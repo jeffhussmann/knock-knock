@@ -1,0 +1,417 @@
+import itertools
+import subprocess
+import pysam
+import numpy as np
+import yaml
+import matplotlib.pyplot as plt
+import shutil
+import matplotlib.ticker
+import bokeh.palettes
+import functools
+import tempfile
+
+from pathlib import Path
+from collections import Counter
+
+import Sequencing.fastq as fastq
+import Sequencing.utilities as utilities
+import Sequencing.interval as interval
+import Sequencing.sam as sam
+import Sequencing.visualize_structure as visualize_structure
+
+import ribosomes.gff as gff
+
+import pacbio
+
+def get_indel_info(alignment):
+    indels = []
+    for i, (kind, length) in enumerate(alignment.cigar):
+        if kind == sam.BAM_CDEL:
+            nucs_before = sam.total_read_nucs(alignment.cigar[:i])
+            centered_at = np.mean([sam.true_query_position(p, alignment) for p in [nucs_before - 1, nucs_before]])
+            indels.append(('deletion', (centered_at, length)))
+        elif kind == sam.BAM_CINS:
+            first_edge = sam.total_read_nucs(alignment.cigar[:i])
+            second_edge = first_edge + length
+            starts_at, ends_at = sorted(sam.true_query_position(p, alignment) for p in [first_edge, second_edge])
+            indels.append(('insertion', (starts_at, ends_at)))
+            
+    return indels
+
+def plot_read(target,
+              dataset,
+              read_id,
+              outcome=None,
+              parsimonious=False,
+              show_qualities=False,
+              x_lims=None,
+              size_multiple=1,
+             ):
+    fns = pacbio.make_fns(target, dataset, outcome)
+    if outcome is not None:
+        bam_fn = fns['bam_by_name']
+    else:
+        bam_fn = fns['full_bam_by_name']
+    
+    manifest = yaml.load(fns['manifest'].open())
+    
+    features = {(f.seqname, f.attribute['ID']): f
+                for f in gff.get_all_features(fns['ref_gff'])
+                if 'ID' in f.attribute
+               }
+        
+    bam_fh = pysam.AlignmentFile(bam_fn)
+    colors = {name: 'C{0}'.format(i) for i, name in enumerate(bam_fh.references)}
+
+    fig, ax = plt.subplots(figsize=(12, 4))
+
+    read_groups = utilities.group_by(bam_fh, lambda r: r.query_name)
+    try:
+        if isinstance(read_id, int):
+            name, group = next(itertools.islice(read_groups, read_id, read_id + 1))
+        else:
+            name, group = next(itertools.dropwhile(lambda t: t[0] != read_id, read_groups))
+    except StopIteration:
+        plt.close(fig)
+        return None
+    
+    per_rname = 0.06
+    gap_between_als = 0.06 * 0.2
+    arrow_height = 0.005
+    arrow_width = 0.01
+    
+    max_y = 0
+    
+    if parsimonious:
+        group = interval.make_parsimoninous(group)
+        
+    query_length = group[0].query_length
+    quals = group[0].query_qualities
+    
+    kwargs = {'linewidth': 2, 'color': 'black'}
+    ax.plot([0, query_length], [0, 0], **kwargs)
+    ax.plot([query_length, query_length * (1 - arrow_width)], [0, arrow_height], **kwargs)
+    
+    ax.annotate('sequencing read',
+                xy=(1, 0),
+                xycoords=('axes fraction', 'data'),
+                xytext=(15, 0),
+                textcoords='offset points',
+                color='black',
+                ha='left',
+                va='center',
+               )
+
+    group = sorted(group, key=lambda al: (al.reference_name, sam.query_interval(al)))
+    by_reference_name = list(utilities.group_by(group, lambda al: al.reference_name))
+    
+    rname_starts = np.cumsum([1] + [len(als) for n, als in by_reference_name])
+    offsets = {name: start for (name, als), start in zip(by_reference_name, rname_starts)}
+    
+    for reference_name, alignments in by_reference_name:
+        alignments = alignments[:10]
+        
+        offset = offsets[reference_name]
+        color = colors[reference_name]
+
+        average_y = (offset  + 0.5 * (len(alignments) - 1)) * gap_between_als
+        ax.annotate(reference_name,
+                    xy=(1, average_y),
+                    xycoords=('axes fraction', 'data'),
+                    xytext=(15, 0),
+                    textcoords='offset points',
+                    color=color,
+                    ha='left',
+                    va='center',
+                   )
+
+        for i, alignment in enumerate(alignments):
+            start, end = sam.query_interval(alignment)
+            strand = sam.get_strand(alignment)
+            y = (offset + i) * gap_between_als
+            
+            # Annotate the ends of alignments with reference position numbers and vertical lines.
+            for x, which in ((start, 'start'), (end, 'end')):
+                if (which == 'start' and strand == '+') or (which == 'end' and strand == '-'):
+                    r = alignment.reference_start
+                else:
+                    r = alignment.reference_end - 1
+
+                ax.plot([x, x], [0, y], color=color, alpha=0.3)
+                if which == 'start':
+                    kwargs = {'ha': 'right', 'xytext': (-2, 0)}
+                else:
+                    kwargs = {'ha': 'left', 'xytext': (2, 0)}
+
+                ax.annotate('{0:,}'.format(r),
+                            xy=(x, y),
+                            xycoords='data',
+                            textcoords='offset points',
+                            color=color,
+                            va='center',
+                            size=6,
+                            **kwargs)
+                
+                
+            # Draw the alignment, with downward dimples at insertions and upward loops at deletions.
+            xs = [start]
+            ys = [y]
+            indels = sorted(get_indel_info(alignment), key=lambda t: t[1][0])
+            for kind, info in indels:
+                if kind == 'deletion':
+                    centered_at, length = info
+                    
+                    if length <= 2:
+                        height = 0.0015
+                        indel_xs = [centered_at, centered_at, centered_at]
+                        indel_ys = [y, y + height, y]
+                    else:
+                        width = query_length * 0.001
+                        height = 0.006
+                        indel_xs = [centered_at - width, centered_at - 0.5 * length, centered_at + 0.5 * length, centered_at + width]
+                        indel_ys = [y, y + height, y + height, y]
+
+                        ax.annotate(str(length),
+                                    xy=(centered_at, y + height),
+                                    xytext=(0, 1),
+                                    textcoords='offset points',
+                                    ha='center',
+                                    va='bottom',
+                                    size=6,
+                                   )
+                elif kind == 'insertion':
+                    starts_at, ends_at = info
+                    centered_at = np.mean([starts_at, ends_at])
+                    length = ends_at - starts_at
+                    if length <= 2:
+                        height = 0.0015
+                    else:
+                        height = 0.004
+                        ax.annotate(str(length),
+                                    xy=(centered_at, y - height),
+                                    xytext=(0, -1),
+                                    textcoords='offset points',
+                                    ha='center',
+                                    va='top',
+                                    size=6,
+                                   )
+                    indel_xs = [starts_at, centered_at, ends_at]
+                    indel_ys = [y, y - height, y]
+                    
+                xs.extend(indel_xs)
+                ys.extend(indel_ys)
+                
+            xs.append(end)
+            ys.append(y)
+            
+            max_y = max(max_y, max(ys))
+            
+            kwargs = {'color': color, 'linewidth': 1.5}
+            ax.plot(xs, ys, **kwargs)
+            
+            if strand == '+':
+                arrow_xs = [end, end - query_length * arrow_width]
+                arrow_ys = [y, y + arrow_height]
+            else:
+                arrow_xs = [start, start + query_length * arrow_width]
+                arrow_ys = [y, y - arrow_height]
+                
+            ax.plot(arrow_xs, arrow_ys, **kwargs)
+
+            features_to_show = [
+                (manifest['target'], 'forward primer'),
+                (manifest['target'], 'reverse primer'),
+                (manifest['target'], "3' HA"),
+                (manifest['target'], "5' HA"),
+                (manifest['donor'], "3' HA"),
+                (manifest['donor'], "5' HA"),
+                (manifest['donor'], 'GFP'),
+            ]
+            
+            q_to_r = {sam.true_query_position(q, alignment): r
+                      for q, r in alignment.aligned_pairs
+                      if r is not None and q is not None
+                     }
+            for feature_reference, feature_name in features_to_show:
+                if reference_name != feature_reference:
+                    continue
+
+                feature = features[feature_reference, feature_name]
+                feature_color = feature.attribute['color']
+                
+                qs = [q for q, r in q_to_r.items() if feature.start <= r <= feature.end]
+                if not qs:
+                    continue
+
+                xs = [min(qs), max(qs)]
+                if xs[1] - xs[0] < 5:
+                    continue
+                
+                rs = [feature.start, feature.end]
+                if strand == '-':
+                    rs = rs[::-1]
+                    
+                for ha, q, r in zip(['left', 'right'], xs, rs):
+                    nts_missing = abs(q_to_r[q] - r)
+                    if nts_missing != 0 and xs[1] - xs[0] > 20:
+                        ax.annotate(str(nts_missing),
+                                    xy=(q, 0),
+                                    ha=ha,
+                                    va='bottom',
+                                    xytext=(3 if ha == 'left' else -3, 1),
+                                    textcoords='offset points',
+                                    size=6,
+                                   )
+                        
+                bottom_y = -5
+                    
+                ax.fill_between(xs, [y] * 2, [0] * 2, color=feature_color, alpha=0.7)
+                ax.annotate(feature.attribute['ID'],
+                            xy=(np.mean(xs), 0),
+                            xycoords='data',
+                            xytext=(0, bottom_y),
+                            textcoords='offset points',
+                            va='top',
+                            ha='center',
+                            color=feature_color,
+                            size=10,
+                            weight='bold',
+                           )
+
+    ax.set_title('{0}: {1}'.format(dataset, alignment.query_name), y=1.2)
+        
+    ax.set_ylim(-0.2 * max_y, 1.1 * max_y)
+    ax.set_xlim(-0.02 * query_length, 1.02 * query_length)
+    ax.set_yticks([])
+    
+    ax.spines['bottom'].set_position(('data', 0))
+    ax.spines['bottom'].set_alpha(0.1)
+    for edge in 'left', 'top', 'right':
+        ax.spines[edge].set_color('none')
+        
+    ax.tick_params(pad=14)
+    fig.set_size_inches((12 * size_multiple, 4 * max_y / 0.15 * size_multiple))
+    
+    bam_fh.close()
+    if show_qualities:
+        ax.plot(np.array(quals) * max_y / 93, color='black', alpha=0.5)
+        
+    if x_lims is not None:
+        ax.set_xlim(*x_lims)
+        
+    return fig
+
+colors = bokeh.palettes.Category20c_20
+col_to_color = {}
+for i, donor in enumerate(['PCR', 'Plasmid', 'ssDNA', 'CT']):
+    for replicate in range(3):
+        col_to_color['{0}-{1}'.format(donor, replicate + 1)] = colors[4 * i  + replicate]
+
+@functools.lru_cache(maxsize=None)
+def load_dataset_lengths(target, dataset):
+    fns = pacbio.make_fns(target, dataset)
+    lengths = Counter(len(r.seq) for r in fastq.reads(fns['full_fastq']))
+    lengths = utilities.counts_to_array(lengths)
+    return lengths
+
+def load_outcome_lengths(target, dataset, outcome):
+    fns = pacbio.make_fns(target, dataset, outcome)
+    alignments = pysam.AlignmentFile(fns['bam_by_name'])
+
+    lengths = Counter()
+    for name, group in utilities.group_by(alignments, lambda al: al.query_name):
+        lengths[group[0].query_length] += 1
+
+    lengths = utilities.counts_to_array(lengths)
+    return lengths
+
+def make_length_plot(target, dataset, outcome):
+    def plot_nonzero(ax, xs, ys, color, highlight):
+        nonzero = ys.nonzero()
+        if highlight:
+            alpha = 0.95
+            markersize = 2
+        else:
+            alpha = 0.7
+            markersize = 0
+
+        ax.plot(xs[nonzero], ys[nonzero], 'o', color=color, markersize=markersize, alpha=alpha)
+        ax.plot(xs, ys, '-', color=color, alpha=0.3 * alpha)
+
+    fig, ax = plt.subplots(figsize=(14, 5))
+
+    ys = load_dataset_lengths(target, dataset)
+    xs = np.arange(len(ys))
+
+    if outcome is None:
+        color = col_to_color.get(dataset.split('_')[-1], 'grey')
+        highlight = True
+    else:
+        color = 'black'
+        highlight = False
+
+    plot_nonzero(ax, xs, ys, color, highlight=highlight)
+    ax.set_ylim(0, max(ys) * 1.05)
+
+    if outcome is not None:
+        ys = load_outcome_lengths(target, dataset, outcome)
+        xs = np.arange(len(ys))
+        color = col_to_color.get(dataset.split('_')[-1], 'grey')
+        plot_nonzero(ax, xs, ys, color=color, highlight=True)
+
+    ax.set_xlabel('Length of read')
+    ax.set_ylabel('Numbr of reads')
+    ax.set_xlim(0, 8000)
+    ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
+
+    return fig
+
+def make_outcome_plots(target, dataset, num_examples=10):
+    fns = pacbio.make_fns(target, dataset)
+
+    if fns['figures_dir'].is_dir():
+        shutil.rmtree(fns['figures_dir'])
+
+    fns['figures_dir'].mkdir(parents=True)
+    
+    fig = make_length_plot(target, dataset, None)
+    fig.savefig(str(fns['all_lengths']), bbox_inches='tight')
+    plt.close(fig)
+    
+    outcomes = pacbio.get_outcomes(target, dataset)
+    
+    for outcome in outcomes:
+        fns = pacbio.make_fns(target, dataset, outcome)
+        
+        with tempfile.TemporaryDirectory(suffix='_outcome_plots') as temp_dir:
+            temp_fns = []
+            for i in range(num_examples):
+                fig = plot_read(target, dataset, i, outcome=outcome, parsimonious=True)
+                if fig is None:
+                    continue
+                    
+                fig.axes[0].set_title('_', y=1.2, color='white')
+                
+                fn = Path(temp_dir) / '{0:05d}.png'.format(i)
+                temp_fns.append(fn)
+                fig.savefig(str(fn), bbox_inches='tight')
+                
+                if i == 0:
+                    fig.axes[0].set_title('')
+                    fig.savefig(str(fns['first']), bbox_inches='tight')
+                    
+                plt.close(fig)
+
+            fig = make_length_plot(target, dataset, outcome)
+            fig.savefig(str(fns['lengths']), bbox_inches='tight')
+            plt.close(fig)
+            
+            to_concat = [fns['lengths']] + temp_fns                
+            convert_command = ['convert', fns['lengths']] + temp_fns + ['-background', 'white', '-gravity', 'center', '-append', fns['figure']]
+            subprocess.check_call(convert_command)
+            
+def make_outcome_text_alignments(target, dataset, num_examples=10):
+    outcomes = pacbio.get_outcomes(target, dataset)
+    for outcome in outcomes:
+        fns = pacbio.make_fns(target, dataset, outcome)
+        visualize_structure.visualize_bam_alignments(fns['bam_by_name'], fns['ref_fasta'], fns['text'], num_examples)
