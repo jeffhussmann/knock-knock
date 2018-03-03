@@ -9,6 +9,7 @@ import matplotlib.ticker
 import bokeh.palettes
 import functools
 import tempfile
+import ipywidgets
 
 from pathlib import Path
 from collections import Counter
@@ -19,9 +20,9 @@ import Sequencing.interval as interval
 import Sequencing.sam as sam
 import Sequencing.visualize_structure as visualize_structure
 
-import ribosomes.gff as gff
-
-import pacbio
+import pacbio_experiment
+import target
+import layout
 
 def get_indel_info(alignment):
     indels = []
@@ -38,8 +39,7 @@ def get_indel_info(alignment):
             
     return indels
 
-def plot_read(target,
-              dataset,
+def plot_read(dataset,
               read_id,
               outcome=None,
               parsimonious=False,
@@ -47,19 +47,16 @@ def plot_read(target,
               x_lims=None,
               size_multiple=1,
              ):
-    fns = pacbio.make_fns(target, dataset, outcome)
+
+    exp = pacbio_experiment.PacbioExperiment(dataset)
+
     if outcome is not None:
-        bam_fn = fns['bam_by_name']
+        bam_fn = exp.outcome_fns(outcome)['bam_by_name']
     else:
-        bam_fn = fns['full_bam_by_name']
+        bam_fn = exp.fns['bam_by_name']
     
-    manifest = yaml.load(fns['manifest'].open())
-    
-    features = {(f.seqname, f.attribute['ID']): f
-                for f in gff.get_all_features(fns['ref_gff'])
-                if 'ID' in f.attribute
-               }
-        
+    features = exp.target.features
+
     bam_fh = pysam.AlignmentFile(bam_fn)
     colors = {name: 'C{0}'.format(i) for i, name in enumerate(bam_fh.references)}
 
@@ -75,22 +72,37 @@ def plot_read(target,
         plt.close(fig)
         return None
     
+    if not all(al.is_unmapped for al in group):
+        _, _, strand = layout.identify_alignments_from_primers(group, exp.target.primers, exp.target.cut_after)
+        if strand == '-':
+            reverse_complement = True
+        else:
+            reverse_complement = False
+    else:
+        reverse_complement = False
+    
     per_rname = 0.06
     gap_between_als = 0.06 * 0.2
     arrow_height = 0.005
     arrow_width = 0.01
     
-    max_y = 0
+    max_y = gap_between_als
     
     if parsimonious:
         group = interval.make_parsimoninous(group)
         
+    query_name = group[0].query_name
     query_length = group[0].query_length
     quals = group[0].query_qualities
     
     kwargs = {'linewidth': 2, 'color': 'black'}
     ax.plot([0, query_length], [0, 0], **kwargs)
-    ax.plot([query_length, query_length * (1 - arrow_width)], [0, arrow_height], **kwargs)
+    arrow_ys = [0, arrow_height]
+    if reverse_complement:
+        arrow_xs = [0, query_length * arrow_width]
+    else:
+        arrow_xs = [query_length, query_length * (1 - arrow_width)]
+    ax.plot(arrow_xs, arrow_ys, **kwargs)
     
     ax.annotate('sequencing read',
                 xy=(1, 0),
@@ -102,13 +114,20 @@ def plot_read(target,
                 va='center',
                )
 
-    group = sorted(group, key=lambda al: (al.reference_name, sam.query_interval(al)))
-    by_reference_name = list(utilities.group_by(group, lambda al: al.reference_name))
+    if all(al.is_unmapped for al in group):
+        by_reference_name = []
+    else:
+        group = sorted(group, key=lambda al: (al.reference_name, sam.query_interval(al)))
+        by_reference_name = list(utilities.group_by(group, lambda al: al.reference_name))
     
     rname_starts = np.cumsum([1] + [len(als) for n, als in by_reference_name])
     offsets = {name: start for (name, als), start in zip(by_reference_name, rname_starts)}
     
     for reference_name, alignments in by_reference_name:
+        if reverse_complement:
+            for alignment in alignments:
+                alignment.is_reverse = not alignment.is_reverse
+
         alignments = alignments[:10]
         
         offset = offsets[reference_name]
@@ -150,8 +169,8 @@ def plot_read(target,
                             color=color,
                             va='center',
                             size=6,
-                            **kwargs)
-                
+                            **kwargs,
+                           )
                 
             # Draw the alignment, with downward dimples at insertions and upward loops at deletions.
             xs = [start]
@@ -179,6 +198,7 @@ def plot_read(target,
                                     va='bottom',
                                     size=6,
                                    )
+
                 elif kind == 'insertion':
                     starts_at, ends_at = info
                     centered_at = np.mean([starts_at, ends_at])
@@ -216,16 +236,17 @@ def plot_read(target,
                 arrow_xs = [start, start + query_length * arrow_width]
                 arrow_ys = [y, y - arrow_height]
                 
-            ax.plot(arrow_xs, arrow_ys, **kwargs)
+            ax.plot(arrow_xs, arrow_ys, clip_on=False, **kwargs)
 
             features_to_show = [
-                (manifest['target'], 'forward primer'),
-                (manifest['target'], 'reverse primer'),
-                (manifest['target'], "3' HA"),
-                (manifest['target'], "5' HA"),
-                (manifest['donor'], "3' HA"),
-                (manifest['donor'], "5' HA"),
-                (manifest['donor'], 'GFP'),
+                (exp.target.target, 'forward primer'),
+                (exp.target.target, 'reverse primer'),
+                (exp.target.target, "3' HA"),
+                (exp.target.target, "5' HA"),
+                (exp.target.target, 'sgRNA'),
+                (exp.target.donor, "3' HA"),
+                (exp.target.donor, "5' HA"),
+                (exp.target.donor, 'GFP'),
             ]
             
             q_to_r = {sam.true_query_position(q, alignment): r
@@ -278,7 +299,7 @@ def plot_read(target,
                             weight='bold',
                            )
 
-    ax.set_title('{0}: {1}'.format(dataset, alignment.query_name), y=1.2)
+    ax.set_title('{0}: {1}'.format(dataset, query_name), y=1.2)
         
     ax.set_ylim(-0.2 * max_y, 1.1 * max_y)
     ax.set_xlim(-0.02 * query_length, 1.02 * query_length)
@@ -293,6 +314,7 @@ def plot_read(target,
     fig.set_size_inches((12 * size_multiple, 4 * max_y / 0.15 * size_multiple))
     
     bam_fh.close()
+
     if show_qualities:
         ax.plot(np.array(quals) * max_y / 93, color='black', alpha=0.5)
         
@@ -300,6 +322,71 @@ def plot_read(target,
         ax.set_xlim(*x_lims)
         
     return fig
+
+def interactive():
+    target_names = [t.name for t in target.get_all_targets()]
+
+    widgets = dict(
+        target = ipywidgets.Select(options=target_names),
+        dataset = ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='450px')),
+        read_id = ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='400px')),
+        parsimonious = ipywidgets.ToggleButton(value=True),
+        show_qualities = ipywidgets.ToggleButton(value=False),
+    )
+
+    exps = pacbio_experiment.get_all_experiments()
+
+    def populate_datasets(change):
+        target = widgets['target'].value
+        previous_value = widgets['dataset'].value
+        datasets = sorted([exp.name for exp in exps if exp.target.name == target])
+        widgets['dataset'].options = datasets
+        
+        if len(datasets) > 0:
+            if previous_value in datasets:
+                widgets['dataset'].value = previous_value
+                populate_outcomes(None)
+            else:
+                widgets['dataset'].value = datasets[0]
+        else:
+            widgets['dataset'].value = None
+
+    def populate_read_ids(change):
+        dataset = widgets['dataset'].value
+        exp = pacbio_experiment.PacbioExperiment(dataset)
+        
+        qnames = list(itertools.islice(exp.query_names(), 200))
+        
+        widgets['read_id'].options = qnames
+        
+        if len(qnames) > 0:
+            widgets['read_id'].value = qnames[0]
+            widgets['read_id'].index = 0
+        else:
+            widgets['read_id'].value = None
+            
+    populate_datasets({'name': 'initial'})
+    populate_read_ids({'name': 'initial'})
+
+    widgets['target'].observe(populate_datasets, names='value')
+    widgets['dataset'].observe(populate_read_ids, names='value')
+
+    figure = ipywidgets.interactive(plot_read,
+                                    size_multiple=ipywidgets.fixed(1.75),
+                                    outcome=ipywidgets.fixed(None),
+                                    x_lims=ipywidgets.fixed(None),
+                                    **widgets,
+                                   )
+    figure.update()
+
+    layout = ipywidgets.VBox(
+        [ipywidgets.HBox([widgets['target'], widgets['dataset'], widgets['read_id']]),
+         ipywidgets.HBox([widgets['parsimonious'], widgets['show_qualities']]),
+         figure.children[-1],
+        ],
+    )
+
+    return layout
 
 colors = bokeh.palettes.Category20c_20
 col_to_color = {}
