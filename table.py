@@ -1,16 +1,43 @@
-import pandas as pd
 import functools
-import bokeh.palettes
-import Sequencing.ipython
 import base64
-import pacbio
-import IPython.display
 
-colors = bokeh.palettes.Category20c_20
-col_to_color = {}
-for i, donor in enumerate(['PCR', 'Plasmid', 'ssDNA', 'CT']):
-    for replicate in range(3):
-        col_to_color['{0}-{1}'.format(donor, replicate + 1)] = colors[4 * i  + replicate]
+import pandas as pd
+import bokeh.palettes
+import IPython.display
+import nbconvert
+import nbformat.v4 as nbf
+
+import Sequencing.ipython
+
+import pacbio_experiment
+
+totals_row_with_priority = ('000:  ', '000: Total reads')
+totals_row = tuple([pacbio_experiment.priority_string_to_description(s) for s in totals_row_with_priority])
+
+def load_counts(conditions=None):
+    exps = pacbio_experiment.get_all_experiments(conditions)
+
+    counts = {exp.name: exp.load_outcome_counts() for exp in exps}
+    df = pd.DataFrame(counts).fillna(0)
+
+    totals = df.sum(axis=0)
+    df.loc[totals_row_with_priority, :] = totals
+
+    df = df.sort_index().astype(int)
+
+    new_levels = [
+        [pacbio_experiment.priority_string_to_description(s) for s in l]
+        for l in df.index.levels
+    ]
+
+    new_index = df.index.set_levels(new_levels)
+
+    outcome_lookup = {new: old for new, old in zip(new_index, df.index)}
+
+    df.index = new_index
+    df.index.names = (None, None)
+
+    return df, outcome_lookup
 
 def fn_to_URI(fn):
     contents = open(fn, 'rb').read()
@@ -70,12 +97,9 @@ class ModalMaker(object):
         
         return modal_div, modal_id
         
-def make_table(target, must_contain=None):
-    if must_contain is None:
-        must_contain = []
-
-    df = pacbio.load_counts(target)
-    totals = df.loc[(' ', 'Total reads')]
+def make_table(conditions=None):
+    df, outcome_lookup = load_counts(conditions)
+    totals = df.loc[totals_row]
 
     modal_maker = ModalMaker()
 
@@ -83,27 +107,27 @@ def make_table(target, must_contain=None):
         if val == 0:
             return ''
         else:
-            outcome = row
-            fns = pacbio.make_fns(target, col, outcome)
+            outcome = outcome_lookup[row]
+            exp = pacbio_experiment.PacbioExperiment(col)
+            outcome_fns = exp.outcome_fns(outcome)
             
             fraction = val / float(totals[col])
             
-            if row == (' ', 'Total reads'):
+            if row == totals_row:
                 title = col
-                modal_image_fn = str(fns['all_lengths'])
+                modal_image_fn = str(exp.fns['lengths_figure'])
                 modal_div, modal_id = modal_maker.make(modal_image_fn, title)
                 link = dataset_link_template.format(modal_id=modal_id, count=val)
                 
                 return link + modal_div
-            elif row == ('malformed layout', 'no alignments detected'):
-                return '{:.2%}'.format(fraction)
             else:
-                outcome_string = '_'.join(outcome)
+                fields = [pacbio_experiment.priority_string_to_description(s) for s in outcome]
+                outcome_string = '_'.join(fields)
                 title = '{0}: {1}'.format(col, outcome_string)
-                modal_image_fn = str(fns['figure'])
+                modal_image_fn = str(outcome_fns['combined_figure'])
                 modal_div, modal_id = modal_maker.make(modal_image_fn, title)
                 
-                hover_image_fn = str(fns['first'])
+                hover_image_fn = str(outcome_fns['first_example'])
                 hover_URI = fn_to_URI(hover_image_fn)
                 link = outcome_link_template.format(fraction=fraction, modal_id=modal_id, URI=hover_URI)
                 
@@ -111,9 +135,6 @@ def make_table(target, must_contain=None):
     
     def bind_link_maker(row):
         return {col: functools.partial(link_maker, col=col, row=row) for col in df}
-
-
-    df = df[[c for c in df.columns if all(s in c for s in must_contain)]]
 
     styled = df.style
     
@@ -128,9 +149,33 @@ def make_table(target, must_contain=None):
         
     styled = styled.set_properties(**{'border': '1px solid black'})
     for col in df:
-        #styled = styled.bar(subset=pd.IndexSlice[:, col], color=col_to_color[col[1].split('_')[-1]])
-        styled = styled.bar(subset=pd.IndexSlice[:, col], color=col_to_color.get(col.split('_')[-1], 'grey'))
+        exp = pacbio_experiment.PacbioExperiment(col)
+        styled = styled.bar(subset=pd.IndexSlice[:, col], color=exp.color)
         
     styled.set_table_styles(styles)
-
+    
     return styled
+
+def generate_html(title='table', conditions=None):
+    nb = nbf.new_notebook()
+
+    cell_contents = '''\
+import table
+
+conditions = {0}
+table.make_table(conditions)
+'''.format(conditions)
+
+    nb['cells'] = [nbf.new_code_cell(cell_contents)]
+
+    nb['metadata'] = {'title': title}
+
+    exporter = nbconvert.HTMLExporter()
+    exporter.template_file = 'modal_template.tpl'
+
+    ep = nbconvert.preprocessors.ExecutePreprocessor(kernel_name='python3.6')
+    ep.preprocess(nb, {})
+
+    body, resources = exporter.from_notebook_node(nb)
+    with open('table_{0}.html'.format(title), 'w') as fh:
+        fh.write(body)

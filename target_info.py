@@ -10,10 +10,11 @@ import Sequencing.utilities as utilities
 
 base_dir = Path('/home/jah/projects/manu/targets')
 
-class Target(object):
+class TargetInfo(object):
     def __init__(self, name):
         self.name = name
         self.dir = base_dir / name
+
         manifest_fn = self.dir / 'manifest.yaml'
         manifest = yaml.load(manifest_fn.open())
         self.target = manifest['target']
@@ -48,67 +49,59 @@ class Target(object):
             for feature in sorted(all_gff_features):
                 gff_fh.write(str(feature) + '\n')
 
-    @property
+    @utilities.memoized_property
     def features(self):
-        if not hasattr(self, '_features'):
-            self._features = {
-                (f.seqname, f.attribute['ID']): f
-                for f in gff.get_all_features(self.fns['ref_gff'])
-                if 'ID' in f.attribute
-            }
-        return self._features
+        features = {
+            (f.seqname, f.attribute['ID']): f
+            for f in gff.get_all_features(self.fns['ref_gff'])
+            if 'ID' in f.attribute
+        }
+        return features
 
-    @property
+    @utilities.memoized_property
     def reference_sequences(self):
-        if not hasattr(self, '_reference_sequence'):
-            self._reference_sequence =  fasta.to_dict(self.fns['ref_fasta'])
-        return self._reference_sequence
+        return fasta.to_dict(self.fns['ref_fasta'])
 
-    @property
+    @utilities.memoized_property
     def target_sequence(self):
-        if not hasattr(self, '_target_sequence'):
-            self._target_sequence = self.reference_sequences[self.target]
-        return self._target_sequence
+        return self.reference_sequences[self.target]
 
-    @property
+    @utilities.memoized_property
     def cut_after(self):
-        if not hasattr(self, '_cut_after'):
-            sgRNA = self.features[self.target, 'sgRNA']
-            seq = self.target_sequence
+        sgRNA = self.features[self.target, 'sgRNA']
+        seq = self.target_sequence
 
-            if sgRNA.strand == '+':
-                PAM = seq[sgRNA.end + 1:sgRNA.end + 4]
-                cut_after = sgRNA.end - 3
+        if sgRNA.strand == '+':
+            PAM = seq[sgRNA.end + 1:sgRNA.end + 4]
+            cut_after = sgRNA.end - 3
 
-            elif sgRNA.strand == '-':
-                PAM = utilities.reverse_complement(seq[sgRNA.start -3:sgRNA.start])
-                cut_after = sgRNA.start + 2
+        elif sgRNA.strand == '-':
+            PAM = utilities.reverse_complement(seq[sgRNA.start -3:sgRNA.start])
+            cut_after = sgRNA.start + 2
 
-            if PAM[-2:] != 'GG':
-                raise ValueError('non-NGG PAM: {0}'.format(PAM))
-            
-            self._cut_after = cut_after
-        return self._cut_after
+        if PAM[-2:] != 'GG':
+            raise ValueError('non-NGG PAM: {0}'.format(PAM))
+        
+        return cut_after
 
-    @property
+    @utilities.memoized_property
     def homology_arms(self):
-        if not hasattr(self, '_homology_arms'):
-            HAs = {}
-            for source in ['donor', 'target']:
-                for side in [5, 3]:
-                    name = "{0}' HA".format(side)
-                    HAs[source, side] = self.features[getattr(self, source), name] 
-            self._homology_arms = HAs
-        return self._homology_arms
+        HAs = {}
+
+        for source in ['donor', 'target']:
+            for side in [5, 3]:
+                name = "{0}' HA".format(side)
+                HAs[source, side] = self.features[getattr(self, source), name] 
+
+        return HAs
     
-    @property
+    @utilities.memoized_property
     def primers(self):
-        if not hasattr(self, '_primers'):
-            self._primers = {
-                5: self.features[self.target, 'forward primer'],
-                3: self.features[self.target, 'reverse primer'],
-            }
-        return self._primers
+        primers = {
+            5: self.features[self.target, 'forward primer'],
+            3: self.features[self.target, 'reverse primer'],
+        }
+        return primers
 
 def parse_benchling_genbank(genbank_fn):
     convert_strand = {
@@ -153,5 +146,5 @@ def parse_benchling_genbank(genbank_fn):
 
 def get_all_targets():
     names = (p.name for p in base_dir.glob('*') if p.is_dir())
-    targets = [Target(n) for n in names]
+    targets = [TargetInfo(n) for n in names]
     return targets

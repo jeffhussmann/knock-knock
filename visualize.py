@@ -1,3 +1,6 @@
+import matplotlib
+matplotlib.use('Agg', warn=False)
+
 import itertools
 import subprocess
 import pysam
@@ -21,7 +24,7 @@ import Sequencing.sam as sam
 import Sequencing.visualize_structure as visualize_structure
 
 import pacbio_experiment
-import target
+import target_info
 import layout
 
 def get_indel_info(alignment):
@@ -55,7 +58,7 @@ def plot_read(dataset,
     else:
         bam_fn = exp.fns['bam_by_name']
     
-    features = exp.target.features
+    features = exp.target_info.features
 
     bam_fh = pysam.AlignmentFile(bam_fn)
     colors = {name: 'C{0}'.format(i) for i, name in enumerate(bam_fh.references)}
@@ -73,8 +76,9 @@ def plot_read(dataset,
         return None
     
     if not all(al.is_unmapped for al in group):
-        _, _, strand = layout.identify_alignments_from_primers(group, exp.target.primers, exp.target.cut_after)
-        if strand == '-':
+        layout_info = {'alignments': {'all': group}}
+        layout.identify_flanking_target_alignments(layout_info, exp.target_info)
+        if layout_info['strand'] == '-':
             reverse_complement = True
         else:
             reverse_complement = False
@@ -238,15 +242,17 @@ def plot_read(dataset,
                 
             ax.plot(arrow_xs, arrow_ys, clip_on=False, **kwargs)
 
+            target = exp.target_info.target
+            donor = exp.target_info.donor
             features_to_show = [
-                (exp.target.target, 'forward primer'),
-                (exp.target.target, 'reverse primer'),
-                (exp.target.target, "3' HA"),
-                (exp.target.target, "5' HA"),
-                (exp.target.target, 'sgRNA'),
-                (exp.target.donor, "3' HA"),
-                (exp.target.donor, "5' HA"),
-                (exp.target.donor, 'GFP'),
+                (target, 'forward primer'),
+                (target, 'reverse primer'),
+                (target, "3' HA"),
+                (target, "5' HA"),
+                (target, 'sgRNA'),
+                (donor, "3' HA"),
+                (donor, "5' HA"),
+                (donor, 'GFP'),
             ]
             
             q_to_r = {sam.true_query_position(q, alignment): r
@@ -324,7 +330,7 @@ def plot_read(dataset,
     return fig
 
 def interactive():
-    target_names = [t.name for t in target.get_all_targets()]
+    target_names = [t.name for t in target_info.get_all_targets()]
 
     widgets = dict(
         target = ipywidgets.Select(options=target_names),
@@ -334,12 +340,15 @@ def interactive():
         show_qualities = ipywidgets.ToggleButton(value=False),
     )
 
+    for k, v in widgets.items():
+        v.description = k
+
     exps = pacbio_experiment.get_all_experiments()
 
     def populate_datasets(change):
         target = widgets['target'].value
         previous_value = widgets['dataset'].value
-        datasets = sorted([exp.name for exp in exps if exp.target.name == target])
+        datasets = sorted([exp.name for exp in exps if exp.target_info.name == target])
         widgets['dataset'].options = datasets
         
         if len(datasets) > 0:
@@ -388,31 +397,84 @@ def interactive():
 
     return layout
 
-colors = bokeh.palettes.Category20c_20
-col_to_color = {}
-for i, donor in enumerate(['PCR', 'Plasmid', 'ssDNA', 'CT']):
-    for replicate in range(3):
-        col_to_color['{0}-{1}'.format(donor, replicate + 1)] = colors[4 * i  + replicate]
+def interactive_by_outcome():
+    target_names = [t.name for t in target_info.get_all_targets()]
 
-@functools.lru_cache(maxsize=None)
-def load_dataset_lengths(target, dataset):
-    fns = pacbio.make_fns(target, dataset)
-    lengths = Counter(len(r.seq) for r in fastq.reads(fns['full_fastq']))
-    lengths = utilities.counts_to_array(lengths)
-    return lengths
+    widgets = dict(
+        target = ipywidgets.Select(options=target_names, value=target_names[0]),
+        dataset = ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='450px')),
+        read_id = ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='400px')),
+        parsimonious = ipywidgets.ToggleButton(value=True),
+        show_qualities = ipywidgets.ToggleButton(value=False),
+        outcome = ipywidgets.Select(options=[], continuous_update=False, layout=ipywidgets.Layout(height='200px', width='450px')),
+    )
 
-def load_outcome_lengths(target, dataset, outcome):
-    fns = pacbio.make_fns(target, dataset, outcome)
-    alignments = pysam.AlignmentFile(fns['bam_by_name'])
+    exps = pacbio_experiment.get_all_experiments()
 
-    lengths = Counter()
-    for name, group in utilities.group_by(alignments, lambda al: al.query_name):
-        lengths[group[0].query_length] += 1
+    def populate_datasets(change):
+        target = widgets['target'].value
+        previous_value = widgets['dataset'].value
+        datasets = sorted([exp.name for exp in exps if exp.target_info.name == target])
+        widgets['dataset'].options = datasets
 
-    lengths = utilities.counts_to_array(lengths)
-    return lengths
+        if len(datasets) > 0:
+            if previous_value in datasets:
+                widgets['dataset'].value = previous_value
+                populate_outcomes(None)
+            else:
+                widgets['dataset'].value = datasets[0]
+        else:
+            widgets['dataset'].value = None
 
-def make_length_plot(target, dataset, outcome):
+    def populate_outcomes(change):
+        previous_value = widgets['outcome'].value
+        exp = pacbio_experiment.PacbioExperiment(widgets['dataset'].value)
+        outcomes = exp.outcomes
+        widgets['outcome'].options = [('_'.join(outcome), outcome) for outcome in outcomes]
+        if len(outcomes) > 0:
+            if previous_value in outcomes:
+                widgets['outcome'].value = previous_value
+                populate_read_ids(None)
+            else:
+                widgets['outcome'].value = widgets['outcome'].options[0][1]
+        else:
+            widgets['outcome'].value = None
+
+    def populate_read_ids(change):
+        exp = pacbio_experiment.PacbioExperiment(widgets['dataset'].value)
+        qnames = exp.outcome_query_names(widgets['outcome'].value)
+        widgets['read_id'].options = qnames
+        if len(qnames) > 0:
+            widgets['read_id'].value = qnames[0]
+            widgets['read_id'].index = 0
+        else:
+            widgets['read_id'].value = None
+            
+    populate_datasets({'name': 'initial'})
+    populate_outcomes({'name': 'initial'})
+    populate_read_ids({'name': 'initial'})
+
+    widgets['target'].observe(populate_datasets, names='value')
+    widgets['dataset'].observe(populate_outcomes, names='value')
+    widgets['outcome'].observe(populate_read_ids, names='value')
+
+    figure = ipywidgets.interactive(plot_read,
+                                    size_multiple=ipywidgets.fixed(1.75),
+                                    x_lims=ipywidgets.fixed(None),
+                                    **widgets,
+                                   )
+    figure.update()
+
+    layout = ipywidgets.VBox(
+        [ipywidgets.HBox([widgets['target'], widgets['dataset'], widgets['outcome'], widgets['read_id']]),
+         ipywidgets.HBox([widgets['parsimonious'], widgets['show_qualities']]),
+         figure.children[-1],
+        ],
+    )
+
+    return layout
+
+def make_length_plot(read_lengths, color, outcome_lengths=None):
     def plot_nonzero(ax, xs, ys, color, highlight):
         nonzero = ys.nonzero()
         if highlight:
@@ -427,23 +489,23 @@ def make_length_plot(target, dataset, outcome):
 
     fig, ax = plt.subplots(figsize=(14, 5))
 
-    ys = load_dataset_lengths(target, dataset)
+    ys = read_lengths
     xs = np.arange(len(ys))
 
-    if outcome is None:
-        color = col_to_color.get(dataset.split('_')[-1], 'grey')
+    if outcome_lengths is None:
+        all_color = color
         highlight = True
     else:
-        color = 'black'
+        all_color = 'black'
         highlight = False
 
     plot_nonzero(ax, xs, ys, color, highlight=highlight)
     ax.set_ylim(0, max(ys) * 1.05)
 
-    if outcome is not None:
-        ys = load_outcome_lengths(target, dataset, outcome)
+    if outcome_lengths is not None:
+        ys = outcome_lengths
         xs = np.arange(len(ys))
-        color = col_to_color.get(dataset.split('_')[-1], 'grey')
+        outcome_color = color
         plot_nonzero(ax, xs, ys, color=color, highlight=True)
 
     ax.set_xlabel('Length of read')
@@ -452,50 +514,6 @@ def make_length_plot(target, dataset, outcome):
     ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
 
     return fig
-
-def make_outcome_plots(target, dataset, num_examples=10):
-    fns = pacbio.make_fns(target, dataset)
-
-    if fns['figures_dir'].is_dir():
-        shutil.rmtree(fns['figures_dir'])
-
-    fns['figures_dir'].mkdir(parents=True)
-    
-    fig = make_length_plot(target, dataset, None)
-    fig.savefig(str(fns['all_lengths']), bbox_inches='tight')
-    plt.close(fig)
-    
-    outcomes = pacbio.get_outcomes(target, dataset)
-    
-    for outcome in outcomes:
-        fns = pacbio.make_fns(target, dataset, outcome)
-        
-        with tempfile.TemporaryDirectory(suffix='_outcome_plots') as temp_dir:
-            temp_fns = []
-            for i in range(num_examples):
-                fig = plot_read(target, dataset, i, outcome=outcome, parsimonious=True)
-                if fig is None:
-                    continue
-                    
-                fig.axes[0].set_title('_', y=1.2, color='white')
-                
-                fn = Path(temp_dir) / '{0:05d}.png'.format(i)
-                temp_fns.append(fn)
-                fig.savefig(str(fn), bbox_inches='tight')
-                
-                if i == 0:
-                    fig.axes[0].set_title('')
-                    fig.savefig(str(fns['first']), bbox_inches='tight')
-                    
-                plt.close(fig)
-
-            fig = make_length_plot(target, dataset, outcome)
-            fig.savefig(str(fns['lengths']), bbox_inches='tight')
-            plt.close(fig)
-            
-            to_concat = [fns['lengths']] + temp_fns                
-            convert_command = ['convert', fns['lengths']] + temp_fns + ['-background', 'white', '-gravity', 'center', '-append', fns['figure']]
-            subprocess.check_call(convert_command)
             
 def make_outcome_text_alignments(target, dataset, num_examples=10):
     outcomes = pacbio.get_outcomes(target, dataset)

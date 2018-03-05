@@ -1,18 +1,17 @@
-import pysam
 import numpy as np
 
-import Sequencing.utilities as utilities
 import Sequencing.sam as sam
 import Sequencing.interval as interval
-
-from collections import defaultdict
 
 def overlaps_feature(alignment, feature):
     same_reference = alignment.reference_name == feature.seqname
     num_overlapping_bases = alignment.get_overlap(feature.start, feature.end)
     return same_reference and (num_overlapping_bases > 0)
 
-def identify_alignments_from_primers(als, primers, cut_after):
+def identify_flanking_target_alignments(layout_info, target_info):
+    als = layout_info['alignments']['all']
+    primers = target_info.primers
+    cut_after = target_info.cut_after
     query_length = als[0].query_length
 
     all_als_from_primers = {
@@ -22,19 +21,20 @@ def identify_alignments_from_primers(als, primers, cut_after):
 
     als_from_primers = None
     strand = None
+    has_integration = False
 
     if len(all_als_from_primers[5]) > 1 or len(all_als_from_primers[3]) > 1:
-        outcome = ('malformed layout', 'extra copies of primer')
+        layout_info['malformed'] = '100: extra copies of primer'
 
     elif len(all_als_from_primers[5]) == 0 or len(all_als_from_primers[3]) == 0:
-        outcome = ('malformed layout', 'missing a primer')
+        layout_info['malformed'] = '200: missing a primer'
 
     else:
         als_from_primers = {side: all_als_from_primers[side][0] for side in [5, 3]}
 
         strands = {side: sam.get_strand(als_from_primers[side]) for side in [5, 3]}
         if strands[5] != strands[3]:
-            outcome = ('malformed layout', 'primers not in same orientation')
+            layout_info['malformed'] = '300: primers not in same orientation'
 
         else:
             strand = strands[5]
@@ -42,60 +42,72 @@ def identify_alignments_from_primers(als, primers, cut_after):
             covered = interval.get_disjoint_covered([als_from_primers[5], als_from_primers[3]])
 
             if covered.start > 10 or query_length - covered.end > 10:
-                outcome = ('malformed layout', 'primer far from read edge')
+                layout_info['malformed'] = '400: primer far from read edge'
 
             else:
-                no_integration = False
+                has_integration = True
 
                 if als_from_primers[5] == als_from_primers[3]:
                     merged = als_from_primers[5]
-                    no_integration = True
+                    has_integration = False
 
                 elif len(covered) == 1:
                     # The number of disjoint intervals is 1 - i.e. it is a
                     # single connected interval.
                     if als_from_primers[5].reference_end < als_from_primers[3].reference_start:
                         merged = sam.merge_adjacent_alignments(als_from_primers[5], als_from_primers[3])
-                        no_integration = True
+                        has_integration = False
 
-                if no_integration:
-                    largest_deletion = largest_deletion_nearby(merged, cut_after, 10)
-                    if largest_deletion == 0:
-                        outcome = ('no integration', 'no scar')
-                    else:
-                        outcome = ('no integration', 'deletion near cut')
+                if not has_integration:
+                    layout_info['scar'] = max_del_nearby(merged, cut_after, 10)
 
-                else:
-                    outcome = 'integration'
+    layout_info['has_integration'] = has_integration
+    layout_info['strand'] = strand
+    layout_info['alignments']['from_primer'] = als_from_primers
+    return layout_info
 
-    return outcome, als_from_primers, strand
-
-def check_for_clean_handoffs(als_from_primers, strand, donor_als, HAs):
+def check_for_clean_handoffs(layout_info, target_info):
     # Identify the alignments to the donor closest to edge of the read
     # that has the 5' and 3' PCR primer.
-    closest_donor_al_to_edges = {}
+    closest_donor_to_edge = {}
+
+    donor_als = [
+        al for al in layout_info['alignments']['all']
+        if al.reference_name == target_info.donor
+    ]
+
+    if len(donor_als) == 0:
+        layout_info['clean_handoffs'] = {5: False, 3: False}
+        layout_info['alignments']['closest_donor_to_edge'] = {5: None, 3: None}
+        return layout_info
+
+
     left_most = min(donor_als, key=lambda al: interval.get_covered(al).start)
     right_most = max(donor_als, key=lambda al: interval.get_covered(al).end)
-    if strand == '+':
-        closest_donor_al_to_edges[5] = left_most
-        closest_donor_al_to_edges[3] = right_most
+
+    if layout_info['strand'] == '+':
+        closest_donor_to_edge[5] = left_most
+        closest_donor_to_edge[3] = right_most
     else:
-        closest_donor_al_to_edges[5] = right_most
-        closest_donor_al_to_edges[3] = left_most
+        closest_donor_to_edge[5] = right_most
+        closest_donor_to_edge[3] = left_most
+
+    from_primer = layout_info['alignments']['from_primer']
+    HAs = target_info.homology_arms
 
     target_contains_full_arm = {
-        5: HAs['target', 5].end - als_from_primers[5].reference_end <= 10,
-        3: als_from_primers[3].reference_start - HAs['target', 3].start <= 10,
+        5: HAs['target', 5].end - from_primer[5].reference_end <= 10,
+        3: from_primer[3].reference_start - HAs['target', 3].start <= 10,
     }
 
     donor_contains_arm_external = {
-        5: closest_donor_al_to_edges[5].reference_start - HAs['donor', 5].start <= 10,
-        3: HAs['donor', 3].end - (closest_donor_al_to_edges[3].reference_end - 1) <= 10,
+        5: closest_donor_to_edge[5].reference_start - HAs['donor', 5].start <= 10,
+        3: HAs['donor', 3].end - (closest_donor_to_edge[3].reference_end - 1) <= 10,
     }
 
     donor_contains_arm_internal = {
-        5: closest_donor_al_to_edges[5].reference_end - 1 - HAs['donor', 5].end >= 20,
-        3: HAs['donor', 3].start - closest_donor_al_to_edges[3].reference_start >= 20,
+        5: closest_donor_to_edge[5].reference_end - 1 - HAs['donor', 5].end >= 20,
+        3: HAs['donor', 3].start - closest_donor_to_edge[3].reference_start >= 20,
     }
 
     donor_contains_full_arm = {
@@ -104,13 +116,13 @@ def check_for_clean_handoffs(als_from_primers, strand, donor_als, HAs):
     }
         
     target_external_edge_query = {
-        5: sam.closest_query_position(HAs['target', 5].start, als_from_primers[5]),
-        3: sam.closest_query_position(HAs['target', 3].end, als_from_primers[3]),
+        5: sam.closest_query_position(HAs['target', 5].start, from_primer[5]),
+        3: sam.closest_query_position(HAs['target', 3].end, from_primer[3]),
     }
     
     donor_external_edge_query = {
-        5: sam.closest_query_position(HAs['donor', 5].start, closest_donor_al_to_edges[5]),
-        3: sam.closest_query_position(HAs['donor', 3].end, closest_donor_al_to_edges[3]),
+        5: sam.closest_query_position(HAs['donor', 5].start, closest_donor_to_edge[5]),
+        3: sam.closest_query_position(HAs['donor', 3].end, closest_donor_to_edge[3]),
     }
 
     arm_overlaps = {
@@ -124,7 +136,7 @@ def check_for_clean_handoffs(als_from_primers, strand, donor_als, HAs):
     }
 
     max_indel_near_junction = {
-        side: largest_indel_nearby(closest_donor_al_to_edges[side], junction[side], 10)
+        side: max_indel_nearby(closest_donor_to_edge[side], junction[side], 10)
         for side in [5, 3]
     }
 
@@ -137,23 +149,107 @@ def check_for_clean_handoffs(als_from_primers, strand, donor_als, HAs):
             max_indel_near_junction[side] <= 2
         )
 
-    return clean_handoffs, closest_donor_al_to_edges
+    layout_info['clean_handoffs'] = clean_handoffs
+    layout_info['alignments']['closest_donor_to_edge'] = closest_donor_to_edge
+    return layout_info
 
-def check_for_blunt_compatibility(als_from_primers):
+def check_flanking_for_blunt_compatibility(layout_info, target_info):
+    from_primer = layout_info['alignments']['from_primer']
+    cut_after = target_info.cut_after
+
     target_to_at_least_cut = {
-        5: als_from_primers[5].reference_end - 1 >= cut_after,
-        3: als_from_primers[3].reference_start <= (cut_after + 1),
+        5: from_primer[5].reference_end - 1 >= cut_after,
+        3: from_primer[3].reference_start <= (cut_after + 1),
     }
 
-def get_integration_interval(als_from_primers, closest_donor_al_to_edges, clean_handoffs, HAs, cut_after):
+    layout_info['target_to_at_least_cut'] = target_to_at_least_cut
+    return layout_info
+
+def characterize_integration_edges(layout_info, target_info):
+    int_int = layout_info['integration_interval']
+    HAs = target_info.homology_arms
+    quals = layout_info['quals']
+
+    donor_als = [al for al in layout_info['alignments']['parsimonious']
+                 if al.reference_name == target_info.donor
+                ]
+
+    if layout_info['strand'] == '+':
+        edge_q = {
+            5: int_int.start,
+            3: int_int.end,
+        }
+    else:
+        edge_q = {
+            5: int_int.end,
+            3: int_int.start,
+        }
+
+    edge_r = {
+        5: [],
+        3: [],
+    }
+
+    for al in donor_als:
+        q_to_r = {
+            sam.true_query_position(q, al): r
+            for q, r in al.aligned_pairs
+            if r is not None and q is not None
+        }
+
+        for side in [5, 3]:
+            if edge_q[side] in q_to_r:
+                edge_r[side].append(q_to_r[edge_q[side]])
+
+    for side in [5, 3]:
+        if len(edge_r[side]) != 1:
+            # placeholder
+            edge_r[side] = [-1000]
+
+        edge_r[side] = edge_r[side][0]
+
+    # convention: positive if there is extra in the integration, negative if truncated
+    relative_to_arm_internal = {
+        5: (HAs['donor', 5].end + 1) - edge_r[5],
+        3: edge_r[3] - (HAs['donor', 3].start - 1),
+    }
+    
+    relative_to_arm_external = {
+        5: HAs['donor', 5].start - edge_r[5],
+        3: edge_r[3] - HAs['donor', 3].end,
+    }
+    
+    donor_blunt = {}
+    for side in [5, 3]:
+        blunt = False
+        offset = relative_to_arm_external[side]
+        
+        if offset == 0:
+            blunt = True
+        elif abs(offset) <= 3:
+            q = edge_q[side]
+            if min(quals[q - 3:q + 4]) <= 30:
+                blunt = True
+                
+        donor_blunt[side] = blunt
+
+    layout_info['integration_blunt'] = donor_blunt
+    layout_info['donor_relative_to_arm_internal'] = relative_to_arm_internal
+
+def identify_integration_interval(layout_info, target_info):
+    alignments = layout_info['alignments']
+    clean_handoffs = layout_info['clean_handoffs']
+    HAs = target_info.homology_arms
+    cut_after = target_info.cut_after
+
     flanking_al = {}
     mask_start = {5: -np.inf}
     mask_end = {3: np.inf}
     for side in [5, 3]:
         if clean_handoffs[side]:
-            flanking_al[side] = closest_donor_al_to_edges[side]
+            flanking_al[side] = alignments['closest_donor_to_edge'][side]
         else:
-            flanking_al[side] = als_from_primers[side]
+            flanking_al[side] = alignments['from_primer'][side]
 
     if clean_handoffs[5]:
         mask_end[5] = HAs['donor', 5].end
@@ -173,222 +269,226 @@ def get_integration_interval(als_from_primers, closest_donor_al_to_edges, clean_
     disjoint_covered = interval.get_disjoint_covered([covered[5], covered[3]])
     integration_interval = interval.Interval(disjoint_covered[0].end + 1, disjoint_covered[-1].start - 1)
 
-    return integration_interval
+    layout_info['integration_interval'] = integration_interval
+    return layout_info
 
-def largest_deletion_nearby(alignment, ref_pos, window):
-    ref_pos_to_block = sam.get_ref_pos_to_block(alignment)
-    nearby = range(ref_pos - window, ref_pos + window)
-    blocks = [ref_pos_to_block.get(r, (0, 0)) for r in nearby]
-    deletions = [l for k, l in blocks if k == sam.BAM_CDEL]
-    if deletions:
-        largest_deletion = max(deletions)
-    else:
-        largest_deletion = 0
+def summarize_junctions(layout_info, target_info):
+    junction_status = {}
 
-    return largest_deletion
-
-def largest_insertion_nearby(alignment, ref_pos, window):
-    nearby = sam.crop_al_to_ref_int(alignment, ref_pos - window, ref_pos + window)
-    largest_insertion = sam.max_block_length(nearby, {sam.BAM_CINS})
-    return largest_insertion
-
-def largest_indel_nearby(alignment, ref_pos, window):
-    largest_deletion = largest_deletion_nearby(alignment, ref_pos, window)
-    largest_insertion = largest_insertion_nearby(alignment, ref_pos, window)
-    return max(largest_deletion, largest_insertion)
-    
-def characterize_layout(als, target):
-    if all(al.is_unmapped for al in als):
-        return ('malformed layout', 'no alignments detected')
-
-    quals = als[0].query_qualities
-
-    outcome, als_from_primers, strand = identify_alignments_from_primers(als, target.primers, target.cut_after)
-
-    if outcome != 'integration':
-        print('\t', outcome)
-        return outcome
-    
-    donor_als = [al for al in als if al.reference_name == target.donor]
-    clean_handoffs, closest_donor_al_to_edges = check_for_clean_handoffs(als_from_primers, strand, donor_als, target.homology_arms)
-
-    integration_interval = get_integration_interval(als_from_primers, closest_donor_al_to_edges, clean_handoffs, target.homology_arms, target.cut_after)
-
-    print(clean_handoffs)
-    print(integration_interval)
-    return ('test', 'test')
-
-    als_from_primers[5] = sam.crop_al_to_ref_int(als_from_primers[5], -np.inf, cut_after)
-    als_from_primers[3] = sam.crop_al_to_ref_int(als_from_primers[3], cut_after + 1, np.inf)
-
-    
-    target_edge_relative_to_cut = {
-        5: als_from_primers[5].reference_end - 1 - cut_after,
-        3: als_from_primers[3].reference_start - (cut_after + 1),
-    }
-    
-    target_q = {
-        5: sam.true_query_position(als_from_primers[5].query_alignment_end - 1, als_from_primers[5]),
-        3: sam.true_query_position(als_from_primers[3].query_alignment_start, als_from_primers[3]),
-    }
-    
-    target_blunt = {}
-    for side in [5, 3]:
-        blunt = False
-        offset = target_edge_relative_to_cut[side]
-        if offset == 0:
-            blunt = True
-        elif abs(offset) <= 3:
-            q = target_q[side]
-            if min(quals[q - 3: q + 4]) <= 30:
-                blunt = True
-                
-        target_blunt[side] = blunt
-    
-    # Mask off the parts of the read explained by the primer-containing alignments.
-    # If these alignments go to exactly the cut site, use the cut as the boundary.
-    # Otherwise, use the homology arm edge.
-    
-    if target_blunt[5]:
-        mask_end = cut_after
-    else:
-        mask_end = HAs[target, 5].end
-        
-    has_primer[5] = sam.crop_al_to_ref_int(has_primer[5], 0, mask_end)
-    
-    if target_blunt[3]:
-        mask_start = cut_after + 1
-    else:
-        mask_start = HAs[target, 3].start
-        
-    has_primer[3] = sam.crop_al_to_ref_int(has_primer[3], mask_start, np.inf)
-    
-    covered_from_primers = interval.get_disjoint_covered([has_primer[5], has_primer[3]])
-    integration_interval = interval.Interval(covered_from_primers[0].end + 1, covered_from_primers[-1].start - 1)
-
-    parsimonious = interval.make_parsimoninous(als)
-    donor_als = [al for al in parsimonious if al.reference_name == donor]
-
-    if len(donor_als) == 0:
-        e_coli_als = [al for al in parsimonious if al.reference_name == 'e_coli_K12']
-        if len(e_coli_als) == 1:
-            e_coli_al, = e_coli_als
-            e_coli_covered = interval.get_covered(e_coli_al)
-            if e_coli_covered.start - integration_interval.start <= 10 and integration_interval.end - e_coli_covered.end <= 10:
-                return ('non-GFP integration', 'e coli')
-            else:
-                return ('non-GFP integration', 'e coli')
-        else:
-            return ('non-GFP integration', 'uncategorized')
-
-    five_most = sam.restrict_alignment_to_query_interval(five_most, integration_interval.start, integration_interval.end)
-    three_most = sam.restrict_alignment_to_query_interval(three_most, integration_interval.start, integration_interval.end)
-
-    # 5 and 3 are both positive if there is extra in the insert and negative if truncated
-    donor_relative_to_arm_internal = {
-        5: (HAs[donor, 5].end + 1) - five_most.reference_start,
-        3: ((three_most.reference_end - 1) + 1) - HAs[donor, 3].start,
-    }
-    
-    donor_relative_to_arm_external = {
-        5: five_most.reference_start - HAs[donor, 5].start,
-        3: three_most.reference_end - 1 - HAs[donor, 3].end,
-    }
-    
-    donor_q = {
-        5: sam.true_query_position(five_most.query_alignment_start, five_most),
-        3: sam.true_query_position(three_most.query_alignment_end - 1, three_most),
-    }
-    
-    donor_blunt = {}
-    for side in [5, 3]:
-        blunt = False
-        offset = donor_relative_to_arm_external[side]
-        
-        if offset == 0:
-            blunt = True
-        elif abs(offset) <= 3:
-            q = donor_q[side]
-            if min(quals[q - 3:q + 4]) <= 30:
-                blunt = True
-                
-        donor_blunt[side] = blunt
-        
-    junction_status = []
+    target_blunt = layout_info['target_to_at_least_cut']
+    donor_blunt = layout_info['integration_blunt']
+    clean_handoffs = layout_info['clean_handoffs']
     
     for side in [5, 3]:
         if target_blunt[side] and donor_blunt[side]:
-            junction_status.append('{0}\' blunt'.format(side))
+            junction_status[side] = 'NHEJ'
         elif clean_handoffs[side]:
-            pass
+            junction_status[side] = 'HDR'
         else:
-            junction_status.append('{0}\' uncategorized'.format(side))
-    
-    if len(junction_status) == 0:
-        junction_description = ' '
-    else:
-        junction_description = ', '.join(junction_status)
-    
-    if len(donor_als) == 1:
-        if clean_handoffs[5] and clean_handoffs[3]:
-            insert_description = 'expected'
-        elif donor_relative_to_arm_internal[5] < 0 or donor_relative_to_arm_internal[3] < 0:
-            insert_description = 'truncated'
-        elif donor_relative_to_arm_internal[5] > 0 or donor_relative_to_arm_internal[3] > 0:
-            insert_description = 'extended'
-        else:
-            insert_description = 'uncategorized insertion'
-        
-        if sam.get_strand(donor_als[0]) != strand:
-            insert_description = 'flipped ' + insert_description
+            junction_status[side] = 'uncategorized'
             
+    if (junction_status[5] == 'HDR' and
+        junction_status[3] == 'HDR'):
+        description = '100: HDR'
     else:
-        # Concatamer?
-        if strand == '+':
-            key = lambda al: interval.get_covered(al).start
-            reverse = False
-        else:
-            key = lambda al: interval.get_covered(al).end
-            reverse = True
+        edges = []
+        for side in [5, 3]:
+            if junction_status[side] == 'NHEJ':
+                edges += ["{0}' NHEJ".format(side)]
+        description = '200: ' + ', '.join(edges)
 
-        five_to_three = sorted(donor_als, key=key, reverse=reverse)
-        concatamer_junctions = []
-        for before_junction, after_junction in zip(five_to_three[:-1], five_to_three[1:]):
-            adjacent = interval.are_adjacent(interval.get_covered(before_junction), interval.get_covered(after_junction))
-            missing_before = before_junction.reference_end - 1 - HAs[donor, 3].end
-            missing_after = after_junction.reference_start - HAs[donor, 5].start
-            clean = adjacent and (missing_before == 0) and (missing_after == 0)
-            concatamer_junctions.append(clean)
+    junction_status['description'] = description
 
-        if all(concatamer_junctions):
-            #insert_description += ', {0}-mer GFP'.format(len(concatamer_junctions) + 1)
-            insert_description = 'concatamer'.format(len(concatamer_junctions) + 1)
+    layout_info['junction'] = junction_status
+
+def characterize_integration(layout_info, target_info):
+    int_int = layout_info['integration_interval']
+    parsimonious_als = layout_info['alignments']['parsimonious']
+    strand = layout_info['strand']
+    donor_relative_to_arm_internal = layout_info['donor_relative_to_arm_internal']
+    junction_status = layout_info['junction']
+
+    donor_als = [
+        al for al in parsimonious_als
+        if al.reference_name == target_info.donor
+    ]
+
+    if len(donor_als) == 0:
+        source = '900: uncategorized'
+
+        e_coli_als = [al for al in parsimonious_als if al.reference_name == 'e_coli_K12']
+        if len(e_coli_als) == 1:
+            covered = interval.get_covered(e_coli_als[0])
+            if covered.start - int_int.start <= 10 and int_int.end - covered.end <= 10:
+                source = '200: e coli'
+
+        layout_info['integration'] = ('unexpected', source)
+        return layout_info
+
+    if any(sam.get_strand(al) != strand for al in donor_als):
+        layout_info['integration'] = ('unexpected', '100: flipped')
+        return layout_info
+
+    if len(donor_als) == 1:
+        if junction_status[5] != 'uncategorized' and junction_status[3] != 'uncategorized':
+            description = 'full length'
         else:
-            insert_description = 'uncategorized insertion'
+            fields = []
+            for side in [5, 3]:
+                if donor_relative_to_arm_internal[side] < 0:
+                    fields += ["{0}' truncated".format(side)]
+                elif donor_relative_to_arm_internal[side] > 0:
+                    fields += ["{0}' extended".format(side)]
+
+            description = '100: ' + ', '.join(fields)
+            if description == '':
+                description = '900: uncategorized'
+
+    else:
+        check_for_concatamer(layout_info, target_info)
+
+        if 'concatamer' in layout_info:
+            description = 'concatamer'
+
+        else:
+            #TODO: check for plasmid extensions around the boundary
+            description = '900: uncategorized'
+
+    layout_info['integration'] = description
+
+    return layout_info
+
+def summarize_outcome(layout_info, target_info):
+    if 'malformed' in layout_info:
+        outcome = ('600: malformed layout', layout_info['malformed'])
+
+    elif not layout_info['has_integration']:
+        if layout_info['scar'] > 0:
+            outcome = ('100: no integration', '200: scar near cut')
+        else:
+            outcome = ('100: no integration', '100: no scar')
+
+    else:
+        if len(layout_info['integration']) == 2:
+            _, description = layout_info['integration']
+            outcome = ('500: unexpected integration', description)
+
+        elif layout_info['integration'] == 'full length':
+            outcome = ('200: full length', layout_info['junction']['description'])
+
+        elif layout_info['integration'] == 'concatamer':
+            outcome = ('300: concatamer', layout_info['junction']['description'])
+
+        else:
+            outcome = ('400: unexpected length', layout_info['integration'])
+
+    layout_info['outcome'] = outcome
+
+def check_for_concatamer(layout_info, target_info):
+    parsimonious_als = layout_info['alignments']['parsimonious']
+    strand = layout_info['strand']
+    HAs = target_info.homology_arms
+
+    donor_als = [
+        al for al in parsimonious_als
+        if al.reference_name == target_info.donor
+    ]
+
+    if len(donor_als) <= 1:
+        return layout_info
+
+    if strand == '+':
+        key = lambda al: interval.get_covered(al).start
+        reverse = False
+    else:
+        key = lambda al: interval.get_covered(al).end
+        reverse = True
+
+    five_to_three = sorted(donor_als, key=key, reverse=reverse)
+    junctions_clean = []
+
+    for before, after in zip(five_to_three[:-1], five_to_three[1:]):
+        adjacent = interval.are_adjacent(interval.get_covered(before), interval.get_covered(after))
+
+        missing_before = before.reference_end - 1 - HAs['donor', 3].end
+        missing_after = after.reference_start - HAs['donor', 5].start
+
+        clean = adjacent and (missing_before == 0) and (missing_after == 0)
+
+        junctions_clean.append(clean)
+
+    if all(junctions_clean):
+        layout_info['concatamer'] = len(junctions_clean) + 1
+
+    return layout_info
+
+def max_del_nearby(alignment, ref_pos, window):
+    ref_pos_to_block = sam.get_ref_pos_to_block(alignment)
+    nearby = range(ref_pos - window, ref_pos + window)
+    blocks = [ref_pos_to_block.get(r, (0, 0)) for r in nearby]
+    dels = [l for k, l in blocks if k == sam.BAM_CDEL]
+    if dels:
+        max_del = max(dels)
+    else:
+        max_del = 0
+
+    return max_del
+
+def max_ins_nearby(alignment, ref_pos, window):
+    nearby = sam.crop_al_to_ref_int(alignment, ref_pos - window, ref_pos + window)
+    max_ins = sam.max_block_length(nearby, {sam.BAM_CINS})
+    return max_ins
+
+def max_indel_nearby(alignment, ref_pos, window):
+    max_del = max_del_nearby(alignment, ref_pos, window)
+    max_ins = max_ins_nearby(alignment, ref_pos, window)
+    return max(max_del, max_ins)
     
-        if any(sam.get_strand(donor_al) != strand for donor_al in donor_als):
-            insert_description = 'flipped ' + insert_description
+def characterize_layout(als, target_info):
+    if all(al.is_unmapped for al in als):
+        layout_info = {'outcome': ('600: malformed layout', '500: no alignments detected')}
+        return layout_info
 
-    outcome = (insert_description, junction_description)
-    return outcome
+    quals = als[0].query_qualities
+    if als[0].is_reverse:
+        quals = quals[::-1]
 
-def count_outcomes(bam_by_name_fn, target):
-    bam_fh = pysam.AlignmentFile(bam_by_name_fn)
-    alignment_groups = utilities.group_by(bam_fh, lambda al: al.query_name)
+    layout_info = {
+        'alignments': {
+            'all': als,
+            'parsimonious': interval.make_parsimoninous(als),
+        },
+        'quals': quals,
+    }
 
-    outcomes = defaultdict(list)
+    identify_flanking_target_alignments(layout_info, target_info)
+    
+    if layout_info['has_integration']:
+        check_for_clean_handoffs(layout_info, target_info)
+        identify_integration_interval(layout_info, target_info)
+        check_flanking_for_blunt_compatibility(layout_info, target_info)
+        characterize_integration_edges(layout_info, target_info)
+        summarize_junctions(layout_info, target_info)
+        characterize_integration(layout_info, target_info)
 
-    group_i = 0
-    for name, als in alignment_groups:
-        group_i += 1
-        if group_i > 10:
-            break
-        
-        print(name)
-        outcome = characterize_layout(als, target)
-        outcomes[outcome].append(name)
+    summarize_outcome(layout_info, target_info)
 
-        
-    bam_fh.close()
-        
-    return outcomes
+    return layout_info
+
+    #target_q = {
+    #    5: sam.true_query_position(als_from_primers[5].query_alignment_end - 1, als_from_primers[5]),
+    #    3: sam.true_query_position(als_from_primers[3].query_alignment_start, als_from_primers[3]),
+    #}
+    #
+    #target_blunt = {}
+    #for side in [5, 3]:
+    #    blunt = False
+    #    offset = target_edge_relative_to_cut[side]
+    #    if offset == 0:
+    #        blunt = True
+    #    elif abs(offset) <= 3:
+    #        q = target_q[side]
+    #        if min(quals[q - 3: q + 4]) <= 30:
+    #            blunt = True
+    #            
+    #    target_blunt[side] = blunt
