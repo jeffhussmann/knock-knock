@@ -37,7 +37,7 @@ def blast(ref_fn, reads, bam_fn, bam_by_name_fn):
         }
 
         if isinstance(reads, (str, Path)):
-            reads = fastq.reads(reads)
+            reads = fastq.reads(reads, up_to_space=True)
 
         with reads_fasta_fn.open('w') as fasta_fh:
             for read in reads:
@@ -91,8 +91,11 @@ def blast(ref_fn, reads, bam_fn, bam_by_name_fn):
 
                 undo_hard_clipping(al)
 
-                sorter.write(al)
-                by_name_sorter.write(al)
+                split_als = sam.split_at_large_insertions(al)
+
+                for split_al in split_als:
+                    sorter.write(split_al)
+                    by_name_sorter.write(split_al)
 
             for name in fastq_dict['+']:
                 if name not in aligned_names:

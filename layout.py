@@ -3,6 +3,60 @@ import numpy as np
 import Sequencing.sam as sam
 import Sequencing.interval as interval
 
+def characterize_layout(als, target_info):
+    if all(al.is_unmapped for al in als):
+        layout_info = {
+            'outcome': {
+                'description': ('malformed layout', 'no alignments detected'),
+                'sort_order': (600, 500),
+            }
+        }
+        return layout_info
+
+    quals = als[0].query_qualities
+    if als[0].is_reverse:
+        quals = quals[::-1]
+
+    layout_info = {
+        'alignments': {
+            'all': als,
+            'parsimonious': interval.make_parsimoninous(als),
+        },
+        'quals': quals,
+    }
+
+    identify_flanking_target_alignments(layout_info, target_info)
+    
+    if layout_info['has_integration']:
+        check_for_clean_handoffs(layout_info, target_info)
+        identify_integration_interval(layout_info, target_info)
+        check_flanking_for_blunt_compatibility(layout_info, target_info)
+        characterize_integration_edges(layout_info, target_info)
+        summarize_junctions(layout_info, target_info)
+        characterize_integration(layout_info, target_info)
+
+    summarize_outcome(layout_info, target_info)
+
+    return layout_info
+
+    #target_q = {
+    #    5: sam.true_query_position(als_from_primers[5].query_alignment_end - 1, als_from_primers[5]),
+    #    3: sam.true_query_position(als_from_primers[3].query_alignment_start, als_from_primers[3]),
+    #}
+    #
+    #target_blunt = {}
+    #for side in [5, 3]:
+    #    blunt = False
+    #    offset = target_edge_relative_to_cut[side]
+    #    if offset == 0:
+    #        blunt = True
+    #    elif abs(offset) <= 3:
+    #        q = target_q[side]
+    #        if min(quals[q - 3: q + 4]) <= 30:
+    #            blunt = True
+    #            
+    #    target_blunt[side] = blunt
+
 def overlaps_feature(alignment, feature):
     same_reference = alignment.reference_name == feature.seqname
     num_overlapping_bases = alignment.get_overlap(feature.start, feature.end)
@@ -59,7 +113,7 @@ def identify_flanking_target_alignments(layout_info, target_info):
                         has_integration = False
 
                 if not has_integration:
-                    layout_info['scar'] = max_del_nearby(merged, cut_after, 10)
+                    layout_info['scar'] = max_indel_nearby(merged, cut_after, 10)
 
     layout_info['has_integration'] = has_integration
     layout_info['strand'] = strand
@@ -290,12 +344,21 @@ def summarize_junctions(layout_info, target_info):
     if (junction_status[5] == 'HDR' and
         junction_status[3] == 'HDR'):
         description = '100: HDR'
+
+    elif (junction_status[5] == 'NHEJ' and
+          junction_status[3] == 'HDR'):
+        description = "200: 5' NHEJ"
+    
+    elif (junction_status[5] == 'HDR' and
+          junction_status[3] == 'NHEJ'):
+        description = "300: 3' NHEJ"
+    
+    elif (junction_status[5] == 'NHEJ' and
+          junction_status[3] == 'NHEJ'):
+        description = "400: 5' and 3' NHEJ"
+
     else:
-        edges = []
-        for side in [5, 3]:
-            if junction_status[side] == 'NHEJ':
-                edges += ["{0}' NHEJ".format(side)]
-        description = '200: ' + ', '.join(edges)
+        description = '900: uncategorized'
 
     junction_status['description'] = description
 
@@ -335,13 +398,15 @@ def characterize_integration(layout_info, target_info):
         else:
             fields = []
             for side in [5, 3]:
-                if donor_relative_to_arm_internal[side] < 0:
-                    fields += ["{0}' truncated".format(side)]
-                elif donor_relative_to_arm_internal[side] > 0:
-                    fields += ["{0}' extended".format(side)]
+                if junction_status[side] == 'uncategorized':
+                    if donor_relative_to_arm_internal[side] < 0:
+                        fields += ["{0}' truncated".format(side)]
+                    elif donor_relative_to_arm_internal[side] > 0:
+                        fields += ["{0}' extended".format(side)]
 
-            description = '100: ' + ', '.join(fields)
-            if description == '':
+            if len(fields) > 0:
+                description = '100: ' + ', '.join(fields)
+            else:
                 description = '900: uncategorized'
 
     else:
@@ -382,7 +447,13 @@ def summarize_outcome(layout_info, target_info):
         else:
             outcome = ('400: unexpected length', layout_info['integration'])
 
-    layout_info['outcome'] = outcome
+    pairs = [s.split(': ') for s in outcome]
+    description = tuple(d for p, d in pairs)
+    sort_order = tuple(int(p) for p, d in pairs)
+    layout_info['outcome'] = {
+        'sort_order': sort_order,
+        'description': description,
+    }
 
 def check_for_concatamer(layout_info, target_info):
     parsimonious_als = layout_info['alignments']['parsimonious']
@@ -410,12 +481,13 @@ def check_for_concatamer(layout_info, target_info):
     for before, after in zip(five_to_three[:-1], five_to_three[1:]):
         adjacent = interval.are_adjacent(interval.get_covered(before), interval.get_covered(after))
 
-        missing_before = before.reference_end - 1 - HAs['donor', 3].end
+        missing_before = HAs['donor', 3].end - (before.reference_end - 1)
         missing_after = after.reference_start - HAs['donor', 5].start
 
         clean = adjacent and (missing_before == 0) and (missing_after == 0)
 
         junctions_clean.append(clean)
+
 
     if all(junctions_clean):
         layout_info['concatamer'] = len(junctions_clean) + 1
@@ -443,52 +515,3 @@ def max_indel_nearby(alignment, ref_pos, window):
     max_del = max_del_nearby(alignment, ref_pos, window)
     max_ins = max_ins_nearby(alignment, ref_pos, window)
     return max(max_del, max_ins)
-    
-def characterize_layout(als, target_info):
-    if all(al.is_unmapped for al in als):
-        layout_info = {'outcome': ('600: malformed layout', '500: no alignments detected')}
-        return layout_info
-
-    quals = als[0].query_qualities
-    if als[0].is_reverse:
-        quals = quals[::-1]
-
-    layout_info = {
-        'alignments': {
-            'all': als,
-            'parsimonious': interval.make_parsimoninous(als),
-        },
-        'quals': quals,
-    }
-
-    identify_flanking_target_alignments(layout_info, target_info)
-    
-    if layout_info['has_integration']:
-        check_for_clean_handoffs(layout_info, target_info)
-        identify_integration_interval(layout_info, target_info)
-        check_flanking_for_blunt_compatibility(layout_info, target_info)
-        characterize_integration_edges(layout_info, target_info)
-        summarize_junctions(layout_info, target_info)
-        characterize_integration(layout_info, target_info)
-
-    summarize_outcome(layout_info, target_info)
-
-    return layout_info
-
-    #target_q = {
-    #    5: sam.true_query_position(als_from_primers[5].query_alignment_end - 1, als_from_primers[5]),
-    #    3: sam.true_query_position(als_from_primers[3].query_alignment_start, als_from_primers[3]),
-    #}
-    #
-    #target_blunt = {}
-    #for side in [5, 3]:
-    #    blunt = False
-    #    offset = target_edge_relative_to_cut[side]
-    #    if offset == 0:
-    #        blunt = True
-    #    elif abs(offset) <= 3:
-    #        q = target_q[side]
-    #        if min(quals[q - 3: q + 4]) <= 30:
-    #            blunt = True
-    #            
-    #    target_blunt[side] = blunt

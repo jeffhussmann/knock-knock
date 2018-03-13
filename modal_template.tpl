@@ -91,6 +91,16 @@ div#notebook-container{
         // activate the bootstrap popovers
         $('[data-toggle="popover"]').popover();
         
+        // highlight edges of range when popover is active
+        $('[data-toggle="popover"]').on('show.bs.popover', function() {
+            $("path", this).attr('stroke-opacity', '0.5');
+        });
+
+        // unhighlight edges of range when popover is inactive
+        $('[data-toggle="popover"]').on('hide.bs.popover', function() {
+            $("path", this).attr('stroke-opacity', '0.05');
+        });
+        
         // make the level-0 index color on hover
         // based on https://codepen.io/chriscoyier/pen/wLGDz
         $("td, th").hover(function() {

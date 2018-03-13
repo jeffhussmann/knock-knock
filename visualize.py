@@ -1,17 +1,14 @@
 import matplotlib
 matplotlib.use('Agg', warn=False)
 
+import copy
+import io
+import PIL
 import itertools
-import subprocess
-import pysam
 import numpy as np
-import yaml
 import matplotlib.pyplot as plt
-import shutil
 import matplotlib.ticker
 import bokeh.palettes
-import functools
-import tempfile
 import ipywidgets
 
 from pathlib import Path
@@ -42,49 +39,29 @@ def get_indel_info(alignment):
             
     return indels
 
-def plot_read(dataset,
-              read_id,
-              outcome=None,
+def plot_read(alignments,
+              target_info,
               parsimonious=False,
               show_qualities=False,
-              x_lims=None,
+              zoom_in=None,
               size_multiple=1,
+              **kwargs,
              ):
-
-    exp = pacbio_experiment.PacbioExperiment(dataset)
-
-    if outcome is not None:
-        bam_fn = exp.outcome_fns(outcome)['bam_by_name']
-    else:
-        bam_fn = exp.fns['bam_by_name']
-    
-    features = exp.target_info.features
-
-    bam_fh = pysam.AlignmentFile(bam_fn)
-    colors = {name: 'C{0}'.format(i) for i, name in enumerate(bam_fh.references)}
+    alignments = copy.deepcopy(alignments)
 
     fig, ax = plt.subplots(figsize=(12, 4))
+    colors = {name: 'C{0}'.format(i) for i, name in enumerate(target_info.reference_sequences)}
 
-    read_groups = utilities.group_by(bam_fh, lambda r: r.query_name)
-    try:
-        if isinstance(read_id, int):
-            name, group = next(itertools.islice(read_groups, read_id, read_id + 1))
-        else:
-            name, group = next(itertools.dropwhile(lambda t: t[0] != read_id, read_groups))
-    except StopIteration:
-        plt.close(fig)
-        return None
-    
-    if not all(al.is_unmapped for al in group):
-        layout_info = {'alignments': {'all': group}}
-        layout.identify_flanking_target_alignments(layout_info, exp.target_info)
+    if not all(al.is_unmapped for al in alignments):
+        layout_info = {'alignments': {'all': alignments}}
+        layout.identify_flanking_target_alignments(layout_info, target_info)
         if layout_info['strand'] == '-':
             reverse_complement = True
         else:
             reverse_complement = False
     else:
         reverse_complement = False
-    
+
     per_rname = 0.06
     gap_between_als = 0.06 * 0.2
     arrow_height = 0.005
@@ -93,11 +70,18 @@ def plot_read(dataset,
     max_y = gap_between_als
     
     if parsimonious:
-        group = interval.make_parsimoninous(group)
+        alignments = interval.make_parsimoninous(alignments)
         
-    query_name = group[0].query_name
-    query_length = group[0].query_length
-    quals = group[0].query_qualities
+    query_name = alignments[0].query_name
+    query_length = alignments[0].query_length
+    quals = alignments[0].query_qualities
+    
+    if zoom_in is not None:
+        x_min = zoom_in[0] * query_length
+        x_max = zoom_in[1] * query_length
+    else:
+        x_min = -0.02 * query_length
+        x_max = 1.02 * query_length
     
     kwargs = {'linewidth': 2, 'color': 'black'}
     ax.plot([0, query_length], [0, 0], **kwargs)
@@ -118,11 +102,11 @@ def plot_read(dataset,
                 va='center',
                )
 
-    if all(al.is_unmapped for al in group):
+    if all(al.is_unmapped for al in alignments):
         by_reference_name = []
     else:
-        group = sorted(group, key=lambda al: (al.reference_name, sam.query_interval(al)))
-        by_reference_name = list(utilities.group_by(group, lambda al: al.reference_name))
+        alignments = sorted(alignments, key=lambda al: (al.reference_name, sam.query_interval(al)))
+        by_reference_name = list(utilities.group_by(alignments, lambda al: al.reference_name))
     
     rname_starts = np.cumsum([1] + [len(als) for n, als in by_reference_name])
     offsets = {name: start for (name, als), start in zip(by_reference_name, rname_starts)}
@@ -183,6 +167,9 @@ def plot_read(dataset,
             for kind, info in indels:
                 if kind == 'deletion':
                     centered_at, length = info
+
+                    # Cap how wide the loop can be.
+                    capped_length = min(100, length)
                     
                     if length <= 2:
                         height = 0.0015
@@ -191,7 +178,13 @@ def plot_read(dataset,
                     else:
                         width = query_length * 0.001
                         height = 0.006
-                        indel_xs = [centered_at - width, centered_at - 0.5 * length, centered_at + 0.5 * length, centered_at + width]
+
+                        indel_xs = [
+                            centered_at - width,
+                            centered_at - 0.5 * capped_length,
+                            centered_at + 0.5 * capped_length,
+                            centered_at + width,
+                        ]
                         indel_ys = [y, y + height, y + height, y]
 
                         ax.annotate(str(length),
@@ -240,10 +233,17 @@ def plot_read(dataset,
                 arrow_xs = [start, start + query_length * arrow_width]
                 arrow_ys = [y, y - arrow_height]
                 
-            ax.plot(arrow_xs, arrow_ys, clip_on=False, **kwargs)
+            draw_arrow = True
+            if zoom_in is not None:
+                if not all(x_min <= x <= x_max for x in arrow_xs):
+                    draw_arrow = False
 
-            target = exp.target_info.target
-            donor = exp.target_info.donor
+            if draw_arrow:
+                ax.plot(arrow_xs, arrow_ys, clip_on=False, **kwargs)
+
+            features = target_info.features
+            target = target_info.target
+            donor = target_info.donor
             features_to_show = [
                 (target, 'forward primer'),
                 (target, 'reverse primer'),
@@ -293,6 +293,9 @@ def plot_read(dataset,
                 bottom_y = -5
                     
                 ax.fill_between(xs, [y] * 2, [0] * 2, color=feature_color, alpha=0.7)
+                
+                if xs[1] - xs[0] < 20:
+                    continue
                 ax.annotate(feature.attribute['ID'],
                             xy=(np.mean(xs), 0),
                             xycoords='data',
@@ -305,10 +308,10 @@ def plot_read(dataset,
                             weight='bold',
                            )
 
-    ax.set_title('{0}: {1}'.format(dataset, query_name), y=1.2)
+    ax.set_title(query_name, y=1.2)
         
     ax.set_ylim(-0.2 * max_y, 1.1 * max_y)
-    ax.set_xlim(-0.02 * query_length, 1.02 * query_length)
+    ax.set_xlim(x_min, x_max)
     ax.set_yticks([])
     
     ax.spines['bottom'].set_position(('data', 0))
@@ -319,85 +322,43 @@ def plot_read(dataset,
     ax.tick_params(pad=14)
     fig.set_size_inches((12 * size_multiple, 4 * max_y / 0.15 * size_multiple))
     
-    bam_fh.close()
-
     if show_qualities:
         ax.plot(np.array(quals) * max_y / 93, color='black', alpha=0.5)
         
-    if x_lims is not None:
-        ax.set_xlim(*x_lims)
-        
     return fig
 
-def interactive():
-    target_names = [t.name for t in target_info.get_all_targets()]
-
-    widgets = dict(
-        target = ipywidgets.Select(options=target_names),
-        dataset = ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='450px')),
-        read_id = ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='400px')),
-        parsimonious = ipywidgets.ToggleButton(value=True),
-        show_qualities = ipywidgets.ToggleButton(value=False),
-    )
-
-    for k, v in widgets.items():
-        v.description = k
-
-    exps = pacbio_experiment.get_all_experiments()
-
-    def populate_datasets(change):
-        target = widgets['target'].value
-        previous_value = widgets['dataset'].value
-        datasets = sorted([exp.name for exp in exps if exp.target_info.name == target])
-        widgets['dataset'].options = datasets
-        
-        if len(datasets) > 0:
-            if previous_value in datasets:
-                widgets['dataset'].value = previous_value
-                populate_outcomes(None)
-            else:
-                widgets['dataset'].value = datasets[0]
-        else:
-            widgets['dataset'].value = None
-
-    def populate_read_ids(change):
-        dataset = widgets['dataset'].value
-        exp = pacbio_experiment.PacbioExperiment(dataset)
-        
-        qnames = list(itertools.islice(exp.query_names(), 200))
-        
-        widgets['read_id'].options = qnames
-        
-        if len(qnames) > 0:
-            widgets['read_id'].value = qnames[0]
-            widgets['read_id'].index = 0
-        else:
-            widgets['read_id'].value = None
+def make_stacked_Image(als_iter, target_info, **kwargs):
+    ims = []
+    for als in als_iter:
+        if als is None:
+            continue
             
-    populate_datasets({'name': 'initial'})
-    populate_read_ids({'name': 'initial'})
+        fig = plot_read(als, target_info, **kwargs)
 
-    widgets['target'].observe(populate_datasets, names='value')
-    widgets['dataset'].observe(populate_read_ids, names='value')
+        #fig.axes[0].set_title('_', y=1.2, color='white')
+        
+        with io.BytesIO() as buffer:
+            fig.savefig(buffer, format='png', bbox_inches='tight')
+            im = PIL.Image.open(buffer)
+            im.load()
+            ims.append(im)
+        plt.close(fig)
+        
+    if len(ims) == 0:
+        return None
 
-    figure = ipywidgets.interactive(plot_read,
-                                    size_multiple=ipywidgets.fixed(1.75),
-                                    outcome=ipywidgets.fixed(None),
-                                    x_lims=ipywidgets.fixed(None),
-                                    **widgets,
-                                   )
-    figure.update()
+    total_height = sum(im.height for im in ims)
+    max_width = max(im.width for im in ims)
 
-    layout = ipywidgets.VBox(
-        [ipywidgets.HBox([widgets['target'], widgets['dataset'], widgets['read_id']]),
-         ipywidgets.HBox([widgets['parsimonious'], widgets['show_qualities']]),
-         figure.children[-1],
-        ],
-    )
+    stacked_im = PIL.Image.new('RGBA', size=(max_width, total_height), color='white')
+    y_start = 0
+    for im in ims:
+        stacked_im.paste(im, (max_width - im.width, y_start))
+        y_start += im.height
 
-    return layout
-
-def interactive_by_outcome():
+    return stacked_im
+    
+def explore(by_outcome=False):
     target_names = [t.name for t in target_info.get_all_targets()]
 
     widgets = dict(
@@ -407,7 +368,12 @@ def interactive_by_outcome():
         parsimonious = ipywidgets.ToggleButton(value=True),
         show_qualities = ipywidgets.ToggleButton(value=False),
         outcome = ipywidgets.Select(options=[], continuous_update=False, layout=ipywidgets.Layout(height='200px', width='450px')),
+        zoom_in = ipywidgets.FloatRangeSlider(value=[-0.02, 1.02], min=-0.02, max=1.02, step=0.001, continuous_update=False, layout=ipywidgets.Layout(width='1200px')),
     )
+
+    # For some reason, the target widget doesn't get a label without this.
+    for k, v in widgets.items():
+        v.description = k
 
     exps = pacbio_experiment.get_all_experiments()
 
@@ -442,8 +408,14 @@ def interactive_by_outcome():
 
     def populate_read_ids(change):
         exp = pacbio_experiment.PacbioExperiment(widgets['dataset'].value)
-        qnames = exp.outcome_query_names(widgets['outcome'].value)
+
+        if by_outcome:
+            qnames = exp.outcome_query_names(widgets['outcome'].value)
+        else:
+            qnames = list(itertools.islice(exp.query_names(), 200))
+
         widgets['read_id'].options = qnames
+
         if len(qnames) > 0:
             widgets['read_id'].value = qnames[0]
             widgets['read_id'].index = 0
@@ -451,24 +423,46 @@ def interactive_by_outcome():
             widgets['read_id'].value = None
             
     populate_datasets({'name': 'initial'})
-    populate_outcomes({'name': 'initial'})
+    if by_outcome:
+        populate_outcomes({'name': 'initial'})
     populate_read_ids({'name': 'initial'})
 
     widgets['target'].observe(populate_datasets, names='value')
+    if by_outcome:
+        widgets['outcome'].observe(populate_read_ids, names='value')
     widgets['dataset'].observe(populate_outcomes, names='value')
-    widgets['outcome'].observe(populate_read_ids, names='value')
 
-    figure = ipywidgets.interactive(plot_read,
-                                    size_multiple=ipywidgets.fixed(1.75),
-                                    x_lims=ipywidgets.fixed(None),
-                                    **widgets,
-                                   )
-    figure.update()
+    def plot(dataset, read_id, **kwargs):
+        exp = pacbio_experiment.PacbioExperiment(dataset)
+
+        if by_outcome:
+            als = exp.get_read_alignments(read_id, kwargs['outcome'])
+        else:
+            als = exp.get_read_alignments(read_id)
+
+        if als is None:
+            return None
+
+        fig = plot_read(als, exp.target_info, size_multiple=1.75, **kwargs)
+
+        return fig
+
+    interactive = ipywidgets.interactive(plot, **widgets)
+    interactive.update()
+
+    def make_row(keys):
+        return ipywidgets.HBox([widgets[k] for k in keys])
+
+    if by_outcome:
+        top_row_keys = ['target', 'dataset', 'outcome', 'read_id']
+    else:
+        top_row_keys = ['target', 'dataset', 'read_id']
 
     layout = ipywidgets.VBox(
-        [ipywidgets.HBox([widgets['target'], widgets['dataset'], widgets['outcome'], widgets['read_id']]),
-         ipywidgets.HBox([widgets['parsimonious'], widgets['show_qualities']]),
-         figure.children[-1],
+        [make_row(top_row_keys),
+         make_row(['parsimonious', 'show_qualities']),
+         widgets['zoom_in'],
+         interactive.children[-1],
         ],
     )
 
@@ -499,24 +493,18 @@ def make_length_plot(read_lengths, color, outcome_lengths=None):
         all_color = 'black'
         highlight = False
 
-    plot_nonzero(ax, xs, ys, color, highlight=highlight)
+    plot_nonzero(ax, xs, ys, all_color, highlight=highlight)
     ax.set_ylim(0, max(ys) * 1.05)
 
     if outcome_lengths is not None:
         ys = outcome_lengths
         xs = np.arange(len(ys))
         outcome_color = color
-        plot_nonzero(ax, xs, ys, color=color, highlight=True)
+        plot_nonzero(ax, xs, ys, outcome_color, highlight=True)
 
     ax.set_xlabel('Length of read')
-    ax.set_ylabel('Numbr of reads')
+    ax.set_ylabel('Number of reads')
     ax.set_xlim(0, 8000)
     ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
 
     return fig
-            
-def make_outcome_text_alignments(target, dataset, num_examples=10):
-    outcomes = pacbio.get_outcomes(target, dataset)
-    for outcome in outcomes:
-        fns = pacbio.make_fns(target, dataset, outcome)
-        visualize_structure.visualize_bam_alignments(fns['bam_by_name'], fns['ref_fasta'], fns['text'], num_examples)
