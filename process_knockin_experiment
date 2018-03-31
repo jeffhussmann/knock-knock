@@ -1,0 +1,100 @@
+#!/usr/bin/env python3.6
+
+import argparse
+import subprocess
+import yaml
+import sys
+
+import pandas as pd
+
+import knockin.experiment
+import knockin.table
+
+def check_blastn():
+    no_blastn = False
+
+    try:
+        output = subprocess.check_output(['blastn', '-version'])
+        if b'2.7.1' not in output:
+            no_blastn = True
+    except:
+        no_blastn = True
+
+    if no_blastn:
+        print('blastn 2.7.1 is required and couldn\'t be found')
+        sys.exit(0)
+
+def check_parallel():
+    no_parallel = False
+
+    try:
+        output = subprocess.check_output(['parallel'])
+        if not output.startswith(b'GNU parallel'):
+            no_parallel = True
+    except:
+        no_parallel = True
+
+    if no_parallel:
+        print('GNU parallel is required and couldn\'t be found')
+        sys.exit(0)
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument('--base_dir', required=True)
+
+mode_group = parser.add_mutually_exclusive_group(required=True)
+mode_group.add_argument('--process', nargs=2, metavar=('GROUP_NAME', 'EXP_NAME'))
+mode_group.add_argument('--parallel', metavar='MAX_PROCS')
+mode_group.add_argument('--html', metavar='FILE_NAME')
+mode_group.add_argument('--csv', metavar='FILE_NAME')
+
+parser.add_argument('--conditions')
+
+args = parser.parse_args()
+
+if args.conditions is None:
+    conditions = {}
+else:
+    conditions = yaml.load(args.conditions)
+
+if args.parallel is not None:
+    check_parallel()
+
+    max_procs = args.parallel
+
+    exps = knockin.experiment.get_all_experiments(args.base_dir, conditions)
+
+    if len(exps) == 0:
+        print('No experiments satify conditions:')
+        print(conditions)
+        sys.exit(0)
+
+    parallel_command = [
+        'parallel',
+        '-n', '2', 
+        '--verbose',
+        '--max-procs', max_procs,
+        'process_knockin_experiment',
+        '--base_dir', args.base_dir,
+        '--process', ':::',
+    ]
+
+    arg_pairs = [(e.group, e.name) for e in exps]
+    for pair in sorted(arg_pairs):
+        parallel_command.extend(pair)
+
+    subprocess.check_call(parallel_command)
+
+elif args.process is not None:
+    check_blastn()
+
+    group, name = args.process
+    exp = knockin.experiment.Experiment(args.base_dir, group, name)
+    exp.process()
+
+elif args.html:
+    knockin.table.generate_html(args.base_dir, args.html, conditions=conditions)
+
+elif args.csv:
+    df = knockin.table.load_counts(args.base_dir, conditions)
+    df.to_csv(args.csv)

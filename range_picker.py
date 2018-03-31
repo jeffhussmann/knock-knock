@@ -2,12 +2,13 @@ import bokeh
 import bokeh.plotting
 import bokeh.io
 import numpy as np
-import pacbio_experiment
+
+from . import experiment
 
 bokeh.io.output_notebook()
 
 def range_picker(inital_dataset=None):
-    exps = {exp.name: exp for exp in pacbio_experiment.get_all_experiments()}
+    exps = {exp.name: exp for exp in experiment.get_all_experiments()}
     if inital_dataset is None:
         inital_dataset = list(exps)[0]
 

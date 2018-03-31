@@ -1,33 +1,29 @@
-#!/usr/bin/env python3.6
-
 import matplotlib
 matplotlib.use('Agg', warn=False)
-import argparse
-import subprocess
+
 import shutil
-import tempfile
 from pathlib import Path
 from collections import defaultdict, Counter
 
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-import bokeh
+import bokeh.palettes
 import pysam
 import yaml
 
-import Sequencing.sam as sam
-import Sequencing.fastq as fastq
-import Sequencing.utilities as utilities
-import Sequencing.visualize_structure as visualize_structure
+import sequencing.sam as sam
+import sequencing.fastq as fastq
+import sequencing.utilities as utilities
+import sequencing.visualize_structure as visualize_structure
+import sequencing.sw as sw
+import sequencing.adapters as adapters
 
-import target_info
-import blast
-import layout
-import visualize
+from . import target_info
+from . import blast
+from . import layout
+from . import visualize
 
-base_dir = Path('/home/jah/projects/manu/experiments')
-    
 palette = bokeh.palettes.Category20c_20
 source_to_color = {}
 for i, source in enumerate(['PCR', 'plasmid', 'ssDNA', 'CT']):
@@ -41,17 +37,17 @@ cap_to_color = {
     'IDDT': palette[2],
 }
 
-class PacbioExperiment(object):
-    def __init__(self, name):
+class Experiment(object):
+    def __init__(self, base_dir, group, name):
+        self.group = group
         self.name = name
-        self.dir = base_dir / name
+        self.dir = Path(base_dir) / 'experiments' / group / name
         description_fn = self.dir / 'description.yaml'
         description = yaml.load(description_fn.open())
 
         self.target_name = description['target_info']
-        self.target_info = target_info.TargetInfo(self.target_name)
+        self.target_info = target_info.TargetInfo(base_dir, self.target_name)
         self.fns = {
-            'fastq': self.dir / description['fastq_fn'],
             'bam': self.dir / 'alignments.bam',
             'bam_by_name': self.dir / 'alignments.by_name.bam',
             'outcomes_dir': self.dir / 'outcomes',
@@ -60,6 +56,13 @@ class PacbioExperiment(object):
             'lengths_figure': self.dir / 'all_lengths.png',
             'manual_length_ranges': self.dir / 'manual_length_ranges.csv',
         }
+
+        if 'fastq_fn' in description:
+            self.fns['fastq'] = self.dir / description['fastq_fn']
+        else:
+            self.fns['R1'] = self.dir / description['R1_fn']
+            self.fns['R2'] = self.dir / description['R2_fn']
+            self.fns['fastq'] = self.dir / 'stitched.fastq'
 
         self.cell_line = description.get('cell_line')
         self.donor_type = description.get('donor_type')
@@ -249,15 +252,19 @@ class PacbioExperiment(object):
 
         if isinstance(read_id, int):
             try:
-                for i in range(read_id + 1):
+                for _ in range(read_id + 1):
                     name, group = next(read_groups)
                 return group
             except StopIteration:
                 return None
         else:
+            name = None
+            group = None
+
             for name, group in read_groups:
                 if name == read_id:
                     break
+
             if name == read_id:
                 return group
             else:
@@ -271,14 +278,18 @@ class PacbioExperiment(object):
                                                          outcome_fns['text_alignments'],
                                                          num_examples,
                                                         )
-    def length_distribution_figure(self, show_ranges=False):
+
+    def length_distribution_figure(self, show_ranges=False, x_lims=None):
         ys = self.read_lengths
+
+        if x_lims is None:
+            x_lims = (0, len(ys))
 
         fig, ax = plt.subplots(figsize=(16, 5))
 
         ax.plot(ys, color=self.color)
         ax.set_ylim(0, 1.01 * max(ys))
-        ax.set_xlim(0, len(ys))
+        ax.set_xlim(*x_lims)
                            
         if show_ranges:
             for _, (start, end) in self.length_ranges.iterrows():
@@ -309,14 +320,27 @@ class PacbioExperiment(object):
         sample = utilities.reservoir_sample(filtered, num_examples)
         
         return visualize.make_stacked_Image(sample, self.target_info, parsimonious=True)
+
+    def stitch_read_pairs(self):
+        before_R1 = adapters.primers['tru_seq']['R1']
+        before_R2 = adapters.primers['tru_seq']['R2']
+        with self.fns['fastq'].open('w') as fh:
+            for R1, R2 in fastq.read_pairs(self.fns['R1'], self.fns['R2']):
+                stitched = sw.stitch_read_pair(R1, R2, before_R1, before_R2)
+                fh.write(str(stitched))
         
     def process(self):
+        if 'R1' in self.fns:
+            self.stitch_read_pairs()
+
         self.generate_alignments()
         self.count_outcomes()
-        #self.make_outcome_plots(num_examples=5)
-        #self.make_text_visualizations()
+        self.make_outcome_plots(num_examples=5)
+        self.make_text_visualizations()
 
-def get_all_experiments(conditions=None):
+def get_all_experiments(base_dir, conditions=None):
+    exps_dir = Path(base_dir) / 'experiments'
+
     if conditions is None:
         conditions = {}
 
@@ -330,38 +354,12 @@ def get_all_experiments(conditions=None):
                     return False
         return True
 
-    names = (p.name for p in base_dir.glob('*') if p.is_dir())
-    exps = [PacbioExperiment(n) for n in names]
+    exps = []
+    groups = (p.name for p in exps_dir.glob('*') if p.is_dir())
+    for group in groups:
+        group_dir = exps_dir / group
+        names = (p.name for p in group_dir.glob('*') if p.is_dir())
+        exps.extend([Experiment(base_dir, group, n) for n in names])
+
     filtered = [exp for exp in exps if check_conditions(exp)]
     return filtered
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument('--process')
-    group.add_argument('--parallel')
-
-    args = parser.parse_args()
-
-    if args.parallel is not None:
-        max_procs = args.parallel
-
-        #conditions = {'target_name': 'CLTA-150HA'}
-        conditions = {}
-        exps = get_all_experiments(conditions)
-        names = sorted(exp.name for exp in exps)
-
-        parallel_command = [
-            'parallel',
-            '--verbose',
-            '--max-procs', max_procs,
-            './pacbio_experiment.py', '--process',
-            ':::'] + names
-
-        subprocess.check_call(parallel_command)
-
-    elif args.process is not None:
-        name = args.process
-        exp = PacbioExperiment(name)
-        exp.process()

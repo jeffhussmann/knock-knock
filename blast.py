@@ -1,18 +1,12 @@
-import pysam
 import subprocess
 import tempfile
-import os
-import array
+from pathlib import Path
 
-try:
-    from pathlib import Path
-except ImportError:
-    from pathlib2 import Path
+import pysam
 
-import Sequencing.sam as sam
-import Sequencing.fasta as fasta
-import Sequencing.fastq as fastq
-import Sequencing.utilities as utilities
+import sequencing.sam as sam
+import sequencing.fasta as fasta
+import sequencing.fastq as fastq
 
 def h_to_s(kind):
     if kind == sam.BAM_CHARD_CLIP:
@@ -27,7 +21,6 @@ def blast(ref_fn, reads, bam_fn, bam_by_name_fn):
         temp_dir_path = Path(temp_dir)
 
         reads_fasta_fn = temp_dir_path / 'reads.fasta'
-        reads_fasta_fai_fn = reads_fasta_fn.with_suffix('.fasta.fai')
 
         sam_fn = temp_dir_path / 'alignments.sam'
 
@@ -62,14 +55,14 @@ def blast(ref_fn, reads, bam_fn, bam_by_name_fn):
         ]
         subprocess.check_call(blast_command)
 
-        def undo_hard_clipping(r):
-            strand = sam.get_strand(r)
-            read = fastq_dict[strand][r.query_name]
+        def undo_hard_clipping(al):
+            strand = sam.get_strand(al)
+            read = fastq_dict[strand][al.query_name]
 
-            r.query_sequence = read.seq
-            r.query_qualities = fastq.decode_sanger(read.qual)
+            al.query_sequence = read.seq
+            al.query_qualities = fastq.decode_sanger(read.qual)
 
-            r.cigar = replace_hard_clip_with_soft(r.cigar)
+            al.cigar = replace_hard_clip_with_soft(al.cigar)
     
         def make_unaligned(read):
             unal = pysam.AlignedSegment()

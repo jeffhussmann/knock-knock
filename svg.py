@@ -1,12 +1,7 @@
-import PIL
-import Sequencing.utilities as utilities
-import pacbio_experiment
-import visualize
-import table
-import matplotlib.pyplot as plt
-import numpy as np
 import io
+import matplotlib.pyplot as plt
 
+from . import  table
 
 before_path_template = '''\
 <a

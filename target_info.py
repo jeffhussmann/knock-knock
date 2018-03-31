@@ -4,16 +4,14 @@ import yaml
 import pysam
 import Bio.SeqIO
 
-import Sequencing.fasta as fasta
-import Sequencing.gff as gff
-import Sequencing.utilities as utilities
-
-base_dir = Path('/home/jah/projects/manu/targets')
+import sequencing.fasta as fasta
+import sequencing.gff as gff
+import sequencing.utilities as utilities
 
 class TargetInfo(object):
-    def __init__(self, name):
+    def __init__(self, base_dir, name):
         self.name = name
-        self.dir = base_dir / name
+        self.dir = Path(base_dir) / 'targets' / name
 
         manifest_fn = self.dir / 'manifest.yaml'
         manifest = yaml.load(manifest_fn.open())
@@ -144,7 +142,8 @@ def parse_benchling_genbank(genbank_fn):
 
     return fasta_record, gff_features
 
-def get_all_targets():
-    names = (p.name for p in base_dir.glob('*') if p.is_dir())
+def get_all_targets(base_dir):
+    targets_dir = Path(base_dir) / 'targets'
+    names = (p.name for p in targets_dir.glob('*') if p.is_dir())
     targets = [TargetInfo(n) for n in names]
     return targets

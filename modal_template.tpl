@@ -18,12 +18,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.1.10/require.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
 <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
-
-{% for css in resources.inlining.css -%}
-    <style type="text/css">
-    {{ css }}
-    </style>
-{% endfor %}
+<link rel = "stylesheet" type = "text/css" href = "https://cdn.jupyter.org/notebook/5.4.0/style/style.min.css" />
 
 <style type="text/css">
 /* Overrides of notebook CSS for static HTML export */

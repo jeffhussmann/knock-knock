@@ -1,0 +1,18 @@
+Generate a comprehensive set of local alignments of portions of the read to the target (i.e. genomic locus) and donor (i.e. plasmid) sequences.
+
+Figure out how to parsimoniously explain the entire read from these alignments.
+
+We expect reads to be flanked by alignments to the target sequence, starting and ending with the PCR primers used to amplify the libraries.
+For reasons that are not entirely understood, a small fraction of reads do not have this expected layout.
+When this happens, we record a rough description of the unexpected layout (e.g. missing one of the two primers, or with multiple copies of them) and give up on that read.
+
+For reads that have the expected layout, the next step is to determine what part of the read (if any) is an integration.
+If the read can be explained entirely by alignments to the target (either a single alignment from forward primer to reverse primer, or two alignments that are adjacent on the read but have a substantial deletion from the target sequence missing between them),
+there was no integration. We record whether there is any indel near cut site that is evidence of cutting followed by non-integration repair, and are done with that read.
+
+If this is not true, we need to characterize exactly what was integrated, and how the read transitions from target to integration on each side.
+
+Precisely defining the part of the read that makes up the integration is a little tricky, since the precise boundary of how much flanking target sequence we expect to be included is different for different repair outcomes.
+The root cause of this is that cut side is typically not exactly the same as the junction between the two homology arms.
+If HDR happens, each flanking target alignment should extend to the homology arm junction.
+If NHEJ happens, each flanking target alignment should extend to the cut site.

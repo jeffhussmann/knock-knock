@@ -1,25 +1,23 @@
 import functools
 import io
 import base64
+import os
+from pathlib import Path
 
 import pandas as pd
-import bokeh.palettes
-import IPython.display
 import nbconvert
 import nbformat.v4 as nbf
 import PIL
 
-import Sequencing.ipython
-
-import pacbio_experiment
-import svg
+from . import experiment
+from . import svg
 
 totals_row_label = (' ', 'Total reads')
 
-def load_counts(conditions=None):
-    exps = pacbio_experiment.get_all_experiments(conditions)
+def load_counts(base_dir, conditions=None):
+    exps = experiment.get_all_experiments(base_dir, conditions)
 
-    counts = {exp.name: exp.load_outcome_counts() for exp in exps}
+    counts = {(exp.group, exp.name): exp.load_outcome_counts() for exp in exps}
     df = pd.DataFrame(counts).fillna(0)
 
     totals = df.sum(axis=0)
@@ -119,20 +117,20 @@ class ModalMaker(object):
         
         return modal_div, modal_id
         
-def make_table(conditions=None):
-    df = load_counts(conditions)
+def make_table(base_dir, conditions=None):
+    df = load_counts(base_dir, conditions)
     totals = df.loc[totals_row_label]
 
     modal_maker = ModalMaker()
 
     def link_maker(val, col, row):
         if val == 0:
-            return ''
+            html = ''
         else:
             outcome = row
-            exp_name = col
+            exp_group, exp_name = col
 
-            exp = pacbio_experiment.PacbioExperiment(exp_name)
+            exp = experiment.Experiment(base_dir, exp_group, exp_name)
             outcome_fns = exp.outcome_fns(outcome)
             
             fraction = val / float(totals[col])
@@ -150,7 +148,7 @@ def make_table(conditions=None):
                                             height=height,
                                            )
                 
-                return link + modal_div
+                html = link + modal_div
             else:
                 modal_div, modal_id = modal_maker.make_outcome(exp, outcome)
                 
@@ -164,7 +162,9 @@ def make_table(conditions=None):
                                             height=height,
                                            )
                 
-                return link + modal_div
+                html = link + modal_div
+
+        return html
     
     def bind_link_maker(row):
         return {col: functools.partial(link_maker, col=col, row=row) for col in df}
@@ -182,33 +182,38 @@ def make_table(conditions=None):
         
     styled = styled.set_properties(**{'border': '1px solid black'})
     for col in df:
-        exp = pacbio_experiment.PacbioExperiment(col)
-        styled = styled.bar(subset=pd.IndexSlice[:, col], color=exp.color)
+        exp_group, exp_name = col
+        exp = experiment.Experiment(base_dir, exp_group, exp_name)
+        # Note: as of pandas 0.22, col needs to be in brackets here so that
+        # apply is ultimately called on a df, not a series, to prevent
+        # TypeError: _bar_left() got an unexpected keyword argument 'axis'
+        styled = styled.bar(subset=pd.IndexSlice[:, [col]], color=exp.color)
         
     styled.set_table_styles(styles)
     
     return styled
 
-def generate_html(title='table', conditions=None):
+def generate_html(base_dir, fn, conditions=None):
     nb = nbf.new_notebook()
 
-    cell_contents = '''\
-import table
+    cell_contents = f'''\
+import knockin.table
 
-conditions = {0}
-table.make_table(conditions)
+conditions = {conditions}
+knockin.table.make_table({base_dir}, conditions)
 '''.format(conditions)
 
     nb['cells'] = [nbf.new_code_cell(cell_contents)]
 
-    nb['metadata'] = {'title': title}
+    nb['metadata'] = {'title': fn}
 
-    exporter = nbconvert.HTMLExporter()
-    exporter.template_file = 'modal_template.tpl'
+    exporter = nbconvert.HTMLExporter(exclude_input=True, exclude_output_prompt=True)
+    template_path = Path(os.path.realpath(__file__)).parent / 'modal_template.tpl'
+    exporter.template_file = str(template_path)
 
     ep = nbconvert.preprocessors.ExecutePreprocessor(timeout=600, kernel_name='python3.6')
     ep.preprocess(nb, {})
 
     body, resources = exporter.from_notebook_node(nb)
-    with open('table_{0}.html'.format(title), 'w') as fh:
+    with open(fn, 'w') as fh:
         fh.write(body)

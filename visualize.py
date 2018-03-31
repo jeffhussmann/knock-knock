@@ -8,21 +8,15 @@ import itertools
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker
-import bokeh.palettes
 import ipywidgets
 
-from pathlib import Path
-from collections import Counter
+import sequencing.utilities as utilities
+import sequencing.interval as interval
+import sequencing.sam as sam
 
-import Sequencing.fastq as fastq
-import Sequencing.utilities as utilities
-import Sequencing.interval as interval
-import Sequencing.sam as sam
-import Sequencing.visualize_structure as visualize_structure
-
-import pacbio_experiment
-import target_info
-import layout
+from . import experiment
+from . import target_info as target_info_module
+from . import layout as layout_module
 
 def get_indel_info(alignment):
     indels = []
@@ -45,6 +39,7 @@ def plot_read(alignments,
               show_qualities=False,
               zoom_in=None,
               size_multiple=1,
+              paired=False,
               **kwargs,
              ):
     alignments = copy.deepcopy(alignments)
@@ -52,13 +47,12 @@ def plot_read(alignments,
     fig, ax = plt.subplots(figsize=(12, 4))
     colors = {name: 'C{0}'.format(i) for i, name in enumerate(target_info.reference_sequences)}
 
-    if not all(al.is_unmapped for al in alignments):
+    if paired:
+        reverse_complement = False
+    elif not all(al.is_unmapped for al in alignments):
         layout_info = {'alignments': {'all': alignments}}
-        layout.identify_flanking_target_alignments(layout_info, target_info)
-        if layout_info['strand'] == '-':
-            reverse_complement = True
-        else:
-            reverse_complement = False
+        layout_module.identify_flanking_target_alignments(layout_info, target_info)
+        reverse_complement = (layout_info['strand'] == '-')
     else:
         reverse_complement = False
 
@@ -84,13 +78,29 @@ def plot_read(alignments,
         x_max = 1.02 * query_length
     
     kwargs = {'linewidth': 2, 'color': 'black'}
-    ax.plot([0, query_length], [0, 0], **kwargs)
-    arrow_ys = [0, arrow_height]
-    if reverse_complement:
-        arrow_xs = [0, query_length * arrow_width]
+    if paired:
+        offsets = [0, -gap_between_als * 0.15]
+        endpoints = [
+            [0, 250],
+            [query_length - 1, query_length - 1 - 250],
+        ]
+        signs = [1, -1]
+        for (start, end), sign, offset in zip(endpoints, signs, offsets):
+            ax.plot([start, end, end - sign * query_length * arrow_width],
+                    [offset, offset, offset + sign * arrow_height],
+                    clip_on=False,
+                    **kwargs,
+                   )
     else:
-        arrow_xs = [query_length, query_length * (1 - arrow_width)]
-    ax.plot(arrow_xs, arrow_ys, **kwargs)
+        ax.plot([0, query_length], [0, 0], **kwargs)
+
+        arrow_ys = [0, arrow_height]
+
+        if reverse_complement:
+            arrow_xs = [0, query_length * arrow_width]
+        else:
+            arrow_xs = [query_length, query_length * (1 - arrow_width)]
+        ax.plot(arrow_xs, arrow_ys, **kwargs)
     
     ax.annotate('sequencing read',
                 xy=(1, 0),
@@ -111,18 +121,18 @@ def plot_read(alignments,
     rname_starts = np.cumsum([1] + [len(als) for n, als in by_reference_name])
     offsets = {name: start for (name, als), start in zip(by_reference_name, rname_starts)}
     
-    for reference_name, alignments in by_reference_name:
+    for ref_name, ref_alignments in by_reference_name:
         if reverse_complement:
-            for alignment in alignments:
+            for alignment in ref_alignments:
                 alignment.is_reverse = not alignment.is_reverse
 
-        alignments = alignments[:10]
+        ref_alignments = ref_alignments[:10]
         
-        offset = offsets[reference_name]
-        color = colors[reference_name]
+        offset = offsets[ref_name]
+        color = colors[ref_name]
 
-        average_y = (offset  + 0.5 * (len(alignments) - 1)) * gap_between_als
-        ax.annotate(reference_name,
+        average_y = (offset  + 0.5 * (len(ref_alignments) - 1)) * gap_between_als
+        ax.annotate(ref_name,
                     xy=(1, average_y),
                     xycoords=('axes fraction', 'data'),
                     xytext=(15, 0),
@@ -132,7 +142,7 @@ def plot_read(alignments,
                     va='center',
                    )
 
-        for i, alignment in enumerate(alignments):
+        for i, alignment in enumerate(ref_alignments):
             start, end = sam.query_interval(alignment)
             strand = sam.get_strand(alignment)
             y = (offset + i) * gap_between_als
@@ -260,7 +270,7 @@ def plot_read(alignments,
                       if r is not None and q is not None
                      }
             for feature_reference, feature_name in features_to_show:
-                if reference_name != feature_reference:
+                if ref_name != feature_reference:
                     continue
 
                 feature = features[feature_reference, feature_name]
@@ -344,7 +354,7 @@ def make_stacked_Image(als_iter, target_info, **kwargs):
             ims.append(im)
         plt.close(fig)
         
-    if len(ims) == 0:
+    if not ims:
         return None
 
     total_height = sum(im.height for im in ims)
@@ -359,23 +369,23 @@ def make_stacked_Image(als_iter, target_info, **kwargs):
     return stacked_im
     
 def explore(by_outcome=False):
-    target_names = [t.name for t in target_info.get_all_targets()]
+    target_names = [t.name for t in target_info_module.get_all_targets()]
 
-    widgets = dict(
-        target = ipywidgets.Select(options=target_names, value=target_names[0]),
-        dataset = ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='450px')),
-        read_id = ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='400px')),
-        parsimonious = ipywidgets.ToggleButton(value=True),
-        show_qualities = ipywidgets.ToggleButton(value=False),
-        outcome = ipywidgets.Select(options=[], continuous_update=False, layout=ipywidgets.Layout(height='200px', width='450px')),
-        zoom_in = ipywidgets.FloatRangeSlider(value=[-0.02, 1.02], min=-0.02, max=1.02, step=0.001, continuous_update=False, layout=ipywidgets.Layout(width='1200px')),
-    )
+    widgets = {
+        'target': ipywidgets.Select(options=target_names, value=target_names[0]),
+        'dataset': ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='450px')),
+        'read_id': ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='400px')),
+        'parsimonious': ipywidgets.ToggleButton(value=True),
+        'show_qualities': ipywidgets.ToggleButton(value=False),
+        'outcome': ipywidgets.Select(options=[], continuous_update=False, layout=ipywidgets.Layout(height='200px', width='450px')),
+        'zoom_in': ipywidgets.FloatRangeSlider(value=[-0.02, 1.02], min=-0.02, max=1.02, step=0.001, continuous_update=False, layout=ipywidgets.Layout(width='1200px')),
+    }
 
     # For some reason, the target widget doesn't get a label without this.
     for k, v in widgets.items():
         v.description = k
 
-    exps = pacbio_experiment.get_all_experiments()
+    exps = experiment.get_all_experiments()
 
     def populate_datasets(change):
         target = widgets['target'].value
@@ -383,7 +393,7 @@ def explore(by_outcome=False):
         datasets = sorted([exp.name for exp in exps if exp.target_info.name == target])
         widgets['dataset'].options = datasets
 
-        if len(datasets) > 0:
+        if datasets:
             if previous_value in datasets:
                 widgets['dataset'].value = previous_value
                 populate_outcomes(None)
@@ -394,10 +404,10 @@ def explore(by_outcome=False):
 
     def populate_outcomes(change):
         previous_value = widgets['outcome'].value
-        exp = pacbio_experiment.PacbioExperiment(widgets['dataset'].value)
+        exp = experiment.Experiment(widgets['dataset'].value)
         outcomes = exp.outcomes
         widgets['outcome'].options = [('_'.join(outcome), outcome) for outcome in outcomes]
-        if len(outcomes) > 0:
+        if outcomes:
             if previous_value in outcomes:
                 widgets['outcome'].value = previous_value
                 populate_read_ids(None)
@@ -407,7 +417,7 @@ def explore(by_outcome=False):
             widgets['outcome'].value = None
 
     def populate_read_ids(change):
-        exp = pacbio_experiment.PacbioExperiment(widgets['dataset'].value)
+        exp = experiment.Experiment(widgets['dataset'].value)
 
         if by_outcome:
             qnames = exp.outcome_query_names(widgets['outcome'].value)
@@ -416,7 +426,7 @@ def explore(by_outcome=False):
 
         widgets['read_id'].options = qnames
 
-        if len(qnames) > 0:
+        if qnames:
             widgets['read_id'].value = qnames[0]
             widgets['read_id'].index = 0
         else:
@@ -433,7 +443,7 @@ def explore(by_outcome=False):
     widgets['dataset'].observe(populate_outcomes, names='value')
 
     def plot(dataset, read_id, **kwargs):
-        exp = pacbio_experiment.PacbioExperiment(dataset)
+        exp = experiment.Experiment(dataset)
 
         if by_outcome:
             als = exp.get_read_alignments(read_id, kwargs['outcome'])

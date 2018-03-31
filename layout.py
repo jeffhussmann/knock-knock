@@ -1,7 +1,7 @@
 import numpy as np
 
-import Sequencing.sam as sam
-import Sequencing.interval as interval
+import sequencing.sam as sam
+import sequencing.interval as interval
 
 def characterize_layout(als, target_info):
     if all(al.is_unmapped for al in als):
@@ -35,7 +35,7 @@ def characterize_layout(als, target_info):
         summarize_junctions(layout_info, target_info)
         characterize_integration(layout_info, target_info)
 
-    summarize_outcome(layout_info, target_info)
+    summarize_outcome(layout_info)
 
     return layout_info
 
@@ -423,7 +423,7 @@ def characterize_integration(layout_info, target_info):
 
     return layout_info
 
-def summarize_outcome(layout_info, target_info):
+def summarize_outcome(layout_info):
     if 'malformed' in layout_info:
         outcome = ('600: malformed layout', layout_info['malformed'])
 
