@@ -18,6 +18,10 @@ def load_counts(base_dir, conditions=None):
     exps = experiment.get_all_experiments(base_dir, conditions)
 
     counts = {(exp.group, exp.name): exp.load_outcome_counts() for exp in exps}
+    no_outcomes = [k for k, v in counts.items() if v is None]
+    if no_outcomes:
+        raise ValueError('Can\'t find outcome counts for {0}'.format(no_outcomes))
+
     df = pd.DataFrame(counts).fillna(0)
 
     totals = df.sum(axis=0)
