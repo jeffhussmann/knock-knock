@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.6
+#!/usr/bin/env python3
 
 import argparse
 import subprocess
@@ -28,7 +28,7 @@ def check_parallel():
     no_parallel = False
 
     try:
-        output = subprocess.check_output(['parallel'])
+        output = subprocess.check_output(['parallel', '--version'])
         if not output.startswith(b'GNU parallel'):
             no_parallel = True
     except:
