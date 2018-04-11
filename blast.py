@@ -72,10 +72,11 @@ def blast(ref_fn, reads, bam_fn, bam_by_name_fn):
             unal.query_qualities = fastq.decode_sanger(read.qual)
             return unal
 
-        sam_fh = pysam.AlignmentFile(sam_fn)
+        sam_fh = pysam.AlignmentFile(str(sam_fn))
+        header = sam_fh.header
 
-        sorter = sam.AlignmentSorter(sam_fh.references, sam_fh.lengths, bam_fn)
-        by_name_sorter = sam.AlignmentSorter(sam_fh.references, sam_fh.lengths, bam_by_name_fn, by_name=True)
+        sorter = sam.AlignmentSorter(bam_fn, header)
+        by_name_sorter = sam.AlignmentSorter(bam_by_name_fn, header, by_name=True)
 
         with sorter, by_name_sorter:
             aligned_names = set()

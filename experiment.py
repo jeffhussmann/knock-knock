@@ -162,10 +162,11 @@ class Experiment(object):
 
     def count_outcomes(self):
         if self.fns['outcomes_dir'].is_dir():
-            shutil.rmtree(self.fns['outcomes_dir'])
+            shutil.rmtree(str(self.fns['outcomes_dir']))
+
         self.fns['outcomes_dir'].mkdir()
 
-        bam_fh = pysam.AlignmentFile(self.fns['bam_by_name'])
+        bam_fh = pysam.AlignmentFile(str(self.fns['bam_by_name']))
         alignment_groups = sam.grouped_by_name(bam_fh)
         outcomes = defaultdict(list)
 
@@ -185,7 +186,7 @@ class Experiment(object):
 
         series.to_csv(self.fns['outcome_counts'], sep='\t')
 
-        with open(self.fns['outcome_sort_order'], 'w') as fh:
+        with self.fns['outcome_sort_order'].open('w') as fh:
             for outcome, priority in sort_order.items():
                 outcome_string = '_'.join(outcome)
                 priority_string = '_'.join(map(str, priority))
@@ -199,12 +200,12 @@ class Experiment(object):
         qname_to_outcome = {}
         bam_fhs = {}
 
-        full_bam_fh = pysam.AlignmentFile(self.fns['bam_by_name'])
+        full_bam_fh = pysam.AlignmentFile(str(self.fns['bam_by_name']))
         
         for outcome, qnames in outcomes.items():
             outcome_fns = self.outcome_fns(outcome)
             outcome_fns['dir'].mkdir()
-            bam_fhs[outcome] = pysam.AlignmentFile(outcome_fns['bam_by_name'], 'w', template=full_bam_fh)
+            bam_fhs[outcome] = pysam.AlignmentFile(str(outcome_fns['bam_by_name']), 'w', template=full_bam_fh)
             
             with outcome_fns['query_names'].open('w') as fh:
                 for qname in qnames:

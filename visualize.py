@@ -40,8 +40,8 @@ def plot_read(alignments,
               zoom_in=None,
               size_multiple=1,
               paired=False,
-              **kwargs,
-             ):
+              **kwargs):
+
     alignments = copy.deepcopy(alignments)
 
     fig, ax = plt.subplots(figsize=(12, 4))
@@ -89,8 +89,7 @@ def plot_read(alignments,
             ax.plot([start, end, end - sign * query_length * arrow_width],
                     [offset, offset, offset + sign * arrow_height],
                     clip_on=False,
-                    **kwargs,
-                   )
+                    **kwargs)
     else:
         ax.plot([0, query_length], [0, 0], **kwargs)
 
@@ -167,8 +166,7 @@ def plot_read(alignments,
                             color=color,
                             va='center',
                             size=6,
-                            **kwargs,
-                           )
+                            **kwargs)
                 
             # Draw the alignment, with downward dimples at insertions and upward loops at deletions.
             xs = [start]

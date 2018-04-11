@@ -196,12 +196,12 @@ def make_table(base_dir, conditions=None):
 def generate_html(base_dir, fn, conditions=None):
     nb = nbf.new_notebook()
 
-    cell_contents = f'''\
+    cell_contents = '''\
 import knockin.table
 
 conditions = {conditions}
-knockin.table.make_table({base_dir}, conditions)
-'''.format(conditions)
+knockin.table.make_table('{base_dir}', conditions)
+'''.format(conditions=conditions, base_dir=base_dir)
 
     nb['cells'] = [nbf.new_code_cell(cell_contents)]
 
@@ -211,7 +211,7 @@ knockin.table.make_table({base_dir}, conditions)
     template_path = Path(os.path.realpath(__file__)).parent / 'modal_template.tpl'
     exporter.template_file = str(template_path)
 
-    ep = nbconvert.preprocessors.ExecutePreprocessor(timeout=600, kernel_name='python3.6')
+    ep = nbconvert.preprocessors.ExecutePreprocessor(timeout=600, kernel_name='python3')
     ep.preprocess(nb, {})
 
     body, resources = exporter.from_notebook_node(nb)
