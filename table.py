@@ -116,7 +116,7 @@ class ModalMaker(object):
         URI, width, height = fn_to_URI(outcome_fns['combined_figure'])
         reads_img = '<img src={0} width={1}, height={2}>'.format(URI, width, height)
         
-        contents = lengths_img + reads_img
+        contents = '<div> {0} </div> <div> {1} </div>'.format(lengths_img, reads_img)
         modal_div = modal_template.format(modal_id=modal_id, contents=contents, title=title)
         
         return modal_div, modal_id
