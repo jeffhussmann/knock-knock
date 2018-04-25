@@ -7,8 +7,8 @@ from . import experiment
 
 bokeh.io.output_notebook()
 
-def range_picker(inital_dataset=None):
-    exps = {exp.name: exp for exp in experiment.get_all_experiments()}
+def range_picker(base_dir, inital_dataset=None):
+    exps = {exp.name: exp for exp in experiment.get_all_experiments(base_dir)}
     if inital_dataset is None:
         inital_dataset = list(exps)[0]
 
