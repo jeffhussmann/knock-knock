@@ -352,8 +352,8 @@ class Experiment(object):
         return visualize.make_stacked_Image(sample, self.target_info, parsimonious=True)
 
     def stitch_read_pairs(self):
-        before_R1 = adapters.primers['tru_seq']['R1']
-        before_R2 = adapters.primers['tru_seq']['R2']
+        before_R1 = adapters.primers['truseq']['R1']
+        before_R2 = adapters.primers['truseq']['R2']
         with self.fns['fastq'].open('w') as fh:
             for R1, R2 in fastq.read_pairs(self.fns['R1'], self.fns['R2']):
                 stitched = sw.stitch_read_pair(R1, R2, before_R1, before_R2)
