@@ -11,6 +11,7 @@ import numpy as np
 import bokeh.palettes
 import pysam
 import yaml
+import scipy.signal
 
 import sequencing.sam as sam
 import sequencing.fastq as fastq
@@ -130,12 +131,25 @@ class Experiment(object):
 
     @property
     def length_ranges(self):
-        path = self.fns['manual_length_ranges']
+        path = self.fns['length_ranges']
         if path.exists():
             ranges = pd.read_csv(path, sep='\t', header=None, names=['start', 'end'])
         else:
             ranges = pd.DataFrame(columns=['start', 'end'])
         return ranges
+
+    def call_peaks_in_length_distribution(self):
+        smoothed = utilities.smooth(self.read_lengths, 25)
+
+        all_peaks, props = scipy.signal.find_peaks(smoothed, prominence=.1, distance=100)
+        above_background = (props['prominences'] / smoothed[all_peaks]) > 0.5
+        peaks = all_peaks[above_background]
+        widths, *_ = scipy.signal.peak_widths(smoothed, peaks, rel_height=0.6)
+
+        length_ranges = [(int(p - w / 2), int(p + w / 2)) for p, w in zip(peaks, widths)]
+            
+        df = pd.DataFrame(length_ranges)                  
+        df.to_csv(self.fns['length_ranges'], index=False, header=None, sep='\t')
 
     def outcome_read_lengths(self, outcome):
         outcome_fns = self.outcome_fns(outcome)
@@ -364,10 +378,10 @@ class Experiment(object):
             self.stitch_read_pairs()
 
         self.call_peaks_in_length_distribution()
-        #self.generate_alignments()
-        #self.count_outcomes()
-        #self.make_outcome_plots(num_examples=5)
-        #self.make_text_visualizations()
+        self.generate_alignments()
+        self.count_outcomes()
+        self.make_outcome_plots(num_examples=5)
+        self.make_text_visualizations()
 
 def get_all_experiments(base_dir, conditions=None):
     data_dir = Path(base_dir) / 'data'
