@@ -14,7 +14,7 @@ import sequencing.utilities as utilities
 import sequencing.interval as interval
 import sequencing.sam as sam
 
-from . import experiment
+from . import experiment as experiment_module
 from . import target_info as target_info_module
 from . import layout as layout_module
 
@@ -366,12 +366,12 @@ def make_stacked_Image(als_iter, target_info, **kwargs):
 
     return stacked_im
     
-def explore(by_outcome=False):
-    target_names = [t.name for t in target_info_module.get_all_targets()]
+def explore(base_dir, by_outcome=False):
+    target_names = [t.name for t in target_info_module.get_all_targets(base_dir)]
 
     widgets = {
         'target': ipywidgets.Select(options=target_names, value=target_names[0]),
-        'dataset': ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='450px')),
+        'experiment': ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='450px')),
         'read_id': ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='400px')),
         'parsimonious': ipywidgets.ToggleButton(value=True),
         'show_qualities': ipywidgets.ToggleButton(value=False),
@@ -383,26 +383,28 @@ def explore(by_outcome=False):
     for k, v in widgets.items():
         v.description = k
 
-    exps = experiment.get_all_experiments()
+    exps = experiment_module.get_all_experiments(base_dir)
 
-    def populate_datasets(change):
+    def populate_experiments(change):
         target = widgets['target'].value
-        previous_value = widgets['dataset'].value
-        datasets = sorted([exp.name for exp in exps if exp.target_info.name == target])
-        widgets['dataset'].options = datasets
+        previous_value = widgets['experiment'].value
+        datasets = sorted([(exp.group, exp.name) for exp in exps if exp.target_info.name == target])
+        options = [('{0}: {1}'.format(*d), d) for d in datasets]
+        widgets['experiment'].options = options
 
         if datasets:
             if previous_value in datasets:
-                widgets['dataset'].value = previous_value
+                widgets['experiment'].value = previous_value
                 populate_outcomes(None)
             else:
-                widgets['dataset'].value = datasets[0]
+                widgets['experiment'].value = datasets[0]
         else:
-            widgets['dataset'].value = None
+            widgets['experiment'].value = None
 
     def populate_outcomes(change):
         previous_value = widgets['outcome'].value
-        exp = experiment.Experiment(widgets['dataset'].value)
+        gn, en = widgets['experiment'].value
+        exp = experiment_module.Experiment(base_dir, gn, en)
         outcomes = exp.outcomes
         widgets['outcome'].options = [('_'.join(outcome), outcome) for outcome in outcomes]
         if outcomes:
@@ -415,7 +417,9 @@ def explore(by_outcome=False):
             widgets['outcome'].value = None
 
     def populate_read_ids(change):
-        exp = experiment.Experiment(widgets['dataset'].value)
+        gn, en = widgets['experiment'].value
+        exp = experiment_module.Experiment(base_dir, gn, en)
+        print(next(exp.query_names()))
 
         if by_outcome:
             qnames = exp.outcome_query_names(widgets['outcome'].value)
@@ -430,18 +434,21 @@ def explore(by_outcome=False):
         else:
             widgets['read_id'].value = None
             
-    populate_datasets({'name': 'initial'})
+    populate_experiments({'name': 'initial'})
     if by_outcome:
         populate_outcomes({'name': 'initial'})
     populate_read_ids({'name': 'initial'})
 
-    widgets['target'].observe(populate_datasets, names='value')
+    widgets['target'].observe(populate_experiments, names='value')
+
     if by_outcome:
         widgets['outcome'].observe(populate_read_ids, names='value')
-    widgets['dataset'].observe(populate_outcomes, names='value')
+        widgets['experiment'].observe(populate_outcomes, names='value')
+    else:
+        widgets['experiment'].observe(populate_read_ids, names='value')
 
-    def plot(dataset, read_id, **kwargs):
-        exp = experiment.Experiment(dataset)
+    def plot(experiment, read_id, **kwargs):
+        exp = experiment_module.Experiment(base_dir, *experiment)
 
         if by_outcome:
             als = exp.get_read_alignments(read_id, kwargs['outcome'])
@@ -462,9 +469,9 @@ def explore(by_outcome=False):
         return ipywidgets.HBox([widgets[k] for k in keys])
 
     if by_outcome:
-        top_row_keys = ['target', 'dataset', 'outcome', 'read_id']
+        top_row_keys = ['target', 'experiment', 'outcome', 'read_id']
     else:
-        top_row_keys = ['target', 'dataset', 'read_id']
+        top_row_keys = ['target', 'experiment', 'read_id']
 
     layout = ipywidgets.VBox(
         [make_row(top_row_keys),

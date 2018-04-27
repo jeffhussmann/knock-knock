@@ -145,5 +145,5 @@ def parse_benchling_genbank(genbank_fn):
 def get_all_targets(base_dir):
     targets_dir = Path(base_dir) / 'targets'
     names = (p.name for p in targets_dir.glob('*') if p.is_dir())
-    targets = [TargetInfo(n) for n in names]
+    targets = [TargetInfo(base_dir, n) for n in names]
     return targets

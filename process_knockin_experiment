@@ -82,7 +82,7 @@ if args.parallel is not None:
     arg_pairs = [(e.group, e.name) for e in exps]
     for pair in sorted(arg_pairs):
         parallel_command.extend(pair)
-
+    
     subprocess.check_call(parallel_command)
 
 elif args.process is not None:
@@ -93,7 +93,7 @@ elif args.process is not None:
     exp.process()
 
 elif args.html:
-    knockin.table.generate_html(args.base_dir, args.html, conditions=conditions)
+    knockin.table.generate_html(args.base_dir, args.html, conditions)
 
 elif args.csv:
     df = knockin.table.load_counts(args.base_dir, conditions)

@@ -1,11 +1,15 @@
 Example directory structure:
 
 base_dir
-├── experiments
-│   └── group_name
-│       └── experiment_name
-│           ├── data.fastq
-│           └── description.yaml
+├── data
+│   ├── group1
+│   │   ├── sample_sheet.yaml
+│   │   ├── data1.fastq
+│   │   └── data2.fastq
+│   └── group1
+│       ├── sample_sheet.yaml
+│       ├── data1.fastq
+│       └── data2.fastq
 └── targets
     └── locus_name
         ├── manifest.yaml
@@ -13,27 +17,24 @@ base_dir
         ├── refs.fasta.fai
         └── refs.gff
 
-Input fastqs and processed outputs are kept in base_dir/experiments, which should contain 'group' directories which themselves contain one or more 'experiment' directories.
+Input fastqs and sample sheets describing the experiments that produced them are kept in base_dir/data in 'group' directories.
 
-Each experiment directory should contain a fastq file and 'description.yaml'.
+Each sample_sheet.yaml should contain {experiment names: {description dictionary}} pairs.
+Each experiment's description dictionary must always contain the key-value pair:
 
-description.yaml must always contain the key-value pair:
-
-	target_info: name of the target (see below)
+    target_info: name of the target (see below)
 
 For a PacBio experiment, it should also contain
 
-    fastq_fn: name of the fastq file (relative to the experiment_name directory, i.e. just the basename)
+    fastq_fn: name of the fastq file (relative to the group's directory, i.e. just the basename)
 
 For a MiSeq experiment, it should contain:
-	R1_fn: name of the R1 fastq file (relative to the experiment_name directory, i.e. just the basename)
-	R2_fn: name of the R2 fastq file (relative to the experiment_name directory, i.e. just the basename)
+    R1_fn: name of the R1 fastq file (relative to the group's directory, i.e. just the basename)
+    R2_fn: name of the R2 fastq file (relative to the group's directory, i.e. just the basename)
     
-It can also contain other optional keys describing properties of the experiment:
+It can also contain other optional keys describing properties of the experiment, e.g.:
     cell_line: string
     donor_type: string
-    capped: boolean
-    cap: string
     replicate: integer
     sorted: boolean
 

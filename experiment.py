@@ -37,15 +37,43 @@ cap_to_color = {
     'IDDT': palette[2],
 }
 
+def extract_color(description):
+    if 'color' in description:
+        color = description['color']
+    elif description.get('capped', False):
+        color = cap_to_color[description['cap']]
+    else:
+        donor = description.get('donor_type')
+        rep = description.get('replicate', 1)
+        color = source_to_color.get((donor, rep), 'grey')
+
+    return color
+
 class Experiment(object):
-    def __init__(self, base_dir, group, name):
+    def __init__(self, base_dir, group, name, description=None):
         self.group = group
         self.name = name
-        self.dir = Path(base_dir) / 'experiments' / group / name
-        description_fn = self.dir / 'description.yaml'
-        description = yaml.load(description_fn.open())
 
-        self.target_name = description['target_info']
+        base_dir = Path(base_dir)
+        self.dir = base_dir / 'results' / group / name
+        if not self.dir.is_dir():
+            self.dir.mkdir(parents=True)
+
+        data_dir = base_dir / 'data' / group
+
+        if description is None:
+            sample_sheet_fn = data_dir / 'sample_sheet.yaml'
+            sample_sheet = yaml.load(sample_sheet_fn.read_text())
+            self.description = sample_sheet[name]
+        else:
+            self.description = description
+
+        # When checking if an Experiment meets filtering conditions, want to be
+        # able to just test description.
+        self.description['group'] = group
+        self.description['name'] = name
+
+        self.target_name = self.description['target_info']
         self.target_info = target_info.TargetInfo(base_dir, self.target_name)
         self.fns = {
             'bam': self.dir / 'alignments.bam',
@@ -54,26 +82,27 @@ class Experiment(object):
             'outcome_counts': self.dir / 'outcome_counts.csv',
             'outcome_sort_order': self.dir / 'outcome_sort_order.txt',
             'lengths_figure': self.dir / 'all_lengths.png',
+            'length_ranges': self.dir / 'length_ranges.csv',
             'manual_length_ranges': self.dir / 'manual_length_ranges.csv',
         }
 
-        if 'fastq_fn' in description:
-            self.fns['fastq'] = self.dir / description['fastq_fn']
+        if 'fastq_fn' in self.description:
+            self.fns['fastq'] = data_dir / self.description['fastq_fn']
+
+            if not self.fns['fastq'].exists():
+                raise ValueError('{0}: {1} specifies non-existent {2}'.format(group, name, self.fns['fastq']))
+
         else:
-            self.fns['R1'] = self.dir / description['R1_fn']
-            self.fns['R2'] = self.dir / description['R2_fn']
+            self.fns['R1'] = data_dir / self.description['R1_fn']
+            self.fns['R2'] = data_dir / self.description['R2_fn']
+            
+            for k in ['R1', 'R2']:
+                if not self.fns[k].exists():
+                    raise ValueError('{0}: {1} specifies non-existent {2}'.format(group, name, self.fns[k]))
+
             self.fns['fastq'] = self.dir / 'stitched.fastq'
 
-        self.cell_line = description.get('cell_line')
-        self.donor_type = description.get('donor_type')
-        self.capped = description.get('capped')
-        self.cap = description.get('cap')
-        self.replicate = description.get('replicate', 1)
-        self.sorted = description.get('sorted')
-
-        self.color = source_to_color.get((self.donor_type, self.replicate), 'grey')
-        if self.capped:
-            self.color = cap_to_color[self.cap]
+        self.color = extract_color(self.description)
     
     def outcome_fns(self, outcome):
         outcome_string = '_'.join(map(str, outcome))
@@ -334,13 +363,14 @@ class Experiment(object):
         if 'R1' in self.fns:
             self.stitch_read_pairs()
 
-        self.generate_alignments()
-        self.count_outcomes()
-        self.make_outcome_plots(num_examples=5)
-        self.make_text_visualizations()
+        self.call_peaks_in_length_distribution()
+        #self.generate_alignments()
+        #self.count_outcomes()
+        #self.make_outcome_plots(num_examples=5)
+        #self.make_text_visualizations()
 
 def get_all_experiments(base_dir, conditions=None):
-    exps_dir = Path(base_dir) / 'experiments'
+    data_dir = Path(base_dir) / 'data'
 
     if conditions is None:
         conditions = {}
@@ -348,19 +378,22 @@ def get_all_experiments(base_dir, conditions=None):
     def check_conditions(exp):
         for k, v in conditions.items():
             if isinstance(v, (list, tuple, set)):
-                if getattr(exp, k) not in v:
+                if exp.description.get(k) not in v:
                     return False
             else:
-                if getattr(exp, k) != v:
+                if exp.description.get(k) != v:
                     return False
         return True
 
     exps = []
-    groups = (p.name for p in exps_dir.glob('*') if p.is_dir())
+    groups = (p.name for p in data_dir.glob('*') if p.is_dir())
+    
     for group in groups:
-        group_dir = exps_dir / group
-        names = (p.name for p in group_dir.glob('*') if p.is_dir())
-        exps.extend([Experiment(base_dir, group, n) for n in names])
+        sample_sheet_fn = data_dir / group / 'sample_sheet.yaml'
+        sample_sheet = yaml.load(sample_sheet_fn.read_text())
+        for name, description in sample_sheet.items():
+            exp = Experiment(base_dir, group, name, description=description)
+            exps.append(exp)
 
     filtered = [exp for exp in exps if check_conditions(exp)]
     return filtered
