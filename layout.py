@@ -1,7 +1,6 @@
 import numpy as np
 
-import sequencing.sam as sam
-import sequencing.interval as interval
+from sequencing import sam, interval
 
 def characterize_layout(als, target_info):
     if all(al.is_unmapped for al in als):
@@ -9,7 +8,8 @@ def characterize_layout(als, target_info):
             'outcome': {
                 'description': ('malformed layout', 'no alignments detected'),
                 'sort_order': (600, 500),
-            }
+            },
+            'malformed': True,
         }
         return layout_info
 
@@ -28,34 +28,22 @@ def characterize_layout(als, target_info):
     identify_flanking_target_alignments(layout_info, target_info)
     
     if layout_info['has_integration']:
+
         check_for_clean_handoffs(layout_info, target_info)
+
         identify_integration_interval(layout_info, target_info)
+
         check_flanking_for_blunt_compatibility(layout_info, target_info)
+
         characterize_integration_edges(layout_info, target_info)
+
         summarize_junctions(layout_info, target_info)
+
         characterize_integration(layout_info, target_info)
 
     summarize_outcome(layout_info)
 
     return layout_info
-
-    #target_q = {
-    #    5: sam.true_query_position(als_from_primers[5].query_alignment_end - 1, als_from_primers[5]),
-    #    3: sam.true_query_position(als_from_primers[3].query_alignment_start, als_from_primers[3]),
-    #}
-    #
-    #target_blunt = {}
-    #for side in [5, 3]:
-    #    blunt = False
-    #    offset = target_edge_relative_to_cut[side]
-    #    if offset == 0:
-    #        blunt = True
-    #    elif abs(offset) <= 3:
-    #        q = target_q[side]
-    #        if min(quals[q - 3: q + 4]) <= 30:
-    #            blunt = True
-    #            
-    #    target_blunt[side] = blunt
 
 def overlaps_feature(alignment, feature):
     same_reference = alignment.reference_name == feature.seqname
@@ -220,13 +208,15 @@ def check_flanking_for_blunt_compatibility(layout_info, target_info):
     return layout_info
 
 def characterize_integration_edges(layout_info, target_info):
+    # 'int_int' short for 'integration_interval'
     int_int = layout_info['integration_interval']
     HAs = target_info.homology_arms
     quals = layout_info['quals']
 
-    donor_als = [al for al in layout_info['alignments']['parsimonious']
-                 if al.reference_name == target_info.donor
-                ]
+    donor_als = [
+        al for al in layout_info['alignments']['parsimonious']
+        if al.reference_name == target_info.donor
+    ]
 
     if layout_info['strand'] == '+':
         edge_q = {

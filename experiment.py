@@ -225,9 +225,7 @@ class Experiment(object):
         bam_fh.close()
 
         counts = {description: len(names) for description, names in outcomes.items()}
-        series = pd.Series(counts)
-
-        series.to_csv(self.fns['outcome_counts'], sep='\t')
+        pd.Series(counts).to_csv(self.fns['outcome_counts'], sep='\t')
 
         with self.fns['outcome_sort_order'].open('w') as fh:
             for outcome, priority in sort_order.items():
@@ -259,7 +257,7 @@ class Experiment(object):
             outcome = qname_to_outcome[al.query_name]
             bam_fhs[outcome].write(al)
 
-        bam_fh.close()
+        full_bam_fh.close()
         for outcome, fh in bam_fhs.items():
             fh.close()
 

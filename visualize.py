@@ -10,9 +10,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker
 import ipywidgets
 
-import sequencing.utilities as utilities
-import sequencing.interval as interval
-import sequencing.sam as sam
+from sequencing import utilities, interval, sam
 
 from . import experiment as experiment_module
 from . import target_info as target_info_module
@@ -25,6 +23,7 @@ def get_indel_info(alignment):
             nucs_before = sam.total_read_nucs(alignment.cigar[:i])
             centered_at = np.mean([sam.true_query_position(p, alignment) for p in [nucs_before - 1, nucs_before]])
             indels.append(('deletion', (centered_at, length)))
+
         elif kind == sam.BAM_CINS:
             first_edge = sam.total_read_nucs(alignment.cigar[:i])
             second_edge = first_edge + length
@@ -419,7 +418,6 @@ def explore(base_dir, by_outcome=False):
     def populate_read_ids(change):
         gn, en = widgets['experiment'].value
         exp = experiment_module.Experiment(base_dir, gn, en)
-        print(next(exp.query_names()))
 
         if by_outcome:
             qnames = exp.outcome_query_names(widgets['outcome'].value)
