@@ -14,7 +14,10 @@ from . import svg
 
 totals_row_label = (' ', 'Total reads')
 
-def load_counts(base_dir, conditions=None):
+def load_counts(base_dir, conditions=None, drop_outcomes=None):
+    if drop_outcomes is None:
+        drop_outcomes = []
+
     exps = experiment.get_all_experiments(base_dir, conditions)
 
     counts = {(exp.group, exp.name): exp.load_outcome_counts() for exp in exps}
@@ -22,19 +25,23 @@ def load_counts(base_dir, conditions=None):
     if no_outcomes:
         raise ValueError('Can\'t find outcome counts for {0}'.format(no_outcomes))
 
-    df = pd.DataFrame(counts).fillna(0)
+    df = pd.DataFrame(counts).fillna(0).drop(drop_outcomes)
 
     totals = df.sum(axis=0)
-    df.loc[totals_row_label, :] = totals
-
-    sort_order = {}
-    for exp in exps:
-        sort_order.update(exp.load_outcome_sort_order())
-
-    sort_order[totals_row_label] = (0, 0)
-
-    df['_sort_order'] = df.index.map(lambda k: sort_order[k])
+    totals_row = pd.DataFrame.from_dict({totals_row_label: totals}, orient='index')
+    
+    # Sort order for outcome is defined in the relevant layout module.
+    layout_modules = {exp.layout_module for exp in exps}
+    
+    if len(layout_modules) > 1:
+        raise ValueError('Can\'t make table for experiments with inconsistent layout modules.')
+    
+    layout_module = layout_modules.pop()
+    
+    df['_sort_order'] = df.index.map(layout_module.order)
     df = df.sort_values('_sort_order').drop('_sort_order', axis=1).astype(int)
+    
+    df = pd.concat([totals_row, df])
     df.index.names = (None, None)
 
     return df
@@ -197,15 +204,91 @@ def make_table(base_dir, conditions=None):
     
     return styled
 
-def generate_html(base_dir, fn, conditions=None):
+def make_table(base_dir, conditions=None, drop_outcomes=None):
+    df = load_counts(base_dir, conditions, drop_outcomes)
+    totals = df.loc[totals_row_label]
+
+    df = df.T
+    
+    modal_maker = ModalMaker()
+
+    def link_maker(val, outcome, exp_group, exp_name):
+        if val == 0:
+            html = ''
+        else:
+            exp = experiment.Experiment(base_dir, exp_group, exp_name)
+            outcome_fns = exp.outcome_fns(outcome)
+            
+            fraction = val / totals[(exp_group, exp_name)]
+            
+            if outcome == totals_row_label:
+                modal_div, modal_id = modal_maker.make_length(exp)
+
+                hover_image_fn = str(exp.fns['lengths_figure'])
+                hover_URI, width, height = fn_to_URI(hover_image_fn)
+
+                link = link_template.format(text='{:,}'.format(val),
+                                            modal_id=modal_id,
+                                            URI=hover_URI,
+                                            width=width,
+                                            height=height,
+                                           )
+                
+                html = link + modal_div
+
+            else:
+                modal_div, modal_id = modal_maker.make_outcome(exp, outcome)
+                
+                hover_image_fn = str(outcome_fns['first_example'])
+                hover_URI, width, height = fn_to_URI(hover_image_fn)
+
+                link = link_template.format(text='{:.2%}'.format(fraction),
+                                            modal_id=modal_id,
+                                            URI=hover_URI,
+                                            width=width,
+                                            height=height,
+                                           )
+                
+                html = link + modal_div
+
+        return html
+    
+    def bind_link_maker(exp_group, exp_name):
+        return {outcome: functools.partial(link_maker, outcome=outcome, exp_group=exp_group, exp_name=exp_name) for outcome in df}
+
+    styled = df.style
+    
+    styles = [
+        dict(selector="th", props=[("border", "1px solid black")]),
+        dict(selector="tr:hover", props=[("background-color", "#cccccc")]),
+    ]
+    
+    for exp_group, exp_name in df.index:
+        sl = pd.IndexSlice[[(exp_group, exp_name)], :]
+        styled = styled.format(bind_link_maker(exp_group, exp_name), subset=sl)
+    
+    styled = styled.set_properties(**{'border': '1px solid black'})
+    for exp_group, exp_name in df.index:
+        exp = experiment.Experiment(base_dir, exp_group, exp_name)
+        # Note: as of pandas 0.22, col needs to be in brackets here so that
+        # apply is ultimately called on a df, not a series, to prevent
+        # TypeError: _bar_left() got an unexpected keyword argument 'axis'
+        styled = styled.bar(subset=pd.IndexSlice[[(exp_group, exp_name)], :], axis=1, color=exp.color)
+        
+    styled.set_table_styles(styles)
+    
+    return styled
+
+def generate_html(base_dir, fn, conditions=None, drop_outcomes=None):
     nb = nbf.new_notebook()
 
     cell_contents = '''\
 import knockin.table
 
 conditions = {conditions}
-knockin.table.make_table('{base_dir}', conditions)
-'''.format(conditions=conditions, base_dir=base_dir)
+drop_outcomes = {drop_outcomes}
+knockin.table.make_table('{base_dir}', conditions, drop_outcomes)
+'''.format(conditions=conditions, base_dir=base_dir, drop_outcomes=drop_outcomes)
 
     nb['cells'] = [nbf.new_code_cell(cell_contents)]
 
