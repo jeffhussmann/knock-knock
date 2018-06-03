@@ -20,23 +20,32 @@ from . import britt_layout as britt_layout
 def get_mismatch_info(alignment, target_info):
     mismatches = []
 
+    triples = []
     if alignment.reference_name not in target_info.reference_sequences:
-        return []
+        for read_p, ref_p, ref_b in alignment.get_aligned_pairs(with_seq=True):
+            if read_p != None and ref_p != None:
+                read_b = alignment.query_sequence[read_p]
+                triples.append((read_p, read_b, ref_b))
 
-    reference = target_info.reference_sequences[alignment.reference_name]
-    pairs = alignment.aligned_pairs
-    for read_p, ref_p in pairs:
-        if read_p != None and ref_p != None and ref_p != 'S':
-            read_b = alignment.seq[read_p]
-            ref_b = reference[ref_p]
+    else:
+        reference = target_info.reference_sequences[alignment.reference_name]
+        for read_p, ref_p in alignment.get_aligned_pairs():
+            if read_p != None and ref_p != None:
+                read_b = alignment.query_sequence[read_p]
+                ref_b = reference[ref_p]
+                
+                triples.append((read_p, read_b, ref_b))
 
-            if read_b != ref_b:
-                true_read_p = sam.true_query_position(read_p, alignment)
-                q = alignment.query_qualities[read_p]
-                if alignment.is_reverse:
-                    read_b = utilities.reverse_complement(read_b)
-                    ref_b = utilities.reverse_complement(ref_b)
-                mismatches.append((true_read_p, read_b, ref_p, ref_b, q))
+    for read_p, read_b, ref_b in triples:
+        if read_b != ref_b:
+            true_read_p = sam.true_query_position(read_p, alignment)
+            q = alignment.query_qualities[read_p]
+
+            if alignment.is_reverse:
+                read_b = utilities.reverse_complement(read_b)
+                ref_b = utilities.reverse_complement(ref_b)
+
+            mismatches.append((true_read_p, read_b, ref_p, ref_b, q))
 
     return mismatches
 
