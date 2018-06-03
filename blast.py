@@ -16,7 +16,7 @@ def h_to_s(kind):
 def replace_hard_clip_with_soft(cigar):
     return [(h_to_s(k), l) for k, l in cigar]
 
-def blast(ref_fn, reads, bam_fn, bam_by_name_fn):
+def blast(ref_fn, reads, bam_fn, bam_by_name_fn, split_at_large_insertions=True):
     with tempfile.TemporaryDirectory(suffix='_blast') as temp_dir:
         temp_dir_path = Path(temp_dir)
 
@@ -29,7 +29,7 @@ def blast(ref_fn, reads, bam_fn, bam_by_name_fn):
             '-': {},
         }
 
-        if isinstance(reads, (str, Path)):
+        if isinstance(reads, (str, Path, list)):
             reads = fastq.reads(reads, up_to_space=True)
 
         with reads_fasta_fn.open('w') as fasta_fh:
@@ -85,11 +85,15 @@ def blast(ref_fn, reads, bam_fn, bam_by_name_fn):
 
                 undo_hard_clipping(al)
 
-                split_als = sam.split_at_large_insertions(al)
+                if split_at_large_insertions:
+                    split_als = sam.split_at_large_insertions(al)
 
-                for split_al in split_als:
-                    sorter.write(split_al)
-                    by_name_sorter.write(split_al)
+                    for split_al in split_als:
+                        sorter.write(split_al)
+                        by_name_sorter.write(split_al)
+                else:
+                    sorter.write(al)
+                    by_name_sorter.write(al)
 
             for name in fastq_dict['+']:
                 if name not in aligned_names:
