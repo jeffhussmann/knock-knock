@@ -86,3 +86,10 @@ To generate a csv of outcome counts:
     process_knockin_experiment --base_dir {base_dir} --csv {file_name.csv}
 
 Both --html and --csv can be given the same kind of --condition argument to restrict to a subset.
+
+To explore outcomes in more depth than the html table, run
+
+    import knockin.visualize
+    knocking.visualize.explore(your_base_dir, by_outcome=True)
+
+in a Jupyter notebook.
