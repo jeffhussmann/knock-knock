@@ -2,13 +2,13 @@
 
 import argparse
 import subprocess
-import yaml
 import sys
+from pathlib import Path
 
+import yaml
 import pandas as pd
 
-import knockin.experiment
-import knockin.table
+from knockin import experiment, table
 
 def check_blastn():
     no_blastn = False
@@ -25,6 +25,7 @@ def check_blastn():
         sys.exit(0)
 
 def check_parallel():
+    print('checking parallel')
     no_parallel = False
 
     try:
@@ -49,6 +50,7 @@ mode_group.add_argument('--html', metavar='FILE_NAME')
 mode_group.add_argument('--csv', metavar='FILE_NAME')
 
 parser.add_argument('--conditions')
+parser.add_argument('--drop_outcomes')
 
 args = parser.parse_args()
 
@@ -57,12 +59,17 @@ if args.conditions is None:
 else:
     conditions = yaml.load(args.conditions)
 
+if args.drop_outcomes is None:
+    drop_outcomes = []
+else:
+    drop_outcomes = yaml.load(args.drop_outcomes)
+
 if args.parallel is not None:
     check_parallel()
 
     max_procs = args.parallel
 
-    exps = knockin.experiment.get_all_experiments(args.base_dir, conditions)
+    exps = experiment.get_all_experiments(args.base_dir, conditions)
 
     if len(exps) == 0:
         print('No experiments satify conditions:')
@@ -89,12 +96,30 @@ elif args.process is not None:
     check_blastn()
 
     group, name = args.process
-    exp = knockin.experiment.Experiment(args.base_dir, group, name)
+        
+    data_dir = Path(args.base_dir) / 'data' / group
+    sample_sheet_fn = data_dir / 'sample_sheet.yaml'
+    sample_sheet = yaml.load(sample_sheet_fn.read_text())
+    description = sample_sheet[name]
+
+    if description.get('experiment_type') == 'britt':
+        exp_class = experiment.BrittExperiment
+    elif description.get('experiment_type') == 'britt_pooled':
+        exp_class = experiment.BrittPooledExperiment
+    elif description.get('experiment_type') == 'britt_amplicon':
+        exp_class = experiment.BrittAmpliconExperiment
+    elif description.get('experiment_type') == 'jin':
+        exp_class = experiment.JinExperiment
+    else:
+        exp_class = experiment.Experiment
+
+    exp = exp_class(args.base_dir, group, name, description)
+
     exp.process()
 
 elif args.html:
-    knockin.table.generate_html(args.base_dir, args.html, conditions)
+    table.generate_html(args.base_dir, args.html, conditions, drop_outcomes)
 
 elif args.csv:
-    df = knockin.table.load_counts(args.base_dir, conditions)
+    df = table.load_counts(args.base_dir, conditions, drop_outcomes)
     df.to_csv(args.csv)

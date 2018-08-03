@@ -1,12 +1,10 @@
 from pathlib import Path
-
+from collections import defaultdict
 import yaml
 import pysam
 import Bio.SeqIO
 
-import sequencing.fasta as fasta
-import sequencing.gff as gff
-import sequencing.utilities as utilities
+from sequencing import fasta, gff, utilities
 
 class TargetInfo(object):
     def __init__(self, base_dir, name):
@@ -19,14 +17,23 @@ class TargetInfo(object):
         self.donor = manifest['donor']
         self.sources = manifest['sources']
 
+        self.sgRNA = manifest.get('sgRNA', 'sgRNA') 
+        self.knockin = manifest.get('knockin', 'GFP') 
+
         self.fns = {
             'ref_fasta': self.dir / 'refs.fasta',
             'ref_gff': self.dir / 'refs.gff',
+
+            'bowtie2_index': self.dir / 'refs',
+
+            'degenerate_insertions': self.dir / 'degenerate_insertions.txt',
+            'degenerate_deletions': self.dir / 'degenerate_deletions.txt',
         }
 
     def make_references(self):
         ''' Generate fasta and gff files from genbank inputs. '''
         gbs = [self.dir / (source + '.gb') for source in self.sources]
+        print(gbs)
         
         fasta_records = []
         all_gff_features = []
@@ -66,7 +73,7 @@ class TargetInfo(object):
 
     @utilities.memoized_property
     def cut_after(self):
-        sgRNA = self.features[self.target, 'sgRNA']
+        sgRNA = self.features[self.target, self.sgRNA]
         seq = self.target_sequence
 
         if sgRNA.strand == '+':
@@ -100,6 +107,98 @@ class TargetInfo(object):
             3: self.features[self.target, 'reverse primer'],
         }
         return primers
+
+    @utilities.memoized_property
+    def fingerprints(self):
+        fps = {
+            self.target: [],
+            self.donor: [],
+        }
+
+        for name in ['SNP{0}'.format(i + 1) for i in range(7)]:
+            fs = {k: self.features[k, name] for k in (self.target, self.donor)}
+            ps = {k: (f.strand, f.start) for k, f in fs.items()}
+            bs = {k: self.reference_sequences[k][p:p + 1] for k, (strand, p) in ps.items()}
+            
+            for k in bs:
+                if fs[k].strand == '-':
+                    bs[k] = utilities.reverse_complement(bs[k])
+                
+                fps[k].append((ps[k], bs[k]))
+
+        return fps
+
+    def identify_degenerate_indels(self):
+        degenerate_dels = defaultdict(list)
+
+        possible_starts = range(self.primers[5].start, self.primers[3].end)
+        for starts_at in possible_starts:
+            before = self.target_sequence[:starts_at]
+            for length in range(1, 200):
+                after = self.target_sequence[starts_at + length:]
+                result = before + after
+                degenerate_dels[result].append((starts_at, length))
+
+        with self.fns['degenerate_deletions'].open('w') as fh:
+            classes = sorted(degenerate_dels.values(), key=len, reverse=True)
+            for degenerate_class in classes:
+                degenerate_class = sorted(degenerate_class)
+                if len(degenerate_class) > 1:
+                    starts_at = '|'.join(str(starts_at) for starts_at, length in degenerate_class)
+                    
+                    length = set(length for starts_at, length in degenerate_class)
+                    if len(length) > 1:
+                        print(length)
+                        print(degenerate_class)
+                        raise ValueError
+                    length = length.pop()
+                    
+                    rep = 'D:{{{0}}},{1}'.format(starts_at, length)
+                    class_string = ';'.join('{},{}'.format(starts_at, length) for starts_at, length in degenerate_class)
+                    fh.write('{0}\t{1}\n'.format(rep, class_string))
+
+        degenerate_inss = defaultdict(list)
+
+        mers = {length: list(utilities.mers(length)) for length in range(1, 5)}
+
+        for starts_after in possible_starts:
+            before = self.target_sequence[:starts_after + 1]
+            after = self.target_sequence[starts_after + 1:]
+            for length in mers:
+                for mer in mers[length]:
+                    result = before + mer + after
+                    degenerate_inss[result].append((starts_after, mer))
+
+        with self.fns['degenerate_insertions'].open('w') as fh:
+            classes = sorted(degenerate_inss.values(), key=len, reverse=True)
+            for degenerate_class in classes:
+                degenerate_class = sorted(degenerate_class)
+                if len(degenerate_class) > 1:
+                    starts_after = '|'.join(str(starts_after) for starts_after, seq in degenerate_class)
+                    seq = '|'.join(seq for starts_after, seq in degenerate_class)
+                    rep = 'I:{{{0}}},{{{1}}}'.format(starts_after, seq)
+                    class_string = ';'.join('{},{}'.format(starts_after, seq) for starts_after, seq in degenerate_class)
+                    fh.write('{0}\t{1}\n'.format(rep, class_string))
+
+    @utilities.memoized_property
+    def degenerate_indels(self):
+        indel_to_rep = {}
+
+        for line in self.fns['degenerate_deletions'].open():
+            rep, dels = line.strip().split('\t')
+            dels = [('D', tuple(map(int, d.split(',')))) for d in dels.split(';')]
+            for d in dels:
+                indel_to_rep[d] = rep
+        
+        for line in self.fns['degenerate_insertions'].open():
+            rep, inss = line.strip().split('\t')
+            fields = [ins.split(',') for ins in inss.split(';')]
+            inss = [('I', (int(starts_after), seq)) for starts_after, seq in fields]
+            for i in inss:
+                indel_to_rep[i] = rep
+
+        return indel_to_rep
+
 
 def parse_benchling_genbank(genbank_fn):
     convert_strand = {
