@@ -39,9 +39,9 @@ def load_counts(base_dir, conditions=None, drop_outcomes=None):
     layout_module = layout_modules.pop()
     
     df['_sort_order'] = df.index.map(layout_module.order)
-    df = df.sort_values('_sort_order').drop('_sort_order', axis=1).astype(int)
+    df = df.sort_values('_sort_order').drop('_sort_order', axis=1)
     
-    df = pd.concat([totals_row, df])
+    df = pd.concat([totals_row, df]).astype(int)
     df.index.names = (None, None)
 
     return df
@@ -128,8 +128,8 @@ class ModalMaker(object):
         
         return modal_div, modal_id
         
-def make_table(base_dir, conditions=None):
-    df = load_counts(base_dir, conditions)
+def make_table(base_dir, conditions=None, drop_outcomes=None):
+    df = load_counts(base_dir, conditions, drop_outcomes)
     totals = df.loc[totals_row_label]
 
     modal_maker = ModalMaker()
@@ -204,7 +204,7 @@ def make_table(base_dir, conditions=None):
     
     return styled
 
-def make_table(base_dir, conditions=None, drop_outcomes=None):
+def make_table_new(base_dir, conditions=None, drop_outcomes=None, include_images=True):
     df = load_counts(base_dir, conditions, drop_outcomes)
     totals = df.loc[totals_row_label]
 
@@ -212,7 +212,7 @@ def make_table(base_dir, conditions=None, drop_outcomes=None):
     
     modal_maker = ModalMaker()
 
-    def link_maker(val, outcome, exp_group, exp_name):
+    def link_maker(val, outcome, exp_group, exp_name, include_images):
         if val == 0:
             html = ''
         else:
@@ -222,39 +222,44 @@ def make_table(base_dir, conditions=None, drop_outcomes=None):
             fraction = val / totals[(exp_group, exp_name)]
             
             if outcome == totals_row_label:
-                modal_div, modal_id = modal_maker.make_length(exp)
-
-                hover_image_fn = str(exp.fns['lengths_figure'])
-                hover_URI, width, height = fn_to_URI(hover_image_fn)
-
-                link = link_template.format(text='{:,}'.format(val),
-                                            modal_id=modal_id,
-                                            URI=hover_URI,
-                                            width=width,
-                                            height=height,
-                                           )
+                text = '{:,}'.format(val)
+                if include_images:
+                    modal_div, modal_id = modal_maker.make_length(exp)
+                    hover_image_fn = str(exp.fns['lengths_figure'])
+                    hover_URI, width, height = fn_to_URI(hover_image_fn)
                 
-                html = link + modal_div
+                    link = link_template.format(text=text,
+                                                modal_id=modal_id,
+                                                URI=hover_URI,
+                                                width=width,
+                                                height=height,
+                                               )
+                    
+                    html = link + modal_div
+                else:
+                    html = text
 
             else:
-                modal_div, modal_id = modal_maker.make_outcome(exp, outcome)
-                
-                hover_image_fn = str(outcome_fns['first_example'])
-                hover_URI, width, height = fn_to_URI(hover_image_fn)
-
-                link = link_template.format(text='{:.2%}'.format(fraction),
-                                            modal_id=modal_id,
-                                            URI=hover_URI,
-                                            width=width,
-                                            height=height,
-                                           )
-                
-                html = link + modal_div
+                text = '{:.2%}'.format(fraction)
+                if include_images:
+                    modal_div, modal_id = modal_maker.make_outcome(exp, outcome)
+                    hover_image_fn = str(outcome_fns['first_example'])
+                    hover_URI, width, height = fn_to_URI(hover_image_fn)
+                    
+                    link = link_template.format(text=text,
+                                                modal_id=modal_id,
+                                                URI=hover_URI,
+                                                width=width,
+                                                height=height,
+                                               )
+                    html = link + modal_div
+                else:
+                    html = text
 
         return html
     
     def bind_link_maker(exp_group, exp_name):
-        return {outcome: functools.partial(link_maker, outcome=outcome, exp_group=exp_group, exp_name=exp_name) for outcome in df}
+        return {outcome: functools.partial(link_maker, outcome=outcome, exp_group=exp_group, exp_name=exp_name, include_images=include_images) for outcome in df}
 
     styled = df.style
     
@@ -287,7 +292,7 @@ import knockin.table
 
 conditions = {conditions}
 drop_outcomes = {drop_outcomes}
-knockin.table.make_table('{base_dir}', conditions, drop_outcomes)
+knockin.table.make_table_new('{base_dir}', conditions, drop_outcomes, include_images=False)
 '''.format(conditions=conditions, base_dir=base_dir, drop_outcomes=drop_outcomes)
 
     nb['cells'] = [nbf.new_code_cell(cell_contents)]

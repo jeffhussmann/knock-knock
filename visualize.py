@@ -65,31 +65,6 @@ def get_indel_info(alignment):
             
     return indels
 
-def homopolymer_lengths(seq, b='A'):
-    locations = []
-    
-    i = 0
-    while True:
-        # Advance until you find a b
-        while  i < len(seq) and seq[i] != b:
-            i += 1
-        # If you never did, you are done.
-        if i == len(seq):
-            break
-            
-        start = i
-        # Advance until the polyb stretch starting at i ends.
-        while  i < len(seq) and seq[i] == b:
-            i += 1
-        
-        length = i - start
-        locations.append((start, length))
-        
-        if i == len(seq):
-            break
-    
-    return locations
-
 def plot_read(alignments,
               target_info,
               parsimonious=False,
@@ -99,7 +74,7 @@ def plot_read(alignments,
               paired=False,
               draw_mismatches=True,
               show_polyA=False,
-              draw_sequence=False,
+              show_sequence=False,
               max_qual=93,
               process_mappings=None,
               **kwargs):
@@ -107,9 +82,13 @@ def plot_read(alignments,
     alignments = copy.deepcopy(alignments)
 
     fig, ax = plt.subplots(figsize=(12, 4))
+    if (not alignments) or (alignments[0].query_sequence is None):
+        return fig
+
     colors = {name: 'C{0}'.format(i) for i, name in enumerate(target_info.reference_sequences)}
 
     if paired:
+        read_length = paired
         reverse_complement = False
     elif not all(al.is_unmapped for al in alignments):
         layout_info = {'alignments': {'all': alignments}}
@@ -143,21 +122,35 @@ def plot_read(alignments,
         x_min = -0.02 * query_length
         x_max = 1.02 * query_length
     
-    kwargs = {'linewidth': 2, 'color': 'black'}
+    read_kwargs = {
+        'linewidth': 2,
+        'color': 'black'
+    }
+
     if paired:
-        offsets = [0, -gap_between_als * 0.15]
-        endpoints = [
-            [0, 250],
-            [query_length - 1, query_length - 1 - 250],
+        offsets = [
+            0,
+            -gap_between_als * 0.15,
         ]
-        signs = [1, -1]
+
+        endpoints = [
+            [0, read_length],
+            [query_length - 1, query_length - 1 - read_length],
+        ]
+
+        signs = [
+            1,
+            -1,
+        ]
+
         for (start, end), sign, offset in zip(endpoints, signs, offsets):
             ax.plot([start, end, end - sign * query_length * arrow_width],
                     [offset, offset, offset + sign * arrow_height],
                     clip_on=False,
-                    **kwargs)
+                    **read_kwargs)
+
     else:
-        ax.plot([0, query_length - 1], [0, 0], **kwargs)
+        ax.plot([0, query_length - 1], [0, 0], **read_kwargs)
 
         arrow_ys = [0, arrow_height]
 
@@ -166,17 +159,17 @@ def plot_read(alignments,
         else:
             arrow_xs = [query_length - 1, (query_length - 1) * (1 - arrow_width)]
         
-        ax.plot(arrow_xs, arrow_ys, **kwargs)
+        ax.plot(arrow_xs, arrow_ys, **read_kwargs)
     
-    ax.annotate('sequencing read',
-                xy=(1, 0),
-                xycoords=('axes fraction', 'data'),
-                xytext=(15, 0),
-                textcoords='offset points',
-                color='black',
-                ha='left',
-                va='center',
-               )
+        ax.annotate('sequencing read',
+                    xy=(1, 0),
+                    xycoords=('axes fraction', 'data'),
+                    xytext=(15, 0),
+                    textcoords='offset points',
+                    color='black',
+                    ha='left',
+                    va='center',
+                   )
 
     if all(al.is_unmapped for al in alignments):
         by_reference_name = []
@@ -187,7 +180,7 @@ def plot_read(alignments,
     
     rname_starts = np.cumsum([1] + [len(als) for n, als in by_reference_name])
     offsets = {name: start for (name, als), start in zip(by_reference_name, rname_starts)}
-    
+
     for ref_name, ref_alignments in by_reference_name:
         if reverse_complement:
             for alignment in ref_alignments:
@@ -242,7 +235,7 @@ def plot_read(alignments,
                 cross_x = 1 * 0.5
                 cross_y = cross_x * 0.002
                 for read_p, read_b, ref_p, ref_b, q in mismatches:
-                    if q < max_qual * 0.5:
+                    if q < max_qual * 0.75:
                         alpha = 0.25
                     else:
                         alpha = 0.75
@@ -424,7 +417,7 @@ def plot_read(alignments,
     if show_polyA:
         seq = alignments[0].get_forward_sequence()
         for b, color in [('A', 'red'), ('G', 'brown')]:
-            locations = homopolymer_lengths(seq, b)
+            locations = utilities.homopolymer_lengths(seq, b)
             for start, length in locations:
                 if length > 10:
                     ax.fill_between([start, start + length - 1], [max_y + arrow_height] * 2, [0] * 2, color=color, alpha=0.2)
@@ -442,7 +435,7 @@ def plot_read(alignments,
                                 weight='bold',
                                )
                     
-    if draw_sequence:
+    if show_sequence:
         seq = alignments[0].get_forward_sequence()
         for x, b in enumerate(seq):
             ax.annotate(b,
@@ -494,16 +487,17 @@ def make_stacked_Image(als_iter, target_info, titles=None, **kwargs):
 
     return stacked_im
     
-def explore(base_dir, by_outcome=False, draw_mismatches=False, parsimonious=True, size_multiple=1.75, max_qual=93):
+def explore(base_dir, by_outcome=False, draw_mismatches=False, parsimonious=True, show_sequence=True, size_multiple=1.75, max_qual=93):
     target_names = [t.name for t in target_info_module.get_all_targets(base_dir)]
 
     widgets = {
         'target': ipywidgets.Select(options=target_names, value=target_names[0]),
         'experiment': ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='450px')),
-        'read_id': ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='400px')),
+        'read_id': ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='600px')),
         'parsimonious': ipywidgets.ToggleButton(value=parsimonious),
         'show_qualities': ipywidgets.ToggleButton(value=False),
         'draw_mismatches': ipywidgets.ToggleButton(value=draw_mismatches),
+        'show_sequence': ipywidgets.ToggleButton(value=show_sequence),
         'outcome': ipywidgets.Select(options=[], continuous_update=False, layout=ipywidgets.Layout(height='200px', width='450px')),
         'zoom_in': ipywidgets.FloatRangeSlider(value=[-0.02, 1.02], min=-0.02, max=1.02, step=0.001, continuous_update=False, layout=ipywidgets.Layout(width='1200px')),
     }
@@ -514,26 +508,34 @@ def explore(base_dir, by_outcome=False, draw_mismatches=False, parsimonious=True
 
     exps = experiment_module.get_all_experiments(base_dir)
 
+    output = ipywidgets.Output()
+
+    @output.capture()
     def populate_experiments(change):
         target = widgets['target'].value
         previous_value = widgets['experiment'].value
-        datasets = sorted([(exp.group, exp.name) for exp in exps if exp.target_info.name == target])
-        options = [('{0}: {1}'.format(*d), d) for d in datasets]
-        widgets['experiment'].options = options
+        datasets = sorted([('{0}: {1}'.format(exp.group, exp.name), exp)
+                           for exp in exps
+                           if exp.target_info.name == target
+                          ])
+        widgets['experiment'].options = datasets
 
         if datasets:
             if previous_value in datasets:
                 widgets['experiment'].value = previous_value
                 populate_outcomes(None)
             else:
-                widgets['experiment'].value = datasets[0]
+                widgets['experiment'].index = 0
         else:
             widgets['experiment'].value = None
 
+    @output.capture()
     def populate_outcomes(change):
         previous_value = widgets['outcome'].value
-        gn, en = widgets['experiment'].value
-        exp = experiment_module.Experiment(base_dir, gn, en)
+        exp = widgets['experiment'].value
+        if exp is None:
+            return
+
         outcomes = exp.outcomes
         widgets['outcome'].options = [('_'.join(outcome), outcome) for outcome in outcomes]
         if outcomes:
@@ -545,12 +547,19 @@ def explore(base_dir, by_outcome=False, draw_mismatches=False, parsimonious=True
         else:
             widgets['outcome'].value = None
 
+    @output.capture()
     def populate_read_ids(change):
-        gn, en = widgets['experiment'].value
-        exp = experiment_module.Experiment(base_dir, gn, en)
+        exp = widgets['experiment'].value
+
+        if exp is None:
+            return
 
         if by_outcome:
-            qnames = exp.outcome_query_names(widgets['outcome'].value)[:200]
+            outcome = widgets['outcome'].value
+            if outcome is None:
+                qnames = []
+            else:
+                qnames = exp.outcome_query_names(outcome)[:200]
         else:
             qnames = list(itertools.islice(exp.query_names, 200))
 
@@ -575,11 +584,15 @@ def explore(base_dir, by_outcome=False, draw_mismatches=False, parsimonious=True
     else:
         widgets['experiment'].observe(populate_read_ids, names='value')
 
+    @output.capture(clear_output=True)
     def plot(experiment, read_id, **kwargs):
-        exp = experiment_module.Experiment(base_dir, *experiment)
+        exp = experiment
+
+        if exp is None:
+            return
 
         if by_outcome:
-            als = exp.get_read_alignments(read_id, kwargs['outcome'])
+            als = exp.get_read_alignments(read_id, outcome=kwargs['outcome'])
         else:
             als = exp.get_read_alignments(read_id)
 
@@ -587,6 +600,7 @@ def explore(base_dir, by_outcome=False, draw_mismatches=False, parsimonious=True
             return None
 
         fig = plot_read(als, exp.target_info, size_multiple=size_multiple, max_qual=max_qual, **kwargs)
+        print(als[0].get_forward_sequence())
 
         return fig
 
@@ -603,9 +617,10 @@ def explore(base_dir, by_outcome=False, draw_mismatches=False, parsimonious=True
 
     layout = ipywidgets.VBox(
         [make_row(top_row_keys),
-         make_row(['parsimonious', 'show_qualities', 'draw_mismatches']),
+         make_row(['parsimonious', 'show_qualities', 'draw_mismatches', 'show_sequence']),
          widgets['zoom_in'],
          interactive.children[-1],
+         output,
         ],
     )
 

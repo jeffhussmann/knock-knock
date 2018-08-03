@@ -3,6 +3,7 @@ matplotlib.use('Agg', warn=False)
 
 import shutil
 from pathlib import Path
+from itertools import islice
 from collections import defaultdict, Counter
 
 import pandas as pd
@@ -13,9 +14,11 @@ import pysam
 import yaml
 import scipy.signal
 
-from sequencing import sam, fastq, utilities, visualize_structure, sw, adapters
+from sequencing import sam, fastq, utilities, visualize_structure, sw, adapters, mapping_tools
 
-from . import target_info, blast, layout, britt_layout, visualize
+from . import target_info, blast, layout, britt_layout, jin_layout, visualize, coherence, collapse
+
+group_by = utilities.group_by
 
 palette = bokeh.palettes.Category20c_20
 source_to_color = {}
@@ -52,10 +55,10 @@ class Experiment(object):
         if not self.dir.is_dir():
             self.dir.mkdir(parents=True)
 
-        data_dir = base_dir / 'data' / group
+        self.data_dir = base_dir / 'data' / group
 
         if description is None:
-            sample_sheet_fn = data_dir / 'sample_sheet.yaml'
+            sample_sheet_fn = self.data_dir / 'sample_sheet.yaml'
             sample_sheet = yaml.load(sample_sheet_fn.read_text())
             self.description = sample_sheet[name]
         else:
@@ -87,6 +90,8 @@ class Experiment(object):
             'deletion_edges': self.dir / 'deletion_edges.npz',
         }
 
+        self.sequencing_primers = 'truseq'
+
         def ensure_list(possibly_list):
             if isinstance(possibly_list, list):
                 definitely_list = possibly_list
@@ -96,20 +101,21 @@ class Experiment(object):
 
         if 'fastq_fns' in self.description:
             fastq_fns = ensure_list(self.description['fastq_fns'])
-            self.fns['fastqs'] = [data_dir / name for name in fastq_fns]
+            self.fns['fastqs'] = [self.data_dir / name for name in fastq_fns]
 
             for fn in self.fns['fastqs']:
                 if not fn.exists():
                     raise ValueError('{0}: {1} specifies non-existent {2}'.format(group, name, fn))
 
         else:
-            for k in ['R1', 'R2']:
-                fastq_fns = ensure_list(self.description['{0}_fns'.format(k)])
-                self.fns[k] = [data_dir / name for name in fastq_fns]
+            for k in ['R1', 'R2', 'I1', 'I2']:
+                if k in self.description:
+                    fastq_fns = ensure_list(self.description[k])
+                    self.fns[k] = [self.data_dir / name for name in fastq_fns]
             
-                for fn in self.fns[k]:
-                    if not self.fns[k].exists():
-                        raise ValueError('{0}: {1} specifies non-existent {2}'.format(group, name, fn))
+                    for fn in self.fns[k]:
+                        if not fn.exists():
+                            raise ValueError('{0}: {1} specifies non-existent {2}'.format(group, name, fn))
 
             self.fns['stitched'] = self.dir / 'stitched.fastq'
             self.fns['fastqs'] = [self.fns['stitched']]
@@ -188,6 +194,34 @@ class Experiment(object):
         bam_fns = []
         bam_by_name_fns = []
 
+        for i, chunk in enumerate(utilities.chunks(self.reads, 10000)):
+            suffix = '.{:06d}.bam'.format(i)
+            bam_fn = self.fns['bam'].with_suffix(suffix)
+            bam_by_name_fn = self.fns['bam_by_name'].with_suffix(suffix)
+
+            blast.blast(self.target_info.fns['ref_fasta'],
+                        chunk,
+                        bam_fn,
+                        bam_by_name_fn,
+                        split_at_large_insertions=self.split_at_large_insertions,
+                       )
+
+            bam_fns.append(bam_fn)
+            bam_by_name_fns.append(bam_by_name_fn)
+
+        sam.merge_sorted_bam_files(bam_fns, self.fns['bam'])
+        sam.merge_sorted_bam_files(bam_by_name_fns, self.fns['bam_by_name'], by_name=True)
+
+        for fn in bam_fns:
+            fn.unlink()
+            fn.with_suffix('.bam.bai').unlink()
+        
+        for fn in bam_by_name_fns:
+            fn.unlink()
+
+    @property
+    def reads(self):
+        return fastq.reads(self.fns['fastqs'], up_to_space=True)
         for i, chunk in enumerate(utilities.chunks(self.reads, 10000)):
             suffix = '.{:06d}.bam'.format(i)
             bam_fn = self.fns['bam'].with_suffix(suffix)
@@ -309,19 +343,19 @@ class Experiment(object):
 
         kwargs = dict(
             parsimonious=False,
-            process_mappings=self.layout_module.characterize_layout,
+            #process_mappings=self.layout_module.characterize_layout,
         )
 
         for outcome in self.outcomes:
             outcome_fns = self.outcome_fns(outcome)
             
-            als = self.get_read_alignments(0, outcome)
+            als = self.get_read_alignments(0, outcome=outcome)
             fig = visualize.plot_read(als, self.target_info, **kwargs)
             fig.axes[0].set_title('')
             fig.savefig(str(outcome_fns['first_example']), bbox_inches='tight')
             plt.close(fig)
             
-            als_iter = (self.get_read_alignments(i, outcome) for i in range(num_examples))
+            als_iter = (self.get_read_alignments(i, outcome=outcome) for i in range(num_examples))
             stacked_im = visualize.make_stacked_Image(als_iter, self.target_info, **kwargs)
             stacked_im.save(outcome_fns['combined_figure'])
 
@@ -410,81 +444,35 @@ class Experiment(object):
         return visualize.make_stacked_Image(sample, self.target_info, parsimonious=True)
 
     def stitch_read_pairs(self):
-        before_R1 = adapters.primers['truseq']['R1']
-        before_R2 = adapters.primers['truseq']['R2']
+        before_R1 = adapters.primers[self.sequencing_primers]['R1']
+        before_R2 = adapters.primers[self.sequencing_primers]['R2']
         with self.fns['stitched'].open('w') as fh:
-            for R1, R2 in fastq.read_pairs(self.fns['R1'], self.fns['R2']):
+            read_pairs = fastq.read_pairs(self.fns['R1'], self.fns['R2'])
+            #read_pairs = islice(read_pairs, 20000)
+            for R1, R2 in read_pairs:
                 stitched = sw.stitch_read_pair(R1, R2, before_R1, before_R2)
                 fh.write(str(stitched))
         
     def process(self):
-        if 'R1' in self.fns:
-            self.stitch_read_pairs()
+        #if 'R1' in self.fns:
+        #    self.stitch_read_pairs()
 
         #self.call_peaks_in_length_distribution()
         #self.generate_alignments()
         self.count_outcomes()
-        self.make_outcome_plots(num_examples=3)
-        self.make_text_visualizations()
+        #self.make_outcome_plots(num_examples=3)
+        #self.make_text_visualizations()
+
+        print('finished with {0}: {1}'.format(self.group, self.name))
         
-class BrittExperiment(Experiment):
+class JinExperiment(Experiment):
     def __init__(self, base_dir, group, name, description=None):
         super().__init__(base_dir, group, name, description)
-        self.fns.update({
-            'supplemental_bam': self.dir / 'supplemental_alignments.bam',
-            'supplemental_bam_by_name': self.dir / 'supplemental_alignments.by_name.bam',
-            'combined_bam': self.dir / 'combined.bam',
-            'combined_bam_by_name': self.dir / 'combined.by_name.bam',
-        })
-        
-        self.layout_module = britt_layout
+        self.layout_module = jin_layout
         self.split_at_large_insertions = False
-
-    def generate_supplemental_alignments(self):
-        ''' Use bowtie2 to produce local alignments to CRCh38, filtering out
-        spurious alignmnents of polyA or polyG stretches. '''
-
-        bowtie2_index = '/nvme/indices/bowtie2/GRCh38/genome'
-        template, mappings = mapping_tools.map_bowtie2(
-            bowtie2_index,
-            reads=self.reads,
-            bam_output=True,
-            local=True,
-            score_min='C,60,0',
-            memory_mapped_IO=True,
-            report_up_to=10,
-            yield_mappings=True,
-        )
-
-        bam_fn = str(self.fns['supplemental_bam'])
-        with pysam.AlignmentFile(bam_fn, 'wb', template=template) as bam_fh:
-            homopolymer_length = 20
-            homopolymers = {b*homopolymer_length for b in ['A', 'G']}
-
-            for mapping in mappings:
-                al_seq = mapping.query_alignment_sequence
-                if mapping.is_reverse:
-                    al_seq = utilities.reverse_complement(al_seq)
-
-                if not any(hp in al_seq for hp in homopolymers):
-                    bam_fh.write(mapping)
-                        
-        sam.sort_bam(self.fns['supplemental_bam'],
-                     self.fns['supplemental_bam_by_name'],
-                     by_name=True,
-                    )
-
-    def combine_alignments(self):
-        sam.merge_sorted_bam_files([self.fns['bam'], self.fns['supplemental_bam']],
-                                   self.fns['combined_bam'],
-                                  )
-
-        sam.merge_sorted_bam_files([self.fns['bam_by_name'], self.fns['supplemental_bam_by_name']],
-                                   self.fns['combined_bam_by_name'],
-                                   by_name=True,
-                                  )
-        
-    def count_outcomes(self, fn_key='combined_bam_by_name'):
+        self.sequencing_primers = 'nextera'
+    
+    def count_outcomes(self, fn_key='bam_by_name'):
         if self.fns['outcomes_dir'].is_dir():
             shutil.rmtree(str(self.fns['outcomes_dir']))
 
@@ -535,14 +523,358 @@ class BrittExperiment(Experiment):
         full_bam_fh.close()
         for outcome, fh in bam_fhs.items():
             fh.close()
+    
+    def make_outcome_plots(self, num_examples=10):
+        fig = self.length_distribution_figure()
+        fig.savefig(str(self.fns['lengths_figure']), bbox_inches='tight')
+        plt.close(fig)
+
+        kwargs = dict(
+            parsimonious=False,
+            paired=300,
+        )
+
+        for outcome in self.outcomes:
+            outcome_fns = self.outcome_fns(outcome)
+            
+            als = self.get_read_alignments(0, outcome=outcome)
+            fig = visualize.plot_read(als, self.target_info, **kwargs)
+            fig.axes[0].set_title('')
+            fig.savefig(str(outcome_fns['first_example']), bbox_inches='tight')
+            plt.close(fig)
+            
+            als_iter = (self.get_read_alignments(i, outcome=outcome) for i in range(num_examples))
+            stacked_im = visualize.make_stacked_Image(als_iter, self.target_info, **kwargs)
+            stacked_im.save(outcome_fns['combined_figure'])
+
+            lengths = self.outcome_read_lengths(outcome)
+            fig = visualize.make_length_plot(self.read_lengths, self.color, lengths)
+            fig.savefig(str(outcome_fns['lengths_figure']), bbox_inches='tight')
+            plt.close(fig)
+
+class BrittExperiment(Experiment):
+    def __init__(self, base_dir, group, name, description=None):
+        super().__init__(base_dir, group, name, description)
+        self.fns.update({
+            'supplemental_bam': self.dir / 'supplemental_alignments.bam',
+            'supplemental_bam_by_name': self.dir / 'supplemental_alignments.by_name.bam',
+            'combined_bam': self.dir / 'combined.bam',
+            'combined_bam_by_name': self.dir / 'combined.by_name.bam',
+
+            'collapsed_UMI_outcomes': self.dir / 'collapsed_UMI_outcomes.txt',
+            'cell_outcomes': self.dir / 'cell_outcomes.txt',
+            'coherent_cell_outcomes': self.dir / 'coherent_cell_outcomes.txt',
+        })
+        
+        self.layout_module = britt_layout
+        self.split_at_large_insertions = True
+
+    def generate_supplemental_alignments(self):
+        ''' Use bowtie2 to produce local alignments to CRCh38, filtering out
+        spurious alignmnents of polyA or polyG stretches. '''
+
+        bowtie2_index = '/nvme/indices/bowtie2/GRCh38/genome'
+        template, mappings = mapping_tools.map_bowtie2(
+            bowtie2_index,
+            reads=self.reads,
+            bam_output=True,
+            local=True,
+            score_min='C,60,0',
+            memory_mapped_IO=True,
+            report_up_to=10,
+            yield_mappings=True,
+            num_reads=10000,
+            custom_binary=True,
+        )
+
+        bam_fn = str(self.fns['supplemental_bam'])
+        with pysam.AlignmentFile(bam_fn, 'wb', template=template) as bam_fh:
+            homopolymer_length = 10
+            homopolymers = {b*homopolymer_length for b in ['A', 'G']}
+
+            for mapping in mappings:
+                al_seq = mapping.query_alignment_sequence
+                if mapping.is_reverse:
+                    al_seq = utilities.reverse_complement(al_seq)
+
+                contains_hp = any(hp in al_seq for hp in homopolymers)
+                if not contains_hp and not mapping.is_unmapped:
+                    bam_fh.write(mapping)
+                        
+        sam.sort_bam(self.fns['supplemental_bam'],
+                     self.fns['supplemental_bam_by_name'],
+                     by_name=True,
+                    )
+
+    def combine_alignments(self):
+        sam.merge_sorted_bam_files([self.fns['bam'], self.fns['supplemental_bam']],
+                                   self.fns['combined_bam'],
+                                  )
+
+        sam.merge_sorted_bam_files([self.fns['bam_by_name'], self.fns['supplemental_bam_by_name']],
+                                   self.fns['combined_bam_by_name'],
+                                   by_name=True,
+                                  )
+        
+    def count_outcomes(self, fn_key='combined_bam_by_name'):
+        if self.fns['outcomes_dir'].is_dir():
+            shutil.rmtree(str(self.fns['outcomes_dir']))
+
+        self.fns['outcomes_dir'].mkdir()
+
+        bam_fh = pysam.AlignmentFile(str(self.fns[fn_key]))
+        alignment_groups = sam.grouped_by_name(bam_fh)
+        outcomes = defaultdict(list)
+
+        with self.fns['outcome_list'].open('w') as fh:
+            for name, als in alignment_groups:
+                layout = self.layout_module.Layout(als, self.target_info)
+                
+                category, subcategory, details = layout.categorize()
+                
+                outcomes[category, subcategory].append(name)
+
+                annotation = collapse.cluster_Annotation.from_identifier(name)
+                UMI_outcome = coherence.UMI_Outcome(annotation['cell_BC'],
+                                                    annotation['UMI'],
+                                                    annotation['num_reads'],
+                                                    category,
+                                                    subcategory,
+                                                    details,
+                                                    name,
+                                                   )
+
+                fh.write(str(UMI_outcome) + '\n')
+
+        bam_fh.close()
+
+        counts = {outcome: len(names) for outcome, names in outcomes.items()}
+        pd.Series(counts).to_csv(self.fns['outcome_counts'], sep='\t')
+
+        # To make plotting easier, for each outcome, make a file listing all of
+        # qnames for the outcome and a bam file (sorted by name) with all of the
+        # alignments for these qnames.
+
+        qname_to_outcome = {}
+        bam_fhs = {}
+
+        full_bam_fh = pysam.AlignmentFile(str(self.fns[fn_key]))
+        
+        for outcome, qnames in outcomes.items():
+            outcome_fns = self.outcome_fns(outcome)
+            outcome_fns['dir'].mkdir()
+            bam_fhs[outcome] = pysam.AlignmentFile(str(outcome_fns['bam_by_name']), 'w', template=full_bam_fh)
+            
+            with outcome_fns['query_names'].open('w') as fh:
+                for qname in qnames:
+                    qname_to_outcome[qname] = outcome
+                    fh.write(qname + '\n')
+        
+        for al in full_bam_fh:
+            outcome = qname_to_outcome[al.query_name]
+            bam_fhs[outcome].write(al)
+
+        full_bam_fh.close()
+        for outcome, fh in bam_fhs.items():
+            fh.close()
+
+    def collapse_UMI_outcomes(self):
+        most_abundant_outcomes = coherence.collapse_UMI_outcomes(self.fns['outcome_list'])
+        with self.fns['collapsed_UMI_outcomes'].open('w') as fh:
+            for outcome in most_abundant_outcomes:
+                fh.write(str(outcome) + '\n')
+
+    def collapse_cell_outcomes(self):
+        cell_outcomes = coherence.collapse_cell_outcomes(self.fns['collapsed_UMI_outcomes'])
+        with self.fns['cell_outcomes'].open('w') as fh:
+            for outcome in cell_outcomes:
+                fh.write(str(outcome) + '\n')
+
+    def filter_coherent_cells(self):
+        good_cells = coherence.filter_coherent_cells(self.fns['cell_outcomes'])
+        good_cells.to_csv(self.fns['coherent_cell_outcomes'], sep='\t')
 
     def process(self):
         #self.generate_alignments()
-        self.generate_supplemental_alignments()
-        self.combine_alignments()
-        #self.count_outcomes(fn_key='combined_bam_by_name')
+        #self.generate_supplemental_alignments()
+        #self.combine_alignments()
+        self.count_outcomes(fn_key='combined_bam_by_name')
+        self.collapse_UMI_outcomes()
+        self.collapse_cell_outcomes()
+        self.filter_coherent_cells()
         #self.make_outcome_plots(num_examples=3)
         #self.make_text_visualizations()
+
+        print('finished with {0}: {1}'.format(self.group, self.name))
+
+class BrittPooledExperiment(BrittExperiment):
+    @property
+    def reads(self):
+        rs = fastq.reads(self.fns['R2'], up_to_space=True)
+        return rs
+    
+    def count_outcomes(self, fn_key='bam_by_name'):
+        if self.fns['outcomes_dir'].is_dir():
+            shutil.rmtree(str(self.fns['outcomes_dir']))
+
+        self.fns['outcomes_dir'].mkdir()
+
+        bam_fh = pysam.AlignmentFile(str(self.fns[fn_key]))
+        alignment_groups = sam.grouped_by_name(bam_fh)
+        outcomes = defaultdict(list)
+
+        with self.fns['outcome_list'].open('w') as fh:
+            for name, als in alignment_groups:
+                layout = self.layout_module.Layout(als, self.target_info)
+                
+                category, subcategory, details = layout.categorize()
+                
+                outcomes[category, subcategory].append(name)
+
+                annotation = collapse.collapsed_UMI_Annotation.from_identifier(name)
+                UMI_outcome = coherence.Pooled_UMI_Outcome(annotation['UMI'],
+                                                           annotation['cluster_id'],
+                                                           annotation['num_reads'],
+                                                           category,
+                                                           subcategory,
+                                                           details,
+                                                          )
+                fh.write(str(UMI_outcome) + '\n')
+
+        bam_fh.close()
+
+        counts = {outcome: len(names) for outcome, names in outcomes.items()}
+        pd.Series(counts).to_csv(self.fns['outcome_counts'], sep='\t')
+
+        # To make plotting easier, for each outcome, make a file listing all of
+        # qnames for the outcome and a bam file (sorted by name) with all of the
+        # alignments for these qnames.
+
+        qname_to_outcome = {}
+        bam_fhs = {}
+
+        full_bam_fh = pysam.AlignmentFile(str(self.fns[fn_key]))
+        
+        for outcome, qnames in outcomes.items():
+            outcome_fns = self.outcome_fns(outcome)
+            outcome_fns['dir'].mkdir()
+            bam_fhs[outcome] = pysam.AlignmentFile(str(outcome_fns['bam_by_name']), 'w', template=full_bam_fh)
+            
+            with outcome_fns['query_names'].open('w') as fh:
+                for qname in qnames:
+                    qname_to_outcome[qname] = outcome
+                    fh.write(qname + '\n')
+        
+        for al in full_bam_fh:
+            outcome = qname_to_outcome[al.query_name]
+            bam_fhs[outcome].write(al)
+
+        full_bam_fh.close()
+        for outcome, fh in bam_fhs.items():
+            fh.close()
+    
+    def collapse_UMI_outcomes(self):
+        most_abundant_outcomes = coherence.collapse_pooled_UMI_outcomes(self.fns['outcome_list'])
+        with self.fns['collapsed_UMI_outcomes'].open('w') as fh:
+            for outcome in most_abundant_outcomes:
+                fh.write(str(outcome) + '\n')
+
+    def process(self):
+        #self.generate_alignments()
+        #self.generate_supplemental_alignments()
+        #self.combine_alignments()
+        #self.count_outcomes(fn_key='combined_bam_by_name')
+        self.collapse_UMI_outcomes()
+        #self.make_outcome_plots(num_examples=3)
+
+class BrittAmpliconExperiment(BrittExperiment):
+    @property
+    def reads(self):
+        rs = fastq.reads(self.fns['R1'], up_to_space=True)
+        #rs = islice(rs, 10000)
+        return rs
+    
+    def generate_alignments(self):
+        mapping_tools.map_bowtie2(
+            self.target_info.fns['bowtie2_index'],
+            #reads=self.reads,
+            R1_fn=self.fns['R1'][0],
+            output_file_name=self.fns['bam'],
+            bam_output=True,
+            local=True,
+            report_all=True,
+            error_file_name='/home/jah/projects/britt/bowtie2_error.txt',
+            custom_binary=True,
+            num_reads=10000,
+        )
+
+        sam.sort_bam(self.fns['bam'], self.fns['bam_by_name'], by_name=True)
+
+    def count_outcomes(self, fn_key='bam_by_name'):
+        if self.fns['outcomes_dir'].is_dir():
+            shutil.rmtree(str(self.fns['outcomes_dir']))
+
+        self.fns['outcomes_dir'].mkdir()
+
+        bam_fh = pysam.AlignmentFile(str(self.fns[fn_key]))
+        alignment_groups = sam.grouped_by_name(bam_fh)
+        outcomes = defaultdict(list)
+
+        with self.fns['outcome_list'].open('w') as fh:
+            for name, als in alignment_groups:
+                layout = self.layout_module.Layout(als, self.target_info)
+                
+                category, subcategory, details = layout.categorize()
+                
+                outcomes[category, subcategory].append(name)
+
+                fh.write('{0}\t{1}\t{2}\t{3}\n'.format(name, category, subcategory, details))
+
+        bam_fh.close()
+
+        counts = {outcome: len(names) for outcome, names in outcomes.items()}
+        pd.Series(counts).to_csv(self.fns['outcome_counts'], sep='\t')
+
+        # To make plotting easier, for each outcome, make a file listing all of
+        # qnames for the outcome and a bam file (sorted by name) with all of the
+        # alignments for these qnames.
+
+        qname_to_outcome = {}
+        bam_fhs = {}
+
+        full_bam_fh = pysam.AlignmentFile(str(self.fns[fn_key]))
+        
+        for outcome, qnames in outcomes.items():
+            outcome_fns = self.outcome_fns(outcome)
+            outcome_fns['dir'].mkdir()
+            bam_fhs[outcome] = pysam.AlignmentFile(str(outcome_fns['bam_by_name']), 'w', template=full_bam_fh)
+            
+            with outcome_fns['query_names'].open('w') as fh:
+                for qname in qnames:
+                    qname_to_outcome[qname] = outcome
+                    fh.write(qname + '\n')
+        
+        for al in full_bam_fh:
+            outcome = qname_to_outcome[al.query_name]
+            bam_fhs[outcome].write(al)
+
+        full_bam_fh.close()
+        for outcome, fh in bam_fhs.items():
+            fh.close()
+    
+    def collapse_UMI_outcomes(self):
+        most_abundant_outcomes = coherence.collapse_pooled_UMI_outcomes(self.fns['outcome_list'])
+        with self.fns['collapsed_UMI_outcomes'].open('w') as fh:
+            for outcome in most_abundant_outcomes:
+                fh.write(str(outcome) + '\n')
+
+    def process(self):
+        self.generate_alignments()
+        self.generate_supplemental_alignments()
+        #self.combine_alignments()
+        #self.count_outcomes(fn_key='combined_bam_by_name')
+        #self.collapse_UMI_outcomes()
+        #self.make_outcome_plots(num_examples=3)
 
 def get_all_experiments(base_dir, conditions=None):
     data_dir = Path(base_dir) / 'data'
@@ -569,6 +901,12 @@ def get_all_experiments(base_dir, conditions=None):
         for name, description in sample_sheet.items():
             if description.get('experiment_type') == 'britt':
                 exp_class = BrittExperiment
+            elif description.get('experiment_type') == 'britt_pooled':
+                exp_class = BrittPooledExperiment
+            elif description.get('experiment_type') == 'britt_amplicon':
+                exp_class = BrittAmpliconExperiment
+            elif description.get('experiment_type') == 'jin':
+                exp_class = JinExperiment
             else:
                 exp_class = Experiment
             

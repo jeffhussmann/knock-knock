@@ -23,6 +23,9 @@ class TargetInfo(object):
         self.fns = {
             'ref_fasta': self.dir / 'refs.fasta',
             'ref_gff': self.dir / 'refs.gff',
+
+            'bowtie2_index': self.dir / 'refs',
+
             'degenerate_insertions': self.dir / 'degenerate_insertions.txt',
             'degenerate_deletions': self.dir / 'degenerate_deletions.txt',
         }
@@ -30,6 +33,7 @@ class TargetInfo(object):
     def make_references(self):
         ''' Generate fasta and gff files from genbank inputs. '''
         gbs = [self.dir / (source + '.gb') for source in self.sources]
+        print(gbs)
         
         fasta_records = []
         all_gff_features = []
@@ -144,6 +148,8 @@ class TargetInfo(object):
                     
                     length = set(length for starts_at, length in degenerate_class)
                     if len(length) > 1:
+                        print(length)
+                        print(degenerate_class)
                         raise ValueError
                     length = length.pop()
                     
@@ -169,8 +175,8 @@ class TargetInfo(object):
                 degenerate_class = sorted(degenerate_class)
                 if len(degenerate_class) > 1:
                     starts_after = '|'.join(str(starts_after) for starts_after, seq in degenerate_class)
-                    seq = '|'.join(sorted(set(seq for starts_after, seq in degenerate_class)))
-                    rep = 'I:{{{0}}},{1}'.format(starts_after, seq)
+                    seq = '|'.join(seq for starts_after, seq in degenerate_class)
+                    rep = 'I:{{{0}}},{{{1}}}'.format(starts_after, seq)
                     class_string = ';'.join('{},{}'.format(starts_after, seq) for starts_after, seq in degenerate_class)
                     fh.write('{0}\t{1}\n'.format(rep, class_string))
 
@@ -240,5 +246,3 @@ def get_all_targets(base_dir):
     names = (p.name for p in targets_dir.glob('*') if p.is_dir())
     targets = [TargetInfo(base_dir, n) for n in names]
     return targets
-
-

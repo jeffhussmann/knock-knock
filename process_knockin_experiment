@@ -8,7 +8,7 @@ from pathlib import Path
 import yaml
 import pandas as pd
 
-from knockin import experiment, britt_experiment, table
+from knockin import experiment, table
 
 def check_blastn():
     no_blastn = False
@@ -25,6 +25,7 @@ def check_blastn():
         sys.exit(0)
 
 def check_parallel():
+    print('checking parallel')
     no_parallel = False
 
     try:
@@ -102,7 +103,13 @@ elif args.process is not None:
     description = sample_sheet[name]
 
     if description.get('experiment_type') == 'britt':
-        exp_class = britt_experiment.BrittExperiment
+        exp_class = experiment.BrittExperiment
+    elif description.get('experiment_type') == 'britt_pooled':
+        exp_class = experiment.BrittPooledExperiment
+    elif description.get('experiment_type') == 'britt_amplicon':
+        exp_class = experiment.BrittAmpliconExperiment
+    elif description.get('experiment_type') == 'jin':
+        exp_class = experiment.JinExperiment
     else:
         exp_class = experiment.Experiment
 
@@ -114,5 +121,5 @@ elif args.html:
     table.generate_html(args.base_dir, args.html, conditions, drop_outcomes)
 
 elif args.csv:
-    df = table.load_counts(args.base_dir, conditions)
+    df = table.load_counts(args.base_dir, conditions, drop_outcomes)
     df.to_csv(args.csv)
