@@ -42,6 +42,7 @@ def check_parallel():
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--base_dir', required=True)
+parser.add_argument('--no_progress', action='store_true')
 
 mode_group = parser.add_mutually_exclusive_group(required=True)
 mode_group.add_argument('--process', nargs=2, metavar=('GROUP_NAME', 'EXP_NAME'))
@@ -83,6 +84,7 @@ if args.parallel is not None:
         '--max-procs', max_procs,
         'process_knockin_experiment',
         '--base_dir', args.base_dir,
+        '--no_progress',
         '--process', ':::',
     ]
 
@@ -96,6 +98,7 @@ elif args.process is not None:
     check_blastn()
 
     group, name = args.process
+    show_progress = not args.no_progress
         
     data_dir = Path(args.base_dir) / 'data' / group
     sample_sheet_fn = data_dir / 'sample_sheet.yaml'
@@ -113,7 +116,7 @@ elif args.process is not None:
     else:
         exp_class = experiment.Experiment
 
-    exp = exp_class(args.base_dir, group, name, description)
+    exp = exp_class(args.base_dir, group, name, description, show_progress)
 
     exp.process()
 

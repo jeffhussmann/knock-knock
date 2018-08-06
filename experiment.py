@@ -13,6 +13,7 @@ import bokeh.palettes
 import pysam
 import yaml
 import scipy.signal
+import tqdm; progress = tqdm.tqdm
 
 from sequencing import sam, fastq, utilities, visualize_structure, sw, adapters, mapping_tools
 
@@ -46,9 +47,11 @@ def extract_color(description):
     return color
 
 class Experiment(object):
-    def __init__(self, base_dir, group, name, description=None):
+    def __init__(self, base_dir, group, name, description=None, show_progress=False):
         self.group = group
         self.name = name
+
+        self.show_progress = show_progress
 
         base_dir = Path(base_dir)
         self.dir = base_dir / 'results' / group / name
@@ -138,7 +141,11 @@ class Experiment(object):
 
     @property
     def reads(self):
-        return fastq.reads(self.fns['fastqs'], up_to_space=True)
+        rs = fastq.reads(self.fns['fastqs'], up_to_space=True)
+        if self.show_progress:
+            rs = progress(rs)
+
+        return rs
 
     @property
     def query_names(self):
@@ -194,34 +201,6 @@ class Experiment(object):
         bam_fns = []
         bam_by_name_fns = []
 
-        for i, chunk in enumerate(utilities.chunks(self.reads, 10000)):
-            suffix = '.{:06d}.bam'.format(i)
-            bam_fn = self.fns['bam'].with_suffix(suffix)
-            bam_by_name_fn = self.fns['bam_by_name'].with_suffix(suffix)
-
-            blast.blast(self.target_info.fns['ref_fasta'],
-                        chunk,
-                        bam_fn,
-                        bam_by_name_fn,
-                        split_at_large_insertions=self.split_at_large_insertions,
-                       )
-
-            bam_fns.append(bam_fn)
-            bam_by_name_fns.append(bam_by_name_fn)
-
-        sam.merge_sorted_bam_files(bam_fns, self.fns['bam'])
-        sam.merge_sorted_bam_files(bam_by_name_fns, self.fns['bam_by_name'], by_name=True)
-
-        for fn in bam_fns:
-            fn.unlink()
-            fn.with_suffix('.bam.bai').unlink()
-        
-        for fn in bam_by_name_fns:
-            fn.unlink()
-
-    @property
-    def reads(self):
-        return fastq.reads(self.fns['fastqs'], up_to_space=True)
         for i, chunk in enumerate(utilities.chunks(self.reads, 10000)):
             suffix = '.{:06d}.bam'.format(i)
             bam_fn = self.fns['bam'].with_suffix(suffix)
@@ -452,7 +431,7 @@ class Experiment(object):
                 stitched = sw.stitch_read_pair(R1, R2, before_R1, before_R2)
                 fh.write(str(stitched))
         
-    def process(self):
+    def process(self, show_progress=False):
         #if 'R1' in self.fns:
         #    self.stitch_read_pairs()
 
@@ -465,7 +444,7 @@ class Experiment(object):
         print('finished with {0}: {1}'.format(self.group, self.name))
         
 class JinExperiment(Experiment):
-    def __init__(self, base_dir, group, name, description=None):
+    def __init__(self, base_dir, group, name, description=None, show_progress=False):
         super().__init__(base_dir, group, name, description)
         self.layout_module = jin_layout
         self.split_at_large_insertions = False
@@ -552,8 +531,8 @@ class JinExperiment(Experiment):
             plt.close(fig)
 
 class BrittExperiment(Experiment):
-    def __init__(self, base_dir, group, name, description=None):
-        super().__init__(base_dir, group, name, description)
+    def __init__(self, base_dir, group, name, description=None, show_progress=False):
+        super().__init__(base_dir, group, name, description, show_progress)
         self.fns.update({
             'supplemental_bam': self.dir / 'supplemental_alignments.bam',
             'supplemental_bam_by_name': self.dir / 'supplemental_alignments.by_name.bam',
@@ -692,7 +671,7 @@ class BrittExperiment(Experiment):
         good_cells = coherence.filter_coherent_cells(self.fns['cell_outcomes'])
         good_cells.to_csv(self.fns['coherent_cell_outcomes'], sep='\t')
 
-    def process(self):
+    def process(self, show_progress=False):
         #self.generate_alignments()
         #self.generate_supplemental_alignments()
         #self.combine_alignments()
@@ -709,6 +688,9 @@ class BrittPooledExperiment(BrittExperiment):
     @property
     def reads(self):
         rs = fastq.reads(self.fns['R2'], up_to_space=True)
+        if self.show_progress:
+            rs = progress(rs)
+
         return rs
     
     def count_outcomes(self, fn_key='bam_by_name'):
@@ -777,7 +759,7 @@ class BrittPooledExperiment(BrittExperiment):
             for outcome in most_abundant_outcomes:
                 fh.write(str(outcome) + '\n')
 
-    def process(self):
+    def process(self, show_progress=False):
         #self.generate_alignments()
         #self.generate_supplemental_alignments()
         #self.combine_alignments()
@@ -789,6 +771,9 @@ class BrittAmpliconExperiment(BrittExperiment):
     @property
     def reads(self):
         rs = fastq.reads(self.fns['R1'], up_to_space=True)
+        rs = islice(rs, 100000)
+        if self.show_progress:
+            rs = progress(rs)
         return rs
     
     def generate_alignments(self):
@@ -806,14 +791,18 @@ class BrittAmpliconExperiment(BrittExperiment):
 
         sam.sort_bam(self.fns['bam'], self.fns['bam_by_name'], by_name=True)
 
-    def count_outcomes(self, fn_key='bam_by_name'):
+    def count_outcomes(self):
         if self.fns['outcomes_dir'].is_dir():
             shutil.rmtree(str(self.fns['outcomes_dir']))
 
         self.fns['outcomes_dir'].mkdir()
 
-        bam_fh = pysam.AlignmentFile(str(self.fns[fn_key]))
+        bam_fh = pysam.AlignmentFile(str(self.fns['combined_bam_by_name']))
         alignment_groups = sam.grouped_by_name(bam_fh)
+
+        if self.show_progress:
+            alignment_groups = progress(alignment_groups)
+
         outcomes = defaultdict(list)
 
         with self.fns['outcome_list'].open('w') as fh:
@@ -838,7 +827,7 @@ class BrittAmpliconExperiment(BrittExperiment):
         qname_to_outcome = {}
         bam_fhs = {}
 
-        full_bam_fh = pysam.AlignmentFile(str(self.fns[fn_key]))
+        full_bam_fh = pysam.AlignmentFile(str(self.fns['combined_bam_by_name']))
         
         for outcome, qnames in outcomes.items():
             outcome_fns = self.outcome_fns(outcome)
@@ -866,9 +855,9 @@ class BrittAmpliconExperiment(BrittExperiment):
 
     def process(self):
         #self.generate_alignments()
-        #self.generate_supplemental_alignments()
+        #self.generate_supplemental_alignments(num_threads=18)
         #self.combine_alignments()
-        self.count_outcomes(fn_key='combined_bam_by_name')
+        self.count_outcomes()
         #self.collapse_UMI_outcomes()
         #self.make_outcome_plots(num_examples=3)
 

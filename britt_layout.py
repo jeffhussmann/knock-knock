@@ -4,8 +4,6 @@ import numpy as np
 
 from sequencing import interval, sam, utilities
 
-from . import layout
-
 class Layout(object):
     def __init__(self, alignments, target_info):
         self.alignments = [al for al in alignments if not al.is_unmapped]
@@ -44,6 +42,15 @@ class Layout(object):
         ]
         
         return s_als
+    
+    @utilities.memoized_property
+    def phiX_alignments(self):
+        als = [
+            al for al in self.alignments
+            if al.reference_name == 'phiX'
+        ]
+        
+        return als
     
     @utilities.memoized_property
     def parsimonious_target_alignments(self):
@@ -124,7 +131,7 @@ class Layout(object):
                 up_to[name] = max(al.reference_end for al in relevant)
 
         return up_to
-    
+
     @utilities.memoized_property
     def specific_to_endogenous(self):
         specific = {}
@@ -358,6 +365,11 @@ class Layout(object):
             subcategory = 'large deletion'
             details = 'D:{0}-{1} ({2})'.format(*self.large_deletion_info)
 
+        elif self.phiX_alignments:
+            category = 'phiX'
+            subcategory = 'phiX'
+            details = 'n/a'
+
         else:
             num_Ns = Counter(self.seq)['N']
 
@@ -476,6 +488,10 @@ category_order = [
          'HBBP1',
          'HBD',
          'other offtarget',
+        ),
+    ),
+    ('phiX',
+        ('phiX',
         ),
     ),
     ('bad sequence',
