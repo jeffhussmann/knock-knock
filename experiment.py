@@ -448,7 +448,6 @@ class Experiment(object):
         before_R2 = adapters.primers[self.sequencing_primers]['R2']
         with self.fns['stitched'].open('w') as fh:
             read_pairs = fastq.read_pairs(self.fns['R1'], self.fns['R2'])
-            #read_pairs = islice(read_pairs, 20000)
             for R1, R2 in read_pairs:
                 stitched = sw.stitch_read_pair(R1, R2, before_R1, before_R2)
                 fh.write(str(stitched))
@@ -569,7 +568,7 @@ class BrittExperiment(Experiment):
         self.layout_module = britt_layout
         self.split_at_large_insertions = True
 
-    def generate_supplemental_alignments(self):
+    def generate_supplemental_alignments(self, num_threads=1):
         ''' Use bowtie2 to produce local alignments to CRCh38, filtering out
         spurious alignmnents of polyA or polyG stretches. '''
 
@@ -577,18 +576,17 @@ class BrittExperiment(Experiment):
         template, mappings = mapping_tools.map_bowtie2(
             bowtie2_index,
             reads=self.reads,
-            bam_output=True,
             local=True,
             score_min='C,60,0',
             memory_mapped_IO=True,
             report_up_to=10,
             yield_mappings=True,
-            num_reads=10000,
+            threads=num_threads,
             custom_binary=True,
         )
 
         bam_fn = str(self.fns['supplemental_bam'])
-        with pysam.AlignmentFile(bam_fn, 'wb', template=template) as bam_fh:
+        with sam.AlignmentSorter(bam_fn, header=template.header) as sorter:
             homopolymer_length = 10
             homopolymers = {b*homopolymer_length for b in ['A', 'G']}
 
@@ -599,7 +597,7 @@ class BrittExperiment(Experiment):
 
                 contains_hp = any(hp in al_seq for hp in homopolymers)
                 if not contains_hp and not mapping.is_unmapped:
-                    bam_fh.write(mapping)
+                    sorter.write(mapping)
                         
         sam.sort_bam(self.fns['supplemental_bam'],
                      self.fns['supplemental_bam_by_name'],
@@ -791,21 +789,19 @@ class BrittAmpliconExperiment(BrittExperiment):
     @property
     def reads(self):
         rs = fastq.reads(self.fns['R1'], up_to_space=True)
-        #rs = islice(rs, 10000)
         return rs
     
     def generate_alignments(self):
         mapping_tools.map_bowtie2(
             self.target_info.fns['bowtie2_index'],
-            #reads=self.reads,
-            R1_fn=self.fns['R1'][0],
+            reads=self.reads,
             output_file_name=self.fns['bam'],
             bam_output=True,
             local=True,
             report_all=True,
             error_file_name='/home/jah/projects/britt/bowtie2_error.txt',
             custom_binary=True,
-            num_reads=10000,
+            threads=18,
         )
 
         sam.sort_bam(self.fns['bam'], self.fns['bam_by_name'], by_name=True)
@@ -869,10 +865,10 @@ class BrittAmpliconExperiment(BrittExperiment):
                 fh.write(str(outcome) + '\n')
 
     def process(self):
-        self.generate_alignments()
-        self.generate_supplemental_alignments()
+        #self.generate_alignments()
+        #self.generate_supplemental_alignments()
         #self.combine_alignments()
-        #self.count_outcomes(fn_key='combined_bam_by_name')
+        self.count_outcomes(fn_key='combined_bam_by_name')
         #self.collapse_UMI_outcomes()
         #self.make_outcome_plots(num_examples=3)
 
