@@ -90,10 +90,11 @@ def plot_read(alignments,
     if paired:
         read_length = paired
         reverse_complement = False
+
     elif not all(al.is_unmapped for al in alignments):
-        layout_info = {'alignments': {'all': alignments}}
-        layout_module.identify_flanking_target_alignments(layout_info, target_info)
-        reverse_complement = (layout_info['strand'] == '-')
+        layout = layout_module.Layout(alignments, target_info)
+        reverse_complement = (layout.strand == '-')
+
     else:
         reverse_complement = False
 
@@ -328,8 +329,8 @@ def plot_read(alignments,
             target = target_info.target
             donor = target_info.donor
             features_to_show = [
-                (target, 'forward primer'),
-                (target, 'reverse primer'),
+                (target, target_info.primer_names[5]),
+                (target, target_info.primer_names[3]),
                 (target, "3' HA"),
                 (target, "5' HA"),
                 (target, target_info.sgRNA),
@@ -600,7 +601,7 @@ def explore(base_dir, by_outcome=False, draw_mismatches=False, parsimonious=True
             return None
 
         fig = plot_read(als, exp.target_info, size_multiple=size_multiple, max_qual=max_qual, **kwargs)
-        print(als[0].get_forward_sequence())
+        #print(als[0].get_forward_sequence())
 
         return fig
 
@@ -618,7 +619,7 @@ def explore(base_dir, by_outcome=False, draw_mismatches=False, parsimonious=True
     layout = ipywidgets.VBox(
         [make_row(top_row_keys),
          make_row(['parsimonious', 'show_qualities', 'draw_mismatches', 'show_sequence']),
-         widgets['zoom_in'],
+         #widgets['zoom_in'],
          interactive.children[-1],
          output,
         ],

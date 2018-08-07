@@ -20,6 +20,11 @@ class TargetInfo(object):
         self.sgRNA = manifest.get('sgRNA', 'sgRNA') 
         self.knockin = manifest.get('knockin', 'GFP') 
 
+        self.primer_names = {
+            5: manifest.get('forward primer', 'forward primer'),
+            3: manifest.get('reverse primer', 'reverse primer'),
+        }
+
         self.fns = {
             'ref_fasta': self.dir / 'refs.fasta',
             'ref_gff': self.dir / 'refs.gff',
@@ -33,7 +38,6 @@ class TargetInfo(object):
     def make_references(self):
         ''' Generate fasta and gff files from genbank inputs. '''
         gbs = [self.dir / (source + '.gb') for source in self.sources]
-        print(gbs)
         
         fasta_records = []
         all_gff_features = []
@@ -102,10 +106,7 @@ class TargetInfo(object):
     
     @utilities.memoized_property
     def primers(self):
-        primers = {
-            5: self.features[self.target, 'forward primer'],
-            3: self.features[self.target, 'reverse primer'],
-        }
+        primers = {side: self.features[self.target, self.primer_names[side]] for side in [5, 3]}
         return primers
 
     @utilities.memoized_property

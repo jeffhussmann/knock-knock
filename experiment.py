@@ -13,7 +13,7 @@ import bokeh.palettes
 import pysam
 import yaml
 import scipy.signal
-import tqdm; progress = tqdm.tqdm
+#import tqdm; progress = tqdm.tqdm
 
 from sequencing import sam, fastq, utilities, visualize_structure, sw, adapters, mapping_tools
 
@@ -47,11 +47,11 @@ def extract_color(description):
     return color
 
 class Experiment(object):
-    def __init__(self, base_dir, group, name, description=None, show_progress=False):
+    def __init__(self, base_dir, group, name, description=None, progress=None):
         self.group = group
         self.name = name
 
-        self.show_progress = show_progress
+        self.progress = progress
 
         base_dir = Path(base_dir)
         self.dir = base_dir / 'results' / group / name
@@ -142,8 +142,8 @@ class Experiment(object):
     @property
     def reads(self):
         rs = fastq.reads(self.fns['fastqs'], up_to_space=True)
-        if self.show_progress:
-            rs = progress(rs)
+        if self.progress is not None:
+            rs = self.progress(rs)
 
         return rs
 
@@ -154,10 +154,10 @@ class Experiment(object):
 
     @utilities.memoized_property
     def read_lengths(self):
-        #lengths = Counter(len(r.seq) for r in self.reads)
-        #lengths = utilities.counts_to_array(lengths)
-        lengths = np.zeros(300)
-        lengths[290] += 1
+        lengths = Counter(len(r.seq) for r in self.reads)
+        lengths = utilities.counts_to_array(lengths)
+        #lengths = np.zeros(300)
+        #lengths[290] += 1
         return lengths
 
     @property
@@ -260,34 +260,26 @@ class Experiment(object):
 
         bam_fh = pysam.AlignmentFile(str(self.fns[fn_key]))
         alignment_groups = sam.grouped_by_name(bam_fh)
+        if self.progress is not None:
+            alignment_groups = self.progress(alignment_groups)
+
         outcomes = defaultdict(list)
 
         sort_order = {}
         with self.fns['outcome_list'].open('w') as fh:
             for name, als in alignment_groups:
-                layout_info = self.layout_module.characterize_layout(als, self.target_info)
+                layout = self.layout_module.Layout(als, self.target_info)
+                category, subcategory, details = layout.categorize()
                 
-                outcome = layout_info['outcome']
-                outcomes[outcome['description']].append(name)
+                outcomes[category, subcategory].append(name)
 
-                sort_order[outcome['description']] = outcome['sort_order']
-
-                category, subcat = outcome['description']
-                details = str(layout_info['details'])
-                fh.write('{0}\t{1}\t{2}\t{3}\n'.format(name, category, subcat, details))
+                fh.write('{0}\t{1}\t{2}\t{3}\n'.format(name, category, subcategory, details))
 
         bam_fh.close()
 
         counts = {description: len(names) for description, names in outcomes.items()}
         pd.Series(counts).to_csv(self.fns['outcome_counts'], sep='\t')
 
-        with self.fns['outcome_sort_order'].open('w') as fh:
-            for outcome, priority in sort_order.items():
-                outcome_string = '_'.join(outcome)
-                priority_string = '_'.join(map(str, priority))
-
-                fh.write('{0}\t{1}\n'.format(outcome_string, priority_string))
-        
         # To make plotting easier, for each outcome, make a file listing all of
         # qnames for the outcome and a bam file (sorted by name) with all of the
         # alignments for these qnames.
@@ -386,7 +378,7 @@ class Experiment(object):
         if x_lims is None:
             x_lims = (0, len(ys))
 
-        fig, ax = plt.subplots(figsize=(16, 5))
+        fig, ax = plt.subplots(figsize=(26, 5))
 
         ax.plot(ys, color=self.color)
         ax.set_ylim(0, 1.01 * max(ys))
@@ -431,14 +423,14 @@ class Experiment(object):
                 stitched = sw.stitch_read_pair(R1, R2, before_R1, before_R2)
                 fh.write(str(stitched))
         
-    def process(self, show_progress=False):
+    def process(self):
         #if 'R1' in self.fns:
         #    self.stitch_read_pairs()
 
         #self.call_peaks_in_length_distribution()
         #self.generate_alignments()
         self.count_outcomes()
-        #self.make_outcome_plots(num_examples=3)
+        self.make_outcome_plots(num_examples=3)
         #self.make_text_visualizations()
 
         print('finished with {0}: {1}'.format(self.group, self.name))

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import yaml
 import pandas as pd
+import tqdm
 
 from knockin import experiment, table
 
@@ -98,7 +99,10 @@ elif args.process is not None:
     check_blastn()
 
     group, name = args.process
-    show_progress = not args.no_progress
+    if args.no_progress:
+        progress = None
+    else:
+        progress = tqdm.tqdm
         
     data_dir = Path(args.base_dir) / 'data' / group
     sample_sheet_fn = data_dir / 'sample_sheet.yaml'
@@ -116,7 +120,7 @@ elif args.process is not None:
     else:
         exp_class = experiment.Experiment
 
-    exp = exp_class(args.base_dir, group, name, description, show_progress)
+    exp = exp_class(args.base_dir, group, name, description, progress)
 
     exp.process()
 
