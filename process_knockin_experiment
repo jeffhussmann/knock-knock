@@ -26,7 +26,6 @@ def check_blastn():
         sys.exit(0)
 
 def check_parallel():
-    print('checking parallel')
     no_parallel = False
 
     try:
@@ -48,6 +47,7 @@ parser.add_argument('--no_progress', action='store_true')
 mode_group = parser.add_mutually_exclusive_group(required=True)
 mode_group.add_argument('--process', nargs=2, metavar=('GROUP_NAME', 'EXP_NAME'))
 mode_group.add_argument('--parallel', metavar='MAX_PROCS')
+mode_group.add_argument('--pool_parallel', nargs=2, metavar=('GROUP_NAME', 'MAX_PROCS'))
 mode_group.add_argument('--html', metavar='FILE_NAME')
 mode_group.add_argument('--csv', metavar='FILE_NAME')
 
@@ -55,6 +55,8 @@ parser.add_argument('--conditions')
 parser.add_argument('--drop_outcomes')
 
 args = parser.parse_args()
+
+base_dir = Path(args.base_dir)
 
 if args.conditions is None:
     conditions = {}
@@ -71,7 +73,7 @@ if args.parallel is not None:
 
     max_procs = args.parallel
 
-    exps = experiment.get_all_experiments(args.base_dir, conditions)
+    exps = experiment.get_all_experiments(base_dir, conditions)
 
     if len(exps) == 0:
         print('No experiments satify conditions:')
@@ -81,7 +83,38 @@ if args.parallel is not None:
     parallel_command = [
         'parallel',
         '-n', '2', 
-        '--verbose',
+        '--bar',
+        '--max-procs', max_procs,
+        'process_knockin_experiment',
+        '--base_dir', str(base_dir),
+        '--no_progress',
+        '--process', ':::',
+    ]
+
+    arg_pairs = [(e.group, e.name) for e in exps]
+    for pair in sorted(arg_pairs):
+        parallel_command.extend(pair)
+    
+    subprocess.check_call(parallel_command)
+
+elif args.pool_parallel is not None:
+    check_parallel()
+
+    group, max_procs = args.pool_parallel
+
+    sample_sheet_fn = base_dir / 'data' / group / 'sample_sheet.yaml'
+    sample_sheet = yaml.load(sample_sheet_fn.read_text())
+    counts_fn = base_dir / 'data' / group / sample_sheet['guide_counts']
+    guide_counts = pd.read_table(counts_fn, header=None, index_col=0, squeeze=True)
+
+    # Create parent results dir to avoid race condition
+    results_dir = base_dir / 'results' / group
+    results_dir.mkdir(exist_ok=True)
+
+    parallel_command = [
+        'parallel',
+        '-n', '2', 
+        '--bar',
         '--max-procs', max_procs,
         'process_knockin_experiment',
         '--base_dir', args.base_dir,
@@ -89,7 +122,7 @@ if args.parallel is not None:
         '--process', ':::',
     ]
 
-    arg_pairs = [(e.group, e.name) for e in exps]
+    arg_pairs = [(group, guide) for guide in guide_counts.index]
     for pair in sorted(arg_pairs):
         parallel_command.extend(pair)
     
@@ -107,26 +140,33 @@ elif args.process is not None:
     data_dir = Path(args.base_dir) / 'data' / group
     sample_sheet_fn = data_dir / 'sample_sheet.yaml'
     sample_sheet = yaml.load(sample_sheet_fn.read_text())
-    description = sample_sheet[name]
 
-    if description.get('experiment_type') == 'britt':
-        exp_class = experiment.BrittExperiment
-    elif description.get('experiment_type') == 'britt_pooled':
-        exp_class = experiment.BrittPooledExperiment
-    elif description.get('experiment_type') == 'britt_amplicon':
-        exp_class = experiment.BrittAmpliconExperiment
-    elif description.get('experiment_type') == 'jin':
-        exp_class = experiment.JinExperiment
+    if name in sample_sheet:
+        description = sample_sheet[name]
+
+        if description.get('experiment_type') == 'britt':
+            exp_class = experiment.BrittExperiment
+        elif description.get('experiment_type') == 'single_guide':
+            exp_class = experiment.SingleGuideExperiment
+        elif description.get('experiment_type') == 'britt_amplicon':
+            exp_class = experiment.BrittAmpliconExperiment
+        elif description.get('experiment_type') == 'jin':
+            exp_class = experiment.JinExperiment
+        else:
+            exp_class = experiment.Experiment
     else:
-        exp_class = experiment.Experiment
+        description = sample_sheet
+        exp_class = experiment.SingleGuideExperiment
 
     exp = exp_class(args.base_dir, group, name, description, progress)
 
     exp.process()
 
 elif args.html:
+    drop_outcomes = ['malformed layout', ('indel', 'complex indel')]
     table.generate_html(args.base_dir, args.html, conditions, drop_outcomes)
 
 elif args.csv:
+    drop_outcomes = ['malformed layout', ('indel', 'complex indel')]
     df = table.load_counts(args.base_dir, conditions, drop_outcomes)
     df.to_csv(args.csv)

@@ -9,13 +9,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker
 import ipywidgets
+import pandas as pd
 
 from sequencing import utilities, interval, sam
 
 from . import experiment as experiment_module
 from . import target_info as target_info_module
 from . import layout as layout_module
-from . import britt_layout as britt_layout
 
 def get_mismatch_info(alignment, target_info):
     mismatches = []
@@ -71,12 +71,15 @@ def plot_read(alignments,
               show_qualities=False,
               zoom_in=None,
               size_multiple=1,
-              paired=False,
+              paired_end_read_length=None,
               draw_mismatches=True,
               show_polyA=False,
               show_sequence=False,
-              max_qual=93,
+              max_qual=42,
               process_mappings=None,
+              detect_orientation=False,
+              label_layout=False,
+              highlight_SNPs=False,
               **kwargs):
 
     alignments = copy.deepcopy(alignments)
@@ -87,11 +90,10 @@ def plot_read(alignments,
 
     colors = {name: 'C{0}'.format(i) for i, name in enumerate(target_info.reference_sequences)}
 
-    if paired:
-        read_length = paired
+    if paired_end_read_length is not None:
         reverse_complement = False
 
-    elif not all(al.is_unmapped for al in alignments):
+    elif detect_orientation and not all(al.is_unmapped for al in alignments):
         layout = layout_module.Layout(alignments, target_info)
         reverse_complement = (layout.strand == '-')
 
@@ -102,11 +104,13 @@ def plot_read(alignments,
         layout_info = process_mappings(alignments, target_info)
         alignments = layout_info['to_plot']
 
-    per_rname = 0.06
     gap_between_als = 0.06 * 0.2
     arrow_height = 0.005
     arrow_width = 0.01
     text_y = -7
+
+    cross_x = 1 * 0.5
+    cross_y = cross_x * 0.002
     
     max_y = gap_between_als
     
@@ -128,15 +132,17 @@ def plot_read(alignments,
         'color': 'black'
     }
 
-    if paired:
+    if paired_end_read_length is not None:
         offsets = [
             0,
             -gap_between_als * 0.15,
         ]
 
+        # Cap overhang at a fraction of the overlap length.
+        capped_length = min(paired_end_read_length, query_length * 1.25)
         endpoints = [
-            [0, read_length],
-            [query_length - 1, query_length - 1 - read_length],
+            [0, capped_length],
+            [query_length - 1, query_length - 1 - capped_length],
         ]
 
         signs = [
@@ -150,6 +156,8 @@ def plot_read(alignments,
                     clip_on=False,
                     **read_kwargs)
 
+        read_label = 'read pair'
+
     else:
         ax.plot([0, query_length - 1], [0, 0], **read_kwargs)
 
@@ -161,16 +169,18 @@ def plot_read(alignments,
             arrow_xs = [query_length - 1, (query_length - 1) * (1 - arrow_width)]
         
         ax.plot(arrow_xs, arrow_ys, **read_kwargs)
+
+        read_label = 'sequencing read'
     
-        ax.annotate('sequencing read',
-                    xy=(1, 0),
-                    xycoords=('axes fraction', 'data'),
-                    xytext=(15, 0),
-                    textcoords='offset points',
-                    color='black',
-                    ha='left',
-                    va='center',
-                   )
+    ax.annotate(read_label,
+                xy=(1, 0),
+                xycoords=('axes fraction', 'data'),
+                xytext=(15, 0),
+                textcoords='offset points',
+                color='black',
+                ha='left',
+                va='center',
+               )
 
     if all(al.is_unmapped for al in alignments):
         by_reference_name = []
@@ -187,7 +197,7 @@ def plot_read(alignments,
             for alignment in ref_alignments:
                 alignment.is_reverse = not alignment.is_reverse
 
-        ref_alignments = ref_alignments[:10]
+        ref_alignments = ref_alignments[:20]
         
         offset = offsets[ref_name]
         color = colors.get(ref_name, 'grey')
@@ -233,13 +243,14 @@ def plot_read(alignments,
 
             if draw_mismatches:
                 mismatches = get_mismatch_info(alignment, target_info)
-                cross_x = 1 * 0.5
-                cross_y = cross_x * 0.002
                 for read_p, read_b, ref_p, ref_b, q in mismatches:
-                    if q < max_qual * 0.75:
+                    if highlight_SNPs:
+                        alpha = 0.95
+                    elif q < max_qual * 0.75:
                         alpha = 0.25
                     else:
                         alpha = 0.75
+
                     cross_kwargs = dict(zorder=10, color='black', alpha=alpha)
                     ax.plot([read_p - cross_x, read_p + cross_x], [y - cross_y, y + cross_y], **cross_kwargs)
                     ax.plot([read_p + cross_x, read_p - cross_x], [y - cross_y, y + cross_y], **cross_kwargs)
@@ -328,22 +339,50 @@ def plot_read(alignments,
             features = target_info.features
             target = target_info.target
             donor = target_info.donor
+
             features_to_show = [
                 (target, target_info.primer_names[5]),
                 (target, target_info.primer_names[3]),
                 (target, "3' HA"),
                 (target, "5' HA"),
-                (target, target_info.sgRNA),
-                (donor, "3' HA"),
-                (donor, "5' HA"),
+                #(target, target_info.sgRNA),
+                #(donor, "3' HA"),
+                #(donor, "5' HA"),
                 (donor, target_info.knockin),
                 (target, 'PAS'),
+                (target, 'protospacer'),
+                (donor, 'GFP11'),
             ]
             
             q_to_r = {sam.true_query_position(q, alignment): r
                       for q, r in alignment.aligned_pairs
                       if r is not None and q is not None
                      }
+
+            if highlight_SNPs:
+                SNP_names = [(s_n, f_n) for s_n, f_n in target_info.features if s_n  == ref_name and f_n.startswith('SNP')]
+                for feature_reference, feature_name in SNP_names:
+                    feature = features[feature_reference, feature_name]
+                    
+                    qs = [q for q, r in q_to_r.items() if feature.start <= r <= feature.end]
+                    if len(qs) != 1:
+                        continue
+
+                    q = qs[0]
+
+                    left_x = q - 0.5
+                    right_x = q + 0.5
+                    bottom_y = y - (cross_y * 2)
+                    top_y = y + (cross_y * 2)
+                    path_xs = [left_x, right_x, right_x, left_x]
+                    path_ys = [bottom_y, bottom_y, top_y, top_y]
+                    path = np.array([path_xs, path_ys]).T
+                    patch = plt.Polygon(path, color='black', alpha=0.2, linewidth=0)
+                    ax.add_patch(patch)
+                    
+            target_info.features.update(target_info.around_cut_features)
+            features_to_show.extend(list(target_info.around_cut_features))
+
             for feature_reference, feature_name in features_to_show:
                 if ref_name != feature_reference:
                     continue
@@ -381,7 +420,7 @@ def plot_read(alignments,
                     
                 ax.fill_between(xs, [y] * 2, [0] * 2, color=feature_color, alpha=0.7)
                 
-                if xs[1] - xs[0] > 20 or feature.attribute['ID'] == target_info.sgRNA:
+                if xs[1] - xs[0] > 18 or feature.attribute['ID'] == target_info.sgRNA:
                     ax.annotate(feature.attribute['ID'],
                                 xy=(np.mean(xs), 0),
                                 xycoords='data',
@@ -394,7 +433,14 @@ def plot_read(alignments,
                                 weight='bold',
                                )
 
-    ax.set_title(query_name, y=1.2)
+    if label_layout:
+        layout = layout_module.Layout(alignments, target_info)
+        cat, subcat, details = layout.categorize()
+        title = '{}\n{}, {}, {}'.format(query_name, cat, subcat, details)
+    else:
+        title = query_name
+
+    ax.set_title(title, y=1.2)
         
     ax.set_ylim(-0.2 * max_y, 1.1 * max_y)
     ax.set_xlim(x_min, x_max)
@@ -438,16 +484,18 @@ def plot_read(alignments,
                     
     if show_sequence:
         seq = alignments[0].get_forward_sequence()
+
         for x, b in enumerate(seq):
-            ax.annotate(b,
-                        xy=(x, 0),
-                        family='monospace',
-                        size=4,
-                        xytext=(0, -2),
-                        textcoords='offset points',
-                        ha='center',
-                        va='top',
-                       )
+            if x_min <= x <= x_max:
+                ax.annotate(b,
+                            xy=(x, 0),
+                            family='monospace',
+                            size=4,
+                            xytext=(0, -2),
+                            textcoords='offset points',
+                            ha='center',
+                            va='top',
+                           )
         
     return fig
 
@@ -487,8 +535,163 @@ def make_stacked_Image(als_iter, target_info, titles=None, **kwargs):
         y_start += im.height
 
     return stacked_im
+
+def explore_pooled(base_dir, group,
+                   by_outcome=False,
+                   draw_mismatches=False,
+                   parsimonious=True,
+                   show_sequence=False,
+                   size_multiple=1.75,
+                   max_qual=93,
+                   highlight_SNPs=False,
+                  ):
+    pool = experiment_module.PooledExperiment(base_dir, group)
+
+    guides = pool.guides
+
+    widgets = {
+        'guide': ipywidgets.Select(options=guides, layout=ipywidgets.Layout(height='200px', width='450px')),
+        'read_id': ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='600px')),
+        'parsimonious': ipywidgets.ToggleButton(value=parsimonious),
+        'show_qualities': ipywidgets.ToggleButton(value=False),
+        'draw_mismatches': ipywidgets.ToggleButton(value=draw_mismatches),
+        'show_sequence': ipywidgets.ToggleButton(value=show_sequence),
+        'highlight_SNPs': ipywidgets.ToggleButton(value=highlight_SNPs),
+        'outcome': ipywidgets.Select(options=[], continuous_update=False, layout=ipywidgets.Layout(height='200px', width='450px')),
+        'zoom_in': ipywidgets.FloatRangeSlider(value=[-0.02, 1.02], min=-0.02, max=1.02, step=0.001, continuous_update=False, layout=ipywidgets.Layout(width='1200px')),
+        'save': ipywidgets.Button(description='Save'),
+        'file_name': ipywidgets.Text(value=str(base_dir / 'figures')),
+    }
+
+    def save(change):
+        fig = interactive.result
+        fn = widgets['file_name'].value
+        fig.savefig(fn, bbox_inches='tight')
+
+    widgets['save'].on_click(save)
+
+    # For some reason, the target widget doesn't get a label without this.
+    for k, v in widgets.items():
+        v.description = k
+
+    output = ipywidgets.Output()
+
+    def get_exp():
+        guide = widgets['guide'].value
+        exp = experiment_module.SingleGuideExperiment(base_dir, group, guide)
+        return exp
+
+    @output.capture()
+    def populate_outcomes(change):
+        previous_value = widgets['outcome'].value
+
+        exp = get_exp()
+
+        outcomes = {(c, sc) for c, sc, d in exp.outcome_counts.index.values}
+
+        widgets['outcome'].options = [('_'.join(outcome), outcome) for outcome in outcomes]
+        if outcomes:
+            if previous_value in outcomes:
+                widgets['outcome'].value = previous_value
+                populate_read_ids(None)
+            else:
+                widgets['outcome'].value = widgets['outcome'].options[0][1]
+        else:
+            widgets['outcome'].value = None
+
+    @output.capture()
+    def populate_read_ids(change):
+        exp = get_exp()
+
+        df = exp.filtered_cell_outcomes
+
+        if exp is None:
+            return
+
+        if by_outcome:
+            outcome = widgets['outcome'].value
+            if outcome is None:
+                qnames = []
+            else:
+                category, subcategory = outcome
+                right_outcome = df.query('category == @category and subcategory == @subcategory')
+                qnames = right_outcome['original_name'].values[:200]
+        else:
+            qnames = df['original_name'].values[:200]
+
+        widgets['read_id'].options = qnames
+
+        if len(qnames) > 0:
+            widgets['read_id'].value = qnames[0]
+            widgets['read_id'].index = 0
+        else:
+            widgets['read_id'].value = None
+            
+    if by_outcome:
+        populate_outcomes({'name': 'initial'})
+
+    populate_read_ids({'name': 'initial'})
+
+    if by_outcome:
+        widgets['outcome'].observe(populate_read_ids, names='value')
+        widgets['guide'].observe(populate_outcomes, names='value')
+    else:
+        widgets['guide'].observe(populate_read_ids, names='value')
+
+    @output.capture(clear_output=True)
+    def plot(guide, read_id, **kwargs):
+        exp = get_exp()
+
+        if exp is None:
+            return
+
+        if by_outcome:
+            als = exp.get_read_alignments(read_id, outcome=kwargs['outcome'])
+        else:
+            als = exp.get_read_alignments(read_id)
+
+        if als is None:
+            return None
+
+        fig = plot_read(als, exp.target_info,
+                        size_multiple=size_multiple,
+                        max_qual=max_qual,
+                        paired_end_read_length=exp.paired_end_read_length,
+                        **kwargs)
+
+        print(als[0].get_forward_sequence())
+        print(als[0].query_name)
+
+        return fig
+
+    # Make a version of the widgets dictionary that excludes non-plot arguments.
+    most_widgets = widgets.copy()
+    most_widgets.pop('save')
+    most_widgets.pop('file_name')
+
+    interactive = ipywidgets.interactive(plot, **most_widgets)
+    interactive.update()
+
+    def make_row(keys):
+        return ipywidgets.HBox([widgets[k] for k in keys])
+
+    if by_outcome:
+        top_row_keys = ['guide', 'outcome', 'read_id']
+    else:
+        top_row_keys = ['guide', 'read_id']
+
+    layout = ipywidgets.VBox(
+        [make_row(top_row_keys),
+         make_row(['parsimonious', 'show_qualities', 'draw_mismatches', 'show_sequence', 'highlight_SNPs', 'save', 'file_name']),
+         #widgets['zoom_in'],
+         interactive.children[-1],
+         output,
+        ],
+    )
+
+    return layout
     
-def explore(base_dir, by_outcome=False, draw_mismatches=False, parsimonious=True, show_sequence=True, size_multiple=1.75, max_qual=93):
+def explore(base_dir, by_outcome=False, draw_mismatches=False, parsimonious=True, show_sequence=False, size_multiple=1.75, max_qual=93):
     target_names = [t.name for t in target_info_module.get_all_targets(base_dir)]
 
     widgets = {
@@ -600,8 +803,12 @@ def explore(base_dir, by_outcome=False, draw_mismatches=False, parsimonious=True
         if als is None:
             return None
 
-        fig = plot_read(als, exp.target_info, size_multiple=size_multiple, max_qual=max_qual, **kwargs)
-        #print(als[0].get_forward_sequence())
+        fig = plot_read(als, exp.target_info,
+                        size_multiple=size_multiple,
+                        max_qual=max_qual,
+                        paired_end_read_length=exp.paired_end_read_length,
+                        **kwargs)
+        print(als[0].get_forward_sequence())
 
         return fig
 
@@ -627,7 +834,7 @@ def explore(base_dir, by_outcome=False, draw_mismatches=False, parsimonious=True
 
     return layout
 
-def make_length_plot(read_lengths, color, outcome_lengths=None):
+def make_length_plot(read_lengths, color, outcome_lengths=None, max_length=None):
     def plot_nonzero(ax, xs, ys, color, highlight):
         nonzero = ys.nonzero()
         if highlight:
@@ -663,7 +870,7 @@ def make_length_plot(read_lengths, color, outcome_lengths=None):
 
     ax.set_xlabel('Length of read')
     ax.set_ylabel('Number of reads')
-    ax.set_xlim(0, 8000)
+    ax.set_xlim(0, len(read_lengths) * 1.05)
     ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
 
     return fig

@@ -1,4 +1,6 @@
 import io
+import matplotlib
+matplotlib.use('Agg', warn=False)
 import matplotlib.pyplot as plt
 
 from . import  table
@@ -16,8 +18,8 @@ before_path_template = '''\
 after_path = '''\
 "
 style="fill:#000000;stroke:#000000;stroke-linejoin:miter;"
-fill-opacity="0.01"
-stroke-opacity="0.05"
+fill-opacity="0.00"
+stroke-opacity="0.00"
 />
 </a>'''
 
@@ -51,15 +53,15 @@ after_svg = '''\
         });
 
         $('[data-toggle="popover"]').on('hide.bs.popover', function() {
-          $("path", this).attr('stroke-opacity', '0.05');
+          $("path", this).attr('stroke-opacity', '0.0');
         });
     });
 </script>
 
 </body>'''
 
-def length_plot_with_popovers(exp, standalone=False, container_selector='body'):
-    fig = exp.length_distribution_figure(show_ranges=True)
+def length_plot_with_popovers(exp, standalone=False, container_selector='body', x_lims=None):
+    fig = exp.length_distribution_figure(show_ranges=True, x_lims=x_lims)
 
     with io.StringIO() as buf:
         fig.savefig(buf, format='svg', bbox_inches='tight')
@@ -84,28 +86,29 @@ def length_plot_with_popovers(exp, standalone=False, container_selector='body'):
         output_lines.append(line)
         if '<g id="length_range_' in line:
             start, end = extract_length_range(line)
-            im = exp.span_to_Image(start, end, num_examples=3)
-            URI, width, height = table.Image_to_png_URI(im)
+            fn = exp.fns['length_range_figures'] / '{}_{}.png'.format(start, end)
+            if fn.exists():
+                URI, width, height = table.fn_to_URI(fn)
 
-            before_path = before_path_template.format(URI=URI,
-                                                      width=width,
-                                                      height=height,
-                                                      container_selector=container_selector,
-                                                     )
-            output_lines.append(before_path)
-            line_i += 1
-            line = lines[line_i]
-            while not line.endswith('/>\n'):
-                output_lines.append(line)
+                before_path = before_path_template.format(URI=URI,
+                                                          width=width,
+                                                          height=height,
+                                                          container_selector=container_selector,
+                                                          )
+                output_lines.append(before_path)
                 line_i += 1
-                try:
-                    line = lines[line_i]
-                except IndexError:
-                    print(line_i, len(lines))
-                    print(lines[-1])
-                    raise
-                
-            output_lines.append(after_path)
+                line = lines[line_i]
+                while not line.endswith('/>\n'):
+                    output_lines.append(line)
+                    line_i += 1
+                    try:
+                        line = lines[line_i]
+                    except IndexError:
+                        print(line_i, len(lines))
+                        print(lines[-1])
+                        raise
+
+                output_lines.append(after_path)
         line_i += 1
 
     if standalone:

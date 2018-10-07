@@ -16,7 +16,7 @@ def h_to_s(kind):
 def replace_hard_clip_with_soft(cigar):
     return [(h_to_s(k), l) for k, l in cigar]
 
-def blast(ref_fn, reads, bam_fn, bam_by_name_fn, split_at_large_insertions=True):
+def blast(ref_fn, reads, bam_fn, bam_by_name_fn, max_insertion_length=None):
     with tempfile.TemporaryDirectory(suffix='_blast') as temp_dir:
         temp_dir_path = Path(temp_dir)
 
@@ -46,6 +46,8 @@ def blast(ref_fn, reads, bam_fn, bam_by_name_fn, split_at_large_insertions=True)
             'blastn',
             '-task', 'blastn', # default is megablast
             '-evalue', '0.1',
+            '-gapopen', '10',
+            '-gapextend', '4',
             '-max_target_seqs', '1000000',
             '-parse_deflines', # otherwise qnames/rnames are lost
             '-outfmt', '17', # SAM output
@@ -72,8 +74,14 @@ def blast(ref_fn, reads, bam_fn, bam_by_name_fn, split_at_large_insertions=True)
             unal.query_qualities = fastq.decode_sanger(read.qual)
             return unal
 
-        sam_fh = pysam.AlignmentFile(str(sam_fn))
-        header = sam_fh.header
+        try:
+            sam_fh = pysam.AlignmentFile(str(sam_fn))
+            header = sam_fh.header
+        except ValueError:
+            # blast had no output
+            header = sam.header_from_fasta(ref_fn)
+            pysam.AlignmentFile(str(sam_fn), 'wb', header=header).close()
+            sam_fh = pysam.AlignmentFile(str(sam_fn))
 
         sorter = sam.AlignmentSorter(bam_fn, header)
         by_name_sorter = sam.AlignmentSorter(bam_by_name_fn, header, by_name=True)
@@ -85,8 +93,8 @@ def blast(ref_fn, reads, bam_fn, bam_by_name_fn, split_at_large_insertions=True)
 
                 undo_hard_clipping(al)
 
-                if split_at_large_insertions:
-                    split_als = sam.split_at_large_insertions(al)
+                if max_insertion_length is not None:
+                    split_als = sam.split_at_large_insertions(al, max_insertion_length + 1)
 
                     for split_al in split_als:
                         sorter.write(split_al)

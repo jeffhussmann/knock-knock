@@ -76,6 +76,20 @@ link_template = '''\
     {text}
 </a>
 '''
+
+link_without_modal_template = '''\
+<a 
+    data-toggle="popover" 
+    data-trigger="hover"
+    data-html="true"
+    data-placement="auto"
+    data-content="<img width={width} height={height} src={URI}>"
+    style="text-decoration:none; color:black"
+>
+    {text}
+</a>
+'''
+
 modal_template = '''\
 <div class="modal fade" tabindex="-1" id="{modal_id}" role="dialog">
     <div class="modal-dialog" style="width:95%; margin:auto;">
@@ -147,16 +161,15 @@ def make_table(base_dir, conditions=None, drop_outcomes=None):
             fraction = val / float(totals[col])
             
             if row == totals_row_label:
-                modal_div, modal_id = modal_maker.make_length(exp)
+                #modal_div, modal_id = modal_maker.make_length(exp)
 
                 hover_image_fn = str(exp.fns['lengths_figure'])
                 hover_URI, width, height = fn_to_URI(hover_image_fn)
 
-                link = link_template.format(text='{:,}'.format(val),
-                                            modal_id=modal_id,
-                                            URI=hover_URI,
-                                            width=width,
-                                            height=height,
+                link = link_without_modal_template.format(text='{:,}'.format(val),
+                                                          URI=hover_URI,
+                                                          width=width,
+                                                          height=height,
                                            )
                 
                 html = link + modal_div
@@ -224,18 +237,18 @@ def make_table_new(base_dir, conditions=None, drop_outcomes=None, include_images
             if outcome == totals_row_label:
                 text = '{:,}'.format(val)
                 if include_images:
-                    modal_div, modal_id = modal_maker.make_length(exp)
+                    #modal_div, modal_id = modal_maker.make_length(exp)
+
                     hover_image_fn = str(exp.fns['lengths_figure'])
                     hover_URI, width, height = fn_to_URI(hover_image_fn)
                 
-                    link = link_template.format(text=text,
-                                                modal_id=modal_id,
-                                                URI=hover_URI,
-                                                width=width,
-                                                height=height,
-                                               )
-                    
-                    html = link + modal_div
+                    link = link_without_modal_template.format(text=text,
+                                                              URI=hover_URI,
+                                                              width=width,
+                                                              height=height,
+                                                             )
+
+                    html = link# + modal_div
                 else:
                     html = text
 
@@ -300,7 +313,7 @@ import knockin.table
 
 conditions = {conditions}
 drop_outcomes = {drop_outcomes}
-knockin.table.make_table('{base_dir}', conditions, drop_outcomes)
+knockin.table.make_table_new('{base_dir}', conditions, drop_outcomes, include_images=True)
 '''.format(conditions=conditions, base_dir=base_dir, drop_outcomes=drop_outcomes)
 
     nb['cells'] = [nbf.new_code_cell(cell_contents)]

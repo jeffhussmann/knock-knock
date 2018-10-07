@@ -1,6 +1,9 @@
 import numpy as np
 
 from sequencing import sam, interval, utilities
+from . import target_info
+
+m_p = utilities.memoized_property
 
 class Layout(object):
     def __init__(self, alignments, target_info):
@@ -36,11 +39,26 @@ class Layout(object):
             subcategory = 'primer far from read edge'
 
         elif not self.has_integration:
-            category = 'no integration'
-            if self.has_scar:
-                subcategory = 'scar near cut'
+            if self.scar_near_cut is not None:
+                category = 'indel'
+
+                if len(self.scar_near_cut) > 1:
+                    subcategory = 'complex indel'
+                else:
+                    kind, indel_details = self.scar_near_cut[0]
+                    if kind == 'D':
+                        d_length = indel_details[0][1]
+                        if d_length < 50:
+                            subcategory = 'deletion <50 nt'
+                        else:
+                            subcategory = 'deletion >=50 nt'
+                    elif kind == 'I':
+                        subcategory = 'insertion'
+
+                details = self.scar_string
             else:
-                subcategory = 'no scar'
+                category = 'no indel'
+                subcategory = 'no indel'
 
         elif self.integration_summary == 'full length':
             category = 'full length'
@@ -50,46 +68,82 @@ class Layout(object):
             category = 'concatamer'
             subcategory = self.junction_summary
 
-        elif self.integration_summary == 'unexpected length':
-            category = 'unexpected length'
-            subcategory = self.messy_junction_description
-
-        elif self.integration_summary == 'unexpected source':
-            category = 'unexpected source'
-
-            if self.e_coli_integration:
-                subcategory = 'e coli'
-            elif self.flipped_donor:
-                subcategory = 'flipped'
-            else:
-                subcategory = 'uncategorized'
+        elif self.integration_summary in ['unexpected length', 'unexpected source']:
+            category = 'uncategorized'
+            subcategory = 'uncategorized'
 
         else:
             print(self.integration_summary)
 
         return category, subcategory, details
+    
+    def categorize_no_donor(self):
+        details = 'n/a'
 
-    @utilities.memoized_property
+        if all(al.is_unmapped for al in self.alignments):
+            category = 'malformed layout'
+            subcategory = 'no alignments detected'
+
+        elif self.extra_copy_of_primer:
+            category = 'malformed layout'
+            subcategory = 'extra copy of primer'
+
+        elif self.missing_a_primer:
+            category = 'malformed layout'
+            subcategory = 'missing a primer'
+
+        elif self.primer_strands[5] != self.primer_strands[3]:
+            category = 'malformed layout'
+            subcategory = 'primers not in same orientation'
+        
+        elif not self.is_mostly_covered:
+            category = 'malformed layout'
+            subcategory = 'primer far from read edge'
+
+        else:
+            if self.scar_near_cut is not None:
+                category = 'indel'
+                if len(self.scar_near_cut) > 1:
+                    subcategory = 'complex indel'
+                else:
+                    kind, indel_details = self.scar_near_cut[0]
+                    if kind == 'D':
+                        d_length = indel_details[0][1]
+                        if d_length < 50:
+                            subcategory = 'deletion <50 nt'
+                        else:
+                            subcategory = 'deletion >=50 nt'
+                    elif kind == 'I':
+                        subcategory = 'insertion'
+
+                details = self.scar_string
+            else:
+                category = 'no indel'
+                subcategory = 'no indel'
+
+        return category, subcategory, details
+
+    @m_p
     def all_primer_alignments(self):
         ''' Get all alignments that contain the amplicon primers. '''
         als = {}
         for side in [5, 3]:
             primer = self.target_info.primers[side]
-            als[side] = [al for al in self.alignments if overlaps_feature(al, primer)]
+            als[side] = [al for al in self.alignments if sam.overlaps_feature(al, primer)]
 
         return als
 
-    @utilities.memoized_property
+    @m_p
     def extra_copy_of_primer(self):
         ''' Check if too many alignments containing either primer were found. '''
         return len(self.all_primer_alignments[5]) > 1 or len(self.all_primer_alignments[3]) > 1
     
-    @utilities.memoized_property
+    @m_p
     def missing_a_primer(self):
         ''' Check if either primer was not found in an alignments. '''
         return len(self.all_primer_alignments[5]) == 0 or len(self.all_primer_alignments[3]) == 0
         
-    @utilities.memoized_property
+    @m_p
     def primer_alignments(self):
         ''' Get the single alignment containing each primer. '''
         if self.extra_copy_of_primer or self.missing_a_primer:
@@ -97,7 +151,7 @@ class Layout(object):
         else:
             return {side: self.all_primer_alignments[side][0] for side in [5, 3]}
         
-    @utilities.memoized_property
+    @m_p
     def primer_strands(self):
         ''' Get which strand each primer-containing alignment mapped to. '''
         if self.primer_alignments is None:
@@ -105,7 +159,7 @@ class Layout(object):
         else:
             return {side: sam.get_strand(self.primer_alignments[side]) for side in [5, 3]}
     
-    @utilities.memoized_property
+    @m_p
     def strand(self):
         ''' Get which strand each primer-containing alignment mapped to. '''
         if self.primer_strands is None:
@@ -115,45 +169,117 @@ class Layout(object):
         else:
             return self.primer_strands[5]
 
-    @utilities.memoized_property
+    @m_p
     def covered_from_primers(self):
         ''' How much of the read is covered by alignments containing the primers? '''
         assert self.primer_strands[5] == self.primer_strands[3]
         return interval.get_disjoint_covered([self.primer_alignments[5], self.primer_alignments[3]])
 
-    @utilities.memoized_property
+    @m_p
     def is_mostly_covered(self):
+        ''' TODO: this is misnamed - should be something like 'covers_beginning_and_end'
+        '''
         return (self.covered_from_primers.start <= 10 and
                 len(self.seq) - self.covered_from_primers.end <= 10
                )
 
-    @utilities.memoized_property
+    @m_p
     def has_integration(self):
         return self.merged_primer_alignment is None
 
-    @utilities.memoized_property
+    @m_p
     def merged_primer_alignment(self):
         primer_als = self.primer_alignments
-        merged = None
 
         if self.is_mostly_covered:
-            if primer_als[5] == primer_als[3]:
-                merged = primer_als[5]
-
-            elif len(self.covered_from_primers) == 1:
-                # The number of disjoint intervals is 1 - i.e. it is a
-                # single connected interval.
-                if primer_als[5].reference_end < primer_als[3].reference_start:
-                    merged = sam.merge_adjacent_alignments(primer_als[5], primer_als[3])
+            merged = sam.merge_adjacent_alignments(primer_als[5], primer_als[3], self.target_info.reference_sequences)
+        else:
+            merged = None
 
         return merged
 
-    @utilities.memoized_property
-    def has_scar(self):
-        indel_size = max_indel_nearby(self.merged_primer_alignment, self.target_info.cut_after, 10)
-        return indel_size > 0
+    @m_p
+    def scar_near_cut(self):
+        d = self.largest_deletion_near_cut
+        i = self.largest_insertion_near_cut
 
-    @utilities.memoized_property
+        if d is None:
+            d_length = 0
+        else:
+            kind, details = d
+            d_length = details[0][1]
+
+        if i is None:
+            i_length = 0
+        else:
+            kind, details = i
+            i_length = len(details[0][1])
+
+        if d_length == 0 and i_length == 0:
+            scar = None
+        elif d_length > i_length:
+            scar = [d]
+        elif i_length > d_length:
+            scar = [i]
+        else:
+            scar = [d, i]
+
+        return scar
+
+    @m_p
+    def near_cut_interval(self):
+        return interval.Interval(self.target_info.cut_after - 10, self.target_info.cut_after + 10)
+
+    @m_p
+    def largest_deletion_near_cut(self):
+        near_cut = []
+        dels = [details for k, details in self.indels if k == 'D']
+
+        for starts_at, length in dels:
+            del_interval = interval.Interval(starts_at, starts_at + length - 1)
+            if del_interval & self.near_cut_interval:
+                near_cut.append((starts_at, length))
+
+        if near_cut:
+            largest = ('D', max(near_cut, key=lambda d: d[1]))
+            largest = self.target_info.expand_degenerate_indel(largest)
+        else:
+            largest = None
+
+        return largest
+
+    @m_p
+    def largest_insertion_near_cut(self):
+        near_cut = []
+        insertions = [details for k, details in self.indels if k == 'I']
+
+        for starts_after, seq in insertions:
+            if starts_after in self.near_cut_interval:
+                near_cut.append((starts_after, seq))
+
+        if near_cut:
+            largest = ('I', max(near_cut, key=lambda ins: len(ins[1])))
+            largest = self.target_info.expand_degenerate_indel(largest)
+        else:
+            largest = None
+
+        return largest
+    
+    @m_p
+    def scar_string(self):
+        if self.scar_near_cut is None:
+            scar_string = None
+        else:
+            reps = []
+            for kind, details in self.scar_near_cut:
+                rep = target_info.degenerate_indel_to_string(kind, details)
+                reps.append(rep)
+
+            scar_string = ' '.join(sorted(reps))
+
+        return scar_string
+
+    @m_p
     def donor_alignments(self):
         als = [
             al for al in self.alignments
@@ -161,11 +287,11 @@ class Layout(object):
         ]
         return als
 
-    @utilities.memoized_property
+    @m_p
     def parsimonius_alignments(self):
         return interval.make_parsimonious(self.alignments)
 
-    @utilities.memoized_property
+    @m_p
     def parsimonious_donor_alignments(self):
         als = [
             al for al in self.parsimonius_alignments
@@ -173,7 +299,7 @@ class Layout(object):
         ]
         return als
 
-    @utilities.memoized_property
+    @m_p
     def closest_donor_alignment_to_edge(self):
         ''' Identify the alignments to the donor closest to edge of the read
         that has the 5' and 3' amplicon primer. '''
@@ -196,7 +322,7 @@ class Layout(object):
 
         return closest
 
-    @utilities.memoized_property
+    @m_p
     def clean_handoff(self):
         ''' Check if target sequence cleanly transitions to donor sequence at
         each junction between the two, with one full length copy of the relevant
@@ -266,7 +392,7 @@ class Layout(object):
 
         return clean_handoff
     
-    @utilities.memoized_property
+    @m_p
     def edge_q(self):
         if self.strand == '+':
             edge_q = {
@@ -280,7 +406,7 @@ class Layout(object):
             }
         return edge_q
 
-    @utilities.memoized_property
+    @m_p
     def edge_r(self):
         edge_r = {
             5: [],
@@ -301,13 +427,13 @@ class Layout(object):
         for side in [5, 3]:
             if len(edge_r[side]) != 1:
                 # placeholder
-                edge_r[side] = [-1000]
+                edge_r[side] = [None]
 
             edge_r[side] = edge_r[side][0]
 
         return edge_r
 
-    @utilities.memoized_property
+    @m_p
     def donor_relative_to_arm(self):
         HAs = self.target_info.homology_arms
 
@@ -324,27 +450,58 @@ class Layout(object):
         }
 
         return relative_to_arm
-        
-    @utilities.memoized_property
+    
+    @m_p
+    def donor_relative_to_cut(self):
+        ''' Distance on query between base aligned to donor before/after cut
+        and start of target alignment.
+        '''
+        to_cut = {
+            5: None,
+            3: None,
+        }
+
+        ti = self.target_info
+
+        try:
+            donor_edge = {
+                5: ti.features[ti.donor, "5' edge"].start,
+                3: ti.features[ti.donor, "3' edge"].start,
+            }
+        except KeyError:
+            return to_cut
+
+        for side in [5, 3]:
+            if self.edge_r[side] is not None:
+                to_cut[side] = self.edge_r[side] - donor_edge[side]
+
+        return to_cut
+
+    @m_p
     def donor_blunt(self):
         donor_blunt = {}
         for side in [5, 3]:
             blunt = False
-            offset = self.donor_relative_to_arm['external'][side]
+            #offset = self.donor_relative_to_arm['external'][side]
+            offset = self.donor_relative_to_cut[side]
             
-            if offset == 0:
-                blunt = True
-            elif abs(offset) <= 3:
-                q = self.edge_q[side]
-                if min(self.qual[q - 3:q + 4]) <= 30:
+            if offset is not None:
+                if offset == 0:
                     blunt = True
+                elif abs(offset) <= 3:
+                    q = self.edge_q[side]
+                    if min(self.qual[q - 3:q + 4]) <= 30:
+                        blunt = True
                     
             donor_blunt[side] = blunt
 
         return donor_blunt
 
-    @utilities.memoized_property
+    @m_p
     def integration_interval(self):
+        ''' because cut site might not exactly coincide with boundary between
+        HAs, the relevant part of query to call integration depends on whether
+        a clean HDR handoff is detected at each edge '''
         HAs = self.target_info.homology_arms
         cut_after = self.target_info.cut_after
 
@@ -376,7 +533,7 @@ class Layout(object):
 
         return interval.Interval(disjoint_covered[0].end + 1, disjoint_covered[-1].start - 1)
 
-    @utilities.memoized_property
+    @m_p
     def target_to_at_least_cut(self):
         cut_after = self.target_info.cut_after
         primer_als = self.primer_alignments
@@ -388,7 +545,7 @@ class Layout(object):
 
         return target_to_at_least_cut
 
-    @utilities.memoized_property
+    @m_p
     def junction_summary_per_side(self):
         per_side = {}
 
@@ -404,7 +561,7 @@ class Layout(object):
 
         return per_side
                 
-    @utilities.memoized_property
+    @m_p
     def junction_summary(self):
         per_side = self.junction_summary_per_side
 
@@ -433,7 +590,7 @@ class Layout(object):
 
         return summary
 
-    @utilities.memoized_property
+    @m_p
     def e_coli_integration(self):
         assert self.has_integration
 
@@ -450,19 +607,20 @@ class Layout(object):
 
         return False
 
-    @utilities.memoized_property
+    @m_p
     def flipped_donor(self):
         return any(sam.get_strand(al) != self.strand for al in self.parsimonious_donor_alignments)
     
-    @utilities.memoized_property
+    @m_p
     def messy_junction_description(self):
         fields = []
         for side in [5, 3]:
             if self.junction_summary_per_side[side] == 'uncategorized':
-                if self.donor_relative_to_arm['internal'][side] < 0:
-                    fields += ["{0}' truncated".format(side)]
-                elif self.donor_relative_to_arm['internal'][side] > 0:
-                    fields += ["{0}' extended".format(side)]
+                #if self.donor_relative_to_arm['internal'][side] < 0:
+                #    fields += ["{0}' truncated".format(side)]
+                #elif self.donor_relative_to_arm['internal'][side] > 0:
+                #    fields += ["{0}' extended".format(side)]
+                pass
 
         if len(fields) > 0:
             description = ', '.join(fields)
@@ -471,7 +629,7 @@ class Layout(object):
 
         return description
 
-    @utilities.memoized_property
+    @m_p
     def integration_summary(self):
         junction_status = self.junction_summary_per_side
 
@@ -479,7 +637,11 @@ class Layout(object):
             summary = 'unexpected source'
 
         elif len(self.parsimonious_donor_alignments) == 1:
-            if junction_status[5] != 'uncategorized' and junction_status[3] != 'uncategorized':
+            donor_al = self.parsimonious_donor_alignments[0]
+            max_indel_length = sam.max_block_length(donor_al, {sam.BAM_CDEL, sam.BAM_CINS})
+            if max_indel_length > 1:
+                summary = 'unexpected source'
+            elif junction_status[5] != 'uncategorized' and junction_status[3] != 'uncategorized':
                 summary = 'full length'
             else:
                 summary = 'unexpected length'
@@ -494,7 +656,7 @@ class Layout(object):
 
         return summary
     
-    @utilities.memoized_property
+    @m_p
     def cleanly_concatanated_donors(self):
         HAs = self.target_info.homology_arms
         p_donor_als = self.parsimonious_donor_alignments
@@ -526,25 +688,44 @@ class Layout(object):
             return len(junctions_clean) + 1
         else:
             return 0
+    
+    @m_p
+    def indels(self):
+        indels = []
 
-def summarize_outcome(layout_info):
-    if len(layout_info['integration']) == 2:
-        _, description = layout_info['integration']
-        outcome = ('500: unexpected integration', description)
+        al = self.merged_primer_alignment
+        if al is not None:
+            for i, (kind, length) in enumerate(al.cigar):
+                if kind == sam.BAM_CDEL:
+                    nucs_before = sam.total_reference_nucs(al.cigar[:i])
+                    starts_at = al.reference_start + nucs_before
+                    ends_at = starts_at + length - 1
 
-    else:
-        outcome = ('400: unexpected length', layout_info['integration'])
+                    indel = ('D', (starts_at, length))
 
-def overlaps_feature(alignment, feature):
-    same_reference = alignment.reference_name == feature.seqname
-    num_overlapping_bases = alignment.get_overlap(feature.start, feature.end)
-    return same_reference and (num_overlapping_bases > 0)
+                elif kind == sam.BAM_CINS:
+                    ref_nucs_before = sam.total_reference_nucs(al.cigar[:i])
+                    starts_after = al.reference_start + ref_nucs_before - 1
 
+                    read_nucs_before = sam.total_read_nucs(al.cigar[:i])
+                    insertion = al.query_sequence[read_nucs_before:read_nucs_before + length]
+
+                    ref_seq = self.target_info.reference_sequences[self.target_info.target]
+
+                    indel = ('I', (starts_after, insertion))
+                    
+                else:
+                    continue
+
+                indels.append(indel)
+
+        return indels
+    
 def max_del_nearby(alignment, ref_pos, window):
     ref_pos_to_block = sam.get_ref_pos_to_block(alignment)
     nearby = range(ref_pos - window, ref_pos + window)
-    blocks = [ref_pos_to_block.get(r, (0, 0)) for r in nearby]
-    dels = [l for k, l in blocks if k == sam.BAM_CDEL]
+    blocks = [ref_pos_to_block.get(r, (-1, -1, -1)) for r in nearby]
+    dels = [l for k, l, s in blocks if k == sam.BAM_CDEL]
     if dels:
         max_del = max(dels)
     else:
@@ -563,9 +744,15 @@ def max_indel_nearby(alignment, ref_pos, window):
     return max(max_del, max_ins)
 
 category_order = [
-    ('no integration',
-        ('no scar',
-         'scar near cut',
+    ('no indel',
+        ('no indel',
+        ),
+    ),
+    ('indel',
+        ('insertion',
+         'deletion <50 nt',
+         'deletion >=50 nt',
+         'complex indel',
         ),
     ),
     ('full length',
@@ -581,6 +768,10 @@ category_order = [
          '3\' NHEJ',
          '5\' and 3\' NHEJ',
          'uncategorized',
+        ),
+    ),
+    ('uncategorized',
+        ('uncategorized',
         ),
     ),
     ('unexpected length',

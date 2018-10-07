@@ -5,12 +5,11 @@ import yaml
 import numpy as np
 import pandas as pd
 
-from knockin import experiment
+from knockin import experiment, collapse
 from sequencing import fastq
 from sequencing.utilities import group_by
 
-from . import collapse
-from .collapse_cython import hamming_distance_matrix, register_corrections
+from knockin.collapse_cython import hamming_distance_matrix, register_corrections
 
 class UMI_Outcome(object):
     columns = [
@@ -53,15 +52,17 @@ class Pooled_UMI_Outcome(object):
         'category',
         'subcategory',
         'details',
+        'original_name',
     ]
 
-    def __init__(self, UMI, cluster_id, num_reads, category, subcategory, details):
+    def __init__(self, UMI, cluster_id, num_reads, category, subcategory, details, original_name):
         self.UMI = UMI
         self.cluster_id = cluster_id
         self.num_reads = int(num_reads)
         self.category = category
         self.subcategory = subcategory
         self.details = details
+        self.original_name = original_name
 
     @classmethod
     def from_line(cls, line):
@@ -170,29 +171,30 @@ def collapse_pooled_UMI_outcomes(input_fn):
     all_outcomes = [o for o in load_UMI_outcomes(input_fn, True) if is_relevant(o)]
     all_outcomes = sorted(all_outcomes, key=lambda u: (u.UMI, u.cluster_id))
 
-    #most_abundant_outcomes = []
-    collapsed_outcomes = []
+    all_collapsed_outcomes = []
+    most_abundant_outcomes = []
 
     for UMI, UMI_outcomes in group_by(all_outcomes, lambda u: u.UMI):
         observed = set(u.outcome for u in UMI_outcomes)
 
-        #collapsed_outcomes = []
+        collapsed_outcomes = []
         for outcome in observed:
             relevant = [u for u in UMI_outcomes if u.outcome == outcome]
             representative = max(relevant, key=lambda u: u.num_reads)
             representative.num_reads = sum(u.num_reads for u in relevant)
 
             collapsed_outcomes.append(representative)
+            all_collapsed_outcomes.append(representative)
+    
+        max_count = max(u.num_reads for u in collapsed_outcomes)
+        has_max_count = [u for u in collapsed_outcomes if u.num_reads == max_count]
 
-    collapsed_outcomes = sorted(collapsed_outcomes, key=lambda u: (u.UMI, u.cluster_id))
-    return collapsed_outcomes
+        if len(has_max_count) == 1:
+            most_abundant_outcomes.append(has_max_count[0])
+
+    all_collapsed_outcomes = sorted(all_collapsed_outcomes, key=lambda u: (u.UMI, u.cluster_id))
+    return all_collapsed_outcomes, most_abundant_outcomes
         
-    #    max_count = max(u.num_reads for u in collapsed_outcomes)
-    #    has_max_count = [u for u in collapsed_outcomes if u.num_reads == max_count]
-    #    most_abundant_outcomes.extend(has_max_count)
-
-    #return most_abundant_outcomes
-
 def error_correct_outcome_UMIs(outcome_group, max_UMI_distance=1):
     # sort UMIs in descending order by number of occurrences.
     UMI_read_counts = Counter()
