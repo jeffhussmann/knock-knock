@@ -198,14 +198,14 @@ class TargetInfo(object):
             for length in range(1, 200):
                 after = self.target_sequence[starts_at + length:]
                 result = before + after
-                degenerate_dels[result].append((starts_at, length))
+                deletion = DegenerateDeletion([starts_at], length)
+                degenerate_dels[result].append(deletion)
 
         with self.fns['degenerate_deletions'].open('w') as fh:
             classes = sorted(degenerate_dels.values(), key=len, reverse=True)
             for degenerate_class in classes:
-                degenerate_class = sorted(degenerate_class)
                 if len(degenerate_class) > 1:
-                    collapsed  = degenerate_indel_to_string('D', degenerate_class)
+                    collapsed = DegenerateDeletion.collapse(degenerate_class)
                     fh.write('{0}\n'.format(collapsed))
 
         degenerate_inss = defaultdict(list)
@@ -218,98 +218,153 @@ class TargetInfo(object):
             for length in mers:
                 for mer in mers[length]:
                     result = before + mer + after
-                    degenerate_inss[result].append((starts_after, mer))
+                    insertion = DegenerateInsertion([starts_after], [mer])
+                    degenerate_inss[result].append(insertion)
 
         with self.fns['degenerate_insertions'].open('w') as fh:
             classes = sorted(degenerate_inss.values(), key=len, reverse=True)
             for degenerate_class in classes:
                 if len(degenerate_class) > 1:
-                    collapsed = degenerate_indel_to_string('I', degenerate_class)
+                    collapsed = DegenerateInsertion.collapse(degenerate_class)
                     fh.write('{0}\n'.format(collapsed))
 
     @utilities.memoized_property
     def degenerate_indels(self):
-        indel_to_rep = {}
+        singleton_to_full = {}
 
         for line in self.fns['degenerate_deletions'].open():
             deletion = degenerate_indel_from_string(line.strip())
-            kind, details = deletion
 
-            for starts_at, length in details:
-                indel_to_rep['D', (starts_at, length)] = deletion
+            for singleton in deletion.singletons():
+                singleton_to_full[singleton] = deletion
         
         for line in self.fns['degenerate_insertions'].open():
             insertion = degenerate_indel_from_string(line.strip())
-            kind, details = insertion
 
-            for starts_after, base in details:
-                indel_to_rep['I', (starts_after, base)] = insertion
+            for singleton in insertion.singletons():
+                singleton_to_full[singleton] = insertion
 
-        return indel_to_rep
+        return singleton_to_full
 
     def expand_degenerate_indel(self, indel):
-        expanded = self.degenerate_indels.get(indel)
+        return self.degenerate_indels.get(indel, indel)
 
-        if expanded is None:
-            kind, details = indel
-            expanded = (kind, [details])
-
-        return expanded
-
-def degenerate_indel_to_string(kind, degenerate_class):
-    degenerate_class = sorted(degenerate_class)
+def degenerate_indel_from_string(full_string):
+    kind, details_string = full_string.split(':')
 
     if kind == 'D':
-        lengths = set(length for starts_at, length in degenerate_class)
+        return DegenerateDeletion.from_string(details_string)
+    elif kind == 'I':
+        return DegenerateInsertion.from_string(details_string)
+
+class DegenerateDeletion():
+    def __init__(self, starts_ats, length):
+        self.kind = 'D'
+        self.starts_ats = tuple(starts_ats)
+        self.length = length
+
+    @classmethod
+    def from_string(cls, details_string):
+        starts_string, length_string = details_string.split(',')
+
+        starts_ats = [int(s) for s in starts_string.strip('{}').split('|')]
+        length = int(length_string)
+
+        return DegenerateDeletion(starts_ats, length)
+
+    @classmethod
+    def collapse(cls, degenerate_deletions):
+        lengths = {d.length for d in degenerate_deletions}
         if len(lengths) > 1:
-            print(lengths)
-            print(degenerate_class)
+            for d in degenerate_deletions:
+                print(d)
             raise ValueError
-
         length = lengths.pop()
-        
-        all_starts_at = '|'.join(str(s) for s, l in sorted(degenerate_class))
-        if len(degenerate_class) > 1:
-            all_starts_at = '{' + all_starts_at + '}'
 
-        collapsed = 'D:{0},{1}'.format(all_starts_at, length)
+        starts_ats = set()
+        for d in degenerate_deletions:
+            starts_ats.update(d.starts_ats)
 
-    elif kind == 'I':
-        all_starts_after = '|'.join(str(starts_after) for starts_after, seq in degenerate_class)
-        all_seqs = '|'.join(seq for starts_after, seq in degenerate_class)
+        starts_ats = sorted(starts_ats)
 
-        if len(degenerate_class) > 1:
-            all_starts_after = '{' + all_starts_after + '}'
-            all_seqs = '{' + all_seqs + '}'
+        return DegenerateDeletion(starts_ats, length)
 
-        collapsed = 'I:{0},{1}'.format(all_starts_after, all_seqs)
+    def __str__(self):
+        starts_string = '|'.join(map(str, self.starts_ats))
+        if len(self.starts_ats) > 1:
+            starts_string = '{' + starts_string + '}'
 
-    return collapsed
+        full_string = 'D:{0},{1}'.format(starts_string, self.length)
 
-def degenerate_indel_from_string(collapsed):
-    kind, details = collapsed.split(':')
-    starts_field, other_field = details.split(',')
+        return full_string
 
-    if '{' in starts_field:
-        all_starts = [int(s) for s in starts_field.strip('{}').split('|')]
-    else:
-        all_starts = [int(starts_field)]
+    def __repr__(self):
+        return str(self)
+    
+    def __eq__(self, other):
+        return self.starts_ats == other.starts_ats and self.length == other.length
 
-    if kind == 'D':
-        all_starts_at = all_starts
-        length = int(other_field)
+    def __hash__(self):
+        return hash((self.starts_ats, self.length))
 
-        return kind, [(starts_at, length) for starts_at in all_starts_at]
+    def singletons(self):
+        return (DegenerateDeletion([starts_at], self.length) for starts_at in self.starts_ats)
+    
+class DegenerateInsertion():
+    def __init__(self, starts_afters, seqs):
+        self.kind = 'I'
+        self.starts_afters = tuple(starts_afters)
+        self.seqs = tuple(seqs)
+    
+        self.pairs = list(zip(self.starts_afters, self.seqs))
 
-    elif kind == 'I':
-        if '{' in other_field:
-            all_bases = [bs for bs in other_field.strip('{}').split('|')]
-        else:
-            all_bases = [other_field]
+    @classmethod
+    def from_string(cls, details_string):
+        starts_string, seqs_string = details_string.split(',')
+        starts_afters = [int(s) for s in starts_string.strip('{}').split('|')]
+        seqs = [seq for seq in seqs_string.strip('{}').split('|')]
 
-        all_starts_after = all_starts
+        return DegenerateInsertion(starts_afters, seqs)
+    
+    @classmethod
+    def from_pairs(cls, pairs):
+        starts_afters, seqs = zip(*pairs)
+        return DegenerateInsertion(starts_afters, seqs)
 
-        return kind, list(zip(all_starts_after, all_bases))
+    def __str__(self):
+        starts_string = '|'.join(map(str, self.starts_afters))
+        seqs_string = '|'.join(self.seqs)
+
+        if len(self.starts_afters) > 1:
+            starts_string = '{' + starts_string + '}'
+            seqs_string = '{' + seqs_string + '}'
+
+        full_string = 'I:{0},{1}'.format(starts_string, seqs_string)
+
+        return full_string
+
+    def __repr__(self):
+        return str(self)
+
+    def __eq__(self, other):
+        return self.starts_afters == other.starts_afters and self.seqs == other.seqs
+    
+    def __hash__(self):
+        return hash((self.starts_afters, self.seqs))
+
+    def singletons(self):
+        return (DegenerateInsertion([starts_after], [seq]) for starts_after, seq in self.pairs)
+    
+    @classmethod
+    def collapse(cls, degenerate_insertions):
+        all_pairs = []
+
+        for d in degenerate_insertions:
+            all_pairs.extend(d.pairs)
+
+        all_pairs = sorted(all_pairs)
+
+        return DegenerateInsertion.from_pairs(all_pairs)
 
 def parse_benchling_genbank(genbank_fn):
     convert_strand = {
