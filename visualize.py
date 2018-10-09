@@ -16,6 +16,7 @@ from sequencing import utilities, interval, sam
 from . import experiment as experiment_module
 from . import target_info as target_info_module
 from . import layout as layout_module
+from . import pooled_layout
 
 def get_mismatch_info(alignment, target_info):
     mismatches = []
@@ -75,7 +76,7 @@ def plot_read(alignments,
               draw_mismatches=True,
               show_polyA=False,
               show_sequence=False,
-              max_qual=42,
+              max_qual=41,
               process_mappings=None,
               detect_orientation=False,
               label_layout=False,
@@ -244,12 +245,10 @@ def plot_read(alignments,
             if draw_mismatches:
                 mismatches = get_mismatch_info(alignment, target_info)
                 for read_p, read_b, ref_p, ref_b, q in mismatches:
-                    if highlight_SNPs:
-                        alpha = 0.95
-                    elif q < max_qual * 0.75:
+                    if q < max_qual * 0.75:
                         alpha = 0.25
                     else:
-                        alpha = 0.75
+                        alpha = 0.85
 
                     cross_kwargs = dict(zorder=10, color='black', alpha=alpha)
                     ax.plot([read_p - cross_x, read_p + cross_x], [y - cross_y, y + cross_y], **cross_kwargs)
@@ -452,7 +451,7 @@ def plot_read(alignments,
         ax.spines[edge].set_color('none')
         
     ax.tick_params(pad=14)
-    fig.set_size_inches((12 * size_multiple, 4 * max_y / 0.15 * size_multiple))
+    fig.set_size_inches((18 * size_multiple, 6 * max_y / 0.15 * size_multiple))
     
     if show_qualities:
         quals = alignments[0].query_qualities
@@ -537,20 +536,23 @@ def make_stacked_Image(als_iter, target_info, titles=None, **kwargs):
     return stacked_im
 
 def explore_pooled(base_dir, group,
+                   initial_guide=None,
                    by_outcome=False,
                    draw_mismatches=False,
                    parsimonious=True,
                    show_sequence=False,
-                   size_multiple=1.75,
+                   size_multiple=1,
                    max_qual=93,
                    highlight_SNPs=False,
                   ):
     pool = experiment_module.PooledExperiment(base_dir, group)
 
     guides = pool.guides
+    if initial_guide is None:
+        initial_guide = guides[0]
 
     widgets = {
-        'guide': ipywidgets.Select(options=guides, layout=ipywidgets.Layout(height='200px', width='450px')),
+        'guide': ipywidgets.Select(options=guides, value=initial_guide, layout=ipywidgets.Layout(height='200px', width='450px')),
         'read_id': ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='600px')),
         'parsimonious': ipywidgets.ToggleButton(value=parsimonious),
         'show_qualities': ipywidgets.ToggleButton(value=False),
@@ -659,6 +661,9 @@ def explore_pooled(base_dir, group,
                         paired_end_read_length=exp.paired_end_read_length,
                         **kwargs)
 
+        l = pooled_layout.Layout(als, exp.target_info)
+        fig.axes[0].set_title(' '.join((l.name,) + l.categorize()))
+
         print(als[0].get_forward_sequence())
         print(als[0].query_name)
 
@@ -691,7 +696,7 @@ def explore_pooled(base_dir, group,
 
     return layout
     
-def explore(base_dir, by_outcome=False, draw_mismatches=False, parsimonious=True, show_sequence=False, size_multiple=1.75, max_qual=93):
+def explore(base_dir, by_outcome=False, draw_mismatches=False, parsimonious=True, show_sequence=False, size_multiple=1, max_qual=93):
     target_names = [t.name for t in target_info_module.get_all_targets(base_dir)]
 
     widgets = {
