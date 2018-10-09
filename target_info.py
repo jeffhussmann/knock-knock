@@ -182,6 +182,31 @@ class TargetInfo(object):
         return fps
 
     @utilities.memoized_property
+    def SNPs(self):
+        SNPs = {}
+
+        SNP_names = sorted([name for seq_name, name in self.features if seq_name == self.target and name.startswith('SNP')])
+
+        for key, seq_name in [('target', self.target), ('donor', self.donor)]:
+            SNPs[key] = {}
+            seq = self.reference_sequences[seq_name]
+            for name in SNP_names:
+                feature = self.features[seq_name, name]
+                strand = feature.strand
+                position = feature.start
+                b = seq[position:position + 1]
+                if strand == '-':
+                    b = utilities.reverse_complement(b)
+
+                SNPs[key][name] = {
+                    'position': position,
+                    'strand': strand,
+                    'base': b
+                }
+            
+        return SNPs
+
+    @utilities.memoized_property
     def wild_type_locii(self):
         return ''.join([b for _, b in self.fingerprints[self.target]])
     
