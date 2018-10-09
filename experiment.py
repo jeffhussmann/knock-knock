@@ -591,9 +591,10 @@ class BrittExperiment(Experiment):
     def __init__(self, base_dir, group, name, description=None, progress=None):
         super().__init__(base_dir, group, name, description, progress)
         self.fns.update({
-            'supplemental_STAR_prefix': self.dir / 'supplemental_alignments_STAR.',
-            'supplemental_bam': self.dir / 'supplemental_alignments.bam',
-            'supplemental_bam_by_name': self.dir / 'supplemental_alignments.by_name.bam',
+            'supplemental_STAR_prefix': lambda name: self.dir / '{}_alignments_STAR.'.format(name),
+            'supplemental_bam': lambda name: self.dir / '{}_alignments.bam'.format(name),
+            'supplemental_bam_by_name': lambda name: self.dir / '{}_alignments.by_name.bam'.format(name),
+
             'combined_bam': self.dir / 'combined.bam',
             'combined_bam_by_name': self.dir / 'combined.by_name.bam',
 
@@ -654,11 +655,13 @@ class BrittExperiment(Experiment):
                     )
     
     def combine_alignments(self):
-        sam.merge_sorted_bam_files([self.fns['bam'], self.fns['supplemental_bam']],
+        supplemental_fns = [self.fns['supplemental_bam'](index_name) for index_name in self.supplemental_indices]
+        sam.merge_sorted_bam_files([self.fns['bam']] + supplemental_fns,
                                    self.fns['combined_bam'],
                                   )
 
-        sam.merge_sorted_bam_files([self.fns['bam_by_name'], self.fns['supplemental_bam_by_name']],
+        supplemental_fns = [self.fns['supplemental_bam_by_name'](index_name) for index_name in self.supplemental_indices]
+        sam.merge_sorted_bam_files([self.fns['bam_by_name']] + supplemental_fns,
                                    self.fns['combined_bam_by_name'],
                                    by_name=True,
                                   )
@@ -1010,6 +1013,11 @@ class SingleGuideExperiment(BrittExperiment):
         except FileNotFoundError:
             self.target_info = target_info.TargetInfo(base_dir, self.target_name)
 
+        self.supplemental_indices = {
+            'hg19': '/nvme/indices/refdata-cellranger-hg19-1.2.0/star',
+            'bosTau7': '/nvme/indices/bosTau7',
+        }
+
     @property
     def reads(self):
         reads = fastq.reads(self.fns['R2'], up_to_space=True)
@@ -1079,30 +1087,36 @@ class SingleGuideExperiment(BrittExperiment):
             fn.unlink()
             
     def generate_supplemental_alignments(self):
-        ''' Use STAR to produce local alignments to hg19, post-filtering
-        spurious alignmnents.
+        ''' Use STAR to produce local alignments, post-filtering spurious alignmnents.
         '''
 
-        STAR_index = '/nvme/indices/refdata-cellranger-hg19-1.2.0/star'
-        bam_fn = mapping_tools.map_STAR(self.fns['collapsed_R2'],
-                               STAR_index,
-                               self.fns['supplemental_STAR_prefix'],
-                               sort=False,
-                              )
+        for index_name, index in self.supplemental_indices.items():
+            bam_fn = mapping_tools.map_STAR(self.fns['collapsed_R2'],
+                                            index,
+                                            self.fns['supplemental_STAR_prefix'](index_name),
+                                            sort=False,
+                                            mode='permissive',
+                                           )
 
-        all_mappings = pysam.AlignmentFile(bam_fn)
-        filtered_fn = str(self.fns['supplemental_bam_by_name'])
-        with pysam.AlignmentFile(filtered_fn, 'wb', template=all_mappings) as fh:
-            for al in all_mappings:
-                if al.query_alignment_length <= 20:
-                    continue
-                if al.get_tag('AS') / al.query_alignment_length <= 0.8:
-                    continue
-                fh.write(al)
+            all_mappings = pysam.AlignmentFile(bam_fn)
+            header = all_mappings.header
+            new_references = ['{}_{}'.format(index_name, ref) for ref in header.references]
+            new_header = pysam.AlignmentHeader.from_references(new_references, header.lengths)
+            filtered_fn = str(self.fns['supplemental_bam_by_name'](index_name))
 
-        sam.sort_bam(self.fns['supplemental_bam_by_name'],
-                     self.fns['supplemental_bam'],
-                    )
+            with pysam.AlignmentFile(filtered_fn, 'wb', header=new_header) as fh:
+                for al in all_mappings:
+                    if al.query_alignment_length <= 20:
+                        continue
+
+                    if al.get_tag('AS') / al.query_alignment_length <= 0.8:
+                        continue
+
+                    fh.write(al)
+
+            sam.sort_bam(self.fns['supplemental_bam_by_name'](index_name),
+                         self.fns['supplemental_bam'](index_name),
+                        )
 
     def categorize_outcomes(self):
         if self.fns['outcomes_dir'].is_dir():
