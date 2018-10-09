@@ -759,7 +759,7 @@ class BrittExperiment(Experiment):
 
 class PooledExperiment(object):
     def __init__(self, base_dir, group, progress=None):
-        self.base_dir = base_dir
+        self.base_dir = Path(base_dir)
         self.group = group
 
         if progress is None:
@@ -767,17 +767,17 @@ class PooledExperiment(object):
 
         self.progress = progress
 
-        sample_sheet_fn = base_dir / 'data' / group / 'sample_sheet.yaml'
+        sample_sheet_fn = self.base_dir / 'data' / group / 'sample_sheet.yaml'
         sample_sheet = yaml.load(sample_sheet_fn.read_text())
 
         self.target_name = sample_sheet['target_info_prefix']
-        self.target_info = target_info.TargetInfo(base_dir, self.target_name)
+        self.target_info = target_info.TargetInfo(self.base_dir, self.target_name)
 
         self.fns = {
-            'guides': base_dir / 'guides' / 'guides.txt',
-            'outcome_counts': base_dir / 'results' / group / 'outcome_counts.npz',
-            'total_outcome_counts': base_dir / 'results' / group / 'total_outcome_counts.txt',
-            'quantiles': base_dir / 'results' / group / 'quantiles.hdf5',
+            'guides': self.base_dir / 'guides' / 'guides.txt',
+            'outcome_counts': self.base_dir / 'results' / group / 'outcome_counts.npz',
+            'total_outcome_counts': self.base_dir / 'results' / group / 'total_outcome_counts.txt',
+            'quantiles': self.base_dir / 'results' / group / 'quantiles.hdf5',
         }
 
     @memoized_property
