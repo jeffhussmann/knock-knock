@@ -22,14 +22,9 @@ class UMI_Outcome(object):
         'query_name',
     ]
 
-    def __init__(self, cell_BC, UMI, num_reads, category, subcategory, details, query_name):
-        self.cell_BC = cell_BC
-        self.UMI = UMI
-        self.num_reads = int(num_reads)
-        self.category = category
-        self.subcategory = subcategory
-        self.details = details
-        self.query_name = query_name
+    def __init__(self, *args):
+        for name, arg in zip(self.__class__.columns, args):
+            setattr(self, name, arg)
 
     @classmethod
     def from_line(cls, line):
@@ -47,6 +42,7 @@ class UMI_Outcome(object):
 class Pooled_UMI_Outcome(object):
     columns = [
         'UMI',
+        'mismatch',
         'cluster_id',
         'num_reads',
         'category',
@@ -55,19 +51,17 @@ class Pooled_UMI_Outcome(object):
         'original_name',
     ]
 
-    def __init__(self, UMI, cluster_id, num_reads, category, subcategory, details, original_name):
-        self.UMI = UMI
-        self.cluster_id = cluster_id
-        self.num_reads = int(num_reads)
-        self.category = category
-        self.subcategory = subcategory
-        self.details = details
-        self.original_name = original_name
+    def __init__(self, *args):
+        for name, arg in zip(self.__class__.columns, args):
+            setattr(self, name, arg)
+
+        self.num_reads = int(self.num_reads)
+        self.mismatch = int(self.mismatch)
 
     @classmethod
     def from_line(cls, line):
         fields = line.strip().split('\t')
-        return cls(**dict(zip(Pooled_UMI_Outcome.columns, fields)))
+        return cls(*fields)
     
     @property
     def outcome(self):

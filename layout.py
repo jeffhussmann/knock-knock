@@ -1,7 +1,7 @@
 import numpy as np
 
 from sequencing import sam, interval, utilities
-from . import target_info
+from knockin.target_info import DegenerateDeletion, DegenerateInsertion
 
 m_p = utilities.memoized_property
 
@@ -45,14 +45,13 @@ class Layout(object):
                 if len(self.scar_near_cut) > 1:
                     subcategory = 'complex indel'
                 else:
-                    kind, indel_details = self.scar_near_cut[0]
-                    if kind == 'D':
-                        d_length = indel_details[0][1]
-                        if d_length < 50:
+                    indel = self.scar_near_cut[0]
+                    if indel.kind == 'D':
+                        if indel.length < 50:
                             subcategory = 'deletion <50 nt'
                         else:
                             subcategory = 'deletion >=50 nt'
-                    elif kind == 'I':
+                    elif indel.kind == 'I':
                         subcategory = 'insertion'
 
                 details = self.scar_string
@@ -106,14 +105,13 @@ class Layout(object):
                 if len(self.scar_near_cut) > 1:
                     subcategory = 'complex indel'
                 else:
-                    kind, indel_details = self.scar_near_cut[0]
-                    if kind == 'D':
-                        d_length = indel_details[0][1]
-                        if d_length < 50:
+                    indel = self.scar_near_cut[0]
+                    if indel.kind == 'D':
+                        if indel.length < 50:
                             subcategory = 'deletion <50 nt'
                         else:
                             subcategory = 'deletion >=50 nt'
-                    elif kind == 'I':
+                    elif indel.kind == 'I':
                         subcategory = 'insertion'
 
                 details = self.scar_string
@@ -206,14 +204,12 @@ class Layout(object):
         if d is None:
             d_length = 0
         else:
-            kind, details = d
-            d_length = details[0][1]
+            d_length = d.length
 
         if i is None:
             i_length = 0
         else:
-            kind, details = i
-            i_length = len(details[0][1])
+            i_length = i.length
 
         if d_length == 0 and i_length == 0:
             scar = None
@@ -227,21 +223,21 @@ class Layout(object):
         return scar
 
     @m_p
-    def near_cut_interval(self):
-        return interval.Interval(self.target_info.cut_after - 10, self.target_info.cut_after + 10)
+    def near_cut_intervals(self):
+        return self.target_info.around_cuts(10)
 
     @m_p
     def largest_deletion_near_cut(self):
-        near_cut = []
-        dels = [details for k, details in self.indels if k == 'D']
+        dels = [indel for indel in self.indels if indel.kind == 'D']
 
-        for starts_at, length in dels:
-            del_interval = interval.Interval(starts_at, starts_at + length - 1)
-            if del_interval & self.near_cut_interval:
-                near_cut.append((starts_at, length))
+        near_cut = []
+        for deletion in dels:
+            del_interval = interval.Interval(min(deletion.starts_ats), max(deletion.starts_ats) + deletion.length - 1)
+            if del_interval & self.near_cut_intervals:
+                near_cut.append(deletion)
 
         if near_cut:
-            largest = ('D', max(near_cut, key=lambda d: d[1]))
+            largest = max(near_cut, key=lambda d: d.length)
             largest = self.target_info.expand_degenerate_indel(largest)
         else:
             largest = None
@@ -250,15 +246,12 @@ class Layout(object):
 
     @m_p
     def largest_insertion_near_cut(self):
-        near_cut = []
-        insertions = [details for k, details in self.indels if k == 'I']
+        insertions = [indel for indel in self.indels if indel.kind == 'I']
 
-        for starts_after, seq in insertions:
-            if starts_after in self.near_cut_interval:
-                near_cut.append((starts_after, seq))
+        near_cut = [ins for ins in insertions if any(sa in self.near_cut_intervals for sa in ins.starts_afters)]
 
         if near_cut:
-            largest = ('I', max(near_cut, key=lambda ins: len(ins[1])))
+            largest = max(near_cut, key=lambda ins: len(ins.seqs[0]))
             largest = self.target_info.expand_degenerate_indel(largest)
         else:
             largest = None
@@ -270,12 +263,7 @@ class Layout(object):
         if self.scar_near_cut is None:
             scar_string = None
         else:
-            reps = []
-            for kind, details in self.scar_near_cut:
-                rep = target_info.degenerate_indel_to_string(kind, details)
-                reps.append(rep)
-
-            scar_string = ' '.join(sorted(reps))
+            scar_string = ' '.join(map(str, self.scar_near_cut))
 
         return scar_string
 
@@ -502,8 +490,12 @@ class Layout(object):
         ''' because cut site might not exactly coincide with boundary between
         HAs, the relevant part of query to call integration depends on whether
         a clean HDR handoff is detected at each edge '''
+        if len(self.target_info.cut_afters) > 1:
+            raise NotImplementedError
+        else:
+            cut_after = self.target_info.cut_afters[0]
+
         HAs = self.target_info.homology_arms
-        cut_after = self.target_info.cut_after
 
         flanking_al = {}
         mask_start = {5: -np.inf}
@@ -535,7 +527,11 @@ class Layout(object):
 
     @m_p
     def target_to_at_least_cut(self):
-        cut_after = self.target_info.cut_after
+        if len(self.target_info.cut_afters) > 1:
+            raise NotImplementedError
+        else:
+            cut_after = self.target_info.cut_afters[0]
+
         primer_als = self.primer_alignments
 
         target_to_at_least_cut = {
@@ -694,14 +690,14 @@ class Layout(object):
         indels = []
 
         al = self.merged_primer_alignment
+
         if al is not None:
             for i, (kind, length) in enumerate(al.cigar):
                 if kind == sam.BAM_CDEL:
                     nucs_before = sam.total_reference_nucs(al.cigar[:i])
                     starts_at = al.reference_start + nucs_before
-                    ends_at = starts_at + length - 1
 
-                    indel = ('D', (starts_at, length))
+                    indel = DegenerateDeletion([starts_at], length)
 
                 elif kind == sam.BAM_CINS:
                     ref_nucs_before = sam.total_reference_nucs(al.cigar[:i])
@@ -710,9 +706,7 @@ class Layout(object):
                     read_nucs_before = sam.total_read_nucs(al.cigar[:i])
                     insertion = al.query_sequence[read_nucs_before:read_nucs_before + length]
 
-                    ref_seq = self.target_info.reference_sequences[self.target_info.target]
-
-                    indel = ('I', (starts_after, insertion))
+                    indel = DegenerateInsertion([starts_after], [insertion])
                     
                 else:
                     continue

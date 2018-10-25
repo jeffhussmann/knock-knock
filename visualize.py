@@ -22,7 +22,7 @@ def get_mismatch_info(alignment, target_info):
     mismatches = []
 
     triples = []
-    if alignment.reference_name not in target_info.reference_sequences:
+    if target_info.reference_sequences.get(alignment.reference_name) is None:
         for read_p, ref_p, ref_b in alignment.get_aligned_pairs(with_seq=True):
             if read_p != None and ref_p != None:
                 read_b = alignment.query_sequence[read_p]
@@ -81,25 +81,34 @@ def plot_read(alignments,
               detect_orientation=False,
               label_layout=False,
               highlight_SNPs=False,
+              highlight_around_cut=False,
+              reverse_complement=None,
+              label_left=False,
+              ax=None,
               **kwargs):
 
     alignments = copy.deepcopy(alignments)
 
-    fig, ax = plt.subplots(figsize=(12, 4))
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(12, 4))
+    else:
+        fig = ax.figure
+
     if (not alignments) or (alignments[0].query_sequence is None):
         return fig
 
     colors = {name: 'C{0}'.format(i) for i, name in enumerate(target_info.reference_sequences)}
 
-    if paired_end_read_length is not None:
-        reverse_complement = False
+    if reverse_complement is None:
+        if paired_end_read_length is not None:
+            reverse_complement = False
 
-    elif detect_orientation and not all(al.is_unmapped for al in alignments):
-        layout = layout_module.Layout(alignments, target_info)
-        reverse_complement = (layout.strand == '-')
+        elif detect_orientation and not all(al.is_unmapped for al in alignments):
+            layout = layout_module.Layout(alignments, target_info)
+            reverse_complement = (layout.strand == '-')
 
-    else:
-        reverse_complement = False
+        else:
+            reverse_complement = False
 
     if process_mappings is not None:
         layout_info = process_mappings(alignments, target_info)
@@ -135,12 +144,21 @@ def plot_read(alignments,
 
     if paired_end_read_length is not None:
         offsets = [
-            0,
-            -gap_between_als * 0.15,
+            #0,
+            #-gap_between_als * 0.15,
+            gap_between_als * 0.07,
+            -gap_between_als * 0.07,
         ]
 
         # Cap overhang at a fraction of the overlap length.
         capped_length = min(paired_end_read_length, query_length * 1.25)
+
+        # If there is an overhang, shift the label down so it doesn't collide.
+        if capped_length > query_length:
+            label_y_offset = -10
+        else:
+            label_y_offset = 0
+
         endpoints = [
             [0, capped_length],
             [query_length - 1, query_length - 1 - capped_length],
@@ -172,14 +190,24 @@ def plot_read(alignments,
         ax.plot(arrow_xs, arrow_ys, **read_kwargs)
 
         read_label = 'sequencing read'
-    
+        label_y_offset = 0
+
+    if label_left:
+        label_x = 0
+        label_ha = 'right'
+        label_x_offset = -30
+    else:
+        label_x = 1
+        label_ha = 'left'
+        label_x_offset = 20
+
     ax.annotate(read_label,
-                xy=(1, 0),
+                xy=(label_x, 0),
                 xycoords=('axes fraction', 'data'),
-                xytext=(15, 0),
+                xytext=(label_x_offset, label_y_offset),
                 textcoords='offset points',
                 color='black',
-                ha='left',
+                ha=label_ha,
                 va='center',
                )
 
@@ -205,12 +233,12 @@ def plot_read(alignments,
 
         average_y = (offset  + 0.5 * (len(ref_alignments) - 1)) * gap_between_als
         ax.annotate(ref_name,
-                    xy=(1, average_y),
+                    xy=(label_x, average_y),
                     xycoords=('axes fraction', 'data'),
-                    xytext=(15, 0),
+                    xytext=(label_x_offset, 0),
                     textcoords='offset points',
                     color=color,
-                    ha='left',
+                    ha=label_ha,
                     va='center',
                    )
                     
@@ -265,7 +293,7 @@ def plot_read(alignments,
                     # Cap how wide the loop can be.
                     capped_length = min(100, length)
                     
-                    if length <= 2:
+                    if length <= 1:
                         height = 0.0015
                         indel_xs = [centered_at, centered_at, centered_at]
                         indel_ys = [y, y + height, y]
@@ -339,20 +367,14 @@ def plot_read(alignments,
             target = target_info.target
             donor = target_info.donor
 
-            features_to_show = [
+            features_to_show = {
                 (target, target_info.primer_names[5]),
                 (target, target_info.primer_names[3]),
-                (target, "3' HA"),
-                (target, "5' HA"),
-                #(target, target_info.sgRNA),
-                #(donor, "3' HA"),
-                #(donor, "5' HA"),
                 (donor, target_info.knockin),
                 (target, 'PAS'),
-                (target, 'protospacer'),
                 (donor, 'GFP11'),
-            ]
-            
+            }
+
             q_to_r = {sam.true_query_position(q, alignment): r
                       for q, r in alignment.aligned_pairs
                       if r is not None and q is not None
@@ -379,8 +401,19 @@ def plot_read(alignments,
                     patch = plt.Polygon(path, color='black', alpha=0.2, linewidth=0)
                     ax.add_patch(patch)
                     
-            target_info.features.update(target_info.around_cut_features)
-            features_to_show.extend(list(target_info.around_cut_features))
+            if highlight_around_cut:
+                target_info.features.update(target_info.around_cut_features)
+                features_to_show.update(list(target_info.around_cut_features))
+            else:
+                features_to_show.update([
+                    (target, "3' HA"),
+                    (target, "5' HA"),
+                    (target, target_info.sgRNA),
+                    (donor, "3' HA"),
+                    (donor, "5' HA"),
+                ])
+
+                features_to_show.update([(target, name) for name in target_info.sgRNAs])
 
             for feature_reference, feature_name in features_to_show:
                 if ref_name != feature_reference:
@@ -451,7 +484,7 @@ def plot_read(alignments,
         ax.spines[edge].set_color('none')
         
     ax.tick_params(pad=14)
-    fig.set_size_inches((18 * size_multiple, 6 * max_y / 0.15 * size_multiple))
+    fig.set_size_inches((18 * size_multiple, 40 * max_y * size_multiple))
     
     if show_qualities:
         quals = alignments[0].query_qualities
@@ -540,10 +573,11 @@ def explore_pooled(base_dir, group,
                    by_outcome=False,
                    draw_mismatches=False,
                    parsimonious=True,
+                   relevant=False,
                    show_sequence=False,
                    size_multiple=1,
-                   max_qual=93,
                    highlight_SNPs=False,
+                   highlight_around_cut=True,
                   ):
     pool = experiment_module.PooledExperiment(base_dir, group)
 
@@ -555,10 +589,12 @@ def explore_pooled(base_dir, group,
         'guide': ipywidgets.Select(options=guides, value=initial_guide, layout=ipywidgets.Layout(height='200px', width='450px')),
         'read_id': ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='600px')),
         'parsimonious': ipywidgets.ToggleButton(value=parsimonious),
+        'relevant': ipywidgets.ToggleButton(value=relevant),
         'show_qualities': ipywidgets.ToggleButton(value=False),
         'draw_mismatches': ipywidgets.ToggleButton(value=draw_mismatches),
         'show_sequence': ipywidgets.ToggleButton(value=show_sequence),
         'highlight_SNPs': ipywidgets.ToggleButton(value=highlight_SNPs),
+        'highlight_around_cut': ipywidgets.ToggleButton(value=highlight_around_cut),
         'outcome': ipywidgets.Select(options=[], continuous_update=False, layout=ipywidgets.Layout(height='200px', width='450px')),
         'zoom_in': ipywidgets.FloatRangeSlider(value=[-0.02, 1.02], min=-0.02, max=1.02, step=0.001, continuous_update=False, layout=ipywidgets.Layout(width='1200px')),
         'save': ipywidgets.Button(description='Save'),
@@ -591,7 +627,7 @@ def explore_pooled(base_dir, group,
 
         outcomes = {(c, sc) for c, sc, d in exp.outcome_counts.index.values}
 
-        widgets['outcome'].options = [('_'.join(outcome), outcome) for outcome in outcomes]
+        widgets['outcome'].options = [('_'.join(outcome), outcome) for outcome in sorted(outcomes)]
         if outcomes:
             if previous_value in outcomes:
                 widgets['outcome'].value = previous_value
@@ -655,14 +691,17 @@ def explore_pooled(base_dir, group,
         if als is None:
             return None
 
+        l = pooled_layout.Layout(als, exp.target_info)
+        info = l.categorize()
+        if kwargs['relevant']:
+            als = l.relevant_alignments
+
         fig = plot_read(als, exp.target_info,
                         size_multiple=size_multiple,
-                        max_qual=max_qual,
                         paired_end_read_length=exp.paired_end_read_length,
                         **kwargs)
 
-        l = pooled_layout.Layout(als, exp.target_info)
-        fig.axes[0].set_title(' '.join((l.name,) + l.categorize()))
+        fig.axes[0].set_title(' '.join((l.name,) + info))
 
         print(als[0].get_forward_sequence())
         print(als[0].query_name)
@@ -687,7 +726,16 @@ def explore_pooled(base_dir, group,
 
     layout = ipywidgets.VBox(
         [make_row(top_row_keys),
-         make_row(['parsimonious', 'show_qualities', 'draw_mismatches', 'show_sequence', 'highlight_SNPs', 'save', 'file_name']),
+         make_row(['parsimonious',
+                   'relevant',
+                   'show_qualities',
+                   'draw_mismatches',
+                   'show_sequence',
+                   'highlight_SNPs',
+                   'highlight_around_cut',
+                   'save',
+                    'file_name',
+                   ]),
          #widgets['zoom_in'],
          interactive.children[-1],
          output,
@@ -697,14 +745,15 @@ def explore_pooled(base_dir, group,
     return layout
     
 def explore(base_dir, by_outcome=False, draw_mismatches=False, parsimonious=True, show_sequence=False, size_multiple=1, max_qual=93):
-    target_names = [t.name for t in target_info_module.get_all_targets(base_dir)]
+    target_names = sorted([t.name for t in target_info_module.get_all_targets(base_dir)])
 
     widgets = {
-        'target': ipywidgets.Select(options=target_names, value=target_names[0]),
+        'target': ipywidgets.Select(options=target_names, value=target_names[0], layout=ipywidgets.Layout(height='200px')),
         'experiment': ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='450px')),
         'read_id': ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='600px')),
         'parsimonious': ipywidgets.ToggleButton(value=parsimonious),
         'show_qualities': ipywidgets.ToggleButton(value=False),
+        'highlight_around_cut': ipywidgets.ToggleButton(value=False),
         'draw_mismatches': ipywidgets.ToggleButton(value=draw_mismatches),
         'show_sequence': ipywidgets.ToggleButton(value=show_sequence),
         'outcome': ipywidgets.Select(options=[], continuous_update=False, layout=ipywidgets.Layout(height='200px', width='450px')),
@@ -813,7 +862,10 @@ def explore(base_dir, by_outcome=False, draw_mismatches=False, parsimonious=True
                         max_qual=max_qual,
                         paired_end_read_length=exp.paired_end_read_length,
                         **kwargs)
-        print(als[0].get_forward_sequence())
+
+        if kwargs['show_sequence']:
+            print(als[0].query_name)
+            print(als[0].get_forward_sequence())
 
         return fig
 
@@ -830,7 +882,12 @@ def explore(base_dir, by_outcome=False, draw_mismatches=False, parsimonious=True
 
     layout = ipywidgets.VBox(
         [make_row(top_row_keys),
-         make_row(['parsimonious', 'show_qualities', 'draw_mismatches', 'show_sequence']),
+         make_row(['parsimonious',
+                   'show_qualities',
+                   'draw_mismatches',
+                   'show_sequence',
+                   'highlight_around_cut',
+                   ]),
          #widgets['zoom_in'],
          interactive.children[-1],
          output,

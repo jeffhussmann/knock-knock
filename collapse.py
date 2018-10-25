@@ -31,43 +31,46 @@ HIGH_Q = 31
 LOW_Q = 10
 N_Q = 2
 
-cluster_fields = [
-    ('cell_BC', 's'),
-    ('UMI', 's'),
-    ('num_reads', '06d'),
-    ('cluster_id', 's'),
-]
-cluster_Annotation = annotation_module.Annotation_factory(cluster_fields)
+annotation_fields = {
+    'cluster': [
+        ('cell_BC', 's'),
+        ('UMI', 's'),
+        ('num_reads', '06d'),
+        ('cluster_id', 's'),
+    ],
+    'read': [
+        ('cell_BC', 's'),
+        ('UMI', 's'),
+        ('original_name', 's'),
+    ],
+    'UMI': [
+        ('UMI', 's'),
+        ('original_name', 's'),
+    ],
+    'UMI_protospacer': [
+        ('UMI', 's'),
+        ('protospacer', 's'),
+        ('protospacer_qual', 's'),
+        ('original_name', 's'),
+    ],
+    'collapsed_UMI': [
+        ('UMI', 's'),
+        ('protospacer', 's'),
+        ('protospacer_qual', 's'),
+        ('cluster_id', '06d'),
+        ('num_reads', '06d'),
+    ],
+    'collapsed_UMI_mismatch': [
+        ('UMI', 's'),
+        ('cluster_id', '06d'),
+        ('num_reads', '06d'),
+        ('mismatch', 'd'),
+    ],
+}
 
-read_fields = [
-    ('cell_BC', 's'),
-    ('UMI', 's'),
-    ('original_name', 's'),
-]
-read_Annotation = annotation_module.Annotation_factory(read_fields)
+Annotations = {key: annotation_module.Annotation_factory(fields) for key, fields in annotation_fields.items()}
 
-UMI_fields = [
-    ('UMI', 's'),
-    ('original_name', 's'),
-]
-UMI_Annotation = annotation_module.Annotation_factory(UMI_fields)
-
-UMI_protospacer_fields = [
-    ('UMI', 's'),
-    ('protospacer', 's'),
-    ('protospacer_qual', 's'),
-    ('original_name', 's'),
-]
-UMI_protospacer_Annotation = annotation_module.Annotation_factory(UMI_protospacer_fields)
-
-collapsed_UMI_fields = [
-    ('UMI', 's'),
-    ('cluster_id', '06d'),
-    ('num_reads', '06d'),
-]
-collapsed_UMI_Annotation = annotation_module.Annotation_factory(collapsed_UMI_fields)
-
-def call_consensus(reads, max_read_length, bam):
+def consensus_seq_and_qs(reads, max_read_length, bam):
     if max_read_length is None:
         max_read_length = len(reads[0].query_sequence)
 
@@ -103,16 +106,33 @@ def call_consensus(reads, max_read_length, bam):
     qs[ties] = N_Q
 
     seq = ''.join(utilities.base_order[i] for i in best_idxs)
+
+    return seq, qs
+
+def call_consensus(reads, max_read_length, bam):
+    seq, qs = consensus_seq_and_qs(reads, max_read_length, bam)
+
     if bam:
         consensus = pysam.AlignedSegment()
         consensus.query_sequence = seq
         consensus.query_qualities = array.array('B', qs)
         consensus.set_tag(NUM_READS_TAG, len(reads), 'i')
     else:
-        annotation = collapsed_UMI_Annotation(UMI='PH',
-                                              num_reads=len(reads),
-                                              cluster_id=0,
-                                             )
+        ps_reads = []
+        for read in reads:
+            annotation = Annotations['UMI_protospacer'].from_identifier(read.name)
+            ps_read = fastq.Read('PH', annotation['protospacer'], annotation['protospacer_qual'])
+            ps_reads.append(ps_read)
+
+        ps_seq, ps_qs = consensus_seq_and_qs(ps_reads, None, False)
+        ps_qual = fastq.encode_sanger(ps_qs)
+
+        annotation = Annotations['collapsed_UMI'](UMI='PH',
+                                                  num_reads=len(reads),
+                                                  protospacer=ps_seq,
+                                                  protospacer_qual=ps_qual,
+                                                  cluster_id=0,
+                                                 )
         name = str(annotation)
         qual = fastq.encode_sanger(qs)
         consensus = fastq.Read(name, seq, qual)
@@ -155,7 +175,13 @@ def make_singleton_cluster(read, bam):
         singleton.query_qualities = read.query_qualities
         singleton.set_tag(NUM_READS_TAG, 1, 'i')
     else:
-        name = collapsed_UMI_Annotation(UMI='PH', num_reads=1, cluster_id=0)
+        annotation = Annotations['UMI_protospacer'].from_identifier(read.name)
+        name = Annotations['collapsed_UMI'](UMI=annotation['UMI'],
+                                            protospacer=annotation['protospacer'],
+                                            protospacer_qual=annotation['protospacer_qual'],
+                                            cluster_id=0,
+                                            num_reads=1,
+                                           )
         singleton = fastq.Read(str(name), read.seq, read.qual)
 
     return singleton
@@ -285,10 +311,10 @@ def sort_cellranger_bam_to_fastq(bam_fn, sorted_fn, gemgroup, show_progress=Fals
 
                 cell_BC = al.get_tag(CELL_BC_TAG)
                 cell_BC_gemgroup = '{}-{}'.format(cell_BC.split('-')[0], gemgroup)
-                name = read_Annotation(cell_BC=cell_BC_gemgroup,
-                                       UMI=al.get_tag(UMI_TAG),
-                                       original_name=al.query_name,
-                                      )
+                name = Annotations['Read'](cell_BC=cell_BC_gemgroup,
+                                           UMI=al.get_tag(UMI_TAG),
+                                           original_name=al.query_name,
+                                          )
                 read = fastq.Read(name,
                                   al.query_sequence,
                                   fastq.encode_sanger(al.query_qualities),
@@ -469,40 +495,14 @@ def form_collapsed_clusters(sorted_fn,
                             not_collapsed.append(other)
                 
                 for cluster in [biggest] + not_collapsed:
-                    annotation = cluster_Annotation(cell_BC=cluster.get_tag(CELL_BC_TAG),
-                                                    UMI=cluster.get_tag(UMI_TAG),
-                                                    num_reads=cluster.get_tag(NUM_READS_TAG),
-                                                    cluster_id=cluster.get_tag(CLUSTER_ID_TAG),
-                                                   )
+                    annotation = Annotations['cluster'](cell_BC=cluster.get_tag(CELL_BC_TAG),
+                                                       UMI=cluster.get_tag(UMI_TAG),
+                                                       num_reads=cluster.get_tag(NUM_READS_TAG),
+                                                       cluster_id=cluster.get_tag(CLUSTER_ID_TAG),
+                                                      )
 
                     cluster.query_name = str(annotation)
                     collapsed_fh.write(cluster)
-
-def form_clusters_pooled(sorted_fn,
-                         collapsed_fn,
-                         max_hq_mismatches=0,
-                        ):
-
-    UMI_key = lambda r: UMI_Annotation.from_identifier(r.name)['UMI']
-    num_reads_key = lambda r: collapsed_UMI_Annotation.from_identifier(r.name)['num_reads']
-
-    sorted_reads = fastq.reads(sorted_fn)
-
-    with Path(collapsed_fn).open('w') as collapsed_fh:
-        groups = utilities.group_by(sorted_reads, UMI_key)
-        groups = progress(groups)
-        for UMI, UMI_group in groups:
-            clusters = form_clusters(UMI_group, max_read_length=None, max_hq_mismatches=max_hq_mismatches)
-            clusters = sorted(clusters, key=num_reads_key, reverse=True)
-
-            for i, cluster in enumerate(clusters):
-                annotation = collapsed_UMI_Annotation.from_identifier(cluster.name)
-                annotation['UMI'] = UMI
-                annotation['cluster_id'] = i
-
-                cluster.name = str(annotation)
-
-                collapsed_fh.write(str(cluster))
 
 def make_cluster_fastqs(collapsed_fn, target, gemgroup, notebook=True):
     group_dir = Path(collapsed_fn).parent
@@ -634,13 +634,13 @@ if __name__ == '__main__':
 
         index_sorted_fastq(sorted_fn, show_progress=show_progress)
 
-        #if not collapsed_fn.exists() or args.force_collapse:
-        #    form_collapsed_clusters(sorted_fn,
-        #                            collapsed_fn,
-        #                            max_hq_mismatches,
-        #                            max_indels,
-        #                            max_UMI_distance,
-        #                            show_progress=show_progress,
-        #                           )
-            
-        #make_cluster_fastqs(collapsed_fn, info['target'], info['gemgroup'])
+        if not collapsed_fn.exists() or args.force_collapse:
+            form_collapsed_clusters(sorted_fn,
+                                    collapsed_fn,
+                                    max_hq_mismatches,
+                                    max_indels,
+                                    max_UMI_distance,
+                                    show_progress=show_progress,
+                                   )
+           
+        make_cluster_fastqs(collapsed_fn, info['target'], info['gemgroup'])

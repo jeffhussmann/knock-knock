@@ -4,20 +4,20 @@ import yaml
 import pysam
 import Bio.SeqIO
 
-from sequencing import fasta, gff, utilities, mapping_tools
+from sequencing import fasta, gff, utilities, mapping_tools, interval
 
 class TargetInfo(object):
-    def __init__(self, base_dir, name):
+    def __init__(self, base_dir, name, sgRNA=None):
         self.name = name
         self.dir = Path(base_dir) / 'targets' / name
 
         manifest_fn = self.dir / 'manifest.yaml'
         manifest = yaml.load(manifest_fn.open())
         self.target = manifest['target']
-        self.donor = manifest['donor']
+        self.donor = manifest.get('donor', None)
         self.sources = manifest['sources']
 
-        self.sgRNA = manifest.get('sgRNA', 'sgRNA') 
+        self.sgRNA = sgRNA
         self.knockin = manifest.get('knockin', 'GFP') 
 
         self.primer_names = {
@@ -34,6 +34,15 @@ class TargetInfo(object):
             'degenerate_insertions': self.dir / 'degenerate_insertions.txt',
             'degenerate_deletions': self.dir / 'degenerate_deletions.txt',
         }
+
+    @utilities.memoized_property
+    def sgRNAs(self):
+        if self.sgRNA is None:
+            sgRNAs = sorted(n for t, n in self.all_sgRNA_features)
+        else:
+            sgRNAs = [self.sgRNA]
+
+        return sgRNAs
 
     def make_references(self):
         ''' Generate fasta and gff files from genbank inputs. '''
@@ -72,7 +81,12 @@ class TargetInfo(object):
 
     @utilities.memoized_property
     def reference_sequences(self):
-        return fasta.to_dict(self.fns['ref_fasta'])
+        if self.fns['ref_fasta'].exists():
+            seqs = fasta.to_dict(self.fns['ref_fasta'])
+        else:
+            seqs = {}
+
+        return seqs
 
     @utilities.memoized_property
     def target_sequence(self):
@@ -97,50 +111,69 @@ class TargetInfo(object):
         return start, end
     
     @utilities.memoized_property
-    def PS_range(self):
-        sgRNA = self.sgRNA_feature
-        return sgRNA.start, sgRNA.end
+    def PS_ranges(self):
+        return [(s.start, s.end) for s in self.sgRNA_features]
         
     @utilities.memoized_property
-    def sgRNA_feature(self):
-        return self.features[self.target, self.sgRNA]
+    def sgRNA_features(self):
+        return [self.features[self.target, sgRNA] for sgRNA in self.sgRNAs]
+
+    @utilities.memoized_property
+    def all_sgRNA_features(self):
+        return {name: feature for name, feature in self.features.items() if feature.feature == 'sgRNA'}
+    
+    @utilities.memoized_property
+    def cut_afters(self):
+        cut_afters = []
+        seq = self.target_sequence
+        for feature in self.sgRNA_features:
+            if feature.strand == '+':
+                PAM = seq[feature.end + 1:feature.end + 4]
+                cut_after = feature.end - 3
+
+            elif feature.strand == '-':
+                PAM = utilities.reverse_complement(seq[feature.start - 3:feature.start])
+                cut_after = feature.start + 2
+
+            if PAM[-2:] != 'GG':
+                raise ValueError('non-NGG PAM: {0}'.format(PAM))
+
+            cut_afters.append(cut_after)
+        
+        return cut_afters
     
     @utilities.memoized_property
     def cut_after(self):
-        sgRNA = self.sgRNA_feature
-        seq = self.target_sequence
+        ''' when processing assumes there will be only one cut, use this '''
+        if len(self.cut_afters) > 1:
+            raise ValueError(self.cut_afters)
+        else:
+            return self.cut_afters[0]
 
-        if sgRNA.strand == '+':
-            PAM = seq[sgRNA.end + 1:sgRNA.end + 4]
-            cut_after = sgRNA.end - 3
-
-        elif sgRNA.strand == '-':
-            PAM = utilities.reverse_complement(seq[sgRNA.start - 3:sgRNA.start])
-            cut_after = sgRNA.start + 2
-
-        if PAM[-2:] != 'GG':
-            raise ValueError('non-NGG PAM: {0}'.format(PAM))
-        
-        return cut_after
+    def around_cuts(self, each_side):
+        intervals = [interval.Interval(cut_after - each_side + 1, cut_after + each_side) for cut_after in self.cut_afters]
+        return interval.DisjointIntervals(intervals)
 
     @utilities.memoized_property
     def around_cut_features(self):
-        upstream = gff.Feature.from_fields(self.target, '.', '.', self.cut_after - 50, self.cut_after, '.', self.sgRNA_feature.strand, '.', '.')
-        downstream = gff.Feature.from_fields(self.target, '.', '.', self.cut_after + 1, self.cut_after + 50, '.', self.sgRNA_feature.strand, '.', '.')
+        fs = {}
+        for feature, cut_after in zip(self.sgRNA_features, self.cut_afters):
+            upstream = gff.Feature.from_fields(self.target, '.', '.', cut_after - 25, cut_after, '.', feature.strand, '.', '.')
+            downstream = gff.Feature.from_fields(self.target, '.', '.', cut_after + 1, cut_after + 25, '.', feature.strand, '.', '.')
 
-        distal, proximal = upstream, downstream
-        if self.sgRNA_feature.strand == '+':
             distal, proximal = upstream, downstream
-        else:
-            distal, proximal = downstream, upstream
-            
-        distal.attribute['color'] = '#b7e6d7'
-        proximal.attribute['color'] = '#85dae9'
+            if feature.strand == '+':
+                distal, proximal = upstream, downstream
+            else:
+                distal, proximal = downstream, upstream
+                
+            distal.attribute['color'] = '#b7e6d7'
+            proximal.attribute['color'] = '#85dae9'
 
-        distal.attribute['ID'] = 'PAM-distal of cut'
-        proximal.attribute['ID'] = 'PAM-proximal of cut'
+            distal.attribute['ID'] = 'PAM-distal\n{} cut'.format(feature.attribute['ID'])
+            proximal.attribute['ID'] = 'PAM-proximal\n{} cut'.format(feature.attribute['ID'])
 
-        fs = {(self.target, f.attribute['ID']): f for f in [distal, proximal]}
+            fs.update({(self.target, f.attribute['ID']): f for f in [distal, proximal]})
 
         return fs
 
@@ -154,7 +187,23 @@ class TargetInfo(object):
                 HAs[source, side] = self.features[getattr(self, source), name] 
 
         return HAs
-    
+
+    @utilities.memoized_property
+    def HA_ref_p_to_offset(self):
+        ref_p_to_offset = {}
+
+        for name, side in self.homology_arms:
+            feature = self.homology_arms[name, side]
+            
+            if feature.strand == '+':
+                order = range(feature.start, feature.end + 1)
+            else:
+                order = range(feature.end, feature.start - 1, -1)
+                
+            ref_p_to_offset[name, side] = {ref_p: offset for offset, ref_p in enumerate(order)}  
+
+        return ref_p_to_offset
+
     @utilities.memoized_property
     def primers(self):
         primers = {side: self.features[self.target, self.primer_names[side]] for side in [5, 3]}
@@ -340,6 +389,11 @@ class DegenerateInsertion():
         self.kind = 'I'
         self.starts_afters = tuple(starts_afters)
         self.seqs = tuple(seqs)
+        
+        lengths = set(len(seq) for seq in self.seqs)
+        if len(lengths) > 1:
+            raise ValueError
+        self.length = lengths.pop()
     
         self.pairs = list(zip(self.starts_afters, self.seqs))
 

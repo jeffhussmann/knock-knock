@@ -18,7 +18,7 @@ import scipy.signal
 from sequencing import sam, fastq, utilities, visualize_structure, sw, adapters, mapping_tools
 from sequencing.utilities import memoized_property
 
-from . import target_info, blast, layout, pooled_layout, jin_layout, visualize, coherence, collapse, svg
+from . import target_info, blast, layout, pooled_layout, visualize, coherence, collapse, svg
 
 group_by = utilities.group_by
 
@@ -46,6 +46,13 @@ def extract_color(description):
         color = source_to_color.get((donor, rep), 'grey')
 
     return color
+        
+def ensure_list(possibly_list):
+    if isinstance(possibly_list, list):
+        definitely_list = possibly_list
+    else:
+        definitely_list = [possibly_list]
+    return definitely_list
 
 class Experiment(object):
     def __init__(self, base_dir, group, name, description=None, progress=None):
@@ -78,6 +85,8 @@ class Experiment(object):
         self.layout_module = layout
         self.max_insertion_length = 20
 
+        self.sgRNA = self.description.get('sgRNA')
+
         # When checking if an Experiment meets filtering conditions, want to be
         # able to just test description.
         self.description['group'] = group
@@ -91,7 +100,7 @@ class Experiment(object):
             else:
                 self.target_name = '{}_{}'.format(self.description['target_info_prefix'], self.name)
 
-        self.target_info = target_info.TargetInfo(base_dir, self.target_name)
+        self.target_info = target_info.TargetInfo(base_dir, self.target_name, sgRNA=self.sgRNA)
 
         self.fns = {
             'bam': self.dir / 'alignments.bam',
@@ -110,37 +119,13 @@ class Experiment(object):
             'lengths_svg': self.dir / (self.name + '_by_length.html'),
         }
 
-        self.sequencing_primers = 'truseq'
+    def for_pacbio():
+        fastq_fns = ensure_list(self.description['fastq_fns'])
+        self.fns['fastqs'] = [self.data_dir / name for name in fastq_fns]
 
-        self.paired_end_read_length = self.description.get('paired_end_read_length', None)
-
-        def ensure_list(possibly_list):
-            if isinstance(possibly_list, list):
-                definitely_list = possibly_list
-            else:
-                definitely_list = [possibly_list]
-            return definitely_list
-
-        if 'fastq_fns' in self.description:
-            fastq_fns = ensure_list(self.description['fastq_fns'])
-            self.fns['fastqs'] = [self.data_dir / name for name in fastq_fns]
-
-            for fn in self.fns['fastqs']:
-                if not fn.exists():
-                    raise ValueError('{0}: {1} specifies non-existent {2}'.format(group, name, fn))
-
-        else:
-            for k in ['R1', 'R2', 'I1', 'I2']:
-                if k in self.description:
-                    fastq_fns = ensure_list(self.description[k])
-                    self.fns[k] = [self.data_dir / name for name in fastq_fns]
-            
-                    for fn in self.fns[k]:
-                        if not fn.exists():
-                            raise ValueError('{0}: {1} specifies non-existent {2}'.format(group, name, fn))
-
-            self.fns['stitched'] = self.dir / 'stitched.fastq'
-            self.fns['fastqs'] = [self.fns['stitched']]
+        for fn in self.fns['fastqs']:
+            if not fn.exists():
+                raise ValueError('{0}: {1} specifies non-existent {2}'.format(group, name, fn))
 
         self.color = extract_color(self.description)
     
@@ -166,13 +151,6 @@ class Experiment(object):
         return rs
 
     @property
-    def read_pairs(self):
-        read_pairs = fastq.read_pairs(self.fns['R1'], self.fns['R2'])
-        read_pairs = self.progress(read_pairs)
-
-        return read_pairs
-
-    @property
     def query_names(self):
         for read in self.reads:
             yield read.name
@@ -195,10 +173,16 @@ class Experiment(object):
             ranges = pd.DataFrame(columns=['start', 'end'])
         return ranges
 
-    @property
-    def alignments_by_name(self, fn_key='bam_by_name'):
-        fh = pysam.AlignmentFile(str(self.fns[fn_key]))
-        return sam.grouped_by_name(fh)
+    def alignment_groups(self, fn_key='bam_by_name', outcome=None):
+        if outcome is None:
+            fn = self.fns[fn_key]
+        else:
+            fn = self.outcome_fns(outcome)['bam_by_name']
+
+        grouped = sam.grouped_by_name(self.fns[fn_key])
+
+        return self.progress(grouped)
+
 
     def call_peaks_in_length_distribution(self):
         if self.paired_end_read_length is not None:
@@ -236,20 +220,26 @@ class Experiment(object):
         outcome_fns = self.outcome_fns(outcome)
 
         lengths = Counter()
-        for _, group in sam.grouped_by_name(outcome_fns['bam_by_name']):
+        for _, group in self.alignment_groups():
             lengths[group[0].query_length] += 1
 
         lengths = utilities.counts_to_array(lengths)
         return lengths
 
-    def generate_alignments(self):
+    def generate_alignments(self, reads=None, bam_key_prefix=''):
+        if reads is None:
+            reads = self.reads
+
         bam_fns = []
         bam_by_name_fns = []
 
-        for i, chunk in enumerate(utilities.chunks(self.reads, 10000)):
+        bam_key = bam_key_prefix + 'bam'
+        bam_by_name_key = bam_key_prefix + 'bam_by_name'
+
+        for i, chunk in enumerate(utilities.chunks(reads, 10000)):
             suffix = '.{:06d}.bam'.format(i)
-            bam_fn = self.fns['bam'].with_suffix(suffix)
-            bam_by_name_fn = self.fns['bam_by_name'].with_suffix(suffix)
+            bam_fn = self.fns[bam_key].with_suffix(suffix)
+            bam_by_name_fn = self.fns[bam_by_name_key].with_suffix(suffix)
 
             blast.blast(self.target_info.fns['ref_fasta'],
                         chunk,
@@ -261,8 +251,8 @@ class Experiment(object):
             bam_fns.append(bam_fn)
             bam_by_name_fns.append(bam_by_name_fn)
 
-        sam.merge_sorted_bam_files(bam_fns, self.fns['bam'])
-        sam.merge_sorted_bam_files(bam_by_name_fns, self.fns['bam_by_name'], by_name=True)
+        sam.merge_sorted_bam_files(bam_fns, self.fns[bam_key])
+        sam.merge_sorted_bam_files(bam_by_name_fns, self.fns[bam_by_name_key], by_name=True)
 
         for fn in bam_fns:
             fn.unlink()
@@ -303,26 +293,24 @@ class Experiment(object):
 
         self.fns['outcomes_dir'].mkdir()
 
-        bam_fh = pysam.AlignmentFile(str(self.fns[fn_key]))
-        alignment_groups = sam.grouped_by_name(bam_fh)
-        alignment_groups = self.progress(alignment_groups)
-
         outcomes = defaultdict(list)
 
         with self.fns['outcome_list'].open('w') as fh:
-            for name, als in alignment_groups:
+            for name, als in self.alignment_groups(fn_key):
                 layout = self.layout_module.Layout(als, self.target_info)
+
                 try:
-                    category, subcategory, details = layout.categorize()
-                except OverflowError:
+                    if self.target_info.donor is not None:
+                        category, subcategory, details = layout.categorize()
+                    else:
+                        category, subcategory, details = layout.categorize_no_donor()
+                except:
                     print(self.name, name)
                     raise
                 
                 outcomes[category, subcategory].append(name)
 
                 fh.write('{0}\t{1}\t{2}\t{3}\n'.format(name, category, subcategory, details))
-
-        bam_fh.close()
 
         counts = {description: len(names) for description, names in outcomes.items()}
         pd.Series(counts).to_csv(self.fns['outcome_counts'], sep='\t')
@@ -334,7 +322,7 @@ class Experiment(object):
         qname_to_outcome = {}
         bam_fhs = {}
 
-        full_bam_fh = pysam.AlignmentFile(str(self.fns['bam_by_name']))
+        full_bam_fh = pysam.AlignmentFile(str(self.fns[fn_key]))
         
         for outcome, qnames in outcomes.items():
             outcome_fns = self.outcome_fns(outcome)
@@ -365,7 +353,7 @@ class Experiment(object):
             #process_mappings=self.layout_module.characterize_layout,
         )
 
-        for outcome in self.outcomes:
+        for outcome in self.progress(self.outcomes):
             outcome_fns = self.outcome_fns(outcome)
             
             als = self.get_read_alignments(0, outcome=outcome)
@@ -384,12 +372,7 @@ class Experiment(object):
             plt.close(fig)
                 
     def get_read_alignments(self, read_id, fn_key='bam_by_name', outcome=None):
-        if outcome is not None:
-            bam_fn = self.outcome_fns(outcome)[fn_key]
-        else:
-            bam_fn = self.fns[fn_key]
-        
-        read_groups = sam.grouped_by_name(bam_fn)
+        read_groups = self.alignment_groups(fn_key, outcome)
 
         if isinstance(read_id, int):
             try:
@@ -411,11 +394,6 @@ class Experiment(object):
             else:
                 return None
 
-    def outcome_alignment_groups(self, outcome):
-        bam_fn = self.outcome_fns(outcome)['bam_by_name']
-        read_groups = sam.grouped_by_name(bam_fn)
-        return read_groups
-
     def make_text_visualizations(self, num_examples=10):
         for outcome in self.outcomes:
             outcome_fns = self.outcome_fns(outcome)
@@ -431,7 +409,7 @@ class Experiment(object):
         if x_lims is None:
             x_lims = (0, len(ys))
 
-        fig, ax = plt.subplots(figsize=(18, 5))
+        fig, ax = plt.subplots(figsize=(18, 8))
 
         ax.plot(ys, color=self.color)
         
@@ -460,14 +438,14 @@ class Experiment(object):
         ax.set_ylabel('Fraction of reads')
         ax.set_xlabel('Length of read')
         
-        ax.set_ylim(0, 0.4)
+        #ax.set_ylim(0, max(ys) * 1.05)
+        ax.set_ylim(0, 0.5)
         ax.set_xlim(*x_lims)
 
         return fig
 
     def span_to_Image(self, start, end, num_examples=5):
-        groups = sam.grouped_by_name(self.fns['bam_by_name'])
-        filtered = (group for name, group in groups
+        filtered = (group for name, group in self.alignment_groups()
                     if start <= group[0].query_length <= end)
         return self.groups_to_Image(filtered, num_examples)
 
@@ -477,16 +455,16 @@ class Experiment(object):
         kwargs = dict(
             parsimonious=True,
             paired_end_read_length=self.paired_end_read_length,
-            label_layout=True,
+            label_layout=False,
+            show_all_guides=True,
             #process_mappings=self.layout_module.characterize_layout,
         )
 
         return visualize.make_stacked_Image(sample, self.target_info, **kwargs)
 
     def generate_individual_length_figures(self):
-        groups = sam.grouped_by_name(self.fns['bam_by_name'])
         by_length = defaultdict(list)
-        for name, group in groups:
+        for name, group in self.alignment_groups():
             length = group[0].query_length
             by_length[length].append(group)
 
@@ -496,97 +474,125 @@ class Experiment(object):
         items = self.progress(items)
 
         for length, groups in items:
-            im = self.groups_to_Image(groups, 3)
+            im = self.groups_to_Image(groups, 5)
             fn = self.fns['length_range_figures'] / '{}_{}.png'.format(length, length)
             im.save(fn)
 
     def generate_svg(self):
-        html = svg.length_plot_with_popovers(self, standalone=True, x_lims=(150, 505))
+        html = svg.length_plot_with_popovers(self, standalone=True, x_lims=(0, 505))
 
         with self.fns['lengths_svg'].open('w') as fh:
             fh.write(html)
+
+    def process(self):
+        #self.count_read_lengths()
+        #self.generate_alignments(self.reads)
+        #self.count_outcomes()
+        self.make_outcome_plots(num_examples=3)
+
+class AmpliconExperiment(Experiment):
+    def __init__(*args, **kwargs):
+        self, *rest = args
+        super(AmpliconExperiment, self).__init__(*rest, **kwargs)
+
+        self.sequencing_primers = self.description.get('sequencing_primers', 'truseq')
+        self.paired_end_read_length = self.description.get('paired_end_read_length', None)
+
+        for k in ['R1', 'R2', 'I1', 'I2']:
+            if k in self.description:
+                fastq_fns = ensure_list(self.description[k])
+                self.fns[k] = [self.data_dir / name for name in fastq_fns]
+        
+                for fn in self.fns[k]:
+                    if not fn.exists():
+                        raise ValueError('{0}: {1} specifies non-existent {2}'.format(group, name, fn))
+
+        self.fns.update({
+            'stitched': self.dir / 'stitched.fastq',
+            'R1_no_overlap': self.dir / 'R1_no_overlap.fastq',
+            'R2_no_overlap': self.dir / 'R2_no_overlap.fastq',
+            
+            'stitched_bam': self.dir / 'stitched_alignments.bam',
+            'stitched_bam_by_name': self.dir / 'stitched_alignments.by_name.bam',
+
+            'R1_no_overlap_bam': self.dir / 'R1_no_overlap_alignments.bam',
+            'R1_no_overlap_bam_by_name': self.dir / 'R1_no_overlap_alignments.by_name.bam',
+            'R2_no_overlap_bam': self.dir / 'R2_no_overlap_alignments.bam',
+            'R2_no_overlap_bam_by_name': self.dir / 'R2_no_overlap_alignments.by_name.bam',
+        })
+    
+    @property
+    def read_pairs(self):
+        read_pairs = fastq.read_pairs(self.fns['R1'], self.fns['R2'])
+        read_pairs = self.progress(read_pairs)
+
+        return read_pairs
 
     def stitch_read_pairs(self):
         before_R1 = adapters.primers[self.sequencing_primers]['R1']
         before_R2 = adapters.primers[self.sequencing_primers]['R2']
 
-        with self.fns['stitched'].open('w') as fh:
+        with self.fns['stitched'].open('w') as stitched_fh, \
+             self.fns['R1_no_overlap'].open('w') as R1_fh, \
+             self.fns['R2_no_overlap'].open('w') as R2_fh:
+
             for R1, R2 in self.read_pairs:
                 stitched = sw.stitch_read_pair(R1, R2, before_R1, before_R2)
-                fh.write(str(stitched))
+                if len(stitched) == 2 * self.paired_end_read_length:
+                    R1_fh.write(str(R1))
+                    R2_fh.write(str(R2))
+                else:
+                    stitched_fh.write(str(stitched))
 
+    @property
+    def stitched_reads(self):
+        reads = fastq.reads(self.fns['stitched'], up_to_space=True)
+        reads = self.progress(reads)
+
+        return reads
+    
+    @property
+    def R1_no_overlap_reads(self):
+        reads = fastq.reads(self.fns['R1_no_overlap'], up_to_space=True)
+        reads = self.progress(reads)
+
+        return reads
+    
+    @property
+    def R2_no_overlap_reads(self):
+        reads = fastq.reads(self.fns['R2_no_overlap'], up_to_space=True)
+        reads = self.progress(reads)
+
+        return reads
+    
+    def count_read_lengths(self):
+        lengths = Counter(len(r.seq) for r in self.stitched_reads)
+
+        no_overlap_length = self.paired_end_read_length * 2
+
+        for R1 in self.R1_no_overlap_reads:
+            lengths[no_overlap_length] += 1
+
+        lengths = utilities.counts_to_array(lengths)
+        np.savetxt(self.fns['lengths'], lengths, '%d')
+    
     def process(self):
-        #if self.paired_end_read_length is not None:
-        #    self.stitch_read_pairs()
-
+        #self.stitch_read_pairs()
+        
         #self.count_read_lengths()
 
-        #self.call_peaks_in_length_distribution()
-        #self.generate_alignments()
-        #self.count_outcomes()
+        #for reads, prefix in [(self.stitched_reads, 'stitched_'),
+        #                      (self.R1_no_overlap_reads, 'R1_no_overlap_'),
+        #                      (self.R2_no_overlap_reads, 'R2_no_overlap_'),
+        #                     ]:
+        #    self.generate_alignments(reads, prefix)
+
+        self.count_outcomes(fn_key='stitched_bam_by_name')
         #self.make_outcome_plots(num_examples=3)
         #self.generate_individual_length_figures()
-        self.generate_svg()
+        #self.generate_svg()
         #self.make_text_visualizations()
 
-class JinExperiment(Experiment):
-    def __init__(self, base_dir, group, name, description=None, progress=None):
-        super().__init__(base_dir, group, name, description, progress)
-        self.max_insertion_length = None
-        self.sequencing_primers = 'nextera'
-    
-    def count_outcomes(self, fn_key='bam_by_name'):
-        if self.fns['outcomes_dir'].is_dir():
-            shutil.rmtree(str(self.fns['outcomes_dir']))
-
-        self.fns['outcomes_dir'].mkdir()
-
-        bam_fh = pysam.AlignmentFile(str(self.fns[fn_key]))
-        alignment_groups = sam.grouped_by_name(bam_fh)
-        outcomes = defaultdict(list)
-
-        with self.fns['outcome_list'].open('w') as fh:
-            for name, als in alignment_groups:
-                layout = self.layout_module.Layout(als, self.target_info)
-                
-                category, subcategory, details = layout.categorize_no_donor()
-                
-                outcomes[category, subcategory].append(name)
-
-                fh.write('{0}\t{1}\t{2}\t{3}\n'.format(name, category, subcategory, details))
-
-        bam_fh.close()
-
-        counts = {outcome: len(names) for outcome, names in outcomes.items()}
-        pd.Series(counts).to_csv(self.fns['outcome_counts'], sep='\t')
-
-        # To make plotting easier, for each outcome, make a file listing all of
-        # qnames for the outcome and a bam file (sorted by name) with all of the
-        # alignments for these qnames.
-
-        qname_to_outcome = {}
-        bam_fhs = {}
-
-        full_bam_fh = pysam.AlignmentFile(str(self.fns['bam_by_name']))
-        
-        for outcome, qnames in outcomes.items():
-            outcome_fns = self.outcome_fns(outcome)
-            outcome_fns['dir'].mkdir()
-            bam_fhs[outcome] = pysam.AlignmentFile(str(outcome_fns['bam_by_name']), 'w', template=full_bam_fh)
-            
-            with outcome_fns['query_names'].open('w') as fh:
-                for qname in qnames:
-                    qname_to_outcome[qname] = outcome
-                    fh.write(qname + '\n')
-        
-        for al in full_bam_fh:
-            outcome = qname_to_outcome[al.query_name]
-            bam_fhs[outcome].write(al)
-
-        full_bam_fh.close()
-        for outcome, fh in bam_fhs.items():
-            fh.close()
-    
 class BrittExperiment(Experiment):
     def __init__(self, base_dir, group, name, description=None, progress=None):
         super().__init__(base_dir, group, name, description, progress)
@@ -601,7 +607,6 @@ class BrittExperiment(Experiment):
             'collapsed_UMI_outcomes': self.dir / 'collapsed_UMI_outcomes.txt',
             'cell_outcomes': self.dir / 'cell_outcomes.txt',
             'filtered_cell_outcomes': self.dir / 'filtered_cell_outcomes.txt',
-            'filtered_cell_outcome_counts': self.dir / 'filtered_cell_outcome_counts.txt',
         })
         
         self.layout_module = pooled_layout
@@ -776,16 +781,17 @@ class PooledExperiment(object):
         self.fns = {
             'guides': self.base_dir / 'guides' / 'guides.txt',
             'outcome_counts': self.base_dir / 'results' / group / 'outcome_counts.npz',
+            'outcome_counts': self.base_dir / 'results' / group / 'outcome_counts.npz',
             'total_outcome_counts': self.base_dir / 'results' / group / 'total_outcome_counts.txt',
+            'mismatch_outcome_counts': self.base_dir / 'results' / group / 'mismatch_outcome_counts.npz',
+            'mismatch_total_outcome_counts': self.base_dir / 'results' / group / 'mismatch_total_outcome_counts.txt',
             'quantiles': self.base_dir / 'results' / group / 'quantiles.hdf5',
         }
 
     @memoized_property
     def guides_df(self):
-        all_guides = pd.read_table(self.base_dir / 'guides' / 'guides.txt', index_col='name')
-        top_3 = all_guides.query('top_3')
-        in_order = top_3.sort_values(['gene', 'short_name', 'rank'])
-        return in_order
+        guides_df = pd.read_table(self.base_dir / 'guides' / 'guides.txt', index_col='short_name')
+        return guides_df
 
     @memoized_property
     def guides(self):
@@ -820,53 +826,94 @@ class PooledExperiment(object):
 
     def make_outcome_counts(self):
         all_counts = {}
+        #guides = self.guides
+        guides = list(self.gene_guides('AQR')) + list(self.non_targeting_guides)
 
-        for guide in self.progress(self.guides):
-            exp = SingleGuideExperiment(self.base_dir, self.group, guide)
-            if len(exp.outcome_counts) > 0:
-                all_counts[guide] = exp.outcome_counts
+        for prefix in ['', 'mismatch_']:
+            for guide in self.progress(guides):
+                exp = SingleGuideExperiment(self.base_dir, self.group, guide)
+                if len(exp.outcome_counts) > 0:
+                    all_counts[guide] = getattr(exp, '{}outcome_counts'.format(prefix))
 
-        all_outcomes = set()
+            all_outcomes = set()
 
-        for guide in all_counts:
-            all_outcomes.update(all_counts[guide].index.values)
-            
-        outcome_order = sorted(all_outcomes)
-        outcome_to_index = {outcome: i for i, outcome in enumerate(outcome_order)}
-
-        counts = scipy.sparse.dok_matrix((len(outcome_order), len(self.guides)), dtype=int)
-
-        for g, guide in enumerate(self.progress(self.guides)):
-            for outcome, count in all_counts[guide].items():
-                o = outcome_to_index[outcome]
-                counts[o, g] = count
+            for guide in all_counts:
+                all_outcomes.update(all_counts[guide].index.values)
                 
-        scipy.sparse.save_npz(self.fns['outcome_counts'], counts.tocoo())
+            outcome_order = sorted(all_outcomes)
+            outcome_to_index = {outcome: i for i, outcome in enumerate(outcome_order)}
 
-        df = pd.DataFrame(counts.todense(), columns=self.guides, index=pd.MultiIndex.from_tuples(outcome_order))
+            counts = scipy.sparse.dok_matrix((len(outcome_order), len(guides)), dtype=int)
 
-        df.sum(axis=1).to_csv(self.fns['total_outcome_counts'])
+            for g, guide in enumerate(self.progress(guides)):
+                for outcome, count in all_counts[guide].items():
+                    o = outcome_to_index[outcome]
+                    counts[o, g] = count
+                    
+            scipy.sparse.save_npz(self.fns['{}outcome_counts'.format(prefix)], counts.tocoo())
+
+            df = pd.DataFrame(counts.todense(),
+                              columns=guides,
+                              index=pd.MultiIndex.from_tuples(outcome_order),
+                             )
+
+            df.sum(axis=1).to_csv(self.fns['{}total_outcome_counts'.format(prefix)])
 
     @memoized_property
     def total_outcome_counts(self):
         return pd.read_csv(self.fns['total_outcome_counts'], header=None, index_col=[0, 1, 2], na_filter=False)
+    
+    @memoized_property
+    def mismatch_total_outcome_counts(self):
+        return pd.read_csv(self.fns['mismatch_total_outcome_counts'], header=None, index_col=[0, 1, 2], na_filter=False)
 
     @memoized_property
     def outcome_counts(self):
+        #guides = self.guides
+        guides = list(self.gene_guides('AQR')) + list(self.non_targeting_guides)
         sparse_counts = scipy.sparse.load_npz(self.fns['outcome_counts'])
         df = pd.DataFrame(sparse_counts.todense(),
                           index=self.total_outcome_counts.index,
-                          columns=self.guides,
+                          columns=guides,
                          )
         df.index.names = ('category', 'subcategory', 'details')
 
-        genomic_insertions = df.xs('genomic insertion').sum()
-        df = df.drop('genomic insertion', level=0)
-        df.loc['genomic insertion', 'genomic insertion', 'n/a'] = genomic_insertions
-        
+        supplemental_names = {s for c, s, v in df.index.values if c == 'genomic insertion'}
+        supplemental_counts = {name: df.xs(('genomic insertion', name)).sum() for name in supplemental_names}
+            
         donor_insertions = df.xs('donor insertion').sum()
+
         df = df.drop('donor insertion', level=0)
+        df = df.drop('genomic insertion', level=0)
+
         df.loc['donor insertion', 'donor insertion', 'n/a'] = donor_insertions
+        for name in supplemental_names:
+            df.loc['genomic insertion', name, 'n/a'] = supplemental_counts[name]
+
+        return df
+    
+    @memoized_property
+    def mismatch_outcome_counts(self):
+        #guides = self.guides
+        guides = list(self.gene_guides('AQR')) + list(self.non_targeting_guides)
+        sparse_counts = scipy.sparse.load_npz(self.fns['mismatch_outcome_counts'])
+        df = pd.DataFrame(sparse_counts.todense(),
+                          index=self.mismatch_total_outcome_counts.index,
+                          columns=guides,
+                         )
+        df.index.names = ('category', 'subcategory', 'details')
+
+        supplemental_names = {s for c, s, v in df.index.values if c == 'genomic insertion'}
+        supplemental_counts = {name: df.xs(('genomic insertion', name)).sum() for name in supplemental_names}
+            
+        donor_insertions = df.xs('donor insertion').sum()
+
+        df = df.drop('donor insertion', level=0)
+        df = df.drop('genomic insertion', level=0)
+
+        df.loc['donor insertion', 'donor insertion', 'n/a'] = donor_insertions
+        for name in supplemental_names:
+            df.loc['genomic insertion', name, 'n/a'] = supplemental_counts[name]
 
         return df
 
@@ -1003,20 +1050,20 @@ class SingleGuideExperiment(BrittExperiment):
         super().__init__(base_dir, group, name, description, progress)
 
         for which in ['R1', 'R2', 'I1', 'I2']:
-            self.fns[which] = self.data_dir / 'by_guide' / '{}_{}.fastq'.format(self.name, which)
+            self.fns[which] = self.data_dir / 'by_guide' / '{}_{}.fastq.gz'.format(self.name, which)
 
-        self.fns['collapsed_R2'] = self.dir / '{}_collapsed_R2.fastq'.format(self.name)
-
-        self.guide_target_name = '{}_{}'.format(self.target_name, self.name)
-        try:
-            self.target_info = target_info.TargetInfo(base_dir, self.guide_target_name)
-        except FileNotFoundError:
-            self.target_info = target_info.TargetInfo(base_dir, self.target_name)
+        self.fns['collapsed_R2'] = self.dir / 'collapsed_R2.fastq'
+        self.fns['protospacer_mismatch_rates'] = self.dir / 'protospacer_mismatch_rates.txt'
+        self.fns['mismatch_outcome_counts'] = self.dir / 'mismatch_outcome_counts.txt'
 
         self.supplemental_indices = {
             'hg19': '/nvme/indices/refdata-cellranger-hg19-1.2.0/star',
             'bosTau7': '/nvme/indices/bosTau7',
         }
+
+        self.min_reads_per_cluster = 2
+
+        self.pool = PooledExperiment(base_dir, group)
 
     @property
     def reads(self):
@@ -1038,9 +1085,17 @@ class SingleGuideExperiment(BrittExperiment):
         '''
 
         def UMI_key(read):
-            return collapse.UMI_Annotation.from_identifier(read.name)['UMI']
+            return collapse.Annotations['UMI_protospacer'].from_identifier(read.name)['UMI']
+
         def num_reads_key(read):
-            return collapse.collapsed_UMI_Annotation.from_identifier(read.name)['num_reads']
+            return collapse.Annotations['collapsed_UMI'].from_identifier(read.name)['num_reads']
+
+        R1_read_length = 45
+
+        mismatch_counts = np.zeros(R1_read_length)
+        total = 0
+
+        expected_seq = self.pool.guides_df.loc[self.name, 'full_seq'][:R1_read_length]
 
         with self.fns['collapsed_R2'].open('w') as collapsed_fh:
             groups = utilities.group_by(self.reads, UMI_key)
@@ -1049,13 +1104,39 @@ class SingleGuideExperiment(BrittExperiment):
                 clusters = sorted(clusters, key=num_reads_key, reverse=True)
 
                 for i, cluster in enumerate(clusters):
-                    annotation = collapse.collapsed_UMI_Annotation.from_identifier(cluster.name)
+                    annotation = collapse.Annotations['collapsed_UMI'].from_identifier(cluster.name)
                     annotation['UMI'] = UMI
                     annotation['cluster_id'] = i
 
-                    cluster.name = str(annotation)
+                    if annotation['num_reads'] >= self.min_reads_per_cluster:
+                        total += 1
+                        ps = annotation['protospacer']
+                        if ps == expected_seq:
+                            mismatch = -1
+                        else:
+                            qs = fastq.decode_sanger(annotation['protospacer_qual'])
+                            mismatches = []
+                            for i, (seen, expected, q) in enumerate(zip(ps, expected_seq, qs)):
+                                if seen != expected and q >= 30:
+                                    mismatches.append(i)
+                            if len(mismatches) == 0:
+                                mismatch = -1
+                            elif len(mismatches) == 1:
+                                mismatch = mismatches[0]
+                            elif len(mismatches) > 1:
+                                continue
 
-                    collapsed_fh.write(str(cluster))
+                            mismatch_counts[mismatch] += 1
+
+                        mismatch_annotation = collapse.Annotations['collapsed_UMI_mismatch'](annotation)
+                        mismatch_annotation['mismatch'] = mismatch
+
+                        cluster.name = str(mismatch_annotation)
+
+                        collapsed_fh.write(str(cluster))
+
+        mismatch_rates = mismatch_counts / total
+        np.savetxt(self.fns['protospacer_mismatch_rates'], mismatch_rates)
 
     def generate_alignments(self):
         bam_fns = []
@@ -1128,10 +1209,13 @@ class SingleGuideExperiment(BrittExperiment):
         alignment_groups = sam.grouped_by_name(bam_fh)
         outcomes = defaultdict(list)
 
+        total = 0
+        required_sw = 0
+
         with self.fns['outcome_list'].open('w') as fh:
             for name, als in self.progress(alignment_groups):
                 layout = self.layout_module.Layout(als, self.target_info)
-                
+                total += 1
                 try:
                     category, subcategory, details = layout.categorize()
                 except:
@@ -1139,10 +1223,14 @@ class SingleGuideExperiment(BrittExperiment):
                     print(self.name, name)
                     raise
                 
+                if layout.required_sw:
+                    required_sw += 1
+                
                 outcomes[category, subcategory].append(name)
 
-                annotation = collapse.collapsed_UMI_Annotation.from_identifier(name)
+                annotation = collapse.Annotations['collapsed_UMI_mismatch'].from_identifier(name)
                 UMI_outcome = coherence.Pooled_UMI_Outcome(annotation['UMI'],
+                                                           annotation['mismatch'],
                                                            annotation['cluster_id'],
                                                            annotation['num_reads'],
                                                            category,
@@ -1183,7 +1271,18 @@ class SingleGuideExperiment(BrittExperiment):
 
     @memoized_property
     def outcome_counts(self):
-        counts = pd.read_table(self.fns['filtered_cell_outcome_counts'],
+        counts = pd.read_table(self.fns['outcome_counts'],
+                               header=None,
+                               index_col=[0, 1, 2],
+                               squeeze=True,
+                               na_filter=False,
+                              )
+        counts.index.names = ['category', 'subcategory', 'details']
+        return counts
+    
+    @memoized_property
+    def mismatch_outcome_counts(self):
+        counts = pd.read_table(self.fns['mismatch_outcome_counts'],
                                header=None,
                                index_col=[0, 1, 2],
                                squeeze=True,
@@ -1207,10 +1306,12 @@ class SingleGuideExperiment(BrittExperiment):
             for outcome in most_abundant_outcomes:
                 if outcome.num_reads >= 10:
                     fh.write(str(outcome) + '\n')
-                    counts[outcome.category, outcome.subcategory, outcome.details] += 1
+                    perfect = (outcome.mismatch == -1)
+                    counts[perfect, outcome.category, outcome.subcategory, outcome.details] += 1
 
         counts = pd.Series(counts).sort_values(ascending=False)
-        counts.to_csv(self.fns['filtered_cell_outcome_counts'], sep='\t')
+        counts.loc[True].to_csv(self.fns['outcome_counts'], sep='\t')
+        counts.loc[False].to_csv(self.fns['mismatch_outcome_counts'], sep='\t')
 
     @memoized_property
     def filtered_cell_outcomes(self):
@@ -1219,10 +1320,10 @@ class SingleGuideExperiment(BrittExperiment):
 
     def process(self):
         try:
-            #self.collapse_UMI_reads()
+            self.collapse_UMI_reads()
             self.generate_alignments()
-            #self.generate_supplemental_alignments()
-            #self.combine_alignments()
+            self.generate_supplemental_alignments()
+            self.combine_alignments()
             self.categorize_outcomes()
             self.collapse_UMI_outcomes()
             #self.make_outcome_plots(num_examples=3)
@@ -1347,14 +1448,10 @@ def get_all_experiments(base_dir, conditions=None):
         sample_sheet = yaml.load(sample_sheet_fn.read_text())
 
         for name, description in sample_sheet.items():
-            if description.get('experiment_type') == 'britt':
-                exp_class = BrittExperiment
+            if description.get('experiment_type') == 'amplicon':
+                exp_class = AmpliconExperiment
             elif description.get('experiment_type') == 'single_guide':
                 exp_class = SingleGuideExperiment
-            elif description.get('experiment_type') == 'britt_amplicon':
-                exp_class = BrittAmpliconExperiment
-            elif description.get('experiment_type') == 'jin':
-                exp_class = JinExperiment
             else:
                 exp_class = Experiment
             
