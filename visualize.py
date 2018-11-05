@@ -1,10 +1,12 @@
+import copy
+import io
+import itertools
+from collections import defaultdict
+
 import matplotlib
 matplotlib.use('Agg', warn=False)
 
-import copy
-import io
 import PIL
-import itertools
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker
@@ -16,7 +18,6 @@ from sequencing import utilities, interval, sam
 from . import experiment as experiment_module
 from . import target_info as target_info_module
 from . import layout as layout_module
-from . import pooled_layout
 
 def get_mismatch_info(alignment, target_info):
     mismatches = []
@@ -66,485 +67,694 @@ def get_indel_info(alignment):
             
     return indels
 
-def plot_read(alignments,
-              target_info,
-              parsimonious=False,
-              show_qualities=False,
-              zoom_in=None,
-              size_multiple=1,
-              paired_end_read_length=None,
-              draw_mismatches=True,
-              show_polyA=False,
-              show_sequence=False,
-              max_qual=41,
-              process_mappings=None,
-              detect_orientation=False,
-              label_layout=False,
-              highlight_SNPs=False,
-              highlight_around_cut=False,
-              reverse_complement=None,
-              label_left=False,
-              ax=None,
-              **kwargs):
+class ReadDiagram():
+    def __init__(self, alignments, target_info,
+                 ref_centric=False,
+                 parsimonious=False,
+                 zoom_in=None,
+                 size_multiple=1,
+                 paired_end_read_length=None,
+                 draw_qualities=False,
+                 draw_mismatches=True,
+                 draw_polyA=False,
+                 draw_sequence=False,
+                 max_qual=41,
+                 process_mappings=None,
+                 detect_orientation=False,
+                 label_layout=False,
+                 highlight_SNPs=False,
+                 highlight_around_cut=False,
+                 reverse_complement=None,
+                 label_left=False,
+                 flip_donor=False,
+                 flip_target=False,
+                 ax=None,
+                 **kwargs):
+        self.parsimonious = parsimonious
 
-    alignments = copy.deepcopy(alignments)
-
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(12, 4))
-    else:
-        fig = ax.figure
-
-    if (not alignments) or (alignments[0].query_sequence is None):
-        return fig
-
-    colors = {name: 'C{0}'.format(i) for i, name in enumerate(target_info.reference_sequences)}
-
-    if reverse_complement is None:
-        if paired_end_read_length is not None:
-            reverse_complement = False
-
-        elif detect_orientation and not all(al.is_unmapped for al in alignments):
-            layout = layout_module.Layout(alignments, target_info)
-            reverse_complement = (layout.strand == '-')
-
-        else:
-            reverse_complement = False
-
-    if process_mappings is not None:
-        layout_info = process_mappings(alignments, target_info)
-        alignments = layout_info['to_plot']
-
-    gap_between_als = 0.06 * 0.2
-    arrow_height = 0.005
-    arrow_width = 0.01
-    text_y = -7
-
-    cross_x = 1 * 0.5
-    cross_y = cross_x * 0.002
-    
-    max_y = gap_between_als
-    
-    if parsimonious:
-        alignments = interval.make_parsimonious(alignments)
+        self.alignments = copy.deepcopy(alignments)
+        if self.parsimonious:
+            self.alignments = interval.make_parsimonious(self.alignments)
+            
+        self.target_info = target_info
+        self.ref_centric = ref_centric
+        self.zoom_in = zoom_in
+        self.size_multiple = size_multiple
+        self.paired_end_read_length = paired_end_read_length
+        self.draw_qualities = draw_qualities
+        self.draw_mismatches = draw_mismatches
+        self.draw_polyA = draw_polyA
+        self.draw_sequence = draw_sequence
+        self.max_qual = max_qual
+        self.process_mappings = process_mappings
+        self.detect_orientation = detect_orientation
+        self.label_layout = label_layout
+        self.highlight_SNPs = highlight_SNPs
+        self.highlight_around_cut = highlight_around_cut
+        self.reverse_complement = reverse_complement
+        self.label_left = label_left
+        self.flip_donor = flip_donor
+        self.flip_target = flip_target
+        self.ax = ax
         
-    query_name = alignments[0].query_name
-    query_length = alignments[0].query_length
-    
-    if zoom_in is not None:
-        x_min = zoom_in[0] * query_length
-        x_max = zoom_in[1] * query_length
-    else:
-        x_min = -0.02 * query_length
-        x_max = 1.02 * query_length
-    
-    read_kwargs = {
-        'linewidth': 2,
-        'color': 'black'
-    }
-
-    if paired_end_read_length is not None:
-        offsets = [
-            #0,
-            #-gap_between_als * 0.15,
-            gap_between_als * 0.07,
-            -gap_between_als * 0.07,
-        ]
-
-        # Cap overhang at a fraction of the overlap length.
-        capped_length = min(paired_end_read_length, query_length * 1.25)
-
-        # If there is an overhang, shift the label down so it doesn't collide.
-        if capped_length > query_length:
-            label_y_offset = -10
+        if self.ref_centric:
+            self.gap_between_als = 0.003
         else:
+            self.gap_between_als = 0.012
+
+        self.arrow_height = 0.005
+        self.arrow_width = 5
+
+        self.text_y = -7
+
+        self.cross_x = 0.5
+        self.cross_y = 0.001
+
+        self.query_length = alignments[0].query_length
+        self.query_name = alignments[0].query_name
+        
+        if self.ax is None:
+            self.fig, self.ax = plt.subplots()
+        else:
+            self.fig = self.ax.figure
+        
+        if self.label_left:
+            self.label_x = 0
+            self.label_ha = 'right'
+            self.label_x_offset = -30
+        else:
+            self.label_x = 1
+            self.label_ha = 'left'
+            self.label_x_offset = 20
+        
+        if self.reverse_complement is None:
+            if self.paired_end_read_length is not None:
+                self.reverse_complement = False
+
+            elif self.detect_orientation and not all(al.is_unmapped for al in self.alignments):
+                layout = layout_module.Layout(alignments, self.target_info)
+                self.reverse_complement = (layout.strand == '-')
+
+            else:
+                self.reverse_complement = False
+        
+        self.ref_name_to_color = defaultdict(lambda: 'grey')
+        for i, name in enumerate(self.target_info.reference_sequences):
+            self.ref_name_to_color[name] = 'C{0}'.format(i)
+
+        self.max_y = self.gap_between_als
+        self.min_y = -self.gap_between_als 
+
+        self.alignment_coordinates = defaultdict(list)
+
+        self.plot_read()
+        if self.ref_centric:
+            self.draw_target_and_donor()
+        self.update_size()
+
+    def draw_read_arrows(self):
+        ''' Draw black arrows that represent the sequencing read or read pair. '''
+        arrow_kwargs = {
+            'linewidth': 2,
+            'color': 'black'
+        }
+
+        if self.paired_end_read_length is not None:
+            offsets = [0.0007, -0.0007]
+
+            # Cap overhang at a fraction of the overlap length.
+            capped_length = min(self.paired_end_read_length, self.query_length * 1.25)
+
+            # If there is an overhang, shift the label down so it doesn't collide.
+            if capped_length > self.query_length:
+                label_y_offset = -10
+            else:
+                label_y_offset = 0
+
+            endpoints = [
+                [0, capped_length],
+                [self.query_length - 1, self.query_length - 1 - capped_length],
+            ]
+
+            signs = [
+                1,
+                -1,
+            ]
+
+            for (start, end), sign, offset in zip(endpoints, signs, offsets):
+                arrow_xs = [start, end, end - sign * self.arrow_width]
+                arrow_ys = [offset, offset, offset + sign * self.arrow_height]
+                self.ax.plot(arrow_xs, arrow_ys, clip_on=False, **arrow_kwargs)
+
+            read_label = 'read pair'
+
+        else:
+            self.ax.plot([0, self.query_length - 1], [0, 0], **arrow_kwargs)
+
+            arrow_ys = [0, self.arrow_height]
+
+            if self.reverse_complement:
+                arrow_xs = [0, self.arrow_width]
+            else:
+                arrow_xs = [self.query_length - 1, self.query_length - 1 - self.arrow_width]
+            
+            self.ax.plot(arrow_xs, arrow_ys, **arrow_kwargs)
+
+            read_label = 'amplicon'
             label_y_offset = 0
 
-        endpoints = [
-            [0, capped_length],
-            [query_length - 1, query_length - 1 - capped_length],
-        ]
+        # Draw label on read.
+        self.ax.annotate(read_label,
+                         xy=(self.label_x, 0),
+                         xycoords=('axes fraction', 'data'),
+                         xytext=(self.label_x_offset, label_y_offset),
+                         textcoords='offset points',
+                         color='black',
+                         ha=self.label_ha,
+                         va='center',
+                        )
 
-        signs = [
-            1,
-            -1,
-        ]
+    def draw_alignments(self):
+        ax = self.ax
+        alignments = [al for al in self.alignments if not al.is_unmapped]
 
-        for (start, end), sign, offset in zip(endpoints, signs, offsets):
-            ax.plot([start, end, end - sign * query_length * arrow_width],
-                    [offset, offset, offset + sign * arrow_height],
-                    clip_on=False,
-                    **read_kwargs)
-
-        read_label = 'read pair'
-
-    else:
-        ax.plot([0, query_length - 1], [0, 0], **read_kwargs)
-
-        arrow_ys = [0, arrow_height]
-
-        if reverse_complement:
-            arrow_xs = [0, (query_length - 1) * arrow_width]
+        by_reference_name = defaultdict(list)
+        for al in sorted(alignments, key=lambda al: (al.reference_name, sam.query_interval(al))):
+            by_reference_name[al.reference_name].append(al)
+        
+        if self.ref_centric:
+            rnames_below = [self.target_info.target]
+            initial_offset = 2
         else:
-            arrow_xs = [query_length - 1, (query_length - 1) * (1 - arrow_width)]
-        
-        ax.plot(arrow_xs, arrow_ys, **read_kwargs)
+            rnames_below = []
+            initial_offset = 1
 
-        read_label = 'sequencing read'
-        label_y_offset = 0
+        rnames_above = [n for n in by_reference_name if n not in rnames_below]
 
-    if label_left:
-        label_x = 0
-        label_ha = 'right'
-        label_x_offset = -30
-    else:
-        label_x = 1
-        label_ha = 'left'
-        label_x_offset = 20
+        offsets = {}
+        for names, sign in [(rnames_below, -1), (rnames_above, 1)]:
+            starts = sign * np.cumsum([initial_offset] + [len(by_reference_name[n]) for n in names])
+            for name, start in zip(names, starts):
+                offsets[name] = start
 
-    ax.annotate(read_label,
-                xy=(label_x, 0),
-                xycoords=('axes fraction', 'data'),
-                xytext=(label_x_offset, label_y_offset),
-                textcoords='offset points',
-                color='black',
-                ha=label_ha,
-                va='center',
-               )
+        for ref_name, ref_alignments in by_reference_name.items():
+            if self.reverse_complement:
+                for alignment in ref_alignments:
+                    alignment.is_reverse = not alignment.is_reverse
 
-    if all(al.is_unmapped for al in alignments):
-        by_reference_name = []
-    else:
-        alignments = [al for al in alignments if not al.is_unmapped]
-        alignments = sorted(alignments, key=lambda al: (al.reference_name, sam.query_interval(al)))
-        by_reference_name = list(utilities.group_by(alignments, lambda al: al.reference_name))
-    
-    rname_starts = np.cumsum([1] + [len(als) for n, als in by_reference_name])
-    offsets = {name: start for (name, als), start in zip(by_reference_name, rname_starts)}
-
-    for ref_name, ref_alignments in by_reference_name:
-        if reverse_complement:
-            for alignment in ref_alignments:
-                alignment.is_reverse = not alignment.is_reverse
-
-        ref_alignments = ref_alignments[:20]
-        
-        offset = offsets[ref_name]
-        color = colors.get(ref_name, 'grey')
-
-        average_y = (offset  + 0.5 * (len(ref_alignments) - 1)) * gap_between_als
-        ax.annotate(ref_name,
-                    xy=(label_x, average_y),
-                    xycoords=('axes fraction', 'data'),
-                    xytext=(label_x_offset, 0),
-                    textcoords='offset points',
-                    color=color,
-                    ha=label_ha,
-                    va='center',
-                   )
-                    
-        for i, alignment in enumerate(ref_alignments):
-            start, end = sam.query_interval(alignment)
-            strand = sam.get_strand(alignment)
-            y = (offset + i) * gap_between_als
+            ref_alignments = ref_alignments[:20]
             
-            # Annotate the ends of alignments with reference position numbers and vertical lines.
-            for x, which in ((start, 'start'), (end, 'end')):
-                if (which == 'start' and strand == '+') or (which == 'end' and strand == '-'):
-                    r = alignment.reference_start
-                else:
-                    r = alignment.reference_end - 1
+            offset = offsets[ref_name]
+            color = self.ref_name_to_color[ref_name]
 
-                ax.plot([x, x], [0, y], color=color, alpha=0.3)
-
-                if which == 'start':
-                    kwargs = {'ha': 'right', 'xytext': (-2, 0)}
-                else:
-                    kwargs = {'ha': 'left', 'xytext': (2, 0)}
-
-                ax.annotate('{0:,}'.format(r),
-                            xy=(x, y),
-                            xycoords='data',
+            average_y = (offset  + 0.5 * (len(ref_alignments) - 1)) * self.gap_between_als
+            if not self.ref_centric:
+                ax.annotate(ref_name,
+                            xy=(self.label_x, average_y),
+                            xycoords=('axes fraction', 'data'),
+                            xytext=(self.label_x_offset, 0),
                             textcoords='offset points',
                             color=color,
+                            ha=self.label_ha,
                             va='center',
-                            size=6,
-                            **kwargs)
-
-            if draw_mismatches:
-                mismatches = get_mismatch_info(alignment, target_info)
-                for read_p, read_b, ref_p, ref_b, q in mismatches:
-                    if q < max_qual * 0.75:
-                        alpha = 0.25
-                    else:
-                        alpha = 0.85
-
-                    cross_kwargs = dict(zorder=10, color='black', alpha=alpha)
-                    ax.plot([read_p - cross_x, read_p + cross_x], [y - cross_y, y + cross_y], **cross_kwargs)
-                    ax.plot([read_p + cross_x, read_p - cross_x], [y - cross_y, y + cross_y], **cross_kwargs)
-
-            # Draw the alignment, with downward dimples at insertions and upward loops at deletions.
-            xs = [start]
-            ys = [y]
-            indels = sorted(get_indel_info(alignment), key=lambda t: t[1][0])
-            for kind, info in indels:
-                if kind == 'deletion':
-                    centered_at, length = info
-
-                    # Cap how wide the loop can be.
-                    capped_length = min(100, length)
-                    
-                    if length <= 1:
-                        height = 0.0015
-                        indel_xs = [centered_at, centered_at, centered_at]
-                        indel_ys = [y, y + height, y]
-                    else:
-                        width = query_length * 0.001
-                        height = 0.006
-
-                        indel_xs = [
-                            centered_at - width,
-                            centered_at - 0.5 * capped_length,
-                            centered_at + 0.5 * capped_length,
-                            centered_at + width,
-                        ]
-                        indel_ys = [y, y + height, y + height, y]
-
-                        ax.annotate(str(length),
-                                    xy=(centered_at, y + height),
-                                    xytext=(0, 1),
-                                    textcoords='offset points',
-                                    ha='center',
-                                    va='bottom',
-                                    size=6,
-                                   )
-
-                elif kind == 'insertion':
-                    starts_at, ends_at = info
-                    centered_at = np.mean([starts_at, ends_at])
-                    length = ends_at - starts_at
-                    if length <= 2:
-                        height = 0.0015
-                    else:
-                        height = 0.004
-                        ax.annotate(str(length),
-                                    xy=(centered_at, y - height),
-                                    xytext=(0, -1),
-                                    textcoords='offset points',
-                                    ha='center',
-                                    va='top',
-                                    size=6,
-                                   )
-                    indel_xs = [starts_at, centered_at, ends_at]
-                    indel_ys = [y, y - height, y]
-                    
-                xs.extend(indel_xs)
-                ys.extend(indel_ys)
+                        )
+                        
+            for i, alignment in enumerate(ref_alignments):
+                start, end = sam.query_interval(alignment)
+                strand = sam.get_strand(alignment)
+                y = (offset + i * np.sign(offset)) * self.gap_between_als
                 
-            xs.append(end)
-            ys.append(y)
-            
-            max_y = max(max_y, max(ys))
-            
-            kwargs = {'color': color, 'linewidth': 1.5}
-            ax.plot(xs, ys, **kwargs)
-            
-            if strand == '+':
-                arrow_xs = [end, end - query_length * arrow_width]
-                arrow_ys = [y, y + arrow_height]
-            else:
-                arrow_xs = [start, start + query_length * arrow_width]
-                arrow_ys = [y, y - arrow_height]
-                
-            draw_arrow = True
-            if zoom_in is not None:
-                if not all(x_min <= x <= x_max for x in arrow_xs):
-                    draw_arrow = False
+                # Annotate the ends of alignments with reference position numbers and vertical lines.
+                for x, which in ((start, 'start'), (end, 'end')):
+                    if (which == 'start' and strand == '+') or (which == 'end' and strand == '-'):
+                        r = alignment.reference_start
+                    else:
+                        r = alignment.reference_end - 1
 
-            if draw_arrow:
-                ax.plot(arrow_xs, arrow_ys, clip_on=False, **kwargs)
+                    ax.plot([x, x], [0, y], color=color, alpha=0.3)
 
-            features = target_info.features
-            target = target_info.target
-            donor = target_info.donor
+                    if which == 'start':
+                        kwargs = {'ha': 'right', 'xytext': (-2, 0)}
+                    else:
+                        kwargs = {'ha': 'left', 'xytext': (2, 0)}
 
-            features_to_show = {
-                (target, target_info.primer_names[5]),
-                (target, target_info.primer_names[3]),
-                (donor, target_info.knockin),
-                (target, 'PAS'),
-                (donor, 'GFP11'),
-            }
+                    ax.annotate('{0:,}'.format(r),
+                                xy=(x, y),
+                                xycoords='data',
+                                textcoords='offset points',
+                                color=color,
+                                va='center',
+                                size=6,
+                                **kwargs)
 
-            q_to_r = {sam.true_query_position(q, alignment): r
-                      for q, r in alignment.aligned_pairs
-                      if r is not None and q is not None
-                     }
+                if self.draw_mismatches:
+                    mismatches = get_mismatch_info(alignment, self.target_info)
+                    for read_p, read_b, ref_p, ref_b, q in mismatches:
+                        if q < self.max_qual * 0.75:
+                            alpha = 0.25
+                        else:
+                            alpha = 0.85
 
-            if highlight_SNPs:
-                SNP_names = [(s_n, f_n) for s_n, f_n in target_info.features if s_n  == ref_name and f_n.startswith('SNP')]
-                for feature_reference, feature_name in SNP_names:
-                    feature = features[feature_reference, feature_name]
+                        print(q, self.max_qual, alpha)
+
+                        cross_kwargs = dict(zorder=10, color='black', alpha=alpha)
+                        cross_ys = [y - self.cross_y, y + self.cross_y]
+                        ax.plot([read_p - self.cross_x, read_p + self.cross_x], cross_ys, **cross_kwargs)
+                        ax.plot([read_p + self.cross_x, read_p - self.cross_x], cross_ys, **cross_kwargs)
+
+                # Draw the alignment, with downward dimples at insertions and upward loops at deletions.
+                xs = [start]
+                ys = [y]
+                indels = sorted(get_indel_info(alignment), key=lambda t: t[1][0])
+                for kind, info in indels:
+                    if kind == 'deletion':
+                        centered_at, length = info
+
+                        # Cap how wide the loop can be.
+                        capped_length = min(100, length)
+                        
+                        if length <= 1:
+                            height = 0.0015
+                            indel_xs = [centered_at, centered_at, centered_at]
+                            indel_ys = [y, y + height, y]
+                        else:
+                            width = self.query_length * 0.001
+                            height = 0.006
+
+                            indel_xs = [
+                                centered_at - width,
+                                centered_at - 0.5 * capped_length,
+                                centered_at + 0.5 * capped_length,
+                                centered_at + width,
+                            ]
+                            indel_ys = [y, y + height, y + height, y]
+
+                            ax.annotate(str(length),
+                                        xy=(centered_at, y + height),
+                                        xytext=(0, 1),
+                                        textcoords='offset points',
+                                        ha='center',
+                                        va='bottom',
+                                        size=6,
+                                    )
+
+                    elif kind == 'insertion':
+                        starts_at, ends_at = info
+                        centered_at = np.mean([starts_at, ends_at])
+                        length = ends_at - starts_at
+                        if length <= 2:
+                            height = 0.0015
+                        else:
+                            height = 0.004
+                            ax.annotate(str(length),
+                                        xy=(centered_at, y - height),
+                                        xytext=(0, -1),
+                                        textcoords='offset points',
+                                        ha='center',
+                                        va='top',
+                                        size=6,
+                                    )
+                        indel_xs = [starts_at, centered_at, ends_at]
+                        indel_ys = [y, y - height, y]
+                        
+                    xs.extend(indel_xs)
+                    ys.extend(indel_ys)
                     
-                    qs = [q for q, r in q_to_r.items() if feature.start <= r <= feature.end]
-                    if len(qs) != 1:
+                xs.append(end)
+                ys.append(y)
+
+                ref_ps = (alignment.reference_start, alignment.reference_end - 1)
+                if alignment.is_reverse:
+                    ref_ps = ref_ps[::-1]
+
+                coordinates = [
+                    (start, end),
+                    ref_ps,
+                    y,
+                ]
+                self.alignment_coordinates[ref_name].append(coordinates)
+                
+                self.max_y = max(self.max_y, max(ys))
+                self.min_y = min(self.min_y, min(ys))
+                
+                kwargs = {'color': color, 'linewidth': 1.5}
+                ax.plot(xs, ys, **kwargs)
+                
+                if strand == '+':
+                    arrow_xs = [end, end - self.arrow_width]
+                    arrow_ys = [y, y + self.arrow_height]
+                else:
+                    arrow_xs = [start, start + self.arrow_width]
+                    arrow_ys = [y, y - self.arrow_height]
+                    
+                draw_arrow = True
+                if self.zoom_in is not None:
+                    if not all(self.min_x <= x <= self.max_x for x in arrow_xs):
+                        draw_arrow = False
+
+                if draw_arrow:
+                    ax.plot(arrow_xs, arrow_ys, clip_on=False, **kwargs)
+
+                features = copy.deepcopy(self.target_info.features)
+                donor = self.target_info.donor
+
+                features_to_show = [(r_name, f_name) for r_name, f_name in features
+                                    if r_name == ref_name and 'edge' not in f_name and 'SNP' not in f_name]
+
+                q_to_r = {sam.true_query_position(q, alignment): r
+                          for q, r in alignment.aligned_pairs
+                          if r is not None and q is not None
+                         }
+
+                if self.highlight_SNPs:
+                    SNP_names = [(s_n, f_n) for s_n, f_n in features if s_n == ref_name and f_n.startswith('SNP')]
+                    for feature_reference, feature_name in SNP_names:
+                        feature = features[feature_reference, feature_name]
+                        
+                        qs = [q for q, r in q_to_r.items() if feature.start <= r <= feature.end]
+                        if len(qs) != 1:
+                            continue
+
+                        q = qs[0]
+
+                        left_x = q - 0.5
+                        right_x = q + 0.5
+                        bottom_y = y - (self.cross_y * 2)
+                        top_y = y + (self.cross_y * 2)
+                        path_xs = [left_x, right_x, right_x, left_x]
+                        path_ys = [bottom_y, bottom_y, top_y, top_y]
+                        path = np.array([path_xs, path_ys]).T
+                        patch = plt.Polygon(path, color='black', alpha=0.2, linewidth=0)
+                        ax.add_patch(patch)
+                        
+                if self.highlight_around_cut:
+                    features.update(self.target_info.around_cut_features)
+                    features_to_show.update(list(self.target_info.around_cut_features))
+                    features_to_show.remove((donor, self.target_info.knockin))
+
+                for feature_reference, feature_name in features_to_show:
+                    if ref_name != feature_reference:
                         continue
 
-                    q = qs[0]
+                    if (feature_reference, feature_name) not in features:
+                        continue
 
-                    left_x = q - 0.5
-                    right_x = q + 0.5
-                    bottom_y = y - (cross_y * 2)
-                    top_y = y + (cross_y * 2)
-                    path_xs = [left_x, right_x, right_x, left_x]
-                    path_ys = [bottom_y, bottom_y, top_y, top_y]
-                    path = np.array([path_xs, path_ys]).T
-                    patch = plt.Polygon(path, color='black', alpha=0.2, linewidth=0)
-                    ax.add_patch(patch)
+                    feature = features[feature_reference, feature_name]
+                    feature_color = feature.attribute['color']
                     
-            if highlight_around_cut:
-                target_info.features.update(target_info.around_cut_features)
-                features_to_show.update(list(target_info.around_cut_features))
-            else:
-                features_to_show.update([
-                    (target, "3' HA"),
-                    (target, "5' HA"),
-                    (target, target_info.sgRNA),
-                    (donor, "3' HA"),
-                    (donor, "5' HA"),
-                ])
+                    qs = [q for q, r in q_to_r.items() if feature.start <= r <= feature.end]
+                    if not qs:
+                        continue
 
-                features_to_show.update([(target, name) for name in target_info.sgRNAs])
+                    xs = [min(qs), max(qs)]
+                    
+                    rs = [feature.start, feature.end]
+                    if strand == '-':
+                        rs = rs[::-1]
+
+                    if np.sign(offset) == 1:
+                        va = 'bottom'
+                        text_y = 1
+                    else:
+                        va = 'top'
+                        text_y = -1
+
+                    if not self.ref_centric:
+                        for ha, q, r in zip(['left', 'right'], xs, rs):
+                            nts_missing = abs(q_to_r[q] - r)
+                            if nts_missing != 0 and xs[1] - xs[0] > 20:
+                                ax.annotate(str(nts_missing),
+                                            xy=(q, 0),
+                                            ha=ha,
+                                            xytext=(3 if ha == 'left' else -3, text_y),
+                                            textcoords='offset points',
+                                            size=6,
+                                            va=va,
+                                        )
+                        
+                    ax.fill_between(xs, [y] * 2, [0] * 2, color=feature_color, alpha=0.7)
+                        
+                    if not self.ref_centric:
+                        if xs[1] - xs[0] > 18 or feature.attribute['ID'] == self.target_info.sgRNA:
+                            ax.annotate(feature.attribute['ID'],
+                                        xy=(np.mean(xs), 0),
+                                        xycoords='data',
+                                        xytext=(0, self.text_y),
+                                        textcoords='offset points',
+                                        va='top',
+                                        ha='center',
+                                        color=feature_color,
+                                        size=10,
+                                        weight='bold',
+                                    )
+
+    def plot_read(self):
+        ax = self.ax
+        alignments = self.alignments
+
+        if (not alignments) or (alignments[0].query_sequence is None):
+            return self.fig
+
+        if self.process_mappings is not None:
+            layout_info = self.process_mappings(alignments, self.target_info)
+            alignments = layout_info['to_plot']
+
+        if self.zoom_in is not None:
+            self.min_x = self.zoom_in[0] * self.query_length
+            self.max_x = self.zoom_in[1] * self.query_length
+        else:
+            self.min_x = -0.02 * self.query_length
+            self.max_x = 1.02 * self.query_length
+        
+        self.draw_read_arrows()
+
+        self.draw_alignments()
+
+        if self.label_layout:
+            layout = layout_module.Layout(alignments, self.target_info)
+            cat, subcat, details = layout.categorize()
+            title = '{}\n{}, {}, {}'.format(self.query_name, cat, subcat, details)
+        else:
+            title = self.query_name
+
+        ax.set_title(title, y=1.2)
+            
+        ax.set_ylim(1.1 * self.min_y, 1.1 * self.max_y)
+        ax.set_xlim(self.min_x, self.max_x)
+        ax.set_yticks([])
+        
+        ax.spines['bottom'].set_position(('data', 0))
+        ax.spines['bottom'].set_alpha(0.1)
+        for edge in 'left', 'top', 'right':
+            ax.spines[edge].set_color('none')
+            
+        if not self.ref_centric:
+            ax.tick_params(pad=14)
+
+        if self.draw_qualities:
+            quals = alignments[0].query_qualities
+            if alignments[0].is_reverse:
+                quals = quals[::-1]
+
+            qual_ys = np.array(quals) * self.max_y / self.max_qual
+            ax.plot(qual_ys, color='black', alpha=0.5)
+
+        if self.draw_polyA:
+            seq = alignments[0].get_forward_sequence()
+            for b, color in [('A', 'red'), ('G', 'brown')]:
+                locations = utilities.homopolymer_lengths(seq, b)
+                for start, length in locations:
+                    if length > 10:
+                        ax.fill_between([start, start + length - 1], [self.max_y + self.arrow_height] * 2, [0] * 2, color=color, alpha=0.2)
+                        
+                        ax.annotate('poly{}'.format(b),
+                                    xy=(start + length / 2, 0),
+                                    xycoords='data',
+                                    xytext=(0, self.text_y),
+                                    textcoords='offset points',
+                                    va='top',
+                                    ha='center',
+                                    color=color,
+                                    alpha=0.4,
+                                    size=10,
+                                    weight='bold',
+                                )
+                        
+        if self.draw_sequence:
+            seq = alignments[0].get_forward_sequence()
+
+            for x, b in enumerate(seq):
+                if self.min_x <= x <= self.max_x:
+                    ax.annotate(b,
+                                xy=(x, 0),
+                                family='monospace',
+                                size=4,
+                                xytext=(0, -2),
+                                textcoords='offset points',
+                                ha='center',
+                                va='top',
+                            )
+            
+        return self.fig
+
+    def draw_target_and_donor(self):
+        ti = self.target_info
+        knockin_feature = ti.features[ti.donor, ti.knockin]
+
+        gap = 0.03
+        
+        params = [
+            (ti.target, ti.cut_after, self.min_y - gap, self.flip_target),
+            (ti.donor, np.mean([knockin_feature.start, knockin_feature.end]), self.max_y + gap, self.flip_donor),
+        ]
+
+        for name, center_p, ref_y, reverse in params:
+            color = self.ref_name_to_color[name]
+
+            if len(self.alignment_coordinates[name]) == 1:
+                xs, ps, y = self.alignment_coordinates[name][0]
+                anchor_ref = ps[0]
+                anchor_read = xs[0]
+            else:
+                anchor_ref = center_p
+                anchor_read = self.query_length // 2
+
+            if reverse:
+                ref_p_to_x = lambda p: anchor_read - (p - anchor_ref)
+                x_to_ref_p = lambda x: (anchor_read - x) + anchor_ref
+            else:
+                ref_p_to_x = lambda p: (p - anchor_ref) + anchor_read
+                x_to_ref_p = lambda x: (x - anchor_read) + anchor_ref
+
+            ref_edge = len(ti.reference_sequences[name]) - 1
+
+            ref_start = max(0, x_to_ref_p(self.min_x))
+            ref_end = min(ref_edge, x_to_ref_p(self.max_x))
+
+            ref_al_min = ref_start
+            ref_al_max = ref_end
+
+            for xs, ps, y in self.alignment_coordinates[name]:
+                ref_xs = [ref_p_to_x(p) for p in ps]
+                ref_al_min = min(ref_al_min, min(ps))
+                ref_al_max = max(ref_al_max, max(ps))
+
+                self.ax.fill_betweenx([y, ref_y], [xs[0], ref_xs[0]], [xs[1], ref_xs[1]], color=color, alpha=0.05)
+
+                for x, ref_x in zip(xs, ref_xs):
+                    self.ax.plot([x, ref_x], [y, ref_y], color=color, alpha=0.3)
+
+            self.min_y = min(self.min_y, ref_y)
+            self.max_y = max(self.max_y, ref_y)
+
+            if ref_al_min < ref_start:
+                ref_start = max(0, ref_al_min - 30, ref_start - 30)
+                self.min_x = min(self.min_x, ref_p_to_x(ref_start))
+
+            if ref_al_max > ref_end:
+                ref_end = min(ref_edge, ref_al_max + 30, ref_end + 30)
+                self.max_x = max(self.max_x, ref_p_to_x(ref_end))
+
+            self.ax.set_xlim(self.min_x, self.max_x)
+
+            ref_xs = [ref_p_to_x(ref_start), ref_p_to_x(ref_end)]
+
+            self.ax.plot(ref_xs, [ref_y, ref_y], color=color, linewidth=3, solid_capstyle='butt')
+
+            features_to_show = [(r_name, f_name) for r_name, f_name in ti.features
+                                if r_name == name and 'edge' not in f_name and 'SNP' not in f_name]
 
             for feature_reference, feature_name in features_to_show:
-                if ref_name != feature_reference:
-                    continue
-
-                if (feature_reference, feature_name) not in features:
-                    continue
-
-                feature = features[feature_reference, feature_name]
+                feature = ti.features[feature_reference, feature_name]
                 feature_color = feature.attribute['color']
                 
-                qs = [q for q, r in q_to_r.items() if feature.start <= r <= feature.end]
-                if not qs:
-                    continue
-
-                xs = [min(qs), max(qs)]
-                if xs[1] - xs[0] < 5:
-                    continue
-                
-                rs = [feature.start, feature.end]
-                if strand == '-':
-                    rs = rs[::-1]
+                xs = [ref_p_to_x(p) for p in [feature.start, feature.end]]
                     
-                for ha, q, r in zip(['left', 'right'], xs, rs):
-                    nts_missing = abs(q_to_r[q] - r)
-                    if nts_missing != 0 and xs[1] - xs[0] > 20:
-                        ax.annotate(str(nts_missing),
-                                    xy=(q, 0),
-                                    ha=ha,
-                                    va='bottom',
-                                    xytext=(3 if ha == 'left' else -3, 1),
-                                    textcoords='offset points',
-                                    size=6,
-                                   )
-                        
-                    
-                ax.fill_between(xs, [y] * 2, [0] * 2, color=feature_color, alpha=0.7)
-                
-                if xs[1] - xs[0] > 18 or feature.attribute['ID'] == target_info.sgRNA:
-                    ax.annotate(feature.attribute['ID'],
-                                xy=(np.mean(xs), 0),
-                                xycoords='data',
-                                xytext=(0, text_y),
-                                textcoords='offset points',
-                                va='top',
-                                ha='center',
-                                color=feature_color,
-                                size=10,
-                                weight='bold',
-                               )
+                start = ref_y
+                end = ref_y + np.sign(ref_y) * gap * 0.2
 
-    if label_layout:
-        layout = layout_module.Layout(alignments, target_info)
-        cat, subcat, details = layout.categorize()
-        title = '{}\n{}, {}, {}'.format(query_name, cat, subcat, details)
-    else:
-        title = query_name
+                self.ax.fill_between(xs, [start] * 2, [end] * 2, color=feature_color, alpha=0.7, linewidth=0)
 
-    ax.set_title(title, y=1.2)
-        
-    ax.set_ylim(-0.2 * max_y, 1.1 * max_y)
-    ax.set_xlim(x_min, x_max)
-    ax.set_yticks([])
+                self.ax.annotate(feature.attribute['ID'],
+                                 xy=(np.mean(xs), end),
+                                 xycoords='data',
+                                 xytext=(0, 2 * np.sign(ref_y)),
+                                 textcoords='offset points',
+                                 va='top' if ref_y < 0 else 'bottom',
+                                 ha='center',
+                                 color=feature_color,
+                                 size=10,
+                                 weight='bold',
+                                )
+
+            # Draw target and donor names next to diagrams.
+            self.ax.annotate(name,
+                             xy=(self.label_x, ref_y),
+                             xycoords=('axes fraction', 'data'),
+                             xytext=(self.label_x_offset, 0),
+                             textcoords='offset points',
+                             color=color,
+                             ha=self.label_ha,
+                             va='center',
+                            )
+            
+        self.ax.set_ylim(self.min_y - 0.1 * self.height, self.max_y + 0.1 * self.height)
+
+    @property
+    def height(self):
+        return self.max_y - self.min_y
     
-    ax.spines['bottom'].set_position(('data', 0))
-    ax.spines['bottom'].set_alpha(0.1)
-    for edge in 'left', 'top', 'right':
-        ax.spines[edge].set_color('none')
-        
-    ax.tick_params(pad=14)
-    fig.set_size_inches((18 * size_multiple, 40 * max_y * size_multiple))
+    @property
+    def width(self):
+        return self.max_x - self.min_x
+
+    def update_size(self):
+        fig_width = 0.04 * (self.width + 50) * self.size_multiple
+        fig_height = 40 * self.height * self.size_multiple
+        self.fig.set_size_inches((fig_width, fig_height))
+
+def plot_pair(R1_als, R2_als, target_info, title=None, **kwargs):
+    fig, axs = plt.subplots(1, 2, gridspec_kw={'wspace': 0.1})
+
+    plot_read(R1_als, target_info, ax=axs[0], label_left=True, **kwargs)
+    plot_read(R2_als, target_info, ax=axs[1], reverse_complement=True, **kwargs)
+
+    y_min = 0
+    y_max = 0
+    for ax in axs:
+        this_y_min, this_y_max = ax.get_ylim()
+        y_min = min(y_min, this_y_min)
+        y_max = max(y_max, this_y_max)
+
+    for ax in axs:
+        ax.set_ylim(y_min, y_max)
+
+    axs[0].set_title('R1')
+    axs[1].set_title('R2')
+    if title is not None:
+        fig.suptitle(title, y=2)
+
+    fig.set_size_inches((24, 24 * y_max))
     
-    if show_qualities:
-        quals = alignments[0].query_qualities
-        if alignments[0].is_reverse:
-            quals = quals[::-1]
-
-        ax.plot(np.array(quals) * max_y / max_qual, color='black', alpha=0.5)
-
-    if show_polyA:
-        seq = alignments[0].get_forward_sequence()
-        for b, color in [('A', 'red'), ('G', 'brown')]:
-            locations = utilities.homopolymer_lengths(seq, b)
-            for start, length in locations:
-                if length > 10:
-                    ax.fill_between([start, start + length - 1], [max_y + arrow_height] * 2, [0] * 2, color=color, alpha=0.2)
-                    
-                    ax.annotate('poly{}'.format(b),
-                                xy=(start + length / 2, 0),
-                                xycoords='data',
-                                xytext=(0, text_y),
-                                textcoords='offset points',
-                                va='top',
-                                ha='center',
-                                color=color,
-                                alpha=0.4,
-                                size=10,
-                                weight='bold',
-                               )
-                    
-    if show_sequence:
-        seq = alignments[0].get_forward_sequence()
-
-        for x, b in enumerate(seq):
-            if x_min <= x <= x_max:
-                ax.annotate(b,
-                            xy=(x, 0),
-                            family='monospace',
-                            size=4,
-                            xytext=(0, -2),
-                            textcoords='offset points',
-                            ha='center',
-                            va='top',
-                           )
-        
     return fig
 
-def make_stacked_Image(als_iter, target_info, titles=None, **kwargs):
+def make_stacked_Image(als_iter, target_info, titles=None, pairs=False, **kwargs):
     if titles is None:
         titles = itertools.repeat(None)
-
     ims = []
 
     for als, title in zip(als_iter, titles):
         if als is None:
             continue
             
-        fig = plot_read(als, target_info, **kwargs)
+        if pairs:
+            R1_als, R2_als = als
+            fig = plot_pair(R1_als, R2_als, target_info, title=title, **kwargs)
+        else:
+            fig = plot_read(als, target_info, **kwargs)
 
-        if title is not None:
-            fig.axes[0].set_title(title)
+            if title is not None:
+                fig.axes[0].set_title(title)
         #fig.axes[0].set_title('_', y=1.2, color='white')
         
         with io.BytesIO() as buffer:
@@ -567,334 +777,6 @@ def make_stacked_Image(als_iter, target_info, titles=None, **kwargs):
         y_start += im.height
 
     return stacked_im
-
-def explore_pooled(base_dir, group,
-                   initial_guide=None,
-                   by_outcome=False,
-                   draw_mismatches=False,
-                   parsimonious=True,
-                   relevant=False,
-                   show_sequence=False,
-                   size_multiple=1,
-                   highlight_SNPs=False,
-                   highlight_around_cut=True,
-                  ):
-    pool = experiment_module.PooledExperiment(base_dir, group)
-
-    guides = pool.guides
-    if initial_guide is None:
-        initial_guide = guides[0]
-
-    widgets = {
-        'guide': ipywidgets.Select(options=guides, value=initial_guide, layout=ipywidgets.Layout(height='200px', width='450px')),
-        'read_id': ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='600px')),
-        'parsimonious': ipywidgets.ToggleButton(value=parsimonious),
-        'relevant': ipywidgets.ToggleButton(value=relevant),
-        'show_qualities': ipywidgets.ToggleButton(value=False),
-        'draw_mismatches': ipywidgets.ToggleButton(value=draw_mismatches),
-        'show_sequence': ipywidgets.ToggleButton(value=show_sequence),
-        'highlight_SNPs': ipywidgets.ToggleButton(value=highlight_SNPs),
-        'highlight_around_cut': ipywidgets.ToggleButton(value=highlight_around_cut),
-        'outcome': ipywidgets.Select(options=[], continuous_update=False, layout=ipywidgets.Layout(height='200px', width='450px')),
-        'zoom_in': ipywidgets.FloatRangeSlider(value=[-0.02, 1.02], min=-0.02, max=1.02, step=0.001, continuous_update=False, layout=ipywidgets.Layout(width='1200px')),
-        'save': ipywidgets.Button(description='Save'),
-        'file_name': ipywidgets.Text(value=str(base_dir / 'figures')),
-    }
-
-    def save(change):
-        fig = interactive.result
-        fn = widgets['file_name'].value
-        fig.savefig(fn, bbox_inches='tight')
-
-    widgets['save'].on_click(save)
-
-    # For some reason, the target widget doesn't get a label without this.
-    for k, v in widgets.items():
-        v.description = k
-
-    output = ipywidgets.Output()
-
-    def get_exp():
-        guide = widgets['guide'].value
-        exp = experiment_module.SingleGuideExperiment(base_dir, group, guide)
-        return exp
-
-    @output.capture()
-    def populate_outcomes(change):
-        previous_value = widgets['outcome'].value
-
-        exp = get_exp()
-
-        outcomes = {(c, sc) for c, sc, d in exp.outcome_counts.index.values}
-
-        widgets['outcome'].options = [('_'.join(outcome), outcome) for outcome in sorted(outcomes)]
-        if outcomes:
-            if previous_value in outcomes:
-                widgets['outcome'].value = previous_value
-                populate_read_ids(None)
-            else:
-                widgets['outcome'].value = widgets['outcome'].options[0][1]
-        else:
-            widgets['outcome'].value = None
-
-    @output.capture()
-    def populate_read_ids(change):
-        exp = get_exp()
-
-        df = exp.filtered_cell_outcomes
-
-        if exp is None:
-            return
-
-        if by_outcome:
-            outcome = widgets['outcome'].value
-            if outcome is None:
-                qnames = []
-            else:
-                category, subcategory = outcome
-                right_outcome = df.query('category == @category and subcategory == @subcategory')
-                qnames = right_outcome['original_name'].values[:200]
-        else:
-            qnames = df['original_name'].values[:200]
-
-        widgets['read_id'].options = qnames
-
-        if len(qnames) > 0:
-            widgets['read_id'].value = qnames[0]
-            widgets['read_id'].index = 0
-        else:
-            widgets['read_id'].value = None
-            
-    if by_outcome:
-        populate_outcomes({'name': 'initial'})
-
-    populate_read_ids({'name': 'initial'})
-
-    if by_outcome:
-        widgets['outcome'].observe(populate_read_ids, names='value')
-        widgets['guide'].observe(populate_outcomes, names='value')
-    else:
-        widgets['guide'].observe(populate_read_ids, names='value')
-
-    @output.capture(clear_output=True)
-    def plot(guide, read_id, **kwargs):
-        exp = get_exp()
-
-        if exp is None:
-            return
-
-        if by_outcome:
-            als = exp.get_read_alignments(read_id, outcome=kwargs['outcome'])
-        else:
-            als = exp.get_read_alignments(read_id)
-
-        if als is None:
-            return None
-
-        l = pooled_layout.Layout(als, exp.target_info)
-        info = l.categorize()
-        if kwargs['relevant']:
-            als = l.relevant_alignments
-
-        fig = plot_read(als, exp.target_info,
-                        size_multiple=size_multiple,
-                        paired_end_read_length=exp.paired_end_read_length,
-                        **kwargs)
-
-        fig.axes[0].set_title(' '.join((l.name,) + info))
-
-        print(als[0].get_forward_sequence())
-        print(als[0].query_name)
-
-        return fig
-
-    # Make a version of the widgets dictionary that excludes non-plot arguments.
-    most_widgets = widgets.copy()
-    most_widgets.pop('save')
-    most_widgets.pop('file_name')
-
-    interactive = ipywidgets.interactive(plot, **most_widgets)
-    interactive.update()
-
-    def make_row(keys):
-        return ipywidgets.HBox([widgets[k] for k in keys])
-
-    if by_outcome:
-        top_row_keys = ['guide', 'outcome', 'read_id']
-    else:
-        top_row_keys = ['guide', 'read_id']
-
-    layout = ipywidgets.VBox(
-        [make_row(top_row_keys),
-         make_row(['parsimonious',
-                   'relevant',
-                   'show_qualities',
-                   'draw_mismatches',
-                   'show_sequence',
-                   'highlight_SNPs',
-                   'highlight_around_cut',
-                   'save',
-                    'file_name',
-                   ]),
-         #widgets['zoom_in'],
-         interactive.children[-1],
-         output,
-        ],
-    )
-
-    return layout
-    
-def explore(base_dir, by_outcome=False, draw_mismatches=False, parsimonious=True, show_sequence=False, size_multiple=1, max_qual=93):
-    target_names = sorted([t.name for t in target_info_module.get_all_targets(base_dir)])
-
-    widgets = {
-        'target': ipywidgets.Select(options=target_names, value=target_names[0], layout=ipywidgets.Layout(height='200px')),
-        'experiment': ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='450px')),
-        'read_id': ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='600px')),
-        'parsimonious': ipywidgets.ToggleButton(value=parsimonious),
-        'show_qualities': ipywidgets.ToggleButton(value=False),
-        'highlight_around_cut': ipywidgets.ToggleButton(value=False),
-        'draw_mismatches': ipywidgets.ToggleButton(value=draw_mismatches),
-        'show_sequence': ipywidgets.ToggleButton(value=show_sequence),
-        'outcome': ipywidgets.Select(options=[], continuous_update=False, layout=ipywidgets.Layout(height='200px', width='450px')),
-        'zoom_in': ipywidgets.FloatRangeSlider(value=[-0.02, 1.02], min=-0.02, max=1.02, step=0.001, continuous_update=False, layout=ipywidgets.Layout(width='1200px')),
-    }
-
-    # For some reason, the target widget doesn't get a label without this.
-    for k, v in widgets.items():
-        v.description = k
-
-    exps = experiment_module.get_all_experiments(base_dir)
-
-    output = ipywidgets.Output()
-
-    @output.capture()
-    def populate_experiments(change):
-        target = widgets['target'].value
-        previous_value = widgets['experiment'].value
-        datasets = sorted([('{0}: {1}'.format(exp.group, exp.name), exp)
-                           for exp in exps
-                           if exp.target_info.name == target
-                          ])
-        widgets['experiment'].options = datasets
-
-        if datasets:
-            if previous_value in datasets:
-                widgets['experiment'].value = previous_value
-                populate_outcomes(None)
-            else:
-                widgets['experiment'].index = 0
-        else:
-            widgets['experiment'].value = None
-
-    @output.capture()
-    def populate_outcomes(change):
-        previous_value = widgets['outcome'].value
-        exp = widgets['experiment'].value
-        if exp is None:
-            return
-
-        outcomes = exp.outcomes
-        widgets['outcome'].options = [('_'.join(outcome), outcome) for outcome in outcomes]
-        if outcomes:
-            if previous_value in outcomes:
-                widgets['outcome'].value = previous_value
-                populate_read_ids(None)
-            else:
-                widgets['outcome'].value = widgets['outcome'].options[0][1]
-        else:
-            widgets['outcome'].value = None
-
-    @output.capture()
-    def populate_read_ids(change):
-        exp = widgets['experiment'].value
-
-        if exp is None:
-            return
-
-        if by_outcome:
-            outcome = widgets['outcome'].value
-            if outcome is None:
-                qnames = []
-            else:
-                qnames = exp.outcome_query_names(outcome)[:200]
-        else:
-            qnames = list(itertools.islice(exp.query_names, 200))
-
-        widgets['read_id'].options = qnames
-
-        if qnames:
-            widgets['read_id'].value = qnames[0]
-            widgets['read_id'].index = 0
-        else:
-            widgets['read_id'].value = None
-            
-    populate_experiments({'name': 'initial'})
-    if by_outcome:
-        populate_outcomes({'name': 'initial'})
-    populate_read_ids({'name': 'initial'})
-
-    widgets['target'].observe(populate_experiments, names='value')
-
-    if by_outcome:
-        widgets['outcome'].observe(populate_read_ids, names='value')
-        widgets['experiment'].observe(populate_outcomes, names='value')
-    else:
-        widgets['experiment'].observe(populate_read_ids, names='value')
-
-    @output.capture(clear_output=True)
-    def plot(experiment, read_id, **kwargs):
-        exp = experiment
-
-        if exp is None:
-            return
-
-        if by_outcome:
-            als = exp.get_read_alignments(read_id, outcome=kwargs['outcome'])
-        else:
-            als = exp.get_read_alignments(read_id)
-
-        if als is None:
-            return None
-
-        fig = plot_read(als, exp.target_info,
-                        size_multiple=size_multiple,
-                        max_qual=max_qual,
-                        paired_end_read_length=exp.paired_end_read_length,
-                        **kwargs)
-
-        if kwargs['show_sequence']:
-            print(als[0].query_name)
-            print(als[0].get_forward_sequence())
-
-        return fig
-
-    interactive = ipywidgets.interactive(plot, **widgets)
-    interactive.update()
-
-    def make_row(keys):
-        return ipywidgets.HBox([widgets[k] for k in keys])
-
-    if by_outcome:
-        top_row_keys = ['target', 'experiment', 'outcome', 'read_id']
-    else:
-        top_row_keys = ['target', 'experiment', 'read_id']
-
-    layout = ipywidgets.VBox(
-        [make_row(top_row_keys),
-         make_row(['parsimonious',
-                   'show_qualities',
-                   'draw_mismatches',
-                   'show_sequence',
-                   'highlight_around_cut',
-                   ]),
-         #widgets['zoom_in'],
-         interactive.children[-1],
-         output,
-        ],
-    )
-
-    return layout
 
 def make_length_plot(read_lengths, color, outcome_lengths=None, max_length=None):
     def plot_nonzero(ax, xs, ys, color, highlight):

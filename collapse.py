@@ -47,16 +47,16 @@ annotation_fields = {
         ('UMI', 's'),
         ('original_name', 's'),
     ],
-    'UMI_protospacer': [
+    'UMI_guide': [
         ('UMI', 's'),
-        ('protospacer', 's'),
-        ('protospacer_qual', 's'),
+        ('guide', 's'),
+        ('guide_qual', 's'),
         ('original_name', 's'),
     ],
     'collapsed_UMI': [
         ('UMI', 's'),
-        ('protospacer', 's'),
-        ('protospacer_qual', 's'),
+        ('guide', 's'),
+        ('guide_qual', 's'),
         ('cluster_id', '06d'),
         ('num_reads', '06d'),
     ],
@@ -118,19 +118,19 @@ def call_consensus(reads, max_read_length, bam):
         consensus.query_qualities = array.array('B', qs)
         consensus.set_tag(NUM_READS_TAG, len(reads), 'i')
     else:
-        ps_reads = []
+        guide_reads = []
         for read in reads:
-            annotation = Annotations['UMI_protospacer'].from_identifier(read.name)
-            ps_read = fastq.Read('PH', annotation['protospacer'], annotation['protospacer_qual'])
-            ps_reads.append(ps_read)
+            annotation = Annotations['UMI_guide'].from_identifier(read.name)
+            guide_read = fastq.Read('PH', annotation['guide'], annotation['guide_qual'])
+            guide_reads.append(ps_read)
 
-        ps_seq, ps_qs = consensus_seq_and_qs(ps_reads, None, False)
-        ps_qual = fastq.encode_sanger(ps_qs)
+        guide_seq, guide_qs = consensus_seq_and_qs(guide_reads, None, False)
+        guide_qual = fastq.encode_sanger(guide_qs)
 
         annotation = Annotations['collapsed_UMI'](UMI='PH',
                                                   num_reads=len(reads),
-                                                  protospacer=ps_seq,
-                                                  protospacer_qual=ps_qual,
+                                                  guide=guide_seq,
+                                                  guide_qual=guide_qual,
                                                   cluster_id=0,
                                                  )
         name = str(annotation)
@@ -175,10 +175,10 @@ def make_singleton_cluster(read, bam):
         singleton.query_qualities = read.query_qualities
         singleton.set_tag(NUM_READS_TAG, 1, 'i')
     else:
-        annotation = Annotations['UMI_protospacer'].from_identifier(read.name)
+        annotation = Annotations['UMI_guide'].from_identifier(read.name)
         name = Annotations['collapsed_UMI'](UMI=annotation['UMI'],
-                                            protospacer=annotation['protospacer'],
-                                            protospacer_qual=annotation['protospacer_qual'],
+                                            guide=annotation['guide'],
+                                            guide_qual=annotation['guide_qual'],
                                             cluster_id=0,
                                             num_reads=1,
                                            )

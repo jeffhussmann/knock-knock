@@ -42,7 +42,7 @@ class UMI_Outcome(object):
 class Pooled_UMI_Outcome(object):
     columns = [
         'UMI',
-        'mismatch',
+        'guide_mismatch',
         'cluster_id',
         'num_reads',
         'category',
@@ -56,7 +56,7 @@ class Pooled_UMI_Outcome(object):
             setattr(self, name, arg)
 
         self.num_reads = int(self.num_reads)
-        self.mismatch = int(self.mismatch)
+        self.guide_mismatch = int(self.guide_mismatch)
 
     @classmethod
     def from_line(cls, line):

@@ -9,7 +9,7 @@ import yaml
 import pandas as pd
 import tqdm
 
-from knockin import experiment, table
+from knockin import experiment, table, pooled_screen
 
 def check_blastn():
     no_blastn = False
@@ -102,7 +102,7 @@ elif args.pool_parallel is not None:
 
     group, max_procs = args.pool_parallel
 
-    pool = experiment.PooledExperiment(base_dir, group)
+    pool = pooled_screen.PooledScreen(base_dir, group)
 
     # Create parent results dir to avoid race condition
     results_dir = base_dir / 'results' / group
@@ -149,7 +149,7 @@ elif args.process is not None:
             exp_class = experiment.Experiment
     else:
         description = sample_sheet
-        exp_class = experiment.SingleGuideExperiment
+        exp_class = pooled_screen.SingleGuideExperiment
 
     exp = exp_class(args.base_dir, group, name, description, progress)
 

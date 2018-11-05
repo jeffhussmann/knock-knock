@@ -3,7 +3,7 @@ import numpy as np
 from sequencing import sam, interval, utilities
 from knockin.target_info import DegenerateDeletion, DegenerateInsertion
 
-m_p = utilities.memoized_property
+memoized_property = utilities.memoized_property
 
 class Layout(object):
     def __init__(self, alignments, target_info):
@@ -121,7 +121,7 @@ class Layout(object):
 
         return category, subcategory, details
 
-    @m_p
+    @memoized_property
     def all_primer_alignments(self):
         ''' Get all alignments that contain the amplicon primers. '''
         als = {}
@@ -131,17 +131,17 @@ class Layout(object):
 
         return als
 
-    @m_p
+    @memoized_property
     def extra_copy_of_primer(self):
         ''' Check if too many alignments containing either primer were found. '''
         return len(self.all_primer_alignments[5]) > 1 or len(self.all_primer_alignments[3]) > 1
     
-    @m_p
+    @memoized_property
     def missing_a_primer(self):
         ''' Check if either primer was not found in an alignments. '''
         return len(self.all_primer_alignments[5]) == 0 or len(self.all_primer_alignments[3]) == 0
         
-    @m_p
+    @memoized_property
     def primer_alignments(self):
         ''' Get the single alignment containing each primer. '''
         if self.extra_copy_of_primer or self.missing_a_primer:
@@ -149,7 +149,7 @@ class Layout(object):
         else:
             return {side: self.all_primer_alignments[side][0] for side in [5, 3]}
         
-    @m_p
+    @memoized_property
     def primer_strands(self):
         ''' Get which strand each primer-containing alignment mapped to. '''
         if self.primer_alignments is None:
@@ -157,7 +157,7 @@ class Layout(object):
         else:
             return {side: sam.get_strand(self.primer_alignments[side]) for side in [5, 3]}
     
-    @m_p
+    @memoized_property
     def strand(self):
         ''' Get which strand each primer-containing alignment mapped to. '''
         if self.primer_strands is None:
@@ -167,13 +167,13 @@ class Layout(object):
         else:
             return self.primer_strands[5]
 
-    @m_p
+    @memoized_property
     def covered_from_primers(self):
         ''' How much of the read is covered by alignments containing the primers? '''
         assert self.primer_strands[5] == self.primer_strands[3]
         return interval.get_disjoint_covered([self.primer_alignments[5], self.primer_alignments[3]])
 
-    @m_p
+    @memoized_property
     def is_mostly_covered(self):
         ''' TODO: this is misnamed - should be something like 'covers_beginning_and_end'
         '''
@@ -181,11 +181,11 @@ class Layout(object):
                 len(self.seq) - self.covered_from_primers.end <= 10
                )
 
-    @m_p
+    @memoized_property
     def has_integration(self):
         return self.merged_primer_alignment is None
 
-    @m_p
+    @memoized_property
     def merged_primer_alignment(self):
         primer_als = self.primer_alignments
 
@@ -196,7 +196,7 @@ class Layout(object):
 
         return merged
 
-    @m_p
+    @memoized_property
     def scar_near_cut(self):
         d = self.largest_deletion_near_cut
         i = self.largest_insertion_near_cut
@@ -222,11 +222,11 @@ class Layout(object):
 
         return scar
 
-    @m_p
+    @memoized_property
     def near_cut_intervals(self):
         return self.target_info.around_cuts(10)
 
-    @m_p
+    @memoized_property
     def largest_deletion_near_cut(self):
         dels = [indel for indel in self.indels if indel.kind == 'D']
 
@@ -244,7 +244,7 @@ class Layout(object):
 
         return largest
 
-    @m_p
+    @memoized_property
     def largest_insertion_near_cut(self):
         insertions = [indel for indel in self.indels if indel.kind == 'I']
 
@@ -258,7 +258,7 @@ class Layout(object):
 
         return largest
     
-    @m_p
+    @memoized_property
     def scar_string(self):
         if self.scar_near_cut is None:
             scar_string = None
@@ -267,7 +267,7 @@ class Layout(object):
 
         return scar_string
 
-    @m_p
+    @memoized_property
     def donor_alignments(self):
         als = [
             al for al in self.alignments
@@ -275,11 +275,11 @@ class Layout(object):
         ]
         return als
 
-    @m_p
+    @memoized_property
     def parsimonius_alignments(self):
         return interval.make_parsimonious(self.alignments)
 
-    @m_p
+    @memoized_property
     def parsimonious_donor_alignments(self):
         als = [
             al for al in self.parsimonius_alignments
@@ -287,7 +287,7 @@ class Layout(object):
         ]
         return als
 
-    @m_p
+    @memoized_property
     def closest_donor_alignment_to_edge(self):
         ''' Identify the alignments to the donor closest to edge of the read
         that has the 5' and 3' amplicon primer. '''
@@ -310,7 +310,7 @@ class Layout(object):
 
         return closest
 
-    @m_p
+    @memoized_property
     def clean_handoff(self):
         ''' Check if target sequence cleanly transitions to donor sequence at
         each junction between the two, with one full length copy of the relevant
@@ -380,7 +380,7 @@ class Layout(object):
 
         return clean_handoff
     
-    @m_p
+    @memoized_property
     def edge_q(self):
         if self.strand == '+':
             edge_q = {
@@ -394,7 +394,7 @@ class Layout(object):
             }
         return edge_q
 
-    @m_p
+    @memoized_property
     def edge_r(self):
         edge_r = {
             5: [],
@@ -421,7 +421,7 @@ class Layout(object):
 
         return edge_r
 
-    @m_p
+    @memoized_property
     def donor_relative_to_arm(self):
         HAs = self.target_info.homology_arms
 
@@ -439,7 +439,7 @@ class Layout(object):
 
         return relative_to_arm
     
-    @m_p
+    @memoized_property
     def donor_relative_to_cut(self):
         ''' Distance on query between base aligned to donor before/after cut
         and start of target alignment.
@@ -465,7 +465,7 @@ class Layout(object):
 
         return to_cut
 
-    @m_p
+    @memoized_property
     def donor_blunt(self):
         donor_blunt = {}
         for side in [5, 3]:
@@ -485,17 +485,13 @@ class Layout(object):
 
         return donor_blunt
 
-    @m_p
+    @memoized_property
     def integration_interval(self):
         ''' because cut site might not exactly coincide with boundary between
         HAs, the relevant part of query to call integration depends on whether
         a clean HDR handoff is detected at each edge '''
-        if len(self.target_info.cut_afters) > 1:
-            raise NotImplementedError
-        else:
-            cut_after = self.target_info.cut_afters[0]
-
         HAs = self.target_info.homology_arms
+        cut_after = self.target_info.cut_after
 
         flanking_al = {}
         mask_start = {5: -np.inf}
@@ -525,13 +521,9 @@ class Layout(object):
 
         return interval.Interval(disjoint_covered[0].end + 1, disjoint_covered[-1].start - 1)
 
-    @m_p
+    @memoized_property
     def target_to_at_least_cut(self):
-        if len(self.target_info.cut_afters) > 1:
-            raise NotImplementedError
-        else:
-            cut_after = self.target_info.cut_afters[0]
-
+        cut_after = self.target_info.cut_after
         primer_als = self.primer_alignments
 
         target_to_at_least_cut = {
@@ -541,7 +533,7 @@ class Layout(object):
 
         return target_to_at_least_cut
 
-    @m_p
+    @memoized_property
     def junction_summary_per_side(self):
         per_side = {}
 
@@ -557,7 +549,7 @@ class Layout(object):
 
         return per_side
                 
-    @m_p
+    @memoized_property
     def junction_summary(self):
         per_side = self.junction_summary_per_side
 
@@ -586,7 +578,7 @@ class Layout(object):
 
         return summary
 
-    @m_p
+    @memoized_property
     def e_coli_integration(self):
         assert self.has_integration
 
@@ -603,11 +595,11 @@ class Layout(object):
 
         return False
 
-    @m_p
+    @memoized_property
     def flipped_donor(self):
         return any(sam.get_strand(al) != self.strand for al in self.parsimonious_donor_alignments)
     
-    @m_p
+    @memoized_property
     def messy_junction_description(self):
         fields = []
         for side in [5, 3]:
@@ -625,7 +617,7 @@ class Layout(object):
 
         return description
 
-    @m_p
+    @memoized_property
     def integration_summary(self):
         junction_status = self.junction_summary_per_side
 
@@ -652,7 +644,7 @@ class Layout(object):
 
         return summary
     
-    @m_p
+    @memoized_property
     def cleanly_concatanated_donors(self):
         HAs = self.target_info.homology_arms
         p_donor_als = self.parsimonious_donor_alignments
@@ -685,7 +677,7 @@ class Layout(object):
         else:
             return 0
     
-    @m_p
+    @memoized_property
     def indels(self):
         indels = []
 
