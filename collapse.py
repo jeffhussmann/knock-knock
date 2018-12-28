@@ -38,21 +38,25 @@ annotation_fields = {
         ('num_reads', '06d'),
         ('cluster_id', 's'),
     ],
+
     'read': [
         ('cell_BC', 's'),
         ('UMI', 's'),
         ('original_name', 's'),
     ],
+
     'UMI': [
         ('UMI', 's'),
         ('original_name', 's'),
     ],
+
     'UMI_guide': [
         ('UMI', 's'),
         ('guide', 's'),
         ('guide_qual', 's'),
         ('original_name', 's'),
     ],
+
     'collapsed_UMI': [
         ('UMI', 's'),
         ('guide', 's'),
@@ -60,6 +64,7 @@ annotation_fields = {
         ('cluster_id', '06d'),
         ('num_reads', '06d'),
     ],
+
     'collapsed_UMI_mismatch': [
         ('UMI', 's'),
         ('cluster_id', '06d'),
@@ -122,7 +127,7 @@ def call_consensus(reads, max_read_length, bam):
         for read in reads:
             annotation = Annotations['UMI_guide'].from_identifier(read.name)
             guide_read = fastq.Read('PH', annotation['guide'], annotation['guide_qual'])
-            guide_reads.append(ps_read)
+            guide_reads.append(guide_read)
 
         guide_seq, guide_qs = consensus_seq_and_qs(guide_reads, None, False)
         guide_qual = fastq.encode_sanger(guide_qs)

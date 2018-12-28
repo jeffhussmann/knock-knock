@@ -88,6 +88,7 @@ class ReadDiagram():
                  label_left=False,
                  flip_donor=False,
                  flip_target=False,
+                 read_label='sequencing read',
                  ax=None,
                  **kwargs):
         self.parsimonious = parsimonious
@@ -115,12 +116,15 @@ class ReadDiagram():
         self.label_left = label_left
         self.flip_donor = flip_donor
         self.flip_target = flip_target
+        self.read_label = read_label
         self.ax = ax
         
         if self.ref_centric:
             self.gap_between_als = 0.003
+            self.arrow_linewidth = 4
         else:
             self.gap_between_als = 0.012
+            self.arrow_linewidth = 2
 
         self.arrow_height = 0.005
         self.arrow_width = 5
@@ -165,6 +169,9 @@ class ReadDiagram():
         self.max_y = self.gap_between_als
         self.min_y = -self.gap_between_als 
 
+        self.min_x = 0
+        self.max_x = 1
+
         self.alignment_coordinates = defaultdict(list)
 
         self.plot_read()
@@ -175,7 +182,7 @@ class ReadDiagram():
     def draw_read_arrows(self):
         ''' Draw black arrows that represent the sequencing read or read pair. '''
         arrow_kwargs = {
-            'linewidth': 2,
+            'linewidth': self.arrow_linewidth,
             'color': 'black'
         }
 
@@ -206,25 +213,21 @@ class ReadDiagram():
                 arrow_ys = [offset, offset, offset + sign * self.arrow_height]
                 self.ax.plot(arrow_xs, arrow_ys, clip_on=False, **arrow_kwargs)
 
-            read_label = 'read pair'
-
         else:
-            self.ax.plot([0, self.query_length - 1], [0, 0], **arrow_kwargs)
+            arrow_ys = [0, 0, 0, self.arrow_height]
 
-            arrow_ys = [0, self.arrow_height]
-
+            arrow_xs = [0, self.query_length - 1]
             if self.reverse_complement:
-                arrow_xs = [0, self.arrow_width]
+                arrow_xs.extend([0, self.arrow_width])
             else:
-                arrow_xs = [self.query_length - 1, self.query_length - 1 - self.arrow_width]
+                arrow_xs.extend([self.query_length - 1, self.query_length - 1 - self.arrow_width])
             
             self.ax.plot(arrow_xs, arrow_ys, **arrow_kwargs)
 
-            read_label = 'amplicon'
             label_y_offset = 0
 
         # Draw label on read.
-        self.ax.annotate(read_label,
+        self.ax.annotate(self.read_label,
                          xy=(self.label_x, 0),
                          xycoords=('axes fraction', 'data'),
                          xytext=(self.label_x_offset, label_y_offset),
@@ -244,7 +247,7 @@ class ReadDiagram():
         
         if self.ref_centric:
             rnames_below = [self.target_info.target]
-            initial_offset = 2
+            initial_offset = 3
         else:
             rnames_below = []
             initial_offset = 1
@@ -268,7 +271,7 @@ class ReadDiagram():
             color = self.ref_name_to_color[ref_name]
 
             average_y = (offset  + 0.5 * (len(ref_alignments) - 1)) * self.gap_between_als
-            if not self.ref_centric:
+            if (not self.ref_centric) or ref_name not in (self.target_info.target, self.target_info.donor):
                 ax.annotate(ref_name,
                             xy=(self.label_x, average_y),
                             xycoords=('axes fraction', 'data'),
@@ -314,8 +317,6 @@ class ReadDiagram():
                             alpha = 0.25
                         else:
                             alpha = 0.85
-
-                        print(q, self.max_qual, alpha)
 
                         cross_kwargs = dict(zorder=10, color='black', alpha=alpha)
                         cross_ys = [y - self.cross_y, y + self.cross_y]
@@ -449,8 +450,8 @@ class ReadDiagram():
                         
                 if self.highlight_around_cut:
                     features.update(self.target_info.around_cut_features)
-                    features_to_show.update(list(self.target_info.around_cut_features))
-                    features_to_show.remove((donor, self.target_info.knockin))
+                    features_to_show.extend(list(self.target_info.around_cut_features))
+                    #features_to_show.remove((donor, self.target_info.knockin))
 
                 for feature_reference, feature_name in features_to_show:
                     if ref_name != feature_reference:
@@ -751,18 +752,17 @@ def make_stacked_Image(als_iter, target_info, titles=None, pairs=False, **kwargs
             R1_als, R2_als = als
             fig = plot_pair(R1_als, R2_als, target_info, title=title, **kwargs)
         else:
-            fig = plot_read(als, target_info, **kwargs)
+            diagram = ReadDiagram(als, target_info, **kwargs)
 
             if title is not None:
-                fig.axes[0].set_title(title)
-        #fig.axes[0].set_title('_', y=1.2, color='white')
+                diagram.fig.axes[0].set_title(title)
         
         with io.BytesIO() as buffer:
-            fig.savefig(buffer, format='png', bbox_inches='tight')
+            diagram.fig.savefig(buffer, format='png', bbox_inches='tight')
             im = PIL.Image.open(buffer)
             im.load()
             ims.append(im)
-        plt.close(fig)
+        plt.close(diagram.fig)
         
     if not ims:
         return None

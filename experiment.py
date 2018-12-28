@@ -19,7 +19,7 @@ import ipywidgets
 from sequencing import sam, fastq, utilities, visualize_structure, sw, adapters, mapping_tools
 from sequencing.utilities import memoized_property
 
-from . import target_info, blast, layout, pooled_layout, visualize, coherence, collapse, svg
+from . import target_info, blast, layout, visualize, coherence, collapse, svg
 
 group_by = utilities.group_by
 
@@ -218,7 +218,7 @@ class Experiment(object):
 
     def outcome_read_lengths(self, outcome):
         lengths = Counter()
-        for _, group in self.alignment_groups(outcome):
+        for _, group in self.alignment_groups(outcome=outcome):
             lengths[group[0].query_length] += 1
 
         lengths = utilities.counts_to_array(lengths)
@@ -346,21 +346,29 @@ class Experiment(object):
         plt.close(fig)
 
         kwargs = dict(
-            parsimonious=False,
-            paired_end_read_length=self.paired_end_read_length,
+            parsimonious=True,
+            paired_end_read_length=None,
+            ref_centric=True,
             #process_mappings=self.layout_module.characterize_layout,
         )
+
+        def relevant_alignments(i, outcome):
+            als = self.get_read_alignments(i, outcome=outcome)
+            if als is None:
+                raise StopIteration
+            l = layout.Layout(als, self.target_info)
+            return l.alignments
 
         for outcome in self.progress(self.outcomes):
             outcome_fns = self.outcome_fns(outcome)
             
-            als = self.get_read_alignments(0, outcome=outcome)
-            fig = visualize.plot_read(als, self.target_info, **kwargs)
-            fig.axes[0].set_title('')
-            fig.savefig(str(outcome_fns['first_example']), bbox_inches='tight')
+            als = relevant_alignments(0, outcome)
+            diagram = visualize.ReadDiagram(als, self.target_info, **kwargs)
+            diagram.fig.axes[0].set_title('')
+            diagram.fig.savefig(str(outcome_fns['first_example']), bbox_inches='tight')
             plt.close(fig)
             
-            als_iter = (self.get_read_alignments(i, outcome=outcome) for i in range(num_examples))
+            als_iter = (relevant_alignments(i, outcome) for i in range(num_examples))
             stacked_im = visualize.make_stacked_Image(als_iter, self.target_info, **kwargs)
             stacked_im.save(outcome_fns['combined_figure'])
 
@@ -453,12 +461,13 @@ class Experiment(object):
         
         kwargs = dict(
             parsimonious=True,
-            label_layout=False,
+            ref_centric=True,
+            label_layout=True,
             show_all_guides=True,
+            paired_end_read_length=None,
+            read_label='amplicon',
             #process_mappings=self.layout_module.characterize_layout,
         )
-        if not pairs:
-            kwargs['paired_end_read_length'] = self.paired_end_read_length
 
         return visualize.make_stacked_Image(sample, self.target_info, pairs=pairs, **kwargs)
     
@@ -585,31 +594,37 @@ class AmpliconExperiment(Experiment):
         items = self.progress(by_length.items())
 
         for length, groups in items:
-            if length != no_overlap_length:
+            if length == no_overlap_length:
                 continue
-            im = self.groups_to_Image(groups, 5, pairs=(length == no_overlap_length))
+            im = self.groups_to_Image(groups, 3, pairs=(length == no_overlap_length))
             fn = self.fns['length_range_figures'] / '{}_{}.png'.format(length, length)
             im.save(fn)
 
     def process(self):
-        self.stitch_read_pairs()
+        #self.stitch_read_pairs()
         
-        self.count_read_lengths()
+        #self.count_read_lengths()
 
-        for reads, prefix in [(self.stitched_reads, 'stitched_'),
-                              (self.R1_no_overlap_reads, 'R1_no_overlap_'),
-                              (self.R2_no_overlap_reads, 'R2_no_overlap_'),
-                             ]:
-            self.generate_alignments(reads, prefix)
+        #for reads, prefix in [(self.stitched_reads, 'stitched_'),
+        #                      (self.R1_no_overlap_reads, 'R1_no_overlap_'),
+        #                      (self.R2_no_overlap_reads, 'R2_no_overlap_'),
+        #                     ]:
+        #    self.generate_alignments(reads, prefix)
 
-        self.count_outcomes(fn_key='stitched_bam_by_name')
-        #self.make_outcome_plots(num_examples=3)
-        #self.generate_individual_length_figures()
-        #self.generate_svg()
+        #self.count_outcomes(fn_key='stitched_bam_by_name')
+        #self.make_outcome_plots(num_examples=6)
+        self.generate_individual_length_figures()
+        self.generate_svg()
         #self.make_text_visualizations()
 
-def explore(base_dir, by_outcome=False, **kwargs):
-    target_names = sorted([t.name for t in target_info.get_all_targets(base_dir)])
+    def explore(self, by_outcome=True, **kwargs):
+        return explore(self.base_dir, by_outcome=by_outcome, target=self.target_name, experiment=(self.group, self.name), **kwargs)
+
+def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
+    if target is None:
+        target_names = sorted([t.name for t in target_info.get_all_targets(base_dir)])
+    else:
+        target_names = [target]
 
     widgets = {
         'target': ipywidgets.Select(options=target_names, value=target_names[0], layout=ipywidgets.Layout(height='200px')),
@@ -633,7 +648,13 @@ def explore(base_dir, by_outcome=False, **kwargs):
     for k, v in widgets.items():
         v.description = k
 
-    exps = get_all_experiments(base_dir)
+    if experiment is None:
+        conditions = {}
+    else:
+        group_name, exp_name = experiment
+        conditions = {'group': group_name, 'name': exp_name}
+
+    exps = get_all_experiments(base_dir, conditions)
 
     output = ipywidgets.Output()
 
@@ -730,16 +751,23 @@ def explore(base_dir, by_outcome=False, **kwargs):
             paired_end_read_length = exp.paired_end_read_length
         else:
             paired_end_read_length = None
-
-        diagram = visualize.ReadDiagram(als, exp.target_info,
-                                        size_multiple=kwargs.get('size_multiple', 1),
-                                        max_qual=exp.max_qual,
-                                        paired_end_read_length=paired_end_read_length,
-                                        **plot_kwargs)
-
+        
         if widgets['draw_sequence'].value:
             print(als[0].query_name)
             print(als[0].get_forward_sequence())
+
+        l = exp.layout_module.Layout(als, exp.target_info)
+        info = l.categorize()
+
+        diagram = visualize.ReadDiagram(l.alignments, exp.target_info,
+                                        size_multiple=kwargs.get('size_multiple', 1),
+                                        max_qual=exp.max_qual,
+                                        paired_end_read_length=paired_end_read_length,
+                                        read_label='amplicon',
+                                        **plot_kwargs)
+        fig = diagram.fig
+
+        fig.axes[0].set_title(' '.join((l.name,) + info))
 
         return diagram.fig
 
@@ -883,8 +911,6 @@ def get_all_experiments(base_dir, conditions=None):
         for name, description in sample_sheet.items():
             if description.get('experiment_type') == 'amplicon':
                 exp_class = AmpliconExperiment
-            elif description.get('experiment_type') == 'single_guide':
-                exp_class = SingleGuideExperiment
             else:
                 exp_class = Experiment
             
@@ -896,27 +922,3 @@ def get_all_experiments(base_dir, conditions=None):
         raise ValueError('No experiments met conditions')
 
     return filtered
-
-def get_pooled_group(base_dir, group):
-    sample_sheet_fn = base_dir / 'data' / group / 'sample_sheet.yaml'
-    sample_sheet = yaml.load(sample_sheet_fn.read_text())
-    counts_fn = base_dir / 'data' / group / sample_sheet['guide_counts']
-    guide_counts = pd.read_table(counts_fn, header=None, index_col=0, squeeze=True)
-    return guide_counts
-
-def get_all_pooled_groups(base_dir):
-    group_dirs = [p for p in (base_dir / 'data').iterdir() if p.is_dir()]
-
-    pooled_groups = {}
-
-    for group_dir in group_dirs:
-        name = group_dir.name
-
-        sample_sheet_fn = group_dir / 'sample_sheet.yaml'
-        if sample_sheet_fn.exists():
-            sample_sheet = yaml.load(sample_sheet_fn.read_text())
-            pooled = sample_sheet.get('pooled', False)
-            if pooled:
-                pooled_groups[name] = get_pooled_group(base_dir, name)
-
-    return pooled_groups

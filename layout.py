@@ -1,4 +1,5 @@
 import numpy as np
+from collections import defaultdict
 
 from sequencing import sam, interval, utilities
 from knockin.target_info import DegenerateDeletion, DegenerateInsertion
@@ -7,8 +8,18 @@ memoized_property = utilities.memoized_property
 
 class Layout(object):
     def __init__(self, alignments, target_info):
-        self.alignments = [al for al in alignments if not al.is_unmapped]
         self.target_info = target_info
+
+        split_als = []
+        for al in alignments:
+            if al.reference_name == self.target_info.target:
+                split_als.extend(sam.split_at_deletions(al, 2))
+            elif al.reference_name == self.target_info.donor:
+                split_als.extend(sam.split_at_deletions(al, 2))
+            else:
+                split_als.append(al)
+
+        self.alignments = split_als
         
         alignment = alignments[0]
         self.name = alignment.query_name
@@ -40,34 +51,35 @@ class Layout(object):
 
         elif not self.has_integration:
             if self.scar_near_cut is not None:
-                category = 'indel'
-
                 if len(self.scar_near_cut) > 1:
-                    subcategory = 'complex indel'
+                    category = 'uncategorized'
+                    subcategory = 'uncategorized'
                 else:
+                    category = 'indel'
                     indel = self.scar_near_cut[0]
                     if indel.kind == 'D':
-                        if indel.length < 50:
-                            subcategory = 'deletion <50 nt'
-                        else:
-                            subcategory = 'deletion >=50 nt'
+                        subcategory = 'deletion'
                     elif indel.kind == 'I':
                         subcategory = 'insertion'
 
                 details = self.scar_string
             else:
-                category = 'no indel'
-                subcategory = 'no indel'
+                category = 'WT'
+                subcategory = 'WT'
 
-        elif self.integration_summary == 'full length':
-            category = 'full length'
-            subcategory = self.junction_summary
+        elif self.integration_summary == 'donor':
+            if self.junction_summary_per_side[5] == 'HDR' and self.junction_summary_per_side[3] == 'HDR':
+                category = 'HDR'
+                subcategory = 'HDR'
+            else:
+                category = 'misintegration'
+                subcategory = '5\' {}, 3\' {}'.format(self.junction_summary_per_side[5], self.junction_summary_per_side[3])
 
         elif self.integration_summary == 'concatamer':
             category = 'concatamer'
             subcategory = self.junction_summary
 
-        elif self.integration_summary in ['unexpected length', 'unexpected source']:
+        elif self.integration_summary in ['donor with indel', 'other', 'unexpected length', 'unexpected source']:
             category = 'uncategorized'
             subcategory = 'uncategorized'
 
@@ -116,8 +128,8 @@ class Layout(object):
 
                 details = self.scar_string
             else:
-                category = 'no indel'
-                subcategory = 'no indel'
+                category = 'WT'
+                subcategory = 'WT'
 
         return category, subcategory, details
 
@@ -382,6 +394,7 @@ class Layout(object):
     
     @memoized_property
     def edge_q(self):
+        ''' Where in the query are the edges of the integration? '''
         if self.strand == '+':
             edge_q = {
                 5: self.integration_interval.start,
@@ -402,15 +415,15 @@ class Layout(object):
         }
 
         for al in self.parsimonious_donor_alignments:
-            q_to_r = {
-                sam.true_query_position(q, al): r
-                for q, r in al.aligned_pairs
-                if r is not None and q is not None
-            }
-
-            for side in [5, 3]:
-                if self.edge_q[side] in q_to_r:
-                    edge_r[side].append(q_to_r[self.edge_q[side]])
+            cropped = sam.crop_al_to_query_int(al, self.integration_interval.start, self.integration_interval.end)
+            start = cropped.reference_start
+            end = cropped.reference_end - 1
+            if self.strand == '+':
+                edge_r[5].append(start)
+                edge_r[3].append(end)
+            else:
+                edge_r[3].append(start)
+                edge_r[5].append(end)
 
         for side in [5, 3]:
             if len(edge_r[side]) != 1:
@@ -423,6 +436,7 @@ class Layout(object):
 
     @memoized_property
     def donor_relative_to_arm(self):
+        ''' How much of the donor is integrated relative to the edges of the HAs? '''
         HAs = self.target_info.homology_arms
 
         # convention: positive if there is extra in the integration, negative if truncated
@@ -466,24 +480,14 @@ class Layout(object):
         return to_cut
 
     @memoized_property
-    def donor_blunt(self):
-        donor_blunt = {}
+    def donor_integration_contains_full_HA(self):
+        full_HA = {}
         for side in [5, 3]:
-            blunt = False
-            #offset = self.donor_relative_to_arm['external'][side]
-            offset = self.donor_relative_to_cut[side]
+            offset = self.donor_relative_to_arm['external'][side]
             
-            if offset is not None:
-                if offset == 0:
-                    blunt = True
-                elif abs(offset) <= 3:
-                    q = self.edge_q[side]
-                    if min(self.qual[q - 3:q + 4]) <= 30:
-                        blunt = True
-                    
-            donor_blunt[side] = blunt
+            full_HA[side] = offset > 0
 
-        return donor_blunt
+        return full_HA
 
     @memoized_property
     def integration_interval(self):
@@ -540,12 +544,12 @@ class Layout(object):
         target_blunt = self.target_to_at_least_cut
         
         for side in [5, 3]:
-            if target_blunt[side] and self.donor_blunt[side]:
-                per_side[side] = 'NHEJ'
-            elif self.clean_handoff[side]:
+            if self.clean_handoff[side]:
                 per_side[side] = 'HDR'
+            elif self.donor_integration_contains_full_HA[side]:
+                per_side[side] = 'NHEJ'
             else:
-                per_side[side] = 'uncategorized'
+                per_side[side] = 'truncated'
 
         return per_side
                 
@@ -619,20 +623,16 @@ class Layout(object):
 
     @memoized_property
     def integration_summary(self):
-        junction_status = self.junction_summary_per_side
-
         if len(self.parsimonious_donor_alignments) == 0:
-            summary = 'unexpected source'
+            summary = 'other'
 
         elif len(self.parsimonious_donor_alignments) == 1:
             donor_al = self.parsimonious_donor_alignments[0]
             max_indel_length = sam.max_block_length(donor_al, {sam.BAM_CDEL, sam.BAM_CINS})
             if max_indel_length > 1:
-                summary = 'unexpected source'
-            elif junction_status[5] != 'uncategorized' and junction_status[3] != 'uncategorized':
-                summary = 'full length'
+                summary = 'donor with indel'
             else:
-                summary = 'unexpected length'
+                summary = 'donor'
 
         else:
             if self.cleanly_concatanated_donors > 1:
@@ -640,7 +640,7 @@ class Layout(object):
 
             else:
                 #TODO: check for plasmid extensions around the boundary
-                summary = 'unexpected source'
+                summary = 'other'
 
         return summary
     
@@ -707,6 +707,26 @@ class Layout(object):
 
         return indels
     
+    def shared_HAs(self, donor_al, target_al):
+        q_to_HA_offsets = defaultdict(lambda: defaultdict(set))
+
+        for (al, which) in [(donor_al, 'donor'), (target_al, 'target')]:
+            for side in [5, 3]:
+                for q, ref_p in al.aligned_pairs:
+                    if q is not None:
+                        offset = self.target_info.HA_ref_p_to_offset[which, side].get(ref_p)
+
+                        if offset is not None:
+                            q_to_HA_offsets[sam.true_query_position(q, al)][side, offset].add(which)
+                        
+        shared = set()
+        for q in q_to_HA_offsets:
+            for side, offset in q_to_HA_offsets[q]:
+                if len(q_to_HA_offsets[q][side, offset]) == 2:
+                    shared.add(side)
+                    
+        return shared
+    
 def max_del_nearby(alignment, ref_pos, window):
     ref_pos_to_block = sam.get_ref_pos_to_block(alignment)
     nearby = range(ref_pos - window, ref_pos + window)
@@ -730,22 +750,17 @@ def max_indel_nearby(alignment, ref_pos, window):
     return max(max_del, max_ins)
 
 category_order = [
-    ('no indel',
-        ('no indel',
+    ('WT',
+        ('WT',
         ),
     ),
     ('indel',
         ('insertion',
-         'deletion <50 nt',
-         'deletion >=50 nt',
-         'complex indel',
+         'deletion',
         ),
     ),
-    ('full length',
+    ('HDR',
         ('HDR',
-         '5\' NHEJ',
-         '3\' NHEJ',
-         '5\' and 3\' NHEJ',
         ),
     ),
     ('concatamer',
@@ -756,20 +771,20 @@ category_order = [
          'uncategorized',
         ),
     ),
-    ('uncategorized',
-        ('uncategorized',
+    ('misintegration',
+        (
+         "5' HDR, 3' NHEJ",
+         "5' NHEJ, 3' HDR",
+         "5' HDR, 3' truncated",
+         "5' truncated, 3' HDR",
+         "5' NHEJ, 3' truncated",
+         "5' truncated, 3' NHEJ",
+         "5' NHEJ, 3' NHEJ",
+         "5' truncated, 3' truncated",
         ),
     ),
-    ('unexpected length',
-        ('5\' truncated',
-         '3\' truncated',
-         '5\' extended',
-         '3\' extended',
-         '5\' truncated, 3\' truncated',
-         '5\' extended, 3\' extended',
-         '5\' truncated, 3\' extended',
-         '5\' extended, 3\' truncated',
-         'uncategorized',
+    ('uncategorized',
+        ('uncategorized',
         ),
     ),
     ('unexpected source',

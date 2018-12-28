@@ -4,9 +4,7 @@ from pathlib import Path
 
 import pysam
 
-import sequencing.sam as sam
-import sequencing.fasta as fasta
-import sequencing.fastq as fastq
+from sequencing import sam, fasta, fastq
 
 def h_to_s(kind):
     if kind == sam.BAM_CHARD_CLIP:

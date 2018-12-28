@@ -6,7 +6,7 @@ import pysam
 from sequencing import interval, sam, utilities, sw, fastq
 from sequencing.utilities import memoized_property
 
-from knockin.target_info import DegenerateDeletion, DegenerateInsertion
+from knockin.target_info import DegenerateDeletion, DegenerateInsertion, SNV, SNVs
 
 class Layout(object):
     def __init__(self, alignments, target_info):
@@ -80,9 +80,10 @@ class Layout(object):
                 als = [merged]
 
         exempt_if_overlaps = self.target_info.around_cuts(5)
-        split_als = []
-        for al in als:
-            split_als.extend(sam.split_at_deletions(al, 2, exempt_if_overlaps))
+        #split_als = []
+        #for al in als:
+        #    split_als.extend(sam.split_at_deletions(al, 2, exempt_if_overlaps))
+        split_als = als
         
         return split_als
 
@@ -182,7 +183,7 @@ class Layout(object):
         position_to_name = {SNPs['target'][name]['position']: name for name in SNPs['target']}
         variable_locii = {name: [] for name in SNPs['target']}
 
-        other = defaultdict(list)
+        other = []
 
         for al in self.parsimonious_target_alignments:
             for true_read_i, read_b, ref_i, ref_b, qual in sam.aligned_tuples(al, self.target_info.target_sequence):
@@ -196,8 +197,10 @@ class Layout(object):
 
                 else:
                     if read_b != '-' and ref_b != '-' and read_b != ref_b:
-                        other[ref_i].append((read_b, qual))
+                        snv = SNV(ref_i, read_b, qual)
+                        other.append(snv)
 
+        other = SNVs(other)
         return variable_locii, other
 
     @memoized_property
@@ -660,6 +663,9 @@ class Layout(object):
 
                 cropped_donor_al = sam.crop_al_to_query_int(donor_al, left_switch_after + 1, right_switch_after)
 
+                if cropped_donor_al is None or cropped_donor_al.is_unmapped:
+                    continue
+
                 if cropped_left_al is None:
                     target_bounds[5] = None
                 else:
@@ -715,7 +721,7 @@ class Layout(object):
             self.relevant_alignments = []
 
         elif self.simple_layout:
-            _, other_SNPs = self.base_calls
+            _, other_SNVs = self.base_calls
             donor_seen, variable_locii_details = self.variable_locii_summary
 
             if donor_seen:
@@ -747,13 +753,13 @@ class Layout(object):
                 if len(self.indels_near_cut) == 0:
                     category = 'wild type'
 
-                    if len(other_SNPs) == 0:
+                    if len(other_SNVs) == 0:
                         subcategory = 'wild type'
+                        details = 'n/a'
                     else:
                         subcategory = 'mismatches'
+                        details = str(other_SNVs)
                     
-                    details = variable_locii_details
-
                     self.relevant_alignments = standard_alignments
 
                 elif len(self.indels_near_cut) == 1:
@@ -763,7 +769,7 @@ class Layout(object):
                         category = 'deletion'
                     
                         nearby = interval.Interval(min(indel.starts_ats) - 5, max(indel.starts_ats) + 5)
-                        if any(SNP_p in nearby for SNP_p in other_SNPs):
+                        if any(SNV.position in nearby for SNV in other_SNVs):
                             subcategory = 'mismatch nearby'
                         else:
                             subcategory = 'clean'
