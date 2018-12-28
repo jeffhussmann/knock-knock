@@ -445,6 +445,53 @@ class DegenerateInsertion():
 
         return DegenerateInsertion.from_pairs(all_pairs)
 
+class SNV():
+    def __init__(self, position, basecall, quality):
+        self.position = position
+        self.basecall = basecall
+        self.quality = quality
+
+    @classmethod
+    def from_string(cls, details_string):
+        basecall = details_string[-1]
+
+        if basecall.islower():
+            quality = 0
+        else:
+            quality = 40
+
+        position = int(details_string[:-1])
+
+        return SNV(position, basecall, quality)
+
+    def __str__(self):
+        if self.quality < 30:
+            bc = self.basecall.lower()
+        else:
+            bc = self.basecall
+
+        return '{}{}'.format(self.position, bc)
+    
+class SNVs():
+    def __init__(self, snvs):
+        self.snvs = sorted(snvs, key=lambda snv: snv.position)
+    
+    def __str__(self):
+        return ','.join(str(snv) for snv in self.snvs)
+
+    @classmethod
+    def from_string(cls, details_string):
+        return SNVs([SNV.from_string(s) for s in details_string.split(',')])
+
+    def __repr__(self):
+        return str(self)
+
+    def __len__(self):
+        return len(self.snvs)
+
+    def __iter__(self):
+        return iter(self.snvs)
+
 def parse_benchling_genbank(genbank_fn):
     convert_strand = {
         -1: '-',
