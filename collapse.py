@@ -68,7 +68,7 @@ annotation_fields = {
     'collapsed_UMI_mismatch': [
         ('UMI', 's'),
         ('cluster_id', '06d'),
-        ('num_reads', '06d'),
+        ('num_reads', '010d'),
         ('mismatch', 'd'),
     ],
 }

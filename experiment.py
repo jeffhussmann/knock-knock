@@ -87,6 +87,7 @@ class Experiment(object):
         self.max_insertion_length = 20
 
         self.sgRNA = self.description.get('sgRNA')
+        self.donor = self.description.get('donor')
 
         # When checking if an Experiment meets filtering conditions, want to be
         # able to just test description.
@@ -101,7 +102,11 @@ class Experiment(object):
             else:
                 self.target_name = '{}_{}'.format(self.description['target_info_prefix'], self.name)
 
-        self.target_info = target_info.TargetInfo(self.base_dir, self.target_name, sgRNA=self.sgRNA)
+        self.target_info = target_info.TargetInfo(self.base_dir,
+                                                  self.target_name,
+                                                  self.donor,
+                                                  sgRNA=self.sgRNA,
+                                                 )
 
         self.fns = {
             'bam': self.dir / 'alignments.bam',
@@ -131,7 +136,6 @@ class Experiment(object):
             if not fn.exists():
                 raise ValueError('{0}: {1} specifies non-existent {2}'.format(group, name, fn))
 
-    
     def outcome_fns(self, outcome):
         outcome_string = '_'.join(map(str, outcome))
         outcome_dir = self.fns['outcomes_dir'] / outcome_string
@@ -139,6 +143,8 @@ class Experiment(object):
             'dir': outcome_dir,
             'query_names': outcome_dir / 'qnames.txt',
             'bam_by_name': outcome_dir / 'alignments.by_name.bam',
+            'filtered_cell_bam': outcome_dir / 'filtered_cell_alignments.bam',
+            'filtered_cell_bam_by_name': outcome_dir / 'filtered_cell_alignments.by_name.bam',
             'first_example': outcome_dir / 'first_examples.png',
             'combined_figure': outcome_dir / 'combined.png',
             'lengths_figure': outcome_dir / 'lengths.png',
@@ -178,7 +184,7 @@ class Experiment(object):
         if outcome is None:
             fn = self.fns[fn_key]
         else:
-            fn = self.outcome_fns(outcome)['bam_by_name']
+            fn = self.outcome_fns(outcome)[fn_key]
 
         grouped = sam.grouped_by_name(fn)
 
@@ -514,6 +520,9 @@ class AmpliconExperiment(Experiment):
             'R2_no_overlap_bam_by_name': self.dir / 'R2_no_overlap_alignments.by_name.bam',
         })
     
+    def get_read_alignments(self, read_id, fn_key='stitched_bam_by_name', outcome=None):
+        return super().get_read_alignments(read_id, fn_key=fn_key, outcome=outcome)
+    
     @property
     def read_pairs(self):
         read_pairs = fastq.read_pairs(self.fns['R1'], self.fns['R2'])
@@ -600,21 +609,21 @@ class AmpliconExperiment(Experiment):
             fn = self.fns['length_range_figures'] / '{}_{}.png'.format(length, length)
             im.save(fn)
 
-    def process(self):
+    def process(self, stage):
         #self.stitch_read_pairs()
-        
+        #
         #self.count_read_lengths()
 
-        #for reads, prefix in [(self.stitched_reads, 'stitched_'),
-        #                      (self.R1_no_overlap_reads, 'R1_no_overlap_'),
-        #                      (self.R2_no_overlap_reads, 'R2_no_overlap_'),
-        #                     ]:
-        #    self.generate_alignments(reads, prefix)
+        for reads, prefix in [(self.stitched_reads, 'stitched_'),
+                              (self.R1_no_overlap_reads, 'R1_no_overlap_'),
+                              (self.R2_no_overlap_reads, 'R2_no_overlap_'),
+                             ]:
+            self.generate_alignments(reads, prefix)
 
-        #self.count_outcomes(fn_key='stitched_bam_by_name')
+        self.count_outcomes(fn_key='stitched_bam_by_name')
         #self.make_outcome_plots(num_examples=6)
-        self.generate_individual_length_figures()
-        self.generate_svg()
+        #self.generate_individual_length_figures()
+        #self.generate_svg()
         #self.make_text_visualizations()
 
     def explore(self, by_outcome=True, **kwargs):
@@ -902,7 +911,10 @@ def get_all_experiments(base_dir, conditions=None):
         return True
 
     exps = []
-    groups = (p.name for p in data_dir.glob('*') if p.is_dir())
+    groups = (p.name for p in data_dir.iterdir() if p.is_dir())
+
+    if 'group' in conditions:
+        groups = (n for n in groups if n in conditions['group'])
     
     for group in groups:
         sample_sheet_fn = data_dir / group / 'sample_sheet.yaml'

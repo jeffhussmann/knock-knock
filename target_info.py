@@ -3,22 +3,37 @@ from collections import defaultdict
 import yaml
 import pysam
 import Bio.SeqIO
+import Bio.SeqUtils
 
-from sequencing import fasta, gff, utilities, mapping_tools, interval
+from sequencing import fasta, gff, utilities, mapping_tools, interval, sam, sw
 
-class TargetInfo(object):
-    def __init__(self, base_dir, name, sgRNA=None):
+class Effector():
+    def __init__(self, name, PAM_pattern, PAM_side, cut_after_offset):
+        self.name = name
+        self.PAM_pattern = PAM_pattern
+        self.PAM_side = PAM_side
+        # cut_after_offset is relative to the 5'-most nt of the PAM
+        self.cut_after_offset = cut_after_offset
+
+effectors = {
+    'SpCas9': Effector('SpCas9', 'NGG', 3, -4),
+    'SaCas9': Effector('SaCas9', 'NNGRRT', 3, -4),
+    'Cpf1': Effector('Cpf1', 'TTTN', 5, (22, 26)),
+}
+
+class TargetInfo():
+    def __init__(self, base_dir, name, donor=None, sgRNA=None, supplemental_headers=None):
         self.name = name
         self.dir = Path(base_dir) / 'targets' / name
 
         manifest_fn = self.dir / 'manifest.yaml'
         manifest = yaml.load(manifest_fn.open())
         self.target = manifest['target']
-        self.donor = manifest.get('donor', None)
         self.sources = manifest['sources']
 
         self.sgRNA = sgRNA
-        self.knockin = manifest.get('knockin', 'GFP') 
+        self.donor = donor
+        self.knockin = manifest.get('knockin', 'donor-specific') 
 
         self.primer_names = {
             5: manifest.get('forward primer', 'forward primer'),
@@ -34,6 +49,10 @@ class TargetInfo(object):
             'degenerate_insertions': self.dir / 'degenerate_insertions.txt',
             'degenerate_deletions': self.dir / 'degenerate_deletions.txt',
         }
+
+    @utilities.memoized_property
+    def header(self):
+        return pysam.AlignmentHeader.from_references([self.target, self.donor], [len(self.target_sequence), len(self.donor_sequence)])
 
     @utilities.memoized_property
     def sgRNAs(self):
@@ -65,6 +84,16 @@ class TargetInfo(object):
         with self.fns['ref_gff'].open('w') as gff_fh:
             gff_fh.write('##gff-version 3\n')
             for feature in sorted(all_gff_features):
+                # Note: all sgRNAs should have feature field format 'sgRNA_{effector}'
+                if feature.feature.startswith('sgRNA'):
+                    try:
+                        _, effector = feature.feature.split('_')
+                    except:
+                        print(self.name, feature)
+                        raise
+                    feature.feature = 'sgRNA'
+                    feature.attribute['effector'] = effector
+
                 gff_fh.write(str(feature) + '\n')
 
     def make_bowtie2_index(self):
@@ -93,71 +122,125 @@ class TargetInfo(object):
         return self.reference_sequences[self.target]
     
     @utilities.memoized_property
+    def target_sequence_bytes(self):
+        return self.target_sequence.encode()
+    
+    @utilities.memoized_property
+    def donor_sequence_bytes(self):
+        return self.donor_sequence.encode()
+
+    @utilities.memoized_property
+    def target_sequence_seed_locations(self):
+        return sw.register_seed_locations(self.target_sequence_bytes)
+    
+    @utilities.memoized_property
+    def donor_sequence_seed_locations(self):
+        return sw.register_seed_locations(self.donor_sequence_bytes)
+
+    @utilities.memoized_property
     def donor_sequence(self):
         return self.reference_sequences[self.donor]
 
     @utilities.memoized_property
-    def PAM_range(self):
-        sgRNA = self.sgRNA_feature
-
-        if sgRNA.strand == '+':
-            start = sgRNA.end + 1
-            end = sgRNA.end + 3
-
-        elif sgRNA.strand == '-':
-            start = sgRNA.start - 3
-            end = sgRNA.start - 1
-
-        return start, end
-    
-    @utilities.memoized_property
-    def PS_ranges(self):
-        return [(s.start, s.end) for s in self.sgRNA_features]
-        
-    @utilities.memoized_property
     def sgRNA_features(self):
-        return [self.features[self.target, sgRNA] for sgRNA in self.sgRNAs]
+        return {name: self.features[self.target, name] for name in self.sgRNAs}
 
     @utilities.memoized_property
     def all_sgRNA_features(self):
         return {name: feature for name, feature in self.features.items() if feature.feature == 'sgRNA'}
     
     @utilities.memoized_property
+    def guide_slices(self):
+        guide_slices = {name: slice(sgRNA.start, sgRNA.end + 1) for name, sgRNA in self.sgRNA_features.items()}
+        return guide_slices
+    
+    @utilities.memoized_property
+    def guide_slice(self):
+        if len(self.guide_slices) > 1:
+            raise ValueError(self.guide_slices)
+        else:
+            return list(self.guide_slices.values())[0]
+    
+    @utilities.memoized_property
+    def PAM_slices(self):
+        PAM_slices = {}
+
+        for name, sgRNA in self.sgRNA_features.items():
+            effector = effectors[sgRNA.attribute['effector']]
+
+            before_slice = slice(sgRNA.start - len(effector.PAM_pattern), sgRNA.start)
+            after_slice = slice(sgRNA.end + 1, sgRNA.end + 1 + len(effector.PAM_pattern))
+
+            if (sgRNA.strand == '+' and effector.PAM_side == 5) or (sgRNA.strand == '-' and effector.PAM_side == 3):
+                PAM_slice = before_slice
+            else:
+                PAM_slice = after_slice
+
+            PAM_slices[name] = PAM_slice
+
+            PAM_seq = self.target_sequence[PAM_slice].upper()
+            if sgRNA.strand == '-':
+                PAM_seq = utilities.reverse_complement(PAM_seq)
+            pattern, *matches = Bio.SeqUtils.nt_search(PAM_seq, effector.PAM_pattern) 
+            if 0 not in matches:
+                raise ValueError('{}: {} doesn\'t match {} PAM'.format(name, PAM_seq, pattern))
+
+        return PAM_slices
+    
+    @utilities.memoized_property
+    def PAM_slice(self):
+        if len(self.PAM_slices) > 1:
+            raise ValueError(self.PAM_slices)
+        else:
+            return list(self.PAM_slices.values())[0]
+
+    @utilities.memoized_property
     def cut_afters(self):
-        cut_afters = []
-        seq = self.target_sequence
-        for feature in self.sgRNA_features:
-            if feature.strand == '+':
-                PAM = seq[feature.end + 1:feature.end + 4]
-                cut_after = feature.end - 3
+        cut_afters = {}
+        for name, sgRNA in self.sgRNA_features.items():
+            effector = effectors[sgRNA.attribute['effector']]
+            if isinstance(effector.cut_after_offset, int):
+                offsets = [effector.cut_after_offset]
+                key_suffixes = ['']
+            else:
+                offsets = effector.cut_after_offset
+                key_suffixes = ['_{}'.format(i) for i in range(len(offsets))]
 
-            elif feature.strand == '-':
-                PAM = utilities.reverse_complement(seq[feature.start - 3:feature.start])
-                cut_after = feature.start + 2
+            for offset, key_suffix in zip(offsets, key_suffixes):
+                if sgRNA.strand == '+':
+                    PAM_5 = self.PAM_slices[name].start
+                    cut_after = PAM_5 + offset
+                else:
+                    PAM_5 = self.PAM_slices[name].stop - 1
+                    cut_after = PAM_5 - offset
+                
+                cut_afters[name + key_suffix] = cut_after
 
-            if PAM[-2:] != 'GG':
-                raise ValueError('non-NGG PAM: {0}'.format(PAM))
-
-            cut_afters.append(cut_after)
-        
         return cut_afters
     
     @utilities.memoized_property
     def cut_after(self):
         ''' when processing assumes there will be only one cut, use this '''
-        if len(self.cut_afters) > 1:
-            raise ValueError(self.cut_afters)
-        else:
-            return self.cut_afters[0]
+        return min(self.cut_afters.values())
 
     def around_cuts(self, each_side):
-        intervals = [interval.Interval(cut_after - each_side + 1, cut_after + each_side) for cut_after in self.cut_afters]
+        intervals = [interval.Interval(cut_after - each_side + 1, cut_after + each_side) for cut_after in self.cut_afters.values()]
         return interval.DisjointIntervals(intervals)
 
     @utilities.memoized_property
+    def overlaps_cut(self):
+        ''' only really makes sense if only one cut or Cpf1 '''
+        cut_after_ps = self.cut_afters.values()
+        cut_interval = interval.Interval(min(cut_after_ps) + 1, max(cut_after_ps))
+        def overlaps_cut(al):
+            return bool(sam.reference_interval(al) & cut_interval)
+        return overlaps_cut
+        
+    @utilities.memoized_property
     def around_cut_features(self):
         fs = {}
-        for feature, cut_after in zip(self.sgRNA_features, self.cut_afters):
+        for name, feature in self.sgRNA_features.items():
+            cut_after = self.cut_afters[name]
             upstream = gff.Feature.from_fields(self.target, '.', '.', cut_after - 25, cut_after, '.', feature.strand, '.', '.')
             downstream = gff.Feature.from_fields(self.target, '.', '.', cut_after + 1, cut_after + 25, '.', feature.strand, '.', '.')
 
@@ -210,14 +293,19 @@ class TargetInfo(object):
         return primers
 
     @utilities.memoized_property
+    def amplicon_length(self):
+        start = min(f.start for f in self.primers.values())
+        end = max(f.end for f in self.primers.values())
+        return end - start + 1
+
+    @utilities.memoized_property
     def fingerprints(self):
         fps = {
             self.target: [],
             self.donor: [],
         }
 
-        SNP_names = sorted([name for seq_name, name in self.features if seq_name == self.target and name.startswith('SNP')])
-        for name in SNP_names:
+        for name in self.SNP_names:
             fs = {k: self.features[k, name] for k in (self.target, self.donor)}
             ps = {k: (f.strand, f.start) for k, f in fs.items()}
             bs = {k: self.reference_sequences[k][p:p + 1] for k, (strand, p) in ps.items()}
@@ -230,16 +318,19 @@ class TargetInfo(object):
 
         return fps
 
+
+    @utilities.memoized_property
+    def SNP_names(self):
+        return sorted([name for seq_name, name in self.features if seq_name == self.donor and name.startswith('SNP')])
+
     @utilities.memoized_property
     def SNPs(self):
         SNPs = {}
 
-        SNP_names = sorted([name for seq_name, name in self.features if seq_name == self.target and name.startswith('SNP')])
-
         for key, seq_name in [('target', self.target), ('donor', self.donor)]:
             SNPs[key] = {}
             seq = self.reference_sequences[seq_name]
-            for name in SNP_names:
+            for name in self.SNP_names:
                 feature = self.features[seq_name, name]
                 strand = feature.strand
                 position = feature.start
@@ -254,6 +345,19 @@ class TargetInfo(object):
                 }
             
         return SNPs
+    
+    @utilities.memoized_property
+    def donor_deletions(self):
+        donor_deletions = []
+        for (seq_name, name), feature in self.features.items():
+            if seq_name == self.target and feature.feature == 'donor_deletion':
+                donor_name = name[:-len('_deletion')]
+                if donor_name == self.donor:
+                    deletion = DegenerateDeletion([feature.start], len(feature))
+                    deletion = self.expand_degenerate_indel(deletion)
+                    donor_deletions.append(deletion)
+
+        return donor_deletions
 
     @utilities.memoized_property
     def wild_type_locii(self):
@@ -335,6 +439,7 @@ class DegenerateDeletion():
     def __init__(self, starts_ats, length):
         self.kind = 'D'
         self.starts_ats = tuple(starts_ats)
+        self.num_MH_nts = len(self.starts_ats) - 1
         self.length = length
 
     @classmethod
@@ -471,7 +576,7 @@ class SNV():
             bc = self.basecall
 
         return '{}{}'.format(self.position, bc)
-    
+
 class SNVs():
     def __init__(self, snvs):
         self.snvs = sorted(snvs, key=lambda snv: snv.position)
@@ -491,6 +596,28 @@ class SNVs():
 
     def __iter__(self):
         return iter(self.snvs)
+
+    @property
+    def positions(self):
+        return [snv.position for snv in self.snvs]
+    
+    @property
+    def basecalls(self):
+        return [snv.basecall for snv in self.snvs]
+
+    def __lt__(self, other):
+        if max(self.positions) != max(other.positions):
+            return max(self.positions) < max(other.positions)
+        else:
+            if len(self) < len(other):
+                return True
+            elif len(self) == len(other):
+                if self.positions != other.positions:
+                    return self.positions < other.positions
+                else: 
+                    return self.basecalls < other.basecalls
+            else:
+                return False
 
 def parse_benchling_genbank(genbank_fn):
     convert_strand = {

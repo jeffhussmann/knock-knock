@@ -39,15 +39,37 @@ def check_parallel():
         print('GNU parallel is required and couldn\'t be found')
         sys.exit(0)
 
+def parallel_pool_common_sequences(base_dir, group_name, max_procs):
+    pool = pooled_screen.PooledScreen(base_dir, group_name)
+    
+    parallel_command = [
+        'parallel',
+        '-n', '2', 
+        '--bar',
+        '--max-procs', max_procs,
+        'process_knockin_experiment',
+        '--base_dir', args.base_dir,
+        '--no_progress',
+        '--process_common_sequences', ':::',
+    ]
+
+    arg_pairs = [(group_name, chunk_name) for chunk_name in pool.common_sequence_chunk_names]
+    for pair in sorted(arg_pairs):
+        parallel_command.extend(pair)
+    
+    subprocess.check_call(parallel_command)
+
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--base_dir', required=True)
 parser.add_argument('--no_progress', action='store_true')
 
 mode_group = parser.add_mutually_exclusive_group(required=True)
-mode_group.add_argument('--process', nargs=2, metavar=('GROUP_NAME', 'EXP_NAME'))
+mode_group.add_argument('--process', nargs=3, metavar=('GROUP_NAME', 'EXP_NAME', 'STAGE'))
+mode_group.add_argument('--parallel_pool_common_sequences', nargs=2, metavar=('GROUP_NAME', 'MAX_PROCS'))
+mode_group.add_argument('--process_common_sequences', nargs=2, metavar=('GROUP_NAME', 'CHUNK_NAME'))
 mode_group.add_argument('--parallel', metavar='MAX_PROCS')
-mode_group.add_argument('--pool_parallel', nargs=2, metavar=('GROUP_NAME', 'MAX_PROCS'))
+mode_group.add_argument('--parallel_pool', nargs=2, metavar=('GROUP_NAME', 'MAX_PROCS'))
 mode_group.add_argument('--html', metavar='FILE_NAME')
 mode_group.add_argument('--csv', metavar='FILE_NAME')
 
@@ -56,6 +78,11 @@ parser.add_argument('--drop_outcomes')
 
 args = parser.parse_args()
 
+if args.no_progress:
+    progress = None
+else:
+    progress = tqdm.tqdm
+        
 base_dir = Path(args.base_dir)
 
 if args.conditions is None:
@@ -82,7 +109,7 @@ if args.parallel is not None:
 
     parallel_command = [
         'parallel',
-        '-n', '2', 
+        '-n', '3', 
         '--bar',
         '--max-procs', max_procs,
         'process_knockin_experiment',
@@ -91,49 +118,70 @@ if args.parallel is not None:
         '--process', ':::',
     ]
 
-    arg_pairs = [(e.group, e.name) for e in exps]
-    for pair in sorted(arg_pairs):
-        parallel_command.extend(pair)
+    arg_tuples = [(e.group, e.name, '0') for e in exps]
+    for t in sorted(arg_tuples):
+        parallel_command.extend(t)
     
     subprocess.check_call(parallel_command)
 
-elif args.pool_parallel is not None:
+elif args.parallel_pool is not None:
     check_parallel()
 
-    group, max_procs = args.pool_parallel
+    group_name, max_procs = args.parallel_pool
 
-    pool = pooled_screen.PooledScreen(base_dir, group)
+    pool = pooled_screen.PooledScreen(base_dir, group_name, progress=tqdm.tqdm)
 
     # Create parent results dir to avoid race condition
-    results_dir = base_dir / 'results' / group
+    results_dir = base_dir / 'results' / group_name
     results_dir.mkdir(exist_ok=True)
 
-    parallel_command = [
-        'parallel',
-        '-n', '2', 
-        '--bar',
-        '--max-procs', max_procs,
-        'process_knockin_experiment',
-        '--base_dir', args.base_dir,
-        '--no_progress',
-        '--process', ':::',
-    ]
+    def process_stage(stage):
+        parallel_command = [
+            'parallel',
+            '-n', '3', 
+            '--bar',
+            '--max-procs', max_procs,
+            'process_knockin_experiment',
+            '--base_dir', args.base_dir,
+            '--no_progress',
+            '--process', ':::',
+        ]
 
-    arg_pairs = [(group, guide) for guide in pool.guides]
-    for pair in sorted(arg_pairs):
-        parallel_command.extend(pair)
-    
-    subprocess.check_call(parallel_command)
+        guides = pool.guides
+        #guides = list(pool.gene_guides(['POLQ', 'HUS1', 'RAD17', 'POLL', 'RAD1', 'RAD9A'])) + pool.non_targeting_guides
+
+        arg_tuples = [(group_name, guide, str(stage)) for guide in guides]
+        for t in sorted(arg_tuples):
+            parallel_command.extend(t)
+        
+        subprocess.check_call(parallel_command)
+
+    #process_stage(0)
+
+    #pool.make_common_sequences()
+    #parallel_pool_common_sequences(base_dir, group_name, max_procs)
+    #pool.build_common_sequence_to_outcome()
+
+    process_stage(1)
+
+    pool.make_outcome_counts()
+
+elif args.parallel_pool_common_sequences is not None:
+    group_name, max_procs = args.parallel_pool_common_sequences
+    parallel_pool_common_sequences(base_dir, group_name, max_procs)
+
+elif args.process_common_sequences is not None:
+    group, chunk_name = args.process_common_sequences
+
+    exp = pooled_screen.CommonSequenceExperiment(base_dir, group, chunk_name, progress=progress)
+    exp.process()
 
 elif args.process is not None:
     check_blastn()
 
-    group, name = args.process
-    if args.no_progress:
-        progress = None
-    else:
-        progress = tqdm.tqdm
-        
+    group, name, stage = args.process
+    stage = int(stage)
+
     data_dir = Path(args.base_dir) / 'data' / group
     sample_sheet_fn = data_dir / 'sample_sheet.yaml'
     sample_sheet = yaml.load(sample_sheet_fn.read_text())
@@ -153,11 +201,11 @@ elif args.process is not None:
 
     exp = exp_class(args.base_dir, group, name, description, progress)
 
-    exp.process()
+    exp.process(stage)
 
 elif args.html:
-    drop_outcomes = ['malformed layout']
-    #drop_outcomes = None
+    #drop_outcomes = ['malformed layout']
+    drop_outcomes = None
     table.generate_html(args.base_dir, args.html, conditions, drop_outcomes)
 
 elif args.csv:

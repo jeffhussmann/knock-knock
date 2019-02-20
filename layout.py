@@ -17,7 +17,8 @@ class Layout(object):
             elif al.reference_name == self.target_info.donor:
                 split_als.extend(sam.split_at_deletions(al, 2))
             else:
-                split_als.append(al)
+                # Ignore any other alignments to e.g. other donors or PCR handles.
+                pass
 
         self.alignments = split_als
         
@@ -756,7 +757,9 @@ category_order = [
     ),
     ('indel',
         ('insertion',
-         'deletion',
+         'deletion <50 nt',
+         'deletion >=50 nt',
+         'complex indel',
         ),
     ),
     ('HDR',
