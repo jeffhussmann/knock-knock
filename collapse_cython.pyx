@@ -33,7 +33,7 @@ def hamming_distance_matrix(seqs):
 
             ds_view[i, j] = d
 
-    return ds
+    return ds + ds.T
 
 @cython.boundscheck(False)
 def register_corrections(long[:, ::1] ds, int max_UMI_distance, UMIs):
