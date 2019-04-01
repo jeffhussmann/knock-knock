@@ -163,9 +163,15 @@ def within_radius_of_seed(seed, reads, max_hq_mismatches):
 def propose_seed(reads, max_read_length, bam):
     seqs = (read.query_sequence for read in reads)
 
-    seq, count = Counter(seqs).most_common(1)[0]
+    seq_counts = Counter(seqs).most_common()
+
+    highest_count = seq_counts[0][1]
+    most_frequents = [s for s, c in seq_counts if c == highest_count]
+
+    # If there is a tie, take the alphabetically first for determinism.
+    seq = sorted(most_frequents)[0]
     
-    if count > 1:
+    if highest_count > 1:
         seed = seq
     else:
         consensus = call_consensus(reads, max_read_length, bam)
