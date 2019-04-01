@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.6
 
 import argparse
 import subprocess
@@ -156,15 +156,17 @@ elif args.parallel_pool is not None:
         
         subprocess.check_call(parallel_command)
 
-    #process_stage(0)
+    process_stage(0)
 
-    #pool.make_common_sequences()
-    #parallel_pool_common_sequences(base_dir, group_name, max_procs)
-    #pool.build_common_sequence_to_outcome()
+    pool.make_common_sequences()
+    parallel_pool_common_sequences(base_dir, group_name, max_procs)
+    pool.write_common_outcome_files()
+    pool.merge_common_sequence_special_alignments()
 
     process_stage(1)
 
     pool.make_outcome_counts()
+    pool.merge_special_alignments()
 
 elif args.parallel_pool_common_sequences is not None:
     group_name, max_procs = args.parallel_pool_common_sequences
@@ -189,10 +191,12 @@ elif args.process is not None:
     if name in sample_sheet:
         description = sample_sheet[name]
 
-        if description.get('experiment_type') == 'amplicon':
-            exp_class = experiment.AmpliconExperiment
-        elif description.get('experiment_type') == 'britt_amplicon':
-            exp_class = experiment.BrittAmpliconExperiment
+        if description.get('experiment_type') == 'pacbio':
+            exp_class = experiment.PacbioExperiment
+        elif description.get('experiment_type') == 'illumina':
+            exp_class = experiment.IlluminaExperiment
+        elif description.get('experiment_type') == 'britt_illumina':
+            exp_class = experiment.BrittIlluminaExperiment
         else:
             exp_class = experiment.Experiment
     else:

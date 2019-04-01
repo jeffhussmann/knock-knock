@@ -66,9 +66,7 @@ class Experiment(object):
             self.progress = progress
 
         self.base_dir = Path(base_dir)
-        self.dir = self.base_dir / 'results' / group / name
-        if not self.dir.is_dir():
-            self.dir.mkdir(parents=True)
+        self.dir.mkdir(exist_ok=True, parents=True)
 
         self.data_dir = self.base_dir / 'data' / group
 
@@ -88,30 +86,14 @@ class Experiment(object):
 
         self.sgRNA = self.description.get('sgRNA')
         self.donor = self.description.get('donor')
+        self.primer_names = self.description.get('primer_names')
 
         # When checking if an Experiment meets filtering conditions, want to be
         # able to just test description.
         self.description['group'] = group
         self.description['name'] = name
 
-        if 'target_info' in self.description:
-            self.target_name = self.description['target_info']
-        elif 'target_info_prefix' in self.description:
-            if self.name == 'unknown':
-                self.target_name = self.description['target_info_prefix']
-            else:
-                self.target_name = '{}_{}'.format(self.description['target_info_prefix'], self.name)
-
-        self.target_info = target_info.TargetInfo(self.base_dir,
-                                                  self.target_name,
-                                                  self.donor,
-                                                  sgRNA=self.sgRNA,
-                                                 )
-
         self.fns = {
-            'bam': self.dir / 'alignments.bam',
-            'bam_by_name': self.dir / 'alignments.by_name.bam',
-
             'outcomes_dir': self.dir / 'outcomes',
             'outcome_counts': self.dir / 'outcome_counts.csv',
             'outcome_list': self.dir / 'outcome_list.txt',
@@ -124,17 +106,59 @@ class Experiment(object):
             'length_range_figures': self.dir / 'length_ranges',
             'lengths_svg': self.dir / (self.name + '_by_length.html'),
         }
-
+        
         self.color = extract_color(self.description)
         self.max_qual = 93
+        
+        self.supplemental_indices = {
+            'hg19': '/nvme/indices/refdata-cellranger-hg19-1.2.0/star',
+            'bosTau7': '/nvme/indices/bosTau7',
+        }
+        
+        self.target_info = target_info.TargetInfo(self.base_dir,
+                                                  self.target_name,
+                                                  donor=self.donor,
+                                                  sgRNA=self.sgRNA,
+                                                  primer_names=self.primer_names,
+                                                 )
 
-    def for_pacbio():
-        fastq_fns = ensure_list(self.description['fastq_fns'])
-        self.fns['fastqs'] = [self.data_dir / name for name in fastq_fns]
+    @memoized_property
+    def dir(self):
+        return self.base_dir / 'results' / self.group / self.name
 
-        for fn in self.fns['fastqs']:
-            if not fn.exists():
-                raise ValueError('{0}: {1} specifies non-existent {2}'.format(group, name, fn))
+    @memoized_property
+    def target_name(self):
+        return self.description['target_info']
+
+    @memoized_property
+    def fns_by_read_type(self):
+        fns = {
+            'fastq': {},
+            'bam' : {},
+            'bam_by_name': {},
+
+            'supplemental_STAR_prefix': {},
+            'supplemental_bam': {},
+            'supplemental_bam_by_name': {},
+
+            'combined_bam': {},
+            'combined_bam_by_name': {},
+        }
+
+        for read_type in self.read_types:
+            fns['fastq'][read_type] = self.dir / f'{read_type}.fastq'
+            fns['bam'][read_type] = self.dir / f'{read_type}_alignments.bam'
+            fns['bam_by_name'][read_type] = self.dir / f'{read_type}_alignments.by_name.bam'
+
+            for index_name in self.supplemental_indices:
+                fns['supplemental_STAR_prefix'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments_STAR.'
+                fns['supplemental_bam'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments.bam'
+                fns['supplemental_bam_by_name'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments.by_name.bam'
+
+            fns['combined_bam'][read_type] = self.dir / f'{read_type}_combined_alignments.bam'
+            fns['combined_bam_by_name'][read_type] = self.dir / f'{read_type}_combined_alignments.by_name.bam'
+        
+        return fns
 
     def outcome_fns(self, outcome):
         outcome_string = '_'.join(map(str, outcome))
@@ -143,6 +167,8 @@ class Experiment(object):
             'dir': outcome_dir,
             'query_names': outcome_dir / 'qnames.txt',
             'bam_by_name': outcome_dir / 'alignments.by_name.bam',
+            'special_alignments': outcome_dir / 'special_alignments.bam',
+            'filtered_cell_special_alignments': outcome_dir / 'filtered_cell_special_alignments.bam',
             'filtered_cell_bam': outcome_dir / 'filtered_cell_alignments.bam',
             'filtered_cell_bam_by_name': outcome_dir / 'filtered_cell_alignments.by_name.bam',
             'first_example': outcome_dir / 'first_examples.png',
@@ -156,7 +182,11 @@ class Experiment(object):
     def reads(self):
         reads = fastq.reads(self.fns['fastqs'], up_to_space=True)
         return self.progress(reads)
-
+    
+    def reads_by_type(self, read_type):
+        reads = fastq.reads(self.fns_by_read_type['fastq'][read_type], up_to_space=True)
+        return self.progress(reads)
+    
     @property
     def query_names(self):
         for read in self.reads:
@@ -180,11 +210,13 @@ class Experiment(object):
             ranges = pd.DataFrame(columns=['start', 'end'])
         return ranges
 
-    def alignment_groups(self, fn_key='bam_by_name', outcome=None):
-        if outcome is None:
-            fn = self.fns[fn_key]
-        else:
+    def alignment_groups(self, fn_key='bam_by_name', outcome=None, read_type=None):
+        if outcome is not None:
             fn = self.outcome_fns(outcome)[fn_key]
+        elif read_type is not None:
+            fn = self.fns_by_read_type[fn_key][read_type]
+        else:
+            raise ValueError
 
         grouped = sam.grouped_by_name(fn)
 
@@ -230,20 +262,19 @@ class Experiment(object):
         lengths = utilities.counts_to_array(lengths)
         return lengths
 
-    def generate_alignments(self, reads=None, bam_key_prefix=''):
-        if reads is None:
-            reads = self.reads
+    def generate_alignments(self, read_type):
+        reads = self.reads_by_type(read_type)
 
         bam_fns = []
         bam_by_name_fns = []
 
-        bam_key = bam_key_prefix + 'bam'
-        bam_by_name_key = bam_key_prefix + 'bam_by_name'
+        base_bam_fn = self.fns_by_read_type['bam'][read_type]
+        base_bam_by_name_fn = self.fns_by_read_type['bam_by_name'][read_type]
 
         for i, chunk in enumerate(utilities.chunks(reads, 10000)):
-            suffix = '.{:06d}.bam'.format(i)
-            bam_fn = self.fns[bam_key].with_suffix(suffix)
-            bam_by_name_fn = self.fns[bam_by_name_key].with_suffix(suffix)
+            suffix = f'.{i:06d}.bam'
+            bam_fn = base_bam_fn.with_suffix(suffix)
+            bam_by_name_fn = base_bam_by_name_fn.with_suffix(suffix)
 
             blast.blast(self.target_info.fns['ref_fasta'],
                         chunk,
@@ -255,8 +286,16 @@ class Experiment(object):
             bam_fns.append(bam_fn)
             bam_by_name_fns.append(bam_by_name_fn)
 
-        sam.merge_sorted_bam_files(bam_fns, self.fns[bam_key])
-        sam.merge_sorted_bam_files(bam_by_name_fns, self.fns[bam_by_name_key], by_name=True)
+        if len(bam_fns) == 0:
+            # There weren't any reads. Make empty bam files.
+            header = sam.header_from_fasta(self.target_info.fns['ref_fasta'])
+            for fn in [base_bam_fh, base_bam_by_name_fn]:
+                with pysam.AlignmentFile(fn, 'wb', header=header) as fh:
+                    pass
+
+        else:
+            sam.merge_sorted_bam_files(bam_fns, base_bam_fn)
+            sam.merge_sorted_bam_files(bam_by_name_fns, base_bam_by_name_fn, by_name=True)
 
         for fn in bam_fns:
             fn.unlink()
@@ -264,6 +303,66 @@ class Experiment(object):
         
         for fn in bam_by_name_fns:
             fn.unlink()
+    
+    def generate_supplemental_alignments(self, read_type):
+        ''' Use STAR to produce local alignments, post-filtering spurious alignmnents.
+        '''
+        for index_name, index in self.supplemental_indices.items():
+            fastq_fn = self.fns_by_read_type['fastq'][read_type]
+            STAR_prefix = self.fns_by_read_type['supplemental_STAR_prefix'][read_type, index_name]
+
+            bam_fn = mapping_tools.map_STAR(fastq_fn,
+                                            index,
+                                            STAR_prefix,
+                                            sort=False,
+                                            mode='permissive',
+                                           )
+
+            all_mappings = pysam.AlignmentFile(bam_fn)
+            header = all_mappings.header
+            new_references = ['{}_{}'.format(index_name, ref) for ref in header.references]
+            new_header = pysam.AlignmentHeader.from_references(new_references, header.lengths)
+
+            by_name_fn = self.fns_by_read_type['supplemental_bam_by_name'][read_type, index_name]
+            by_name_sorter = sam.AlignmentSorter(by_name_fn, new_header, by_name=True)
+
+            with by_name_sorter:
+                for al in all_mappings:
+                    # To reduce noise, filter out alignments that are too short
+                    # or that have too many edits (per aligned nt). Keep this in
+                    # mind when interpretting short unexplained gaps in reads.
+
+                    if al.query_alignment_length <= 20:
+                        continue
+
+                    if al.get_tag('AS') / al.query_alignment_length <= 0.8:
+                        continue
+
+                    by_name_sorter.write(al)
+
+            sam.sort_bam(by_name_fn,
+                         self.fns_by_read_type['supplemental_bam'][read_type, index_name],
+                        )
+    
+    def combine_alignments(self, read_type):
+        for by_name in [False, True]:
+            if by_name:
+                suffix = '_by_name'
+            else:
+                suffix = ''
+
+            bam_key = 'bam' + suffix
+            supp_key = 'supplemental_bam' + suffix
+            combined_key = 'combined_bam' + suffix
+
+            fns_to_merge = [self.fns_by_read_type[bam_key][read_type]]
+            for index_name in self.supplemental_indices:
+                fns_to_merge.append(self.fns_by_read_type[supp_key][read_type, index_name])
+
+            sam.merge_sorted_bam_files(fns_to_merge,
+                                       self.fns_by_read_type[combined_key][read_type],
+                                       by_name=by_name,
+                                      )
 
     def load_outcome_counts(self, key='outcome_counts'):
         if self.fns[key].exists():
@@ -291,7 +390,7 @@ class Experiment(object):
         qnames = [l.strip() for l in open(str(fns['query_names']))]
         return qnames
     
-    def count_outcomes(self, fn_key='bam_by_name'):
+    def categorize_outcomes(self, fn_key='combined_bam_by_name', read_type=None):
         if self.fns['outcomes_dir'].is_dir():
             shutil.rmtree(str(self.fns['outcomes_dir']))
 
@@ -300,7 +399,7 @@ class Experiment(object):
         outcomes = defaultdict(list)
 
         with self.fns['outcome_list'].open('w') as fh:
-            for name, als in self.alignment_groups(fn_key):
+            for name, als in self.alignment_groups(fn_key, read_type=read_type):
                 layout = self.layout_module.Layout(als, self.target_info)
 
                 try:
@@ -314,7 +413,7 @@ class Experiment(object):
                 
                 outcomes[category, subcategory].append(name)
 
-                fh.write('{0}\t{1}\t{2}\t{3}\n'.format(name, category, subcategory, details))
+                fh.write(f'{name}\t{category}\t{subcategory}\t{details}\n')
 
         counts = {description: len(names) for description, names in outcomes.items()}
         pd.Series(counts).to_csv(self.fns['outcome_counts'], sep='\t')
@@ -326,23 +425,27 @@ class Experiment(object):
         qname_to_outcome = {}
         bam_fhs = {}
 
-        full_bam_fh = pysam.AlignmentFile(str(self.fns[fn_key]))
-        
-        for outcome, qnames in outcomes.items():
-            outcome_fns = self.outcome_fns(outcome)
-            outcome_fns['dir'].mkdir()
-            bam_fhs[outcome] = pysam.AlignmentFile(str(outcome_fns['bam_by_name']), 'w', template=full_bam_fh)
-            
-            with outcome_fns['query_names'].open('w') as fh:
-                for qname in qnames:
-                    qname_to_outcome[qname] = outcome
-                    fh.write(qname + '\n')
-        
-        for al in full_bam_fh:
-            outcome = qname_to_outcome[al.query_name]
-            bam_fhs[outcome].write(al)
+        if read_type is not None:
+            full_bam_fn = self.fns_by_read_type[fn_key][read_type]
+        else:
+            full_bam_fh = self.fns[fn_key]
 
-        full_bam_fh.close()
+        with pysam.AlignmentFile(full_bam_fn) as full_bam_fh:
+        
+            for outcome, qnames in outcomes.items():
+                outcome_fns = self.outcome_fns(outcome)
+                outcome_fns['dir'].mkdir()
+                bam_fhs[outcome] = pysam.AlignmentFile(outcome_fns['bam_by_name'], 'wb', template=full_bam_fh)
+                
+                with outcome_fns['query_names'].open('w') as fh:
+                    for qname in qnames:
+                        qname_to_outcome[qname] = outcome
+                        fh.write(qname + '\n')
+            
+            for al in full_bam_fh:
+                outcome = qname_to_outcome[al.query_name]
+                bam_fhs[outcome].write(al)
+
         for outcome, fh in bam_fhs.items():
             fh.close()
 
@@ -354,7 +457,10 @@ class Experiment(object):
         kwargs = dict(
             parsimonious=True,
             paired_end_read_length=None,
-            ref_centric=True,
+            #ref_centric=True,
+            size_multiple=0.3,
+            detect_orientation=True,
+            features_to_hide=['forward_primer_illumina', 'reverse_primer_illumina'],
             #process_mappings=self.layout_module.characterize_layout,
         )
 
@@ -372,7 +478,7 @@ class Experiment(object):
             diagram = visualize.ReadDiagram(als, self.target_info, **kwargs)
             diagram.fig.axes[0].set_title('')
             diagram.fig.savefig(str(outcome_fns['first_example']), bbox_inches='tight')
-            plt.close(fig)
+            plt.close(diagram.fig)
             
             als_iter = (relevant_alignments(i, outcome) for i in range(num_examples))
             stacked_im = visualize.make_stacked_Image(als_iter, self.target_info, **kwargs)
@@ -383,9 +489,9 @@ class Experiment(object):
             fig.savefig(str(outcome_fns['lengths_figure']), bbox_inches='tight')
             plt.close(fig)
                 
-    def get_read_alignments(self, read_id, fn_key='bam_by_name', outcome=None):
+    def get_read_alignments(self, read_id, fn_key='bam_by_name', outcome=None, read_type=None):
         # iter() necessary because tqdm objects aren't iterators
-        read_groups = iter(self.alignment_groups(fn_key, outcome))
+        read_groups = iter(self.alignment_groups(fn_key, outcome, read_type))
 
         if isinstance(read_id, int):
             try:
@@ -416,7 +522,7 @@ class Experiment(object):
                                                          num_examples,
                                                         )
 
-    def length_distribution_figure(self, show_ranges=False, x_lims=None):
+    def length_distribution_figure(self, show_ranges=False, x_lims=None, tick_multiple=500):
         ys = self.read_lengths / sum(self.read_lengths)
 
         if x_lims is None:
@@ -428,22 +534,23 @@ class Experiment(object):
         
         nonzero_xs = ys.nonzero()[0]
         nonzero_ys = ys[nonzero_xs]
-        ax.scatter(nonzero_xs, nonzero_ys, s=4, c=self.color)
+        ax.scatter(nonzero_xs, nonzero_ys, s=2, c=self.color)
                            
         if show_ranges:
-            #for _, (start, end) in self.length_ranges.iterrows():
-            for start in range(501):
-                end = start
+            for _, (start, end) in self.length_ranges.iterrows():
+                print(start, end)
+            #for start in range(501):
+                #end = start
                 ax.axvspan(start - 0.5, end + 0.5,
-                           gid='length_range_{0:05d}_{1:05d}'.format(start, end),
-                           alpha=0.0,
+                           gid=f'length_range_{start:05d}_{end:05d}',
+                           alpha=0.1,
                            facecolor='white',
                            edgecolor='black',
                            zorder=100,
                           )
             
-        major = np.arange(0, len(ys), 50)
-        minor = [x for x in np.arange(0, len(ys), 25) if x % 50 != 0]
+        major = np.arange(0, len(ys), tick_multiple)
+        minor = [x for x in np.arange(0, len(ys), tick_multiple // 2) if x % tick_multiple != 0]
                     
         ax.set_xticks(major)
         ax.set_xticks(minor, minor=True)
@@ -451,8 +558,8 @@ class Experiment(object):
         ax.set_ylabel('Fraction of reads')
         ax.set_xlabel('Length of read')
         
-        #ax.set_ylim(0, max(ys) * 1.05)
-        ax.set_ylim(0, 0.5)
+        ax.set_ylim(0, max(ys) * 1.05)
+        #ax.set_ylim(0, 0.5)
         ax.set_xlim(*x_lims)
 
         return fig
@@ -472,10 +579,12 @@ class Experiment(object):
             show_all_guides=True,
             paired_end_read_length=None,
             read_label='amplicon',
+            size_multiple=0.5,
+            detect_orientation=True,
             #process_mappings=self.layout_module.characterize_layout,
         )
 
-        return visualize.make_stacked_Image(sample, self.target_info, pairs=pairs, **kwargs)
+        return vi.make_stacked_Image(sample, self.target_info, pairs=pairs, **kwargs)
     
     def generate_svg(self):
         html = svg.length_plot_with_popovers(self, standalone=True, x_lims=(0, 505))
@@ -483,15 +592,46 @@ class Experiment(object):
         with self.fns['lengths_svg'].open('w') as fh:
             fh.write(html)
 
-    def process(self):
+    def process(self, stage):
         #self.count_read_lengths()
         #self.generate_alignments(self.reads)
-        #self.count_outcomes()
-        self.make_outcome_plots(num_examples=3)
+        self.categorize_outcomes()
+        self.make_outcome_plots(num_examples=5)
 
-class AmpliconExperiment(Experiment):
+    def explore(self, by_outcome=True, **kwargs):
+        return explore(self.base_dir, by_outcome=by_outcome, target=self.target_name, experiment=(self.group, self.name), **kwargs)
+
+class PacbioExperiment(Experiment):
     def __init__(self, *args, **kwargs):
-        super(AmpliconExperiment, self).__init__(*args, **kwargs)
+        super(PacbioExperiment, self).__init__(*args, **kwargs)
+        self.paired_end_read_length = None
+
+        fastq_fns = ensure_list(self.description['fastq_fns'])
+        self.fns['fastqs'] = [self.data_dir / name for name in fastq_fns]
+
+        for fn in self.fns['fastqs']:
+            if not fn.exists():
+                raise ValueError(f'{group}: {name} specifies non-existent {fn}')
+    
+    def generate_length_range_figures(self):
+        self.fns['length_range_figures'].mkdir(exist_ok=True)
+
+        rows = self.progress(list(self.length_ranges.iterrows()))
+
+        for _, row in rows:
+            im = self.span_to_Image(row.start, row.end)
+            fn = self.fns['length_range_figures'] / f'{row.start}_{row.end}.png'
+            im.save(fn)
+    
+    def generate_svg(self):
+        html = svg.length_plot_with_popovers(self, standalone=True)
+
+        with self.fns['lengths_svg'].open('w') as fh:
+            fh.write(html)
+
+class IlluminaExperiment(Experiment):
+    def __init__(self, *args, **kwargs):
+        super(IlluminaExperiment, self).__init__(*args, **kwargs)
 
         self.sequencing_primers = self.description.get('sequencing_primers', 'truseq')
         self.paired_end_read_length = self.description.get('paired_end_read_length', None)
@@ -504,24 +644,16 @@ class AmpliconExperiment(Experiment):
         
                 for fn in self.fns[k]:
                     if not fn.exists():
-                        raise ValueError('{0}: {1} specifies non-existent {2}'.format(self.group, self.name, fn))
+                        raise ValueError(f'{self.group}: {self.name} specifies non-existent {fn}')
 
-        self.fns.update({
-            'stitched': self.dir / 'stitched.fastq',
-            'R1_no_overlap': self.dir / 'R1_no_overlap.fastq',
-            'R2_no_overlap': self.dir / 'R2_no_overlap.fastq',
-            
-            'stitched_bam': self.dir / 'stitched_alignments.bam',
-            'stitched_bam_by_name': self.dir / 'stitched_alignments.by_name.bam',
+        self.read_types = [
+            'stitched',
+            'R1_no_overlap',
+            'R2_no_overlap',
+        ]
 
-            'R1_no_overlap_bam': self.dir / 'R1_no_overlap_alignments.bam',
-            'R1_no_overlap_bam_by_name': self.dir / 'R1_no_overlap_alignments.by_name.bam',
-            'R2_no_overlap_bam': self.dir / 'R2_no_overlap_alignments.bam',
-            'R2_no_overlap_bam_by_name': self.dir / 'R2_no_overlap_alignments.by_name.bam',
-        })
-    
-    def get_read_alignments(self, read_id, fn_key='stitched_bam_by_name', outcome=None):
-        return super().get_read_alignments(read_id, fn_key=fn_key, outcome=outcome)
+    def get_read_alignments(self, read_id, fn_key='bam_by_name', outcome=None, read_type=None):
+        return super().get_read_alignments(read_id, fn_key=fn_key, outcome=outcome, read_type=read_type)
     
     @property
     def read_pairs(self):
@@ -559,25 +691,10 @@ class AmpliconExperiment(Experiment):
                     stitched_fh.write(str(stitched))
 
     @property
-    def stitched_reads(self):
-        reads = fastq.reads(self.fns['stitched'], up_to_space=True)
-        return self.progress(reads)
-    
-    @property
     def query_names(self):
         for read in self.stitched_reads:
             yield read.name
 
-    @property
-    def R1_no_overlap_reads(self):
-        reads = fastq.reads(self.fns['R1_no_overlap'], up_to_space=True)
-        return self.progress(reads)
-    
-    @property
-    def R2_no_overlap_reads(self):
-        reads = fastq.reads(self.fns['R2_no_overlap'], up_to_space=True)
-        return self.progress(reads)
-    
     def count_read_lengths(self):
         lengths = Counter(len(r.seq) for r in self.stitched_reads)
 
@@ -606,28 +723,24 @@ class AmpliconExperiment(Experiment):
             if length == no_overlap_length:
                 continue
             im = self.groups_to_Image(groups, 3, pairs=(length == no_overlap_length))
-            fn = self.fns['length_range_figures'] / '{}_{}.png'.format(length, length)
+            fn = self.fns['length_range_figures'] / f'{length}_{length}.png'
             im.save(fn)
 
-    def process(self, stage):
+    def process(self, stage=0):
         #self.stitch_read_pairs()
         #
         #self.count_read_lengths()
 
-        for reads, prefix in [(self.stitched_reads, 'stitched_'),
-                              (self.R1_no_overlap_reads, 'R1_no_overlap_'),
-                              (self.R2_no_overlap_reads, 'R2_no_overlap_'),
-                             ]:
-            self.generate_alignments(reads, prefix)
+        for read_type in ['stitched', 'R1_no_overlap', 'R2_no_overlap']:
+            self.generate_alignments(read_type)
+            self.generate_supplemental_alignments(read_type)
+            self.combine_alignments(read_type)
 
-        self.count_outcomes(fn_key='stitched_bam_by_name')
-        #self.make_outcome_plots(num_examples=6)
+        self.categorize_outcomes(read_type='stitched')
+        self.make_outcome_plots(num_examples=6)
         #self.generate_individual_length_figures()
         #self.generate_svg()
         #self.make_text_visualizations()
-
-    def explore(self, by_outcome=True, **kwargs):
-        return explore(self.base_dir, by_outcome=by_outcome, target=self.target_name, experiment=(self.group, self.name), **kwargs)
 
 def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
     if target is None:
@@ -644,14 +757,16 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
     }
     toggles = [
         'parsimonious',
+        'relevant',
         'ref_centric',
         'draw_sequence',
         'draw_qualities',
         'draw_mismatches',
         'draw_read_pair',
+        'force_left_aligned',
     ]
     for toggle in toggles:
-        widgets[toggle] = ipywidgets.ToggleButton(value=kwargs.get(toggle, False))
+        widgets[toggle] = ipywidgets.ToggleButton(value=kwargs.pop(toggle, False))
 
     # For some reason, the target widget doesn't get a label without this.
     for k, v in widgets.items():
@@ -671,7 +786,7 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
     def populate_experiments(change):
         target = widgets['target'].value
         previous_value = widgets['experiment'].value
-        datasets = sorted([('{0}: {1}'.format(exp.group, exp.name), exp)
+        datasets = sorted([(f'{exp.group}: {exp.name}', exp)
                            for exp in exps
                            if exp.target_info.name == target
                           ])
@@ -767,9 +882,11 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
 
         l = exp.layout_module.Layout(als, exp.target_info)
         info = l.categorize()
+        
+        if widgets['relevant'].value:
+            als = l.relevant_alignments
 
-        diagram = visualize.ReadDiagram(l.alignments, exp.target_info,
-                                        size_multiple=kwargs.get('size_multiple', 1),
+        diagram = visualize.ReadDiagram(als, exp.target_info,
                                         max_qual=exp.max_qual,
                                         paired_end_read_length=paired_end_read_length,
                                         read_label='amplicon',
@@ -780,7 +897,9 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
 
         return diagram.fig
 
-    interactive = ipywidgets.interactive(plot, **widgets)
+    all_kwargs = {**{k: ipywidgets.fixed(v) for k, v in kwargs.items()}, **widgets}
+
+    interactive = ipywidgets.interactive(plot, **all_kwargs)
     interactive.update()
 
     def make_row(keys):
@@ -800,99 +919,6 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
     )
 
     return layout
-
-class BrittAmpliconExperiment(Experiment):
-    @property
-    def reads(self):
-        rs = fastq.reads(self.fns['R1'], up_to_space=True)
-        if self.progress is not None:
-            rs = self.progress(rs)
-        return rs
-    
-    def generate_alignments(self):
-        mapping_tools.map_bowtie2(
-            self.target_info.fns['bowtie2_index'],
-            reads=self.reads,
-            output_file_name=self.fns['bam'],
-            bam_output=True,
-            local=True,
-            report_all=True,
-            error_file_name='/home/jah/projects/britt/bowtie2_error.txt',
-            custom_binary=True,
-            threads=18,
-        )
-
-        sam.sort_bam(self.fns['bam'], self.fns['bam_by_name'], by_name=True)
-
-    def count_outcomes(self):
-        if self.fns['outcomes_dir'].is_dir():
-            shutil.rmtree(str(self.fns['outcomes_dir']))
-
-        self.fns['outcomes_dir'].mkdir()
-
-        bam_fh = pysam.AlignmentFile(str(self.fns['combined_bam_by_name']))
-        alignment_groups = sam.grouped_by_name(bam_fh)
-
-        if self.progress is not None:
-            alignment_groups = self.progress(alignment_groups)
-
-        outcomes = defaultdict(list)
-
-        with self.fns['outcome_list'].open('w') as fh:
-            for name, als in alignment_groups:
-                layout = self.layout_module.Layout(als, self.target_info)
-                
-                category, subcategory, details = layout.categorize()
-                
-                outcomes[category, subcategory].append(name)
-
-                fh.write('{0}\t{1}\t{2}\t{3}\n'.format(name, category, subcategory, details))
-
-        bam_fh.close()
-
-        counts = {outcome: len(names) for outcome, names in outcomes.items()}
-        pd.Series(counts).to_csv(self.fns['outcome_counts'], sep='\t')
-
-        # To make plotting easier, for each outcome, make a file listing all of
-        # qnames for the outcome and a bam file (sorted by name) with all of the
-        # alignments for these qnames.
-
-        qname_to_outcome = {}
-        bam_fhs = {}
-
-        full_bam_fh = pysam.AlignmentFile(str(self.fns['combined_bam_by_name']))
-        
-        for outcome, qnames in outcomes.items():
-            outcome_fns = self.outcome_fns(outcome)
-            outcome_fns['dir'].mkdir()
-            bam_fhs[outcome] = pysam.AlignmentFile(str(outcome_fns['bam_by_name']), 'w', template=full_bam_fh)
-            
-            with outcome_fns['query_names'].open('w') as fh:
-                for qname in qnames:
-                    qname_to_outcome[qname] = outcome
-                    fh.write(qname + '\n')
-        
-        for al in full_bam_fh:
-            outcome = qname_to_outcome[al.query_name]
-            bam_fhs[outcome].write(al)
-
-        full_bam_fh.close()
-        for outcome, fh in bam_fhs.items():
-            fh.close()
-    
-    def collapse_UMI_outcomes(self):
-        collapsed_outcomes = coherence.collapse_pooled_UMI_outcomes(self.fns['outcome_list'])
-        with self.fns['collapsed_UMI_outcomes'].open('w') as fh:
-            for outcome in collapsed_outcomes:
-                fh.write(str(outcome) + '\n')
-
-    def process(self):
-        #self.generate_alignments()
-        #self.generate_supplemental_alignments(num_threads=18)
-        #self.combine_alignments()
-        self.count_outcomes()
-        #self.collapse_UMI_outcomes()
-        #self.make_outcome_plots(num_examples=3)
 
 def get_all_experiments(base_dir, conditions=None):
     data_dir = Path(base_dir) / 'data'
@@ -921,8 +947,10 @@ def get_all_experiments(base_dir, conditions=None):
         sample_sheet = yaml.load(sample_sheet_fn.read_text())
 
         for name, description in sample_sheet.items():
-            if description.get('experiment_type') == 'amplicon':
-                exp_class = AmpliconExperiment
+            if description.get('experiment_type') == 'illumina':
+                exp_class = IlluminaExperiment
+            elif description.get('experiment_type') == 'pacbio':
+                exp_class = PacbioExperiment
             else:
                 exp_class = Experiment
             

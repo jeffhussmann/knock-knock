@@ -16,23 +16,15 @@ from sequencing import utilities, sam, fastq, mapping_tools, annotation
 from knockin import experiment, target_info, collapse, coherence, pooled_layout, visualize
 
 memoized_property = utilities.memoized_property
+memoized_with_key = utilities.memoized_with_key
 
 class SingleGuideExperiment(experiment.Experiment):
     def __init__(self, *args, **kwargs):
-        super(SingleGuideExperiment, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         
         self.fns.update({
             'R2': self.data_dir / 'by_guide' / '{}_R2.fastq.gz'.format(self.name),
-            'collapsed_R2': self.dir / 'collapsed_R2.fastq',
-            'collapsed_uncommon_R2': self.dir / 'collapsed_uncommon_R2.fastq',
             'guide_mismatch_rates': self.dir / 'guide_mismatch_rates.txt',
-
-            'supplemental_STAR_prefix': lambda name: self.dir / '{}_alignments_STAR.'.format(name),
-            'supplemental_bam': lambda name: self.dir / '{}_alignments.bam'.format(name),
-            'supplemental_bam_by_name': lambda name: self.dir / '{}_alignments.by_name.bam'.format(name),
-
-            'combined_bam': self.dir / 'combined.bam',
-            'combined_bam_by_name': self.dir / 'combined.by_name.bam',
 
             'collapsed_UMI_outcomes': self.dir / 'collapsed_UMI_outcomes.txt',
             'cell_outcomes': self.dir / 'cell_outcomes.txt',
@@ -48,40 +40,52 @@ class SingleGuideExperiment(experiment.Experiment):
         self.max_insertion_length = None
         self.max_qual = 41
 
-        self.supplemental_indices = {
-            'hg19': '/nvme/indices/refdata-cellranger-hg19-1.2.0/star',
-            'bosTau7': '/nvme/indices/bosTau7',
-        }
-
         self.supplemental_headers = {n: sam.header_from_STAR_index(p) for n, p in self.supplemental_indices.items()}
 
         self.min_reads_per_cluster = 2
         self.min_reads_per_UMI = 4
 
-        self.pool = PooledScreen(self.base_dir, self.group)
         self.use_memoized_outcomes = kwargs.get('use_memoized_outcomes', True)
+
+        self.read_types = ['collapsed_R2', 'collapsed_uncommon_R2']
+
+    @memoized_property
+    def pool(self):
+        return PooledScreen(self.base_dir, self.group)
+    
+    @memoized_property
+    def target_name(self):
+        prefix = self.description['target_info_prefix']
+
+        if self.name == 'unknown':
+            target_name = prefix
+        else:
+            target_name = f'{prefix}_{self.name}'
+
+        return target_name
 
     @property
     def reads(self):
-        if not self.fns['R2'].exists():
+        fn = self.fns['R2']
+        if not fn.exists():
             return []
 
-        reads = fastq.reads(self.fns['R2'], up_to_space=True)
-        reads = self.progress(reads)
+        return self.progress(fastq.reads(fn, up_to_space=True))
 
-        return reads
-
-    def get_read_alignments(self, read_id, fn_key='filtered_cell_bam_by_name', outcome=None, check_for_common=True):
+    def get_read_alignments(self, read_id, fn_key='combined_bam_by_name', outcome=None):
         looked_up_common = False
 
-        if check_for_common:
+        if self.use_memoized_outcomes:
             seq = self.names_with_common_seq.get(read_id)
             if seq is not None:
                 als = self.pool.get_common_seq_alignments(seq)
                 looked_up_common = True
+            read_type = 'collapsed_uncommon_R2'
+        else:
+            read_type = 'collapsed_R2'
             
         if not looked_up_common:
-            als = super().get_read_alignments(read_id, fn_key=fn_key, outcome=outcome)
+            als = super().get_read_alignments(read_id, fn_key=fn_key, outcome=outcome, read_type=read_type)
 
         return als
     
@@ -103,7 +107,9 @@ class SingleGuideExperiment(experiment.Experiment):
 
         expected_seq = self.pool.guides_df.loc[self.name, 'full_seq'][:R1_read_length]
 
-        with self.fns['collapsed_R2'].open('w') as collapsed_fh:
+        collapsed_fn = self.fns_by_read_type['fastq']['collapsed_R2']
+
+        with collapsed_fn.open('w') as collapsed_fh:
             groups = utilities.group_by(self.reads, UMI_key)
             for UMI, UMI_group in groups:
                 clusters = collapse.form_clusters(UMI_group, max_read_length=None, max_hq_mismatches=0)
@@ -149,10 +155,12 @@ class SingleGuideExperiment(experiment.Experiment):
     
     @property
     def collapsed_reads(self):
-        return self.progress(fastq.reads(self.fns['collapsed_R2']))
+        fn = self.fns_by_read_type['fastq']['collapsed_R2']
+        return self.progress(fastq.reads(fn))
 
     def make_uncommon_sequence_fastq(self):
-        with self.fns['collapsed_uncommon_R2'].open('w') as fh:
+        fn = self.fns_by_read_type['fastq']['collapsed_uncommon_R2']
+        with fn.open('w') as fh:
             for read in self.collapsed_reads:
                 if read.seq not in self.pool.common_sequence_to_outcome:
                     fh.write(str(read))
@@ -160,63 +168,21 @@ class SingleGuideExperiment(experiment.Experiment):
     @memoized_property
     def names_with_common_seq(self):
         names = {}
+
         for read in self.collapsed_reads:
             if read.seq in self.pool.common_sequence_to_outcome:
                 names[read.name] = read.seq
+
         return names
 
     @property
     def collapsed_uncommon_reads(self):
-        return self.progress(fastq.reads(self.fns['collapsed_uncommon_R2']))
+        fn = self.fns_by_read_type['fastq']['collapsed_uncommon_R2']
+        return self.progress(fastq.reads(fn))
 
-    def generate_supplemental_alignments(self):
-        ''' Use STAR to produce local alignments, post-filtering spurious alignmnents.
-        '''
-
-        if self.use_memoized_outcomes:
-            reads_fn_key = 'collapsed_uncommon_R2'
-        else:
-            reads_fn_key = 'collapsed_R2'
-        
-        for index_name, index in self.supplemental_indices.items():
-            bam_fn = mapping_tools.map_STAR(self.fns[reads_fn_key],
-                                            index,
-                                            self.fns['supplemental_STAR_prefix'](index_name),
-                                            sort=False,
-                                            mode='permissive',
-                                           )
-
-            all_mappings = pysam.AlignmentFile(bam_fn)
-            header = all_mappings.header
-            new_references = ['{}_{}'.format(index_name, ref) for ref in header.references]
-            new_header = pysam.AlignmentHeader.from_references(new_references, header.lengths)
-            filtered_fn = str(self.fns['supplemental_bam_by_name'](index_name))
-
-            with pysam.AlignmentFile(filtered_fn, 'wb', header=new_header) as fh:
-                for al in all_mappings:
-                    if al.query_alignment_length <= 20:
-                        continue
-
-                    if al.get_tag('AS') / al.query_alignment_length <= 0.8:
-                        continue
-
-                    fh.write(al)
-
-            sam.sort_bam(self.fns['supplemental_bam_by_name'](index_name),
-                         self.fns['supplemental_bam'](index_name),
-                        )
-
-    def combine_alignments(self):
-        supplemental_fns = [self.fns['supplemental_bam'](index_name) for index_name in self.supplemental_indices]
-        sam.merge_sorted_bam_files([self.fns['bam']] + supplemental_fns,
-                                   self.fns['combined_bam'],
-                                  )
-
-        supplemental_fns = [self.fns['supplemental_bam_by_name'](index_name) for index_name in self.supplemental_indices]
-        sam.merge_sorted_bam_files([self.fns['bam_by_name']] + supplemental_fns,
-                                   self.fns['combined_bam_by_name'],
-                                   by_name=True,
-                                  )
+    @memoized_property
+    def combined_header(self):
+        return sam.get_header(self.fns['combined_bam_by_name'])
         
     def categorize_outcomes(self):
         if self.fns['outcomes_dir'].is_dir():
@@ -229,19 +195,26 @@ class SingleGuideExperiment(experiment.Experiment):
         total = 0
         required_sw = 0
 
-        # iter wrap since tqdm objects are not iterators
-        alignment_groups = iter(self.alignment_groups('combined_bam_by_name'))
-        reads = self.collapsed_reads
-
         if self.use_memoized_outcomes:
-            lookup = self.pool.common_sequence_to_outcome
+            outcome_lookup = self.pool.common_sequence_to_outcome
+            special_alignment_lookup = self.pool.common_sequence_to_special_alignment
+            bam_read_type = 'collapsed_uncommon_R2'
         else:
-            lookup = {}
+            outcome_lookup = {}
+            special_alignment_lookup = {}
+            bam_read_type = 'collapsed_R2'
+
+        # iter wrap since tqdm objects are not iterators
+        alignment_groups = iter(self.alignment_groups(fn_key='combined_bam_by_name', read_type=bam_read_type))
+        reads = self.reads_by_type('collapsed_R2')
+
+        special_als = defaultdict(list)
 
         with self.fns['outcome_list'].open('w') as fh:
             for read in reads:
-                if read.seq in lookup:
-                    category, subcategory, details = lookup[read.seq]
+                if read.seq in outcome_lookup:
+                    category, subcategory, details = outcome_lookup[read.seq]
+                    special_alignment = special_alignment_lookup.get(read.seq)
                 else:
                     name, als = next(alignment_groups)
                     if name != read.name:
@@ -258,6 +231,11 @@ class SingleGuideExperiment(experiment.Experiment):
                 
                     if layout.required_sw:
                         required_sw += 1
+
+                    special_alignment = layout.special_alignment
+
+                    if special_alignment is not None:
+                        special_als[category, subcategory].append(layout.special_alignment)
 
                     outcomes[category, subcategory].append(read.name)
 
@@ -285,18 +263,21 @@ class SingleGuideExperiment(experiment.Experiment):
         qname_to_outcome = {}
         bam_fhs = {}
 
-        with pysam.AlignmentFile(str(self.fns['combined_bam_by_name'])) as full_bam_fh:
-        
-            for outcome, qnames in outcomes.items():
-                outcome_fns = self.outcome_fns(outcome)
-                outcome_fns['dir'].mkdir()
-                bam_fhs[outcome] = pysam.AlignmentFile(str(outcome_fns['bam_by_name']), 'w', template=full_bam_fh)
-                
-                with outcome_fns['query_names'].open('w') as fh:
-                    for qname in qnames:
-                        qname_to_outcome[qname] = outcome
-                        fh.write(qname + '\n')
+        bam_fn = self.fns_by_read_type['combined_bam_by_name'][bam_read_type]
+        with pysam.AlignmentFile(bam_fn) as full_bam_fh:
+            header = full_bam_fh.header
+
+        for outcome, qnames in outcomes.items():
+            outcome_fns = self.outcome_fns(outcome)
+            outcome_fns['dir'].mkdir()
+            bam_fhs[outcome] = pysam.AlignmentFile(outcome_fns['bam_by_name'], 'wb', header=header)
             
+            with outcome_fns['query_names'].open('w') as fh:
+                for qname in qnames:
+                    qname_to_outcome[qname] = outcome
+                    fh.write(qname + '\n')
+            
+        with pysam.AlignmentFile(bam_fn) as full_bam_fh:
             for al in full_bam_fh:
                 if al.query_name in qname_to_outcome:
                     outcome = qname_to_outcome[al.query_name]
@@ -304,6 +285,15 @@ class SingleGuideExperiment(experiment.Experiment):
 
         for outcome, fh in bam_fhs.items():
             fh.close()
+
+        # Make special alignments bams.
+        for outcome, als in special_als.items():
+            outcome_fns = self.outcome_fns(outcome)
+            bam_fn = outcome_fns['special_alignments']
+            sorter = sam.AlignmentSorter(bam_fn, header)
+            with sorter:
+                for al in als:
+                    sorter.write(al)
 
     @memoized_property
     def outcome_counts(self):
@@ -354,7 +344,14 @@ class SingleGuideExperiment(experiment.Experiment):
         for outcome in outcomes_seen:
             self.outcome_fns(outcome)['dir'].mkdir(exist_ok=True)
 
-        with pysam.AlignmentFile(str(self.fns['combined_bam'])) as combined_bam_fh:
+        if self.use_memoized_outcomes:
+            bam_read_type = 'collapsed_uncommon_R2'
+        else:
+            bam_read_type = 'collapsed_R2'
+
+        bam_fn = self.fns_by_read_type['combined_bam'][bam_read_type]
+
+        with pysam.AlignmentFile(bam_fn) as combined_bam_fh:
             header = combined_bam_fh.header
 
             sorters = {'all': sam.AlignmentSorter(self.fns['filtered_cell_bam'], header)}
@@ -384,18 +381,20 @@ class SingleGuideExperiment(experiment.Experiment):
             sorters[organism] = sam.AlignmentSorter(fn, header)
             
         with sam.multiple_AlignmentSorters(sorters.values()):
-            rows = self.filtered_cell_outcomes.query('category == "genomic insertion"  and guide_mismatch == -1')
+            rows = self.filtered_cell_outcomes.query('category == "genomic insertion" and guide_mismatch == -1')
             for _, row in rows.iterrows():
                 name = row['original_name']
                 organism = row['subcategory']
                 als = self.get_read_alignments(name, outcome=('genomic insertion', organism))
-                layout = pooled_layout.Layout(als, self.target_info, supplemental_headers=headers)
-                try:
-                    original_al = layout.genomic_insertion[0]['original_alignment']
-                except:
-                    print(self.name, name)
-                    raise
 
+                layout = pooled_layout.Layout(als, self.target_info, supplemental_headers=headers)
+                if layout.genomic_insertion is None:
+                    layout = pooled_layout.Layout(als, self.pool.target_info, supplemental_headers=headers)
+                    if layout.genomic_insertion is None:
+                        print(self.name, name)
+                        continue
+
+                original_al = layout.genomic_insertion[0]['original_alignment']
                 original_al.query_name = name + '_' + self.name
                 
                 sorters[organism].write(original_al)
@@ -419,30 +418,28 @@ class SingleGuideExperiment(experiment.Experiment):
 
     @memoized_property
     def cell_outcomes(self):
-        df = pd.read_table(self.fns['cell_outcomes'], header=None, names=coherence.Pooled_UMI_Outcome.columns)
+        df = pd.read_table(self.fns['cell_outcomes'], header=None, na_filter=False, names=coherence.Pooled_UMI_Outcome.columns)
         return df
 
     @memoized_property
     def filtered_cell_outcomes(self):
-        df = pd.read_table(self.fns['filtered_cell_outcomes'], header=None, names=coherence.Pooled_UMI_Outcome.columns)
+        df = pd.read_table(self.fns['filtered_cell_outcomes'], header=None, na_filter=False, names=coherence.Pooled_UMI_Outcome.columns)
         return df
-
-    def generate_alignments(self):
-        if self.use_memoized_outcomes:
-            reads = self.collapsed_uncommon_reads
-        else:
-            reads = self.collapsed_reads
-
-        super().generate_alignments(reads=reads)
 
     def process(self, stage):
         if stage == 0:
             self.collapse_UMI_reads()
         elif stage == 1:
-            self.make_uncommon_sequence_fastq()
-            self.generate_alignments()
-            self.generate_supplemental_alignments()
-            self.combine_alignments()
+            if self.use_memoized_outcomes:
+                self.make_uncommon_sequence_fastq()
+                read_type = 'collapsed_uncommon_R2'
+            else:
+                read_type = 'collapsed_R2'
+
+            self.generate_alignments(read_type)
+            self.generate_supplemental_alignments(read_type)
+            self.combine_alignments(read_type)
+
             self.categorize_outcomes()
             self.collapse_UMI_outcomes()
             self.make_reads_per_UMI()
@@ -453,62 +450,30 @@ class SingleGuideExperiment(experiment.Experiment):
             raise ValueError(stage)
 
 class CommonSequenceExperiment(SingleGuideExperiment):
-    def __init__(self, base_dir, pool_name, chunk_name, progress=None):
-        if progress is None:
-            self.progress = utilities.identity
-        else:
-            self.progress = progress
-
-        self.pool = PooledScreen(base_dir, pool_name)
-        self.name = chunk_name
-
-        self.dir = self.pool.fns['common_sequences_dir'] / chunk_name
-        self.dir.mkdir(exist_ok=True)
-
-        self.target_info = self.pool.target_info
-
-        self.fns = {
-            'bam': self.dir / 'alignments.bam',
-            'bam_by_name': self.dir / 'alignments.by_name.bam',
-
-            'outcomes_dir': self.dir / 'outcomes',
-            'outcome_counts': self.dir / 'outcome_counts.csv',
-            'outcome_list': self.dir / 'outcome_list.txt',
-
-            'collapsed_R2': self.dir / 'collapsed_R2.fastq',
-
-            'supplemental_STAR_prefix': lambda name: self.dir / '{}_alignments_STAR.'.format(name),
-            'supplemental_bam': lambda name: self.dir / '{}_alignments.bam'.format(name),
-            'supplemental_bam_by_name': lambda name: self.dir / '{}_alignments.by_name.bam'.format(name),
-
-            'combined_bam': self.dir / 'combined.bam',
-            'combined_bam_by_name': self.dir / 'combined.by_name.bam',
-        }
-        
-        self.layout_module = pooled_layout
-        self.max_insertion_length = None
-        self.max_qual = 41
-
-        self.supplemental_indices = {
-            'hg19': '/nvme/indices/refdata-cellranger-hg19-1.2.0/star',
-            'bosTau7': '/nvme/indices/bosTau7',
-        }
-
-        self.supplemental_headers = {n: sam.header_from_STAR_index(p) for n, p in self.supplemental_indices.items()}
-
-        self.min_reads_per_cluster = 2
-        self.min_reads_per_UMI = 4
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
         self.use_memoized_outcomes = False
     
+    @property
+    def dir(self):
+        return self.pool.fns['common_sequences_dir'] / self.name
+    
+    @memoized_property
+    def target_name(self):
+        prefix = self.description['target_info_prefix']
+        target_name = prefix
+        return target_name
+
     def get_read_alignments(self, read_id, outcome=None):
-        return super().get_read_alignments(read_id, fn_key='combined_bam_by_name', outcome=outcome, check_for_common=False)
+        return super().get_read_alignments(read_id, fn_key='combined_bam_by_name', outcome=outcome)
     
     def process(self):
         try:
-            self.generate_alignments()
-            self.generate_supplemental_alignments()
-            self.combine_alignments()
+            read_type = 'collapsed_R2'
+            self.generate_alignments(read_type)
+            self.generate_supplemental_alignments(read_type)
+            self.combine_alignments(read_type)
             self.categorize_outcomes()
         except:
             print(self.name)
@@ -543,24 +508,6 @@ def collapse_categories(df):
 
     return pd.concat((df, new_rows))
 
-def memoized_with_key(f):
-    @functools.wraps(f)
-    def memoized_f(self, key):
-        attr_name = '_' + f.__name__
-        if not hasattr(self, attr_name):
-            setattr(self, attr_name, {})
-
-        already_computed = getattr(self, attr_name)
-        if key in already_computed:
-            value = already_computed[key]
-        else:
-            value = f(self, key)
-            already_computed[key] = value
-
-        return value
-
-    return memoized_f
-
 class PooledScreen():
     def __init__(self, base_dir, group, progress=None):
         self.base_dir = Path(base_dir)
@@ -594,28 +541,53 @@ class PooledScreen():
             'quantiles': self.base_dir / 'results' / group / 'quantiles.hdf5',
 
             'common_sequences_dir': self.base_dir / 'results' / group / 'common_sequences',
-            'common_sequences_lookup_table': self.base_dir / 'results' / group / 'common_sequences' / 'lookup.txt',
+            'common_name_to_common_sequence': self.base_dir / 'results' / group / 'common_sequences' / 'common_name_to_common_sequence.txt',
             'all_sequences': self.base_dir / 'results' / group / 'common_sequences' / '{}_all_sequences.txt'.format(group),
-            'common_sequence_outcomes': self.base_dir / 'results' / group / 'common_sequences' / 'outcomes.txt',
+            'common_sequence_outcomes': self.base_dir / 'results' / group / 'common_sequences' / 'common_sequence_to_outcome.txt',
+            'common_name_to_outcome': self.base_dir / 'results' / group / 'common_sequences' / 'common_name_to_outcome.txt',
+
+            'common_sequence_special_alignments': self.base_dir / 'results' / group / 'common_sequences' / 'all_special_alignments.bam',
+            'special_alignments_dir': self.base_dir / 'results' / group / 'special_alignments',
         }
 
-    def single_guide_experiments(self):
-        for guide in self.progress(self.guides):
-            yield SingleGuideExperiment(self.base_dir, self.group, guide)
+    def single_guide_experiments(self, no_progress=False):
+        for guide in self.guides:
+            yield self.single_guide_experiment(guide, no_progress=no_progress)
 
-    def single_guide_experiment(self, guide):
-        return SingleGuideExperiment(self.base_dir, self.group, guide)
+    def single_guide_experiment(self, guide, no_progress=False):
+        if no_progress:
+            progress = None
+        else:
+            progress = self.progress
+
+        return SingleGuideExperiment(self.base_dir, self.group, guide, progress=progress)
 
     @memoized_property
     def guides_df(self):
         guides_df = pd.read_table(self.base_dir / 'guides' / 'guides.txt', index_col='short_name')
+
         guides_df.loc[guides_df['promoter'].isnull(), 'promoter'] = 'P1P2'
+
         guides_df['best_promoter'] = True
+
         for gene, promoter in self.best_promoters.items():
             not_best = guides_df.query('gene == @gene and promoter != @promoter').index
             guides_df.loc[not_best, 'best_promoter'] = False
-            
+
         return guides_df
+
+    @memoized_property
+    def old_gene_to_new_gene(self):
+        updated_gene_names = pd.read_table(self.base_dir / 'guides' / 'updated_gene_names.txt', index_col=0, squeeze=True)
+        return updated_gene_names
+    
+    @memoized_property
+    def new_gene_to_old_gene(self):
+        new_to_old_dict = utilities.reverse_dictionary(self.old_gene_to_new_gene)
+        def new_gene_to_old_gene(new_gene):
+            return new_to_old_dict.get(new_gene, new_gene)
+
+        return new_gene_to_old_gene
     
     @memoized_property
     def best_promoters(self):
@@ -938,6 +910,46 @@ class PooledScreen():
             merged_fn = self.fns['genomic_insertions_bam'](organism)
             sam.merge_sorted_bam_files(fns, merged_fn)
 
+    def merge_common_sequence_special_alignments(self):
+        chunks = self.common_sequence_chunks()
+
+        all_fns = []
+
+        for chunk in chunks:
+            for sub_dir in chunk.fns['outcomes_dir'].iterdir():
+                fn = sub_dir / 'special_alignments.bam'
+                if fn.exists():
+                    all_fns.append(fn)
+
+        sam.merge_sorted_bam_files(all_fns, self.fns['common_sequence_special_alignments'])
+
+    def merge_special_alignments(self):
+        all_fns = defaultdict(dict)
+
+        for exp in self.single_guide_experiments():
+            for sub_dir in exp.fns['outcomes_dir'].iterdir():
+                outcome = sub_dir.name
+                fn = sub_dir / 'special_alignments.bam'
+                if fn.exists():
+                    all_fns[outcome][exp.name] = fn
+
+        top_dir = self.fns['special_alignments_dir']
+
+        top_dir.mkdir(exist_ok=True)
+
+        for outcome, outcome_fns in self.progress(all_fns.items()):
+            first_fn = list(outcome_fns.values())[0]
+            with pysam.AlignmentFile(first_fn) as fh:
+                header = fh.header
+                
+            merged_bam_fn = top_dir / f'{outcome}.bam'
+            with sam.AlignmentSorter(merged_bam_fn, header) as sorter:
+                for guide, fn in outcome_fns.items():
+                    with pysam.AlignmentFile(fn) as individual_fh:
+                        for al in individual_fh:
+                            al.query_name = f'{al.query_name}_{guide}'
+                            sorter.write(al)
+
     def merge_reads_per_UMI(self):
         reads_per_UMI = defaultdict(Counter)
 
@@ -962,7 +974,7 @@ class PooledScreen():
         if relevant_outcomes is None:
             relevant_outcomes = 50
         if isinstance(relevant_outcomes, int):
-            relevant_outcomes = self.most_frequent_outcomes
+            relevant_outcomes = self.most_frequent_outcomes[:relevant_outcomes]
 
         counts = self.outcome_counts('perfect').loc[relevant_outcomes]
         
@@ -990,8 +1002,9 @@ class PooledScreen():
         def Read_to_num_reads(r):
             return Annotation.from_identifier(r.name)['num_reads']
 
-        for exp in self.progress(self.single_guide_experiments()):
-            enough_reads_per_UMI = (r.seq for r in fastq.reads(exp.fns['collapsed_R2']) if Read_to_num_reads(r) >= 5)
+        for exp in self.progress(self.single_guide_experiments(no_progress=True)):
+            reads = exp.reads_by_type('collapsed_R2')
+            enough_reads_per_UMI = (r.seq for r in reads if Read_to_num_reads(r) >= 5)
             splitter.update_counts(enough_reads_per_UMI)
 
         splitter.write_files()
@@ -1005,9 +1018,9 @@ class PooledScreen():
             yield CommonSequenceExperiment(self.base_dir, self.group, chunk_name, progress=self.progress)
 
     @memoized_property
-    def name_to_seq(self):
+    def common_name_to_common_sequence(self):
         name_to_seq = {}
-        with self.fns['common_sequences_lookup_table'].open() as fh:
+        with self.fns['common_name_to_common_sequence'].open() as fh:
             for line in fh:
                 name, seq = line.strip().split()
                 name_to_seq[name] = seq
@@ -1015,8 +1028,34 @@ class PooledScreen():
         return name_to_seq
     
     @memoized_property
-    def seq_to_name(self):
-        return utilities.reverse_dictionary(self.name_to_seq)
+    def common_names(self):
+        common_names = []
+
+        with self.fns['common_name_to_common_sequence'].open() as fh:
+            for line in fh:
+                name, seq = line.strip().split()
+                common_names.append(name)
+
+        return common_names
+    
+    @memoized_property
+    def common_sequence_to_common_name(self):
+        return utilities.reverse_dictionary(self.common_name_to_common_sequence)
+
+    @memoized_property
+    def common_name_to_special_alignment(self):
+        name_to_al = {}
+
+        for al in pysam.AlignmentFile(self.fns['common_sequence_special_alignments']):
+            name_to_al[al.query_name] = al
+
+        return name_to_al
+
+    @memoized_property
+    def common_sequence_to_special_alignment(self):
+        name_to_al = self.common_name_to_special_alignment
+        seq_to_name = self.common_sequence_to_common_name
+        return {seq: name_to_al[name] for seq, name in seq_to_name.items() if name in name_to_al}
 
     @memoized_property
     def name_to_chunk(self):
@@ -1034,12 +1073,17 @@ class PooledScreen():
         return name_to_chunk
 
     def get_read_alignments(self, name):
+        if isinstance(name, int):
+            name = self.common_names[name]
+
         chunk = self.name_to_chunk(name)
+
         als = chunk.get_read_alignments(name)
+
         return als
 
     def get_common_seq_alignments(self, seq):
-        name = self.seq_to_name[seq]
+        name = self.common_sequence_to_common_name[seq]
         als = self.get_read_alignments(name)
         return als
 
@@ -1051,20 +1095,27 @@ class PooledScreen():
 
         return outcomes
 
-    def build_common_sequence_to_outcome(self):
-        with self.fns['common_sequence_outcomes'].open('w') as fh:
+    def write_common_outcome_files(self):
+        with self.fns['common_sequence_outcomes'].open('w') as seq_fh, \
+             self.fns['common_name_to_outcome'].open('w') as name_fh:
+
             for outcome in self.common_sequence_outcomes:
-                fields = [
-                    self.name_to_seq[outcome.original_name],
+                common_name = outcome.original_name
+                common_seq = self.common_name_to_common_sequence[common_name]
+                outcome_fields = [
                     outcome.category,
                     outcome.subcategory,
                     outcome.details,
                 ]
-                fh.write('\t'.join(fields) + '\n')
+                outcome = '\t'.join(outcome_fields)
+
+                seq_fh.write('{}\t{}\n'.format(common_seq, outcome))
+                name_fh.write('{}\t{}\n'.format(common_name, outcome))
 
     @memoized_property
     def common_sequence_to_outcome(self):
         common_sequence_to_outcome = {}
+
         with self.fns['common_sequence_outcomes'].open() as fh:
             for line in fh:
                 seq, category, subcategory, details = line.strip().split('\t')
@@ -1078,6 +1129,7 @@ class CommonSequenceSplitter():
         self.reads_per_chunk = reads_per_chunk
         self.current_chunk_fh = None
         self.seq_counts = Counter()
+        self.distinct_guides_per_seq = Counter()
         
         common_sequences_dir = self.pool.fns['common_sequences_dir']
 
@@ -1089,6 +1141,8 @@ class CommonSequenceSplitter():
     def update_counts(self, seqs):
         counts = Counter(seqs)
         self.seq_counts.update(counts)
+        for seq in counts:
+            self.distinct_guides_per_seq[seq] += 1
             
     def close(self):
         if self.current_chunk_fh is not None:
@@ -1099,7 +1153,8 @@ class CommonSequenceSplitter():
             self.close()
             chunk_name = '{:010d}-{:010d}'.format(i, i + self.reads_per_chunk - 1)
             chunk_exp = CommonSequenceExperiment(self.pool.base_dir, self.pool.group, chunk_name)
-            self.current_chunk_fh = chunk_exp.fns['collapsed_R2'].open('w')
+            fn = chunk_exp.fns_by_read_type['fastq']['collapsed_R2']
+            self.current_chunk_fh = fn.open('w')
             
     def write_read(self, i, read):
         self.possibly_make_new_chunk(i)
@@ -1117,40 +1172,136 @@ class CommonSequenceSplitter():
         tuples = []
 
         Annotation = collapse.Annotations['collapsed_UMI_mismatch']
-       
-        for i, (seq, count) in enumerate(self.seq_counts.most_common()):
-            name = str(Annotation(UMI='{:010}'.format(i), cluster_id=0, num_reads=count, mismatch=-1))
-            tuples.append((name, seq, count))
-            if count > 1:
+
+        i = 0 
+        for seq, count in self.seq_counts.most_common():
+            distinct_guides = self.distinct_guides_per_seq[seq]
+
+            if count > 1 and distinct_guides > 1:
+                name = str(Annotation(UMI='{:010}'.format(i), cluster_id=0, num_reads=count, mismatch=-1))
                 read = fastq.Read(name, seq, qual)
                 self.write_read(i, read)
+                i += 1
+            else:
+                name = None
+
+            tuples.append((name, seq, count))
 
         self.close()
 
-        with self.pool.fns['common_sequences_lookup_table'].open('w') as lookup_fh, \
+        with self.pool.fns['common_name_to_common_sequence'].open('w') as name_to_seq_fh, \
              self.pool.fns['all_sequences'].open('w') as all_sequences_fh:
 
             for name, seq, count in tuples:
                 all_sequences_fh.write('{}\t{}\n'.format(seq, count))
 
-                if count > 1:
-                    lookup_fh.write('{}\t{}\n'.format(name, seq))
+                if name is not None:
+                    name_to_seq_fh.write('{}\t{}\n'.format(name, seq))
 
-def explore(base_dir, group, initial_guide=None, by_outcome=True, **kwargs):
+class BrittIlluminaExperiment(experiment.IlluminaExperiment):
+    def __init__(self, *args, **kwargs):
+        super(BrittAmpliconExperiment, self).__init__(*args, **kwargs)
+        self.supplemental_headers = {}
+        self.layout_module = pooled_layout
+        
+    def categorize_outcomes(self, bam_fn_key='stitched_bam_by_name'):
+        if self.fns['outcomes_dir'].is_dir():
+            shutil.rmtree(str(self.fns['outcomes_dir']))
+
+        self.fns['outcomes_dir'].mkdir()
+
+        outcomes = defaultdict(list)
+
+        total = 0
+        required_sw = 0
+
+        # iter wrap since tqdm objects are not iterators
+        alignment_groups = iter(self.alignment_groups(bam_fn_key))
+
+        with self.fns['outcome_list'].open('w') as fh:
+            for name, als in alignment_groups:
+                layout = self.layout_module.Layout(als, self.target_info, self.supplemental_headers)
+                total += 1
+                try:
+                    category, subcategory, details = layout.categorize()
+                except:
+                    print()
+                    print(self.name, name)
+                    raise
+            
+                if layout.required_sw:
+                    required_sw += 1
+
+                outcomes[category, subcategory].append(name)
+
+                UMI_outcome = coherence.Pooled_UMI_Outcome('ph',
+                                                           '-1',
+                                                           name,
+                                                           1,
+                                                           category,
+                                                           subcategory,
+                                                           details,
+                                                           name,
+                                                          )
+                fh.write(str(UMI_outcome) + '\n')
+
+        # To make plotting easier, for each outcome, make a file listing all of
+        # qnames for the outcome and a bam file (sorted by name) with all of the
+        # alignments for these qnames.
+
+        qname_to_outcome = {}
+        bam_fhs = {}
+
+        with pysam.AlignmentFile(self.fns['combined_bam_by_name']) as full_bam_fh:
+        
+            for outcome, qnames in outcomes.items():
+                outcome_fns = self.outcome_fns(outcome)
+                outcome_fns['dir'].mkdir()
+                bam_fhs[outcome] = pysam.AlignmentFile(str(outcome_fns['bam_by_name']), 'w', template=full_bam_fh)
+                
+                with outcome_fns['query_names'].open('w') as fh:
+                    for qname in qnames:
+                        qname_to_outcome[qname] = outcome
+                        fh.write(qname + '\n')
+            
+            for al in full_bam_fh:
+                if al.query_name in qname_to_outcome:
+                    outcome = qname_to_outcome[al.query_name]
+                    bam_fhs[outcome].write(al)
+
+        for outcome, fh in bam_fhs.items():
+            fh.close()
+
+def explore(base_dir, group,
+            initial_guide=None,
+            by_outcome=True,
+            ref_centric=True,
+            highlight_SNPs=True,
+            draw_mismatches=True,
+            split_at_indels=True,
+            **kwargs):
     pool = PooledScreen(base_dir, group)
 
     guides = pool.guides
     if initial_guide is None:
         initial_guide = guides[0]
 
+    Select = ipywidgets.Select
+    Layout = ipywidgets.Layout
+
     widgets = {
-        'guide': ipywidgets.Select(options=guides, value=initial_guide, layout=ipywidgets.Layout(height='200px', width='450px')),
-        'read_id': ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='600px')),
-        'outcome': ipywidgets.Select(options=[], continuous_update=False, layout=ipywidgets.Layout(height='200px', width='450px')),
+        'guide': Select(options=guides, value=initial_guide, layout=Layout(height='200px', width='450px')),
+        'read_id': Select(options=[], layout=Layout(height='200px', width='600px')),
+        'outcome': Select(options=[], continuous_update=False, layout=Layout(height='200px', width='450px')),
         'zoom_in': ipywidgets.FloatRangeSlider(value=[-0.02, 1.02], min=-0.02, max=1.02, step=0.001, continuous_update=False, layout=ipywidgets.Layout(width='1200px')),
         'save': ipywidgets.Button(description='Save'),
         'file_name': ipywidgets.Text(value=str(Path(base_dir) / 'figures')),
     }
+
+    kwargs['ref_centric'] = ref_centric
+    kwargs['highlight_SNPs'] = highlight_SNPs
+    kwargs['draw_mismatches'] = draw_mismatches
+    kwargs['split_at_indels'] = split_at_indels
 
     toggles = [
         'parsimonious',
@@ -1160,7 +1311,7 @@ def explore(base_dir, group, initial_guide=None, by_outcome=True, **kwargs):
         'draw_qualities',
         'draw_mismatches',
         'highlight_SNPs',
-        'highlight_around_cut',
+        'split_at_indels',
     ]
     for toggle in toggles:
         widgets[toggle] = ipywidgets.ToggleButton(value=kwargs.get(toggle, False))
