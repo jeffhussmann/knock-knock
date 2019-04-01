@@ -142,7 +142,7 @@ class ModalMaker(object):
         
         return modal_div, modal_id
         
-def make_table(base_dir, conditions=None, drop_outcomes=None):
+def make_table(base_dir, conditions=None, drop_outcomes=None, include_images=True):
     df = load_counts(base_dir, conditions, drop_outcomes)
     totals = df.loc[totals_row_label]
 
@@ -161,32 +161,40 @@ def make_table(base_dir, conditions=None, drop_outcomes=None):
             fraction = val / float(totals[col])
             
             if row == totals_row_label:
-                #modal_div, modal_id = modal_maker.make_length(exp)
+                text = '{:,}'.format(val)
+                if include_images:
+                    #modal_div, modal_id = modal_maker.make_length(exp)
 
-                hover_image_fn = str(exp.fns['lengths_figure'])
-                hover_URI, width, height = fn_to_URI(hover_image_fn)
+                    hover_image_fn = str(exp.fns['lengths_figure'])
+                    hover_URI, width, height = fn_to_URI(hover_image_fn)
 
-                link = link_without_modal_template.format(text='{:,}'.format(val),
-                                                          URI=hover_URI,
-                                                          width=width,
-                                                          height=height,
-                                           )
-                
-                html = link + modal_div
+                    link = link_without_modal_template.format(text=text,
+                                                            URI=hover_URI,
+                                                            width=width,
+                                                            height=height,
+                                            )
+                    
+                    html = link# + modal_div
+                else:
+                    html = text
             else:
-                modal_div, modal_id = modal_maker.make_outcome(exp, outcome)
-                
-                hover_image_fn = str(outcome_fns['first_example'])
-                hover_URI, width, height = fn_to_URI(hover_image_fn)
+                text = '{:.2%}'.format(fraction)
+                if include_images:
+                    modal_div, modal_id = modal_maker.make_outcome(exp, outcome)
+                    
+                    hover_image_fn = str(outcome_fns['first_example'])
+                    hover_URI, width, height = fn_to_URI(hover_image_fn)
 
-                link = link_template.format(text='{:.2%}'.format(fraction),
-                                            modal_id=modal_id,
-                                            URI=hover_URI,
-                                            width=width,
-                                            height=height,
-                                           )
-                
-                html = link + modal_div
+                    link = link_template.format(text=text,
+                                                modal_id=modal_id,
+                                                URI=hover_URI,
+                                                width=width,
+                                                height=height,
+                                            )
+                    
+                    html = link + modal_div
+                else:
+                    html = text
 
         return html
     
@@ -305,17 +313,9 @@ import knockin.table
 
 conditions = {conditions}
 drop_outcomes = {drop_outcomes}
-knockin.table.make_table_new('{base_dir}', conditions, drop_outcomes, include_images=False)
+knockin.table.make_table_new('{base_dir}', conditions, drop_outcomes, include_images=True)
 '''.format(conditions=conditions, base_dir=base_dir, drop_outcomes=drop_outcomes)
     
-#    cell_contents = '''\
-#import knockin.table
-#
-#conditions = {conditions}
-#drop_outcomes = {drop_outcomes}
-#knockin.table.make_table_new('{base_dir}', conditions, drop_outcomes, include_images=True)
-#'''.format(conditions=conditions, base_dir=base_dir, drop_outcomes=drop_outcomes)
-
     nb['cells'] = [nbf.new_code_cell(cell_contents)]
 
     nb['metadata'] = {'title': fn}
