@@ -396,6 +396,8 @@ class ReadDiagram():
                         
             for i, alignment in enumerate(ref_alignments):
                 start, end = sam.query_interval(alignment)
+                start -= 0.5
+                end += 0.5
                 strand = sam.get_strand(alignment)
                 y = (offset + i * np.sign(offset)) * self.gap_between_als
                 
@@ -600,7 +602,7 @@ class ReadDiagram():
                     if not qs:
                         continue
 
-                    xs = [min(qs), max(qs)]
+                    xs = [min(qs) - 0.5, max(qs) + 0.5]
                     
                     rs = [feature.start, feature.end]
                     if strand == '-':
