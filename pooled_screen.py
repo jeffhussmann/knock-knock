@@ -444,7 +444,7 @@ class SingleGuideExperiment(experiment.Experiment):
             self.collapse_UMI_outcomes()
             self.make_reads_per_UMI()
             self.make_filtered_cell_bams()
-            self.make_genomic_insertion_bams()
+            #self.make_genomic_insertion_bams()
             #self.make_outcome_plots(num_examples=3)
         else:
             raise ValueError(stage)
@@ -1279,6 +1279,8 @@ def explore(base_dir, group,
             highlight_SNPs=True,
             draw_mismatches=True,
             split_at_indels=True,
+            draw_sequence=True,
+            force_left_aligned=True,
             **kwargs):
     pool = PooledScreen(base_dir, group)
 
@@ -1302,12 +1304,15 @@ def explore(base_dir, group,
     kwargs['highlight_SNPs'] = highlight_SNPs
     kwargs['draw_mismatches'] = draw_mismatches
     kwargs['split_at_indels'] = split_at_indels
+    kwargs['draw_sequence'] = draw_sequence
+    kwargs['force_left_aligned'] = force_left_aligned
 
     toggles = [
         'parsimonious',
         'relevant',
         'ref_centric',
         'draw_sequence',
+        'force_left_aligned',
         'draw_qualities',
         'draw_mismatches',
         'highlight_SNPs',

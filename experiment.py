@@ -678,9 +678,11 @@ class IlluminaExperiment(Experiment):
         before_R1 = adapters.primers[self.sequencing_primers]['R1']
         before_R2 = adapters.primers[self.sequencing_primers]['R2']
 
-        with self.fns['stitched'].open('w') as stitched_fh, \
-             self.fns['R1_no_overlap'].open('w') as R1_fh, \
-             self.fns['R2_no_overlap'].open('w') as R2_fh:
+        fns = self.fns_by_read_type['fastq']
+
+        with fns['stitched'].open('w') as stitched_fh, \
+             fns['R1_no_overlap'].open('w') as R1_fh, \
+             fns['R2_no_overlap'].open('w') as R2_fh:
 
             for R1, R2 in self.read_pairs:
                 stitched = sw.stitch_read_pair(R1, R2, before_R1, before_R2)
@@ -696,11 +698,11 @@ class IlluminaExperiment(Experiment):
             yield read.name
 
     def count_read_lengths(self):
-        lengths = Counter(len(r.seq) for r in self.stitched_reads)
+        lengths = Counter(len(r.seq) for r in self.reads_by_type('stitched'))
 
         no_overlap_length = self.paired_end_read_length * 2
 
-        lengths[no_overlap_length] += sum(1 for _ in self.R1_no_overlap_reads)
+        lengths[no_overlap_length] += sum(1 for _ in self.reads_by_type('R1_no_overlap'))
 
         lengths = utilities.counts_to_array(lengths)
         np.savetxt(self.fns['lengths'], lengths, '%d')
@@ -728,13 +730,13 @@ class IlluminaExperiment(Experiment):
 
     def process(self, stage=0):
         #self.stitch_read_pairs()
-        #
+        
         #self.count_read_lengths()
 
-        for read_type in ['stitched', 'R1_no_overlap', 'R2_no_overlap']:
-            self.generate_alignments(read_type)
-            self.generate_supplemental_alignments(read_type)
-            self.combine_alignments(read_type)
+        #for read_type in self.read_types:
+        #    self.generate_alignments(read_type)
+        #    self.generate_supplemental_alignments(read_type)
+        #    self.combine_alignments(read_type)
 
         self.categorize_outcomes(read_type='stitched')
         self.make_outcome_plots(num_examples=6)

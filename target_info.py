@@ -68,6 +68,8 @@ class TargetInfo():
     def sgRNAs(self):
         if self.sgRNA is None:
             sgRNAs = sorted(n for t, n in self.all_sgRNA_features)
+        elif isinstance(self.sgRNA, list):
+            sgRNAs = self.sgRNA
         else:
             sgRNAs = [self.sgRNA]
 
@@ -163,6 +165,10 @@ class TargetInfo():
             if 'ID' in f.attribute
         }
         return features
+
+    @memoized_property
+    def sequencing_start(self):
+        return self.features[self.target, 'sequencing_start']
 
     @memoized_property
     def reference_sequences(self):
@@ -315,6 +321,10 @@ class TargetInfo():
             return list(self.PAM_slices.values())[0]
 
     @memoized_property
+    def effector(self):
+        return effectors[self.sgRNA_feature.attribute['effector']]
+
+    @memoized_property
     def cut_afters(self):
         cut_afters = {}
         for name, sgRNA in self.sgRNA_features.items():
@@ -359,45 +369,6 @@ class TargetInfo():
         return overlaps_cut
         
     @memoized_property
-    def around_cut_features(self):
-        fs = {}
-        for name, feature in self.sgRNA_features.items():
-            cut_after = self.cut_afters[name]
-            upstream = gff.Feature.from_fields(self.target, '.', '.', cut_after - 25, cut_after, '.', feature.strand, '.', '.')
-            downstream = gff.Feature.from_fields(self.target, '.', '.', cut_after + 1, cut_after + 25, '.', feature.strand, '.', '.')
-
-            distal, proximal = upstream, downstream
-            if feature.strand == '+':
-                distal, proximal = upstream, downstream
-            else:
-                distal, proximal = downstream, upstream
-                
-            distal.attribute['color'] = '#b7e6d7'
-            proximal.attribute['color'] = '#85dae9'
-
-            distal.attribute['ID'] = 'PAM-distal\n{} cut'.format(feature.attribute['ID'])
-            proximal.attribute['ID'] = 'PAM-proximal\n{} cut'.format(feature.attribute['ID'])
-
-            fs.update({(self.target, f.attribute['ID']): f for f in [distal, proximal]})
-
-        return fs
-
-    @memoized_property
-    def intervals_around_cut(self):
-        if self.sgRNA_feature.strand == '+':
-            relative_intervals = {
-                'PAM-proximal': interval.Interval(self.sgRNA_feature.end + 1, np.inf),
-                'PAM-distal': interval.Interval(0, self.sgRNA_feature.start - 1),
-            }
-        else:
-            relative_intervals = {
-                'PAM-proximal': interval.Interval(0, self.sgRNA_feature.start - 1),
-                'PAM-distal': interval.Interval(self.sgRNA_feature.end + 1, np.inf),
-            }
-
-        return relative_intervals
-        
-    @memoized_property
     def most_extreme_primer_names(self):
         # Default to the primers farthest to the left and right on the target.
         all_primer_names = {name: feature for (_, name), feature in self.features.items()
@@ -421,15 +392,15 @@ class TargetInfo():
         return primers
 
     @memoized_property
-    def primers_by_side_of_cut(self):
+    def primers_by_PAM_side(self):
         primers = {}
 
         for primer_name, primer in self.primers.items():
             primer = self.features[self.target, primer_name]
-            primer_interval = interval.Interval(primer.start, primer.end)
+            primer_interval = interval.Interval.from_feature(primer)
             
-            for side, relative_interval  in self.intervals_around_cut.items():
-                if len(primer_interval & relative_interval) > 0:
+            for side, PAM_side_interval in self.PAM_side_intervals.items():
+                if primer_interval & PAM_side_interval:
                     primers[side] = primer
 
         if len(primers) != 2:
@@ -445,8 +416,76 @@ class TargetInfo():
         return by_side
 
     @memoized_property
+    def target_side_intervals(self):
+        ''' intervals of target 5' and 3' of cut '''
+        return {
+            5: interval.Interval(0, self.cut_after),
+            3: interval.Interval(self.cut_after + 1, np.inf)
+        }
+
+    @memoized_property
+    def PAM_side_intervals(self):
+        return {self.target_side_to_PAM_side[side]: intvl for side, intvl in self.target_side_intervals.items()}
+    
+    @memoized_property
+    def read_side_intervals(self):
+        return {self.target_side_to_read_side[side]: intvl for side, intvl in self.target_side_intervals.items()}
+
+    @memoized_property
+    def target_side_to_PAM_side(self):
+        PAM_interval = interval.Interval.from_slice(self.PAM_slice)
+        if self.target_side_intervals[5] & PAM_interval:
+            target_to_PAM = {5: 'PAM-proximal', 3: 'PAM-distal'}
+        elif self.target_side_intervals[3] & PAM_interval:
+            target_to_PAM = {3: 'PAM-proximal', 5: 'PAM-distal'}
+            
+        return target_to_PAM
+
+    @memoized_property
+    def target_side_to_read_side(self):
+        read_start_interval = interval.Interval.from_feature(self.sequencing_start)
+        
+        if self.target_side_intervals[5] & read_start_interval:
+            target_to_read = {5: 'left', 3: 'right'}
+        elif self.target_side_intervals[3] & read_start_interval:
+            target_to_read = {5: 'right', 3: 'left'}
+        else:
+            raise ValueError
+            
+        return target_to_read
+
+    @memoized_property
+    def read_side_to_target_side(self):
+        return utilities.reverse_dictionary(self.target_side_to_read_side)
+
+    @memoized_property
+    def PAM_side_to_target_side(self):
+        return utilities.reverse_dictionary(self.target_side_to_PAM_side)
+
+    @memoized_property
+    def read_side_to_PAM_side(self):
+        read_to_PAM = {}
+
+        for target_side, read_side in self.target_side_to_read_side.items():
+            PAM_side = self.target_side_to_PAM_side[target_side]
+            read_to_PAM[read_side] = PAM_side
+
+        return read_to_PAM
+    
+    @memoized_property
+    def PAM_side_to_read_side(self):
+        return utilities.reverse_dictionary(self.read_side_to_PAM_side)
+
+    @memoized_property
     def homology_arms(self):
-        ''' HAs keyed by either side of cut (PAM-proximal/PAM-distal) or side of target (5/3) '''
+        ''' HAs keyed by:
+                name,
+                side of cut (PAM-proximal/PAM-distal),
+                side of target (5/3),
+                expected side of read (left/right),
+        '''
+
+        # Load homology arms from gff features.
         HAs = defaultdict(dict)
 
         ref_name_to_source = {
@@ -463,6 +502,8 @@ class TargetInfo():
         if len(HAs) != 2:
             raise ValueError('expected 2 HAs, got {} ({})'.format(len(HAs), sorted(HAs)))
             
+        # Confirm that every HA name exists on both the target and donor and has the same
+        # sequence on each.
         for name in HAs:
             if 'target' not in HAs[name] or 'donor' not in HAs[name]:
                 raise ValueError('{} not present on either target or donor'.format(name))
@@ -480,50 +521,17 @@ class TargetInfo():
             if seqs['target'] != seqs['donor']:
                 raise ValueError('{} not identical sequence on target and donor'.format(name))
 
-        relative_to_cut = defaultdict(list)
-
-        for name in HAs:
+        for name in sorted(HAs):
             HA = HAs[name]['target']
             HA_interval = interval.Interval(HA.start, HA.end)
-            for side, relative_interval in self.intervals_around_cut.items():
-                if len(HA_interval & relative_interval) > 0:
-                    relative_to_cut[side].append(name)
+            for target_side, target_side_interval in self.target_side_intervals.items():
+                if HA_interval & target_side_interval:
+                    PAM_side = self.target_side_to_PAM_side[target_side]
+                    read_side = self.target_side_to_read_side[target_side]
+                    for key in [target_side, PAM_side, read_side]:
+                        HAs[key] = HAs[name]
 
-        target_side_to_name = {}
-        target_side_to_name[5], target_side_to_name[3] = sorted(HAs, key=lambda n: HAs[n]['target'].start)
-
-        for side in relative_to_cut:
-            if len(relative_to_cut[side]) != 1:
-                raise ValueError('not exactly one HA in {}: {}'.format(side, relative_to_cut[side]))
-
-        relative_HAs = {}
-        for side in relative_to_cut:
-            name = relative_to_cut[side][0]
-            relative_HAs[side] = {source: HAs[name][source] for source in ['target', 'donor']}
-
-        for target_side, name in target_side_to_name.items():
-            relative_HAs[target_side] = {source: HAs[name][source] for source in ['target', 'donor']}
-
-        return relative_HAs
-
-    @memoized_property
-    def read_side_to_PAM_side(self):
-        ''' which HA should be on the left and right of the read ''' 
-        primer = self.primers_by_side_of_target[3]
-
-        distances = {}
-        for HA_side in ['PAM-distal', 'PAM-proximal']:
-            HA = self.homology_arms[HA_side]['target']
-            distances[HA_side] = abs(HA.start - primer.start)
-
-        expected = {}
-        expected['left'], expected['right'] = sorted(distances, key=distances.__getitem__)
-
-        return expected
-
-    @memoized_property
-    def PAM_side_to_read_side(self):
-        return utilities.reverse_dictionary(self.read_side_to_PAM_side)
+        return HAs
 
     @memoized_property
     def HA_ref_p_to_offset(self):
@@ -606,15 +614,29 @@ class TargetInfo():
     
     @memoized_property
     def simple_donor_SNVs(self):
-        ''' {position: base identity} on the forward strand'''
-        simple = {}
-        for name, d in self.donor_SNVs['donor'].items():
-            b = d['base']
-            if d['strand'] == '-':
-                # undo the flip
-                b = utilities.reverse_complement(b)
-            simple[d['position']] = b
-        return simple
+        ''' {ref_name, position: base identity in donor if on forward strand}}'''
+        SNVs = {}
+
+        for SNV_name, donor_SNV_details in self.donor_SNVs['donor'].items():
+            target_SNV_details = self.donor_SNVs['target'][SNV_name]
+
+            donor_base = donor_SNV_details['base']
+            if donor_SNV_details['strand'] == '-':
+                # We want the forward strand base.
+                donor_base = utilities.reverse_complement(donor_base)
+
+            SNVs[self.donor, donor_SNV_details['position']] = donor_base
+
+            # Confusing: we want the base that would be read on the forward
+            # strand of target if it is actually the donor SNV.
+            if target_SNV_details['strand'] != donor_SNV_details['strand']:
+                possibly_flipped_donor_base = utilities.reverse_complement(donor_base)
+            else:
+                possibly_flipped_donor_base = donor_base
+
+            SNVs[self.target, target_SNV_details['position']] = possibly_flipped_donor_base
+        
+        return SNVs
     
     @memoized_property
     def donor_deletions(self):

@@ -75,6 +75,7 @@ mode_group.add_argument('--csv', metavar='FILE_NAME')
 
 parser.add_argument('--conditions')
 parser.add_argument('--drop_outcomes')
+parser.add_argument('--include_images', action='store_true')
 
 args = parser.parse_args()
 
@@ -156,9 +157,9 @@ elif args.parallel_pool is not None:
         
         subprocess.check_call(parallel_command)
 
-    process_stage(0)
+    #process_stage(0)
 
-    pool.make_common_sequences()
+    #pool.make_common_sequences()
     parallel_pool_common_sequences(base_dir, group_name, max_procs)
     pool.write_common_outcome_files()
     pool.merge_common_sequence_special_alignments()
@@ -210,7 +211,7 @@ elif args.process is not None:
 elif args.html:
     #drop_outcomes = ['malformed layout']
     drop_outcomes = None
-    table.generate_html(args.base_dir, args.html, conditions, drop_outcomes)
+    table.generate_html(args.base_dir, args.html, conditions, drop_outcomes, args.include_images)
 
 elif args.csv:
     #drop_outcomes = ['malformed layout', ('indel', 'complex indel')]

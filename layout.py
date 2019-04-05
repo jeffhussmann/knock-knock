@@ -17,6 +17,9 @@ class Layout(object):
 
         split_als = []
         for al in alignments:
+            if al.is_unmapped:
+                continue
+
             if al.reference_name == self.target_info.target:
                 split_als.extend(sam.split_at_deletions(al, 3))
             elif al.reference_name == self.target_info.donor:

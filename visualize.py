@@ -95,6 +95,7 @@ class ReadDiagram():
                  features_on_alignments=True,
                  ax=None,
                  features_to_hide=None,
+                 refs_to_hide=None,
                  draw_edge_numbers=True,
                  hide_non_target_alignments=False,
                  default_color='grey',
@@ -172,6 +173,11 @@ class ReadDiagram():
             self.features_to_hide = set()
         else:
             self.features_to_hide = features_to_hide
+        
+        if refs_to_hide is None:
+            self.refs_to_hide = set()
+        else:
+            self.refs_to_hide = refs_to_hide
 
         if len(alignments) > 0:
             self.query_length = alignments[0].query_length
@@ -314,7 +320,7 @@ class ReadDiagram():
 
     def draw_alignments(self):
         ax = self.ax
-        alignments = [al for al in self.alignments if not al.is_unmapped]
+        alignments = [al for al in self.alignments if not al.is_unmapped and al.reference_name not in self.refs_to_hide]
 
         # Ensure that target and donor are at the bottom followed by other references.
         reference_order = [self.target_info.target, self.target_info.donor]

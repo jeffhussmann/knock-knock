@@ -305,16 +305,16 @@ def make_table_new(base_dir, conditions=None, drop_outcomes=None, include_images
     
     return styled
 
-def generate_html(base_dir, fn, conditions=None, drop_outcomes=None):
+def generate_html(base_dir, fn, conditions=None, drop_outcomes=None, include_images=False):
     nb = nbf.new_notebook()
 
-    cell_contents = '''\
+    cell_contents = f'''\
 import knockin.table
 
 conditions = {conditions}
 drop_outcomes = {drop_outcomes}
-knockin.table.make_table_new('{base_dir}', conditions, drop_outcomes, include_images=True)
-'''.format(conditions=conditions, base_dir=base_dir, drop_outcomes=drop_outcomes)
+knockin.table.make_table_new('{base_dir}', conditions, drop_outcomes, include_images={include_images})
+'''
     
     nb['cells'] = [nbf.new_code_cell(cell_contents)]
 

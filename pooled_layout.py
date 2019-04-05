@@ -29,7 +29,7 @@ class Layout(object):
 
         self.special_alignment = None
         
-        #self.relevant_alignments = self.parsimonious_target_alignments + self.donor_alignments
+        self.relevant_alignments = self.alignments
 
     @classmethod
     def from_read(cls, read, target_info):
@@ -113,6 +113,13 @@ class Layout(object):
             merged_al = edge_als['right']
         else:
             merged_al = sam.merge_adjacent_alignments(edge_als['left'], edge_als['right'], self.target_info.reference_sequences)
+
+            if merged_al is None and edge_als['right'] is not None:
+                extended_right_al = sw.extend_alignment_with_one_nt_deletion(edge_als['right'], self.target_info.target_sequence_bytes)
+                if self.covers_whole_read(extended_right_al):
+                    merged_al = extended_right_al
+                else:
+                    merged_al = sam.merge_adjacent_alignments(edge_als['left'], extended_right_al, self.target_info.reference_sequences)
 
         return merged_al
     
@@ -268,6 +275,11 @@ class Layout(object):
                 'middle': (ignoring_edges - covered).total_length,
             }
 
+            forward_primer = self.target_info.primers['forward_primer']
+            # primer is annotated on strand it targets, not sequenced strand
+            if sam.overlaps_feature(t_al, forward_primer, require_same_strand=False):
+                missing_from['end'] = 0
+
             return missing_from
 
     @memoized_property
@@ -298,13 +310,12 @@ class Layout(object):
         return edges
 
     @memoized_property
-    def starts_at_primer(self):
+    def starts_at_expected_location(self):
         edge_al = self.original_target_edge_alignments['left']
         if edge_al is None:
             return False
         else:
-            primer = self.target_info.primers_by_side_of_target[3]
-            return sam.overlaps_feature(edge_al, primer)
+            return sam.overlaps_feature(edge_al, self.target_info.sequencing_start)
 
     @memoized_property
     def Q30_fractions(self):
@@ -346,16 +357,24 @@ class Layout(object):
         _, other_locii = self.SNVs_summary
         return other_locii
 
-    def specific_to_donor(self, donor_al):
-        ''' Does donor_al contain a donor SNV? '''
+    def specific_to_donor(self, al):
+        ''' Does al contain a donor SNV? '''
+        if al is None or al.is_unmapped:
+            return False
+
         ti = self.target_info
+
+        ref_name = al.reference_name
+        ref_seq = ti.reference_sequences[al.reference_name]
 
         contains_SNV = False
 
-        for true_read_i, read_b, ref_i, ref_b, qual in sam.aligned_tuples(donor_al, ti.donor_sequence):
-            if ref_i in ti.simple_donor_SNVs:
-                if read_b == ti.simple_donor_SNVs[ref_i]:
-                    contains_SNV = True
+        for true_read_i, read_b, ref_i, ref_b, qual in sam.aligned_tuples(al, ref_seq):
+            # Note: read_b and ref_b are as if the read is the forward strand
+            donor_base = ti.simple_donor_SNVs.get((ref_name, ref_i))
+
+            if donor_base is not None and donor_base == read_b:
+                contains_SNV = True
 
         return contains_SNV
 
@@ -452,7 +471,7 @@ class Layout(object):
                 if indel.kind != 'D' or indel.length != 1:
                     return False
                 deletion_interval = interval.Interval(min(indel.starts_ats), max(indel.ends_ats))
-                return len(deletion_interval & polyT_interval) > 1
+                return len(deletion_interval & polyT_interval) >= 1
 
             indels = [(indel, near_cut) for indel, near_cut in indels if not should_ignore(indel)]
 
@@ -902,27 +921,20 @@ class Layout(object):
     
     @memoized_property
     def genomic_insertion(self):
-        possible = self.identify_genomic_insertions()
-        valid = [d for d in possible if 'failed' not in d]
+        if self.ranked_templated_insertions is None:
+            return None
+        
+        ranked = [details for details in self.ranked_templated_insertions if details['source'] == 'genomic']
+        if len(ranked) == 0:
+            return None
+        else:
+            best_explanation = ranked[0]
 
-        def priority(details):
-            key_order = [
-                'gap_before',
-                'gap_after',
-                'edit_distance',
-            ]
-            return [details[k] for k in key_order]
-
-        valid = sorted(valid, key=priority)
-
-        if len(valid) == 0:
-            valid = None
-
-        return valid
+        return best_explanation
 
     @memoized_property
     def genomic_insertion_string(self):
-        details = self.genomic_insertion[0]
+        details = self.genomic_insertion
         fields = [
             details['target_bounds'][5],
             details['target_bounds'][3],
@@ -930,8 +942,8 @@ class Layout(object):
             details['gap_after'],
             details['edit_distance'],
             details['chr'],
-            details['genomic_bounds'][5],
-            details['genomic_bounds'][3],
+            details['insertion_reference_bounds'][5],
+            details['insertion_reference_bounds'][3],
         ]
         return ','.join(map(str, fields))
 
@@ -981,37 +993,31 @@ class Layout(object):
                 possible_insertions.append(details)
                 continue
 
-            left_overlap = edge_covered['left'] & genomic_covered
-            right_overlap = edge_covered['right'] & genomic_covered
-            
             target_bounds = {}
             genomic_bounds = {}
             
-            left_switch_after, left_min_edits, gap_before = sam.find_best_query_switch_after(edge_als['left'], genomic_al, target_seq, None, max)
-            right_switch_after, right_min_edits, gap_after = sam.find_best_query_switch_after(genomic_al, edge_als['right'], None, target_seq, min)
+            left_results = sam.find_best_query_switch_after(edge_als['left'], genomic_al, target_seq, None, max)
+            right_results = sam.find_best_query_switch_after(genomic_al, edge_als['right'], None, target_seq, min)
 
-            if edge_als['left'] is None:
-                cropped_left_al = None
-                target_bounds[5] = None
-            else:
-                cropped_left_al = sam.crop_al_to_query_int(edge_als['left'], -np.inf, left_switch_after)
-                target_bounds[5] = sam.reference_edges(cropped_left_al)[3]
+            cropped_left_al = sam.crop_al_to_query_int(edge_als['left'], -np.inf, left_results['switch_after'])
+            target_bounds[5] = sam.reference_edges(cropped_left_al)[3]
 
-            if edge_als['right'] is None:
-                cropped_right_al = None
-                target_bounds[3] = None
-            else:
-                cropped_right_al = sam.crop_al_to_query_int(edge_als['right'], right_switch_after + 1, np.inf)
-                if cropped_right_al is None:
-                    target_bounds[3] = None
-                else:
-                    target_bounds[3] = sam.reference_edges(cropped_right_al)[5]
+            cropped_right_al = sam.crop_al_to_query_int(edge_als['right'], right_results['switch_after'] + 1, np.inf)
+            target_bounds[3] = sam.reference_edges(cropped_right_al)[5]
 
-            cropped_genomic_al = sam.crop_al_to_query_int(genomic_al, left_switch_after + 1, right_switch_after)
+            cropped_genomic_al = sam.crop_al_to_query_int(genomic_al, left_results['switch_after'] + 1, right_results['switch_after'])
+            if cropped_genomic_al is None or cropped_genomic_al.is_unmapped:
+                details = {'failed': 'cropping eliminates insertion'}
+                possible_insertions.append(details)
+                continue
+
             genomic_bounds = sam.reference_edges(cropped_genomic_al)   
                 
-            middle_edits = sam.edit_distance_in_query_interval(genomic_al, non_overlapping)
-            total_edit_distance = left_min_edits + middle_edits + right_min_edits
+            left_edits = sam.edit_distance_in_query_interval(cropped_left_al, ref_seq=target_seq)
+            right_edits = sam.edit_distance_in_query_interval(cropped_right_al, ref_seq=target_seq)
+
+            middle_edits = sam.edit_distance_in_query_interval(cropped_genomic_al, ref_seq=None)
+            edit_distance = left_edits + middle_edits + right_edits
 
             organism, original_name = cropped_genomic_al.reference_name.split('_', 1)
             if organism not in self.supplemental_headers:
@@ -1022,10 +1028,19 @@ class Layout(object):
                 al_dict['ref_name'] = original_name
                 original_al = pysam.AlignedSegment.from_dict(al_dict, header)
             
+            gap_before_length = left_results['gap_length']
+            gap_after_length = right_results['gap_length']
+
+            total_gap_length = gap_before_length + gap_after_length
+
             details = {
-                'gap_before': gap_before,
-                'gap_after': gap_after,
-                'edit_distance': total_edit_distance,
+                'gap_before': left_results['gap_interval'],
+                'gap_after': right_results['gap_interval'],
+                'gap_before_length': gap_before_length,
+                'gap_after_length': gap_after_length,
+                'total_gap_length': total_gap_length,
+                'total_edits_and_gaps': total_gap_length + edit_distance,
+                'edit_distance': edit_distance,
                 'chr': genomic_al.reference_name,
                 'organism': organism,
                 'original_alignment': original_al,
@@ -1038,14 +1053,17 @@ class Layout(object):
 
             failures = []
 
-            if gap_before > 5:
-                failures.append(f'gap_before = {gap_before}')
+            if gap_before_length > 5:
+                failures.append(f'gap_before_length = {gap_before_length}')
 
-            if gap_after > 5:
-                failures.append(f'gap_after = {gap_after}')
+            if gap_after_length > 5:
+                failures.append(f'gap_after_length = {gap_after_length}')
 
-            if total_edit_distance > 5:
-                failures.append(f'edit_distance = {total_edit_distance}')
+            if edit_distance > 5:
+                failures.append(f'edit_distance = {edit_distance}')
+
+            if len(failures) > 0:
+                details['failed'] = ' '.join(failures)
 
             possible_insertions.append(details)
 
@@ -1053,47 +1071,26 @@ class Layout(object):
 
     @memoized_property
     def donor_insertion(self):
-        if self.target_info.donor is None:
-            valid = []
+        if self.ranked_templated_insertions is None:
+            return None
+        
+        ranked = [details for details in self.ranked_templated_insertions if details['source'] == 'donor']
+        if len(ranked) == 0:
+            return None
         else:
-            possible = self.identify_donor_insertions(self.original_target_edge_alignments, self.split_donor_alignments)
-            valid = [d for d in possible if 'failed' not in d]
-
-            perfect_edge_als, _ = self.perfect_edge_alignments
-            if len(valid) == 0:
-                possible = self.identify_donor_insertions(perfect_edge_als, self.split_donor_alignments)
-                valid = [d for d in possible if 'failed' not in d]
-            
-            #if len(valid) == 0:
-            #    possible = self.identify_donor_insertions(self.realigned_target_edge_alignments, self.realigned_donor_alignments)
-            #    valid = [d for d in possible if 'failed' not in d]
-
-        def priority(details):
-            key_order = [
-                'gap_before',
-                'gap_after',
-                'edit_distance',
-            ]
-            return [details[k] for k in key_order]
-
-        valid = sorted(valid, key=priority)
-
-        if len(valid) == 0:
-            results = None
-        else:
-            best_explanation = valid[0]
+            best_explanation = ranked[0]
 
             shared_HAs = best_explanation['shared_HAs']
             if len(shared_HAs) > 1:
                 subcategory = 'uses both homology arms'
             elif len(shared_HAs) == 1:
-                read_side = shared_HAs.pop()
+                read_side = list(shared_HAs)[0]
                 PAM_side = self.target_info.read_side_to_PAM_side[read_side]
                 subcategory = f'uses {PAM_side} homology'
             else:
                 subcategory = 'neither homology arm used'
 
-            if not best_explanation['contains_donor_SNV']:
+            if not best_explanation['has_donor_SNV']['insertion']:
                 subcategory += ' (no SNVs)'
             
             fields = [
@@ -1103,13 +1100,14 @@ class Layout(object):
                 best_explanation['gap_before'],
                 best_explanation['gap_after'],
                 best_explanation['edit_distance'],
-                best_explanation['length'],
-                best_explanation['donor_bounds'][5],
-                best_explanation['donor_bounds'][3],
+                best_explanation['insertion_length'],
+                best_explanation['insertion_reference_bounds'][5],
+                best_explanation['insertion_reference_bounds'][3],
             ]
             details_string = ','.join(map(str, fields))
 
-            relevant_alignments = best_explanation['full_alignments'] + best_explanation['concatamer_alignments']
+            # TODO: re-examine concatamer
+            relevant_alignments = best_explanation['full_alignments']# + best_explanation['concatamer_alignments']
 
             results = subcategory, details_string, relevant_alignments, best_explanation
 
@@ -1121,6 +1119,7 @@ class Layout(object):
         return seen
 
     def shared_HAs(self, donor_al, target_edge_als):
+
         q_to_HA_offsets = defaultdict(lambda: defaultdict(set))
 
         for side in ['left', 'right']:
@@ -1129,6 +1128,9 @@ class Layout(object):
             all_q_to_HA_offset = {}
             
             al = target_edge_als[side]
+
+            if al is None or al.is_unmapped:
+                continue
             
             for q, read_b, ref_i, ref_b, qual in sam.aligned_tuples(al, self.target_info.target_sequence):
                 if q is None:
@@ -1149,14 +1151,17 @@ class Layout(object):
                 while q in all_q_to_HA_offset:
                     q_to_HA_offsets[q][side, all_q_to_HA_offset[q]].add('target')
                     q += direction
-                
-        for q, read_b, ref_i, ref_b, qual in sam.aligned_tuples(donor_al, self.target_info.donor_sequence):
-            if q is None:
-                continue
-            for side in ['left', 'right']:
-                offset = self.target_info.HA_ref_p_to_offset['donor', side].get(ref_i)
-                if offset is not None:
-                    q_to_HA_offsets[q][side, offset].add('donor')
+
+        if donor_al is None or donor_al.is_unmapped:
+            pass
+        else:
+            for q, read_b, ref_i, ref_b, qual in sam.aligned_tuples(donor_al, self.target_info.donor_sequence):
+                if q is None:
+                    continue
+                for side in ['left', 'right']:
+                    offset = self.target_info.HA_ref_p_to_offset['donor', side].get(ref_i)
+                    if offset is not None:
+                        q_to_HA_offsets[q][side, offset].add('donor')
             
         shared = set()
         for q in q_to_HA_offsets:
@@ -1166,20 +1171,201 @@ class Layout(object):
 
         return shared
 
-    def long_insertion_framework(self, edge_als):
-        edge_covered = {}
+    @memoized_property
+    def ranked_templated_insertions(self):
+        possible = self.possible_templated_insertions()
+        valid = [details for details in possible if 'failed' not in details]
 
-        if edge_als['left'] is None:
-            edge_covered['left'] = interval.Interval(-np.inf, -1)
-        else:
-            edge_covered['left'] = interval.get_covered(edge_als['left'])
-        
-        if edge_als['right'] is None:
-            edge_covered['right'] = interval.Interval(len(self.seq), np.inf)
-        else:
-            edge_covered['right'] = interval.get_covered(edge_als['right'])
+        def priority(details):
+            key_order = [
+                'total_edits_and_gaps',
+                'total_gap_length',
+                'edit_distance',
+                'gap_before_length',
+                'gap_after_length',
+                'source',
+            ]
+            return [details[k] for k in key_order]
 
-        return edge_covered
+        if len(valid) > 0:
+            ranked = sorted(valid, key=priority)
+            return ranked
+        else:
+            return None
+
+    def possible_templated_insertions(self):
+        # Make some shorter aliases.
+        ti = self.target_info
+
+        perfect_edge_alignments, _ = self.perfect_edge_alignments
+
+        edge_als = {}
+        for side in ['left', 'right']:
+            # For each edge of the read, if blastn produced an alignment
+            # to the target, use it. Otherwise, if a perfect alignment
+            # at the edge exists, use it. Otherwise, store None. 
+            original_al = self.original_target_edge_alignments[side]
+            if original_al is not None:
+                edge_als[side] = original_al
+            else:
+                edge_als[side] = perfect_edge_alignments[side]
+            
+        if edge_als['left'] is not None:
+            # If a target alignment to the start of the read exists,
+            # insist that it be to the sequencing primer. 
+            if not sam.overlaps_feature(edge_als['left'], ti.sequencing_start):
+                return [{'failed': 'left edge alignment isn\'t to primer'}]
+
+        candidates = []
+        for donor_al in self.split_donor_alignments:
+            # Try to add back edges that were missed because of 1 nt deletions
+            # too close to the edge.
+            donor_al = sw.extend_repeatedly(donor_al, ti.donor_sequence_bytes)
+            candidates.append((donor_al, 'donor'))
+
+        for genomic_al in self.nonredundant_supplemental_alignments:
+            candidates.append((genomic_al, 'genomic'))
+
+        possible_insertions = []
+
+        for candidate_al, source in candidates:
+            details = {'source': source}
+
+            if source == 'donor':
+                candidate_ref_seq = ti.donor_sequence
+            else:
+                candidate_ref_seq = None
+            
+            # Find the locations on the query at which swtiching from the left edge alignment to the
+            # candidate and then back again minimizes the edit distance incurred.
+            left_results = sam.find_best_query_switch_after(edge_als['left'], candidate_al, ti.target_sequence, candidate_ref_seq, max)
+            right_results = sam.find_best_query_switch_after(candidate_al, edge_als['right'], candidate_ref_seq, ti.target_sequence, min)
+
+            # Crop the alignments at the swtich points identified.
+            target_bounds = {}
+
+            cropped_left_al = sam.crop_al_to_query_int(edge_als['left'], -np.inf, left_results['switch_after'])
+            target_bounds[5] = sam.reference_edges(cropped_left_al)[3]
+
+            cropped_right_al = sam.crop_al_to_query_int(edge_als['right'], right_results['switch_after'] + 1, np.inf)
+            target_bounds[3] = sam.reference_edges(cropped_right_al)[5]
+
+            cropped_candidate_al = sam.crop_al_to_query_int(candidate_al, left_results['switch_after'] + 1, right_results['switch_after'])
+            if cropped_candidate_al is None or cropped_candidate_al.is_unmapped:
+                details['failed'] = 'cropping eliminates insertion'
+                possible_insertions.append(details)
+                continue
+
+            insertion_reference_bounds = sam.reference_edges(cropped_candidate_al)   
+            insertion_query_interval = interval.get_covered(cropped_candidate_al)
+            insertion_length = len(insertion_query_interval)
+                
+            left_edits = sam.edit_distance_in_query_interval(cropped_left_al, ref_seq=ti.target_sequence)
+            right_edits = sam.edit_distance_in_query_interval(cropped_right_al, ref_seq=ti.target_sequence)
+            middle_edits = sam.edit_distance_in_query_interval(cropped_candidate_al, ref_seq=candidate_ref_seq)
+            edit_distance = left_edits + middle_edits + right_edits
+
+            gap_before_length = left_results['gap_length']
+            gap_after_length = right_results['gap_length']
+            total_gap_length = gap_before_length + gap_after_length
+            
+            has_donor_SNV = {
+                'left': self.specific_to_donor(cropped_left_al),
+                'right': self.specific_to_donor(cropped_right_al),
+            }
+            if source == 'donor':
+                has_donor_SNV['insertion'] = self.specific_to_donor(candidate_al) # should this be cropped_candidate_al?
+
+            # TODO: deal with this
+            #resection = {3: None}
+            #if target_bounds[3] is not None:
+            #    resection[3] = (target_bounds[3] - ti.cut_after) * resection_sign
+
+            details.update({
+                'source': source,
+                'insertion_length': insertion_length,
+
+                'gap_before': left_results['gap_interval'],
+                'gap_after': right_results['gap_interval'],
+
+                'gap_before_length': gap_before_length,
+                'gap_after_length': gap_after_length,
+                'total_gap_length': total_gap_length,
+
+                'total_edits_and_gaps': total_gap_length + edit_distance,
+                'edit_distance': edit_distance,
+                'candidate_alignment': candidate_al,
+                'cropped_candidate_alignment': cropped_candidate_al,
+                'insertion_reference_bounds': insertion_reference_bounds,
+                'target_bounds': target_bounds,
+                'cropped_alignments': [al for al in [cropped_left_al, cropped_candidate_al, cropped_right_al] if al is not None],
+                'full_alignments': [al for al in [edge_als['left'], candidate_al, edge_als['right']] if al is not None],
+
+                'has_donor_SNV': has_donor_SNV,
+
+                'strand': sam.get_strand(candidate_al),
+            })
+
+            if source == 'genomic':
+                organism, original_name = cropped_candidate_al.reference_name.split('_', 1)
+                if organism not in self.supplemental_headers:
+                    raise ValueError(organism, self.supplemental_headers)
+                else:
+                    header = self.supplemental_headers[organism]
+                    al_dict = cropped_candidate_al.to_dict()
+                    al_dict['ref_name'] = original_name
+                    original_al = pysam.AlignedSegment.from_dict(al_dict, header)
+
+                details.update({
+                    'chr': candidate_al.reference_name,
+                    'organism': organism,
+                    'original_alignment': original_al,
+                })
+
+            if source == 'donor':
+                details['shared_HAs'] = self.shared_HAs(candidate_al, edge_als)
+                # TODO: deal with this
+                #concatamer_als = []
+                #if resection[3] is not None and resection[3] < -10:
+                #    # Non-physical resection might indicate concatamer. Check for
+                #    # a relevant donor alignment.
+                #    for al in self.split_donor_alignments:
+                #        possible_concatamer = sam.crop_al_to_query_int(al, right_results['switch_after'] + 1, np.inf)
+                #        if possible_concatamer is not None:
+                #            concatamer_als.append(possible_concatamer)
+
+                #details['concatamer_alignments'] = concatamer_als
+
+            failures = []
+
+            if gap_before_length > 5:
+                failures.append(f'gap_before_length = {gap_before_length}')
+
+            if gap_after_length > 5:
+                failures.append(f'gap_after_length = {gap_after_length}')
+
+            if edit_distance > 5:
+                failures.append(f'edit_distance = {edit_distance}')
+
+            if has_donor_SNV['left']:
+                failures.append('left alignment has a donor SNV')
+
+            if has_donor_SNV['right']:
+                failures.append('right alignment has a donor SNV')
+
+            if insertion_length < 5:
+                failures.append(f'insertion length = {insertion_length}')
+
+            edit_distance_over_length = edit_distance / insertion_length
+            if edit_distance_over_length >= 0.1:
+                failures.append(f'edit distance / length = {edit_distance_over_length}')
+
+            if len(failures) > 0:
+                details['failed'] = ' '.join(failures)
+
+            possible_insertions.append(details)
+
+        return possible_insertions
 
     def identify_donor_insertions(self, edge_als, donor_als):
         ''' edge_als: dictionary of alignments that include the 5' and 3' edges of the read
@@ -1188,7 +1374,7 @@ class Layout(object):
 
         cut_after = ti.cut_after
 
-        # (5' edge of 3' target alignment  - cut_after) will be multiplied by
+        # (5' edge of 3' target alignment - cut_after) will be multiplied by
         # resection_sign to give how many bases were resected on the sequencing
         # primer distal side of the cut.
         if ti.cut_after >= ti.primers_by_side_of_target[3].start:
@@ -1209,23 +1395,14 @@ class Layout(object):
             return [{'failed': 'no left edge alignment'}]
 
         if edge_als['right'] is not None:
-            cropped_to_cut = sam.crop_al_to_ref_int(edge_als['right'], -np.inf, cut_after) 
             edge_covered['right'] = interval.get_covered(cropped_to_cut)
         else:
             return [{'failed': 'no right edge alignment'}]
 
-        #covered_from_edges = interval.DisjointIntervals(edge_covered.values())
-
         possible_inserts = []
 
         for donor_al in donor_als:
-            #insert_covered = interval.get_covered(donor_al)
-            #novel_length = (insert_covered - covered_from_edges).total_length
-
-            #if novel_length == 0:
-            #    details = {'failed': 'donor alignment covered by edge alignments'}
-            #    possible_inserts.append(details)
-            #    continue
+            donor_al = sw.extend_repeatedly(donor_al, self.target_info.donor_sequence_bytes)
                 
             target_bounds = {}
             insert_bounds = {}
@@ -1239,7 +1416,10 @@ class Layout(object):
             cropped_donor_al = sam.crop_al_to_query_int(donor_al, left_switch_after + 1, right_switch_after)
 
             if cropped_donor_al is None or cropped_donor_al.is_unmapped:
-                details = {'failed': 'cropping removes entire donor alignment'}
+                details = {
+                    'failed': 'cropping removes entire donor alignment',
+                    'als': [edge_als['left'], edge_als['right'], donor_al],
+                }
                 possible_inserts.append(details)
                 continue
 
@@ -1266,37 +1446,52 @@ class Layout(object):
                     if possible_concatamer is not None:
                         concatamer_als.append(possible_concatamer)
 
-            insert_bounds =  sam.reference_edges(cropped_donor_al)
+            insert_bounds = sam.reference_edges(cropped_donor_al)
 
-            left_edits = sam.edit_distance_in_query_interval(cropped_left_al, interval.get_covered(cropped_left_al), target_seq)
-            right_edits = sam.edit_distance_in_query_interval(cropped_right_al, interval.get_covered(cropped_right_al), target_seq)
-            middle_edits = sam.edit_distance_in_query_interval(cropped_donor_al, interval.get_covered(cropped_donor_al), donor_seq)
+            left_edits = sam.edit_distance_in_query_interval(cropped_left_al, ref_seq=target_seq)
+            right_edits = sam.edit_distance_in_query_interval(cropped_right_al, ref_seq=target_seq)
+            middle_edits = sam.edit_distance_in_query_interval(cropped_donor_al, ref_seq=donor_seq)
+
             total_edit_distance = left_edits + middle_edits + right_edits
+
+            gap_before_length = len(gap_before) if gap_before is not None else 0
+            gap_after_length = len(gap_after) if gap_after is not None else 0
+
+            has_donor_SNV = {
+                'left': self.specific_to_donor(cropped_left_al),
+                'donor': self.specific_to_donor(donor_al), # should this be cropped_donor_al?
+                'right': self.specific_to_donor(cropped_right_al),
+            }
 
             details = {
                 'shared_HAs': self.shared_HAs(donor_al, edge_als),
                 'gap_before': gap_before,
                 'gap_after': gap_after,
+                'gap_before_length': gap_before_length,
+                'gap_after_length': gap_after_length,
+                'total_gap': gap_before_length + gap_after_length,
+                'total_edits_and_gaps': gap_before_length + gap_after_length + total_edit_distance,
                 'edit_distance': total_edit_distance,
                 'strand': sam.get_strand(donor_al),
                 'donor_bounds': insert_bounds,
                 'target_bounds': target_bounds,
                 'length': abs(insert_bounds[5] - insert_bounds[3]) + 1,
                 'donor_al': donor_al,
+                'cropped_donor_al': cropped_donor_al,
                 'cropped_alignments': [cropped_left_al, cropped_donor_al, cropped_right_al],
                 'full_alignments': [edge_als['left'], donor_al, edge_als['right']],
                 'resection': resection,
                 'concatamer_alignments': concatamer_als,
-                'contains_donor_SNV': self.specific_to_donor(donor_al),
+                'has_donor_SNV': has_donor_SNV,
             }
 
             failures = []
 
-            if gap_before > 5:
-                failures.append(f'gap_before = {gap_before}')
+            if gap_before_length > 5:
+                failures.append(f'gap_before_length = {gap_before_length}')
 
-            if gap_after > 5:
-                failures.append(f'gap_after = {gap_after}')
+            if gap_after_length > 5:
+                failures.append(f'gap_after_length = {gap_after_length}')
 
             if total_edit_distance > 5:
                 failures.append(f'edit_distance = {total_edit_distance}')
@@ -1314,20 +1509,16 @@ class Layout(object):
             if details['target_bounds'][3] is None:
                 failures.append('target_bounds[3] is None')
 
+            if has_donor_SNV['left']:
+                failures.append('left alignment has a donor SNV')
+
+            if has_donor_SNV['right']:
+                failures.append('right alignment has a donor SNV')
+
             if len(failures) > 0:
                 details['failed'] = ' '.join(failures)
 
             possible_inserts.append(details)
-
-        #def is_valid(d):
-        #    return (d['gap_before'] <= 5 and 
-        #            d['gap_after'] <= 5 and
-        #            d['edit_distance'] <= 5 and
-        #            d['length'] >= 5 and
-        #            d['edit_distance'] / d['length'] < 0.05 and
-        #            (d['target_bounds'][5] is not None and d['target_bounds'][3] is not None)
-        #           )
-        #valid = [d for d in possible_inserts if is_valid(d)]
 
         return possible_inserts
 
@@ -1358,7 +1549,7 @@ class Layout(object):
                         outcome = HDROutcome(self.donor_SNV_string, self.donor_deletions_seen)
                         details = str(outcome)
                     else:
-                        if self.starts_at_primer:
+                        if self.starts_at_expected_location:
                             category = 'wild type'
                             subcategory = 'clean'
                             details = 'n/a'
@@ -1366,6 +1557,8 @@ class Layout(object):
                             category = 'truncation'
                             subcategory = 'clean'
                             details = str(self.target_reference_edges[5])
+
+                    self.relevant_alignments = [self.single_target_alignment]
 
                 else: # no indels but mismatches
                     # If extra bases synthesized during SD-MMEJ are the same length
@@ -1377,7 +1570,7 @@ class Layout(object):
                         details = self.SD_MMEJ_string
                         self.relevant_alignments = self.SD_MMEJ['alignments']
                     else:
-                        if self.starts_at_primer:
+                        if self.starts_at_expected_location:
                             category = 'mismatches'
                             subcategory = 'mismatches'
                             outcome = MismatchOutcome(self.non_donor_SNVs)
@@ -1387,14 +1580,16 @@ class Layout(object):
                             subcategory = 'mismatches'
                             details = str(self.target_reference_edges[5])
 
+                        self.relevant_alignments = [self.single_target_alignment]
+
             elif len(self.indels) == 1:
                 indel, near_cut = self.indels[0]
                 if len(self.donor_deletions_seen) == 1:
                     if len(self.non_donor_SNVs) == 0:
-                            category = 'donor'
-                            subcategory = 'clean'
-                            outcome = HDROutcome(self.donor_SNV_string, self.donor_deletions_seen)
-                            details = str(outcome)
+                        category = 'donor'
+                        subcategory = 'clean'
+                        outcome = HDROutcome(self.donor_SNV_string, self.donor_deletions_seen)
+                        details = str(outcome)
 
                     else: # has non-donor SNVs
                         if self.is_valid_SD_MMEJ:
@@ -1443,7 +1638,7 @@ class Layout(object):
                                     if self.donor_insertion is not None:
                                         category = 'donor insertion'
                                         subcategory, details, self.relevant_alignments, best_explanation = self.donor_insertion
-                                        self.special_alignment = best_explanation['donor_al']
+                                        self.special_alignment = best_explanation['candidate_alignment']
                                     else:
                                         category = 'uncategorized'
                                         subcategory = 'uncategorized'
@@ -1503,6 +1698,8 @@ class Layout(object):
                             category = 'uncategorized'
                             subcategory = 'uncategorized'
                             details = 'indel far from cut'
+
+                        self.relevant_alignments = [self.single_target_alignment]
 
             else: # more than one indel
                 if self.has_any_SNV:
@@ -1579,19 +1776,19 @@ class Layout(object):
         elif self.donor_insertion is not None:
             category = 'donor insertion'
             subcategory, details, self.relevant_alignments, best_explanation = self.donor_insertion
-            self.special_alignment = best_explanation['donor_al']
+            self.special_alignment = best_explanation['candidate_alignment']
         
         elif self.genomic_insertion is not None:
             category = 'genomic insertion'
 
-            best_explanation = self.genomic_insertion[0]
+            best_explanation = self.genomic_insertion
             # which supplemental index did it come from?
             subcategory = best_explanation['chr'].split('_')[0]
 
             details = self.genomic_insertion_string
 
             self.relevant_alignments = best_explanation['full_alignments']
-            self.special_alignment = best_explanation['cropped_genomic_alignment']
+            self.special_alignment = best_explanation['cropped_candidate_alignment']
 
         elif self.phiX_alignments:
             category = 'phiX'
