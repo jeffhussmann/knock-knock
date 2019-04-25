@@ -1,3 +1,4 @@
+import array
 from pathlib import Path
 from collections import defaultdict
 
@@ -31,6 +32,7 @@ class TargetInfo():
                  donor=None,
                  sgRNA=None,
                  primer_names=None,
+                 supplmental_headers=None,
                  ):
         self.name = name
         self.dir = Path(base_dir) / 'targets' / name
@@ -43,6 +45,7 @@ class TargetInfo():
         self.sgRNA = sgRNA
         self.donor = donor
         self.donor_specific = manifest.get('donor_specific', 'GFP11') 
+        self.supplemental_headers = supplmental_headers
 
         self.fns = {
             'ref_fasta': self.dir / 'refs.fasta',
@@ -53,6 +56,7 @@ class TargetInfo():
             'protospacer_bam_template': self.dir / 'protospacers_{}.bam',
 
             'bowtie2_index': self.dir / 'refs',
+            'STAR_index_dir': self.dir / 'STAR_index',
 
             'degenerate_insertions': self.dir / 'degenerate_insertions.txt',
             'degenerate_deletions': self.dir / 'degenerate_deletions.txt',
@@ -156,7 +160,7 @@ class TargetInfo():
 
     def make_bowtie2_index(self):
         mapping_tools.build_bowtie2_index(self.fns['bowtie2_index'], [self.fns['ref_fasta']])
-
+    
     @memoized_property
     def features(self):
         features = {
@@ -168,7 +172,7 @@ class TargetInfo():
 
     @memoized_property
     def sequencing_start(self):
-        return self.features[self.target, 'sequencing_start']
+        return self.features.get((self.target, 'sequencing_start'))
 
     @memoized_property
     def reference_sequences(self):
@@ -220,12 +224,14 @@ class TargetInfo():
             padded_interval_end = min(len(full_seq) - 1, interval_end + 20)
 
             int_seq = full_seq[padded_interval_start:padded_interval_end + 1]
+            int_qual = full_qual[padded_interval_start:padded_interval_end + 1]
 
             p_als = []
 
             for m_al in aligner.map(int_seq, MD=True):
-                # Note: hasn't been rigorously tested for off-by-one errors.
+                ## Note: hasn't been rigorously tested for off-by-one errors.
                 p_al = pysam.AlignedSegment(header)
+                p_al.query_name = query_name
                 p_al.reference_name = m_al.ctg
                 p_al.reference_start = m_al.r_st
                 p_al.is_reverse = (m_al.strand == -1)
@@ -245,7 +251,9 @@ class TargetInfo():
                     p_al.cigar = p_al.cigar[::-1]
 
                 p_al.query_sequence = full_seq
-                p_al.query_qualities = full_qual
+                p_al.query_qualities = array.array('B', full_qual) # This is wonky
+                #p_al.query_sequence = int_seq
+                #p_al.query_qualities = array.array('B', int_qual) # This is wonky
 
                 p_als.append(p_al)
 
@@ -433,16 +441,21 @@ class TargetInfo():
 
     @memoized_property
     def target_side_to_PAM_side(self):
-        PAM_interval = interval.Interval.from_slice(self.PAM_slice)
-        if self.target_side_intervals[5] & PAM_interval:
+        strand = self.sgRNA_feature.strand
+        PAM_side = self.effector.PAM_side
+
+        if (strand == '+' and PAM_side == 3) or (strand == '-' and PAM_side == 5):
             target_to_PAM = {5: 'PAM-proximal', 3: 'PAM-distal'}
-        elif self.target_side_intervals[3] & PAM_interval:
+        elif (strand == '+' and PAM_side == 5) or (strand == '-' and PAM_side == 3):
             target_to_PAM = {3: 'PAM-proximal', 5: 'PAM-distal'}
-            
+
         return target_to_PAM
 
     @memoized_property
     def target_side_to_read_side(self):
+        if self.sequencing_start is None:
+            return None
+        
         read_start_interval = interval.Interval.from_feature(self.sequencing_start)
         
         if self.target_side_intervals[5] & read_start_interval:
@@ -500,13 +513,14 @@ class TargetInfo():
                     HAs[feature_name][source] = feature
                     
         if len(HAs) != 2:
-            raise ValueError('expected 2 HAs, got {} ({})'.format(len(HAs), sorted(HAs)))
+            print('expected 2 HAs, got {} ({})'.format(len(HAs), sorted(HAs)))
             
-        # Confirm that every HA name exists on both the target and donor and has the same
+        # Confirm that every HA name that exists on both the target and donor has the same
         # sequence on each.
         for name in HAs:
             if 'target' not in HAs[name] or 'donor' not in HAs[name]:
-                raise ValueError('{} not present on either target or donor'.format(name))
+                print('{} not present on either target or donor'.format(name))
+                continue
             
             seqs = {}
             for source in ['target', 'donor']:
@@ -521,17 +535,36 @@ class TargetInfo():
             if seqs['target'] != seqs['donor']:
                 raise ValueError('{} not identical sequence on target and donor'.format(name))
 
-        for name in sorted(HAs):
-            HA = HAs[name]['target']
-            HA_interval = interval.Interval(HA.start, HA.end)
-            for target_side, target_side_interval in self.target_side_intervals.items():
-                if HA_interval & target_side_interval:
-                    PAM_side = self.target_side_to_PAM_side[target_side]
-                    read_side = self.target_side_to_read_side[target_side]
-                    for key in [target_side, PAM_side, read_side]:
-                        HAs[key] = HAs[name]
+        HAs_on_target = {n for n in HAs if 'target' in HAs[n]}
+        by_target_side = {}
+        by_target_side[5], by_target_side[3] = sorted(HAs_on_target, key=lambda n: HAs[n]['target'].start)
+
+        for target_side, name in by_target_side.items():
+            PAM_side = self.target_side_to_PAM_side[target_side]
+
+            # If sequencing start isn't annotated, don't populate by read side.
+            if self.target_side_to_read_side is not None:
+                read_side = self.target_side_to_read_side[target_side]
+            else:
+                read_side = None
+
+            for key in [target_side, PAM_side, read_side]:
+                if key is not None:
+                    if key in HAs:
+                        raise ValueError(key)
+                    HAs[key] = HAs[name]
 
         return HAs
+
+    @memoized_property
+    def has_shared_homology_arms(self):
+        has_shared_arms = False
+
+        for name, d in self.homology_arms.items():
+            if 'target' in d and 'donor' in d:
+                has_shared_arms = True
+
+        return has_shared_arms
 
     @memoized_property
     def HA_ref_p_to_offset(self):
@@ -558,10 +591,13 @@ class TargetInfo():
         return ref_p_to_offset
 
     @memoized_property
+    def amplicon_interval(self):
+        primers = self.primers_by_side_of_target
+        return interval.Interval(primers[5].start, primers[3].end)
+
+    @memoized_property
     def amplicon_length(self):
-        start = min(f.start for f in self.primers_by_side_of_target.values())
-        end = max(f.end for f in self.primers_by_side_of_target.values())
-        return end - start + 1
+        return len(self.amplicon_interval)
 
     @memoized_property
     def fingerprints(self):

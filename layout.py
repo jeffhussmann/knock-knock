@@ -1,41 +1,107 @@
 from collections import defaultdict
 
 import numpy as np
+import pandas as pd
+import pysam
 
-from sequencing import sam, interval, utilities
+from sequencing import sam, interval, utilities, fastq, sw
 from knockin.target_info import DegenerateDeletion, DegenerateInsertion
 
 memoized_property = utilities.memoized_property
+idx = pd.IndexSlice
 
 class Layout(object):
-    def __init__(self, alignments, target_info, use_mappy=False):
+    def __init__(self, alignments, target_info):
         self.target_info = target_info
 
-        self.use_mappy = use_mappy
+        self.original_alignments = [al for al in alignments if not al.is_unmapped]
 
-        self.supplemental_alignments = []
-
-        split_als = []
-        for al in alignments:
-            if al.is_unmapped:
-                continue
-
-            if al.reference_name == self.target_info.target:
-                split_als.extend(sam.split_at_deletions(al, 3))
-            elif al.reference_name == self.target_info.donor:
-                split_als.extend(sam.split_at_deletions(al, 3))
-            else:
-                self.supplemental_alignments.append(al)
-
-        self.alignments = split_als
-        
         alignment = alignments[0]
         self.name = alignment.query_name
         self.seq = sam.get_original_seq(alignment)
         self.qual = np.array(sam.get_original_qual(alignment))
 
-        self.relevant_alignments = alignments
+        self.relevant_alignments = self.original_alignments
+
+    @memoized_property
+    def target_alignments(self):
+        if self.seq is None:
+            return []
+
+        primers = self.target_info.primers_by_side_of_target
+        target_seq_bytes = self.target_info.target_sequence_bytes
+
+        original_als = [al for al in self.original_alignments if al.reference_name == self.target_info.target]
+
+        processed_als = []
+
+        for al in original_als:
+            # Ignore alignments to the target that fall entirely outside the amplicon interval.
+            # These should typically be considered genomic insertions and caught by supplementary alignments;
+            # counting on target alignments to get them makes behavior dependant on the amount of flanking
+            # sequence included around the amplicon.
+            if not (self.target_info.amplicon_interval & sam.reference_interval(al)):
+                continue
+
+            query_interval = interval.get_covered(al)
+
+            # Primers frequently contain 1 nt deletions, sometimes causing truncated alignments at the edges
+            # of reads. If alignment ends close to but not at a read end, try to refine.
+            extend_before = (0 < query_interval.start <= len(primers[5]) + 5)
+            extend_after = (len(self.seq) - 1 - len(primers[3]) - 5 <= query_interval.end < len(self.seq) - 1)
+            if extend_before or extend_after:
+                al = sw.extend_repeatedly(al, target_seq_bytes, extend_before=extend_before, extend_after=extend_after)
+
+            # Easier to reason about alignments if any that contain long insertions or deletions are split into multiple
+            # alignments.
+            split_at_dels = sam.split_at_deletions(al, 3)
+            split_at_both = []
+            for split_al in split_at_dels:
+                split_at_both.extend(sam.split_at_large_insertions(split_al, 2))
+
+            extended = [sw.extend_alignment(split_al, target_seq_bytes) for split_al in split_at_both]
+
+            processed_als.extend(extended)
+
+        # If processed alignments don't cover either edge, this typically means non-specific amplification.
+        # Try to realign each uncovered edge to the relevant primer.
+        existing_covered = interval.get_disjoint_covered(processed_als)
+
+        possible_edge_als = []
+
+        if existing_covered.start != 0:
+            possible_edge_als.append(self.realign_edges_to_primers(5))
+
+        if existing_covered.end != len(self.seq) - 1:
+            possible_edge_als.append(self.realign_edges_to_primers(3))
+
+        for edge_al in possible_edge_als:
+            if edge_al is not None:
+                new_covered = interval.get_covered(edge_al) - existing_covered
+                # Only add the new alignment if it explains a substantial new amount of the read.
+                if new_covered.total_length > 10:
+                    processed_als.append(edge_al)
         
+        return processed_als
+
+    @memoized_property
+    def donor_alignments(self):
+        original_als = [al for al in self.original_alignments if al.reference_name == self.target_info.donor]
+        processed_als = []
+
+        for al in original_als:
+            processed_als.extend(sam.split_at_deletions(al, 3))
+
+        return processed_als
+
+    @memoized_property
+    def alignments(self):
+        return self.target_alignments + self.donor_alignments
+    
+    @memoized_property
+    def supplemental_alignments(self):
+        return [al for al in self.original_alignments if al.reference_name not in self.target_info.reference_sequences]
+
     def categorize(self):
         details = 'n/a'
 
@@ -76,6 +142,8 @@ class Layout(object):
                         subcategory = 'insertion'
 
                 details = self.indel_string
+                self.relevant_alignments = self.target_alignments
+
             elif len(self.mismatches_near_cut) > 0:
                 category = 'uncategorized'
                 subcategory = 'mismatch(es) near cut'
@@ -94,9 +162,11 @@ class Layout(object):
             if self.junction_summary_per_side[5] == 'HDR' and self.junction_summary_per_side[3] == 'HDR':
                 category = 'HDR'
                 subcategory = 'HDR'
+                self.relevant_alignments = self.parsimonious_alignments
             else:
                 category = 'misintegration'
                 subcategory = '5\' {}, 3\' {}'.format(self.junction_summary_per_side[5], self.junction_summary_per_side[3])
+                self.relevant_alignments = self.alignments
 
         elif self.integration_summary == 'concatamer':
             category = 'concatamer'
@@ -107,21 +177,26 @@ class Layout(object):
             subcategory = 'nonspecific amplification'
             details = 'n/a'
             
-            self.relevant_alignments = self.target_alignments + self.nonspecific_amplification
+            self.relevant_alignments = self.parsimonious_target_alignments + self.nonspecific_amplification
 
         elif self.genomic_insertion is not None:
             category = 'genomic insertion'
             subcategory = 'genomic insertion'
             details = 'n/a'
 
-            self.relevant_alignments = self.target_alignments + self.genomic_insertion
+            self.relevant_alignments = self.parsimonious_target_alignments + self.min_edit_distance_genomic_insertions
 
         elif self.integration_summary in ['donor with indel', 'other', 'unexpected length', 'unexpected source']:
             category = 'uncategorized'
             subcategory = self.integration_summary
 
+            self.relevant_alignments = self.parsimonious_alignments + self.supplemental_alignments + self.gap_alignments
+
         else:
             print(self.integration_summary)
+
+        if self.strand == '-':
+            self.relevant_alignments = [sam.flip_alignment(al) for al in self.relevant_alignments]
 
         return category, subcategory, details
     
@@ -169,6 +244,75 @@ class Layout(object):
                 subcategory = 'WT'
 
         return category, subcategory, details
+    
+    @memoized_property
+    def read(self):
+        if self.seq is None:
+            return None
+        else:
+            return fastq.Read(self.name, self.seq, fastq.encode_sanger(self.qual))
+    
+    @memoized_property
+    def whole_read_interval(self):
+        return interval.Interval(0, len(self.seq) - 1)
+    
+    def realign_edges_to_primers(self, side):
+        if self.seq is None:
+            return []
+
+        buffer_length = 5
+
+        primer = self.target_info.primers_by_side_of_target[side]
+
+        if side == 5:
+            amplicon_slice = idx[primer.start:primer.end + 1 + buffer_length]
+            read_slice = idx[:len(primer) + buffer_length]
+            alignment_type = 'fixed_start'
+        else:
+            amplicon_slice = idx[primer.start - buffer_length:primer.end + 1]
+            read_slice = idx[-(len(primer) + buffer_length):]
+            alignment_type = 'fixed_end'
+
+        amplicon_side_seq = self.target_info.target_sequence[amplicon_slice]
+
+        read = self.read[read_slice]
+        soft_clip_length = len(self.seq) - len(read)
+
+        temp_header = pysam.AlignmentHeader.from_references(['amplicon_side'], [len(amplicon_side_seq)])
+
+        targets = [('amplicon_side', amplicon_side_seq)]
+        als = sw.align_read(read, targets, 5, temp_header,
+                            alignment_type=alignment_type,
+                            max_alignments_per_target=1,
+                            both_directions=False,
+                            min_score_ratio=0,
+                            )
+
+        edge_al = None
+
+        if len(als) > 0:
+            al = als[0]
+            if side == 5:
+                offset = primer.start
+                new_cigar = al.cigar + [(sam.BAM_CSOFT_CLIP, soft_clip_length)]
+                primer_query_interval = interval.Interval(0, len(primer) - 1)
+            else:
+                offset = primer.start - buffer_length
+                new_cigar = [(sam.BAM_CSOFT_CLIP, soft_clip_length)] + al.cigar
+                # can't just use buffer_length as start in case read is shorter than primer + buffer_length
+                primer_query_interval = interval.Interval(len(read) - len(primer), np.inf)
+            
+            edits_in_primer = sam.edit_distance_in_query_interval(al, primer_query_interval, ref_seq=amplicon_side_seq)
+            if edits_in_primer <= 5:
+                al.reference_start = al.reference_start + offset
+                al.cigar = sam.collapse_soft_clip_blocks(new_cigar)
+                al.query_sequence = self.seq
+                al.query_qualities = self.qual
+                al_dict = al.to_dict()
+                al_dict['ref_name'] = self.target_info.target
+                edge_al = pysam.AlignedSegment.from_dict(al_dict, self.target_info.header)
+            
+        return edge_al
 
     @memoized_property
     def all_primer_alignments(self):
@@ -177,9 +321,28 @@ class Layout(object):
         for side, primer in self.target_info.primers_by_side_of_target.items():
             # Prefer to have the primers annotated on the strand they anneal to,
             # so don't require strand match here.
-            als[side] = [al for al in self.alignments if sam.overlaps_feature(al, primer, False)]
+            als[side] = [al for al in self.parsimonious_alignments if sam.overlaps_feature(al, primer, False)]
 
         return als
+
+    @memoized_property
+    def gap_alignments(self):
+        seq_bytes = self.seq.encode()
+        gap_als = []
+
+        gap = self.gap_between_primer_alignments
+        if len(gap) >= 4:
+            for on in ['target', 'donor']:
+                aligner = self.target_info.seed_and_extender[on]
+                als = aligner(seq_bytes, gap.start, gap.end, self.name)
+                als = sorted(als, key=lambda al: al.query_alignment_length, reverse=True)
+                # For same reasoning as in target_alignments, only consider als that overlap the amplicon interval.
+                if on == 'target':
+                    als = [al for al in als if (self.target_info.amplicon_interval & sam.reference_interval(al))]
+
+                gap_als.extend(als[:10])
+
+        return gap_als
 
     @memoized_property
     def extra_copy_of_primer(self):
@@ -350,32 +513,16 @@ class Layout(object):
         return indel_string
 
     @memoized_property
-    def donor_alignments(self):
-        als = [
-            al for al in self.alignments
-            if al.reference_name == self.target_info.donor
-        ]
-        return als
-    
-    @memoized_property
-    def target_alignments(self):
-        als = [
-            al for al in self.alignments
-            if al.reference_name == self.target_info.target
-        ]
-        return als
-
-    @memoized_property
-    def parsimonius_alignments(self):
+    def parsimonious_alignments(self):
         return interval.make_parsimonious(self.alignments)
 
     @memoized_property
+    def parsimonious_target_alignments(self):
+        return [al for al in self.parsimonious_alignments if al.reference_name == self.target_info.target]
+
+    @memoized_property
     def parsimonious_donor_alignments(self):
-        als = [
-            al for al in self.parsimonius_alignments
-            if al.reference_name == self.target_info.donor
-        ]
-        return als
+        return [al for al in self.parsimonious_alignments if al.reference_name == self.target_info.donor]
 
     @memoized_property
     def closest_donor_alignment_to_edge(self):
@@ -413,6 +560,10 @@ class Layout(object):
         from_primer = self.primer_alignments
         HAs = self.target_info.homology_arms
         closest_donor = self.closest_donor_alignment_to_edge
+
+        if 'donor' not in HAs[5] or 'donor' not in HAs[3]:
+            # The donor doesn't share homology arms with the target.
+            return {5: False, 3: False}
 
         target_contains_full_arm = {
             5: HAs[5]['target'].end - from_primer[5].reference_end <= 10,
@@ -554,6 +705,10 @@ class Layout(object):
 
     @memoized_property
     def donor_integration_contains_full_HA(self):
+        HAs = self.target_info.homology_arms
+        if 'donor' not in HAs[5] or 'donor' not in HAs[3]:
+            return {5: False, 3: False}
+
         full_HA = {}
         for side in [5, 3]:
             offset = self.donor_relative_to_arm['external'][side]
@@ -602,13 +757,15 @@ class Layout(object):
         return interval.Interval(disjoint_covered[0].end + 1, disjoint_covered[-1].start - 1)
 
     @memoized_property
-    def has_unexplained_integration(self):
-        int_int = self.integration_interval
-        if int_int is None:
-            return False
-        else:
-            target_and_donor_als = self.target_alignments + self.donor_alignments
-            return not any(len(int_int & interval.get_covered(al)) > 0 for al in target_and_donor_als)
+    def gap_between_primer_alignments(self):
+        if self.primer_alignments[5] is None or self.primer_alignments[3] is None:
+            return interval.Interval.empty()
+
+        left_covered = interval.get_covered(self.primer_alignments[5])
+        right_covered = interval.get_covered(self.primer_alignments[3])
+        gap = interval.Interval(left_covered.start, right_covered.end) - left_covered - right_covered
+        
+        return gap
 
     @memoized_property
     def target_to_at_least_cut(self):
@@ -626,8 +783,6 @@ class Layout(object):
     def junction_summary_per_side(self):
         per_side = {}
 
-        target_blunt = self.target_to_at_least_cut
-        
         for side in [5, 3]:
             if self.clean_handoff[side]:
                 per_side[side] = 'HDR'
@@ -671,7 +826,7 @@ class Layout(object):
     def e_coli_integration(self):
         assert self.has_integration
 
-        e_coli_alignments = [al for al in self.parsimonius_alignments if al.reference_name == 'e_coli_K12']
+        e_coli_alignments = [al for al in self.parsimonious_alignments if al.reference_name == 'e_coli_K12']
 
         int_start = self.integration_interval.start
         int_end = self.integration_interval.end
@@ -737,6 +892,11 @@ class Layout(object):
         if len(p_donor_als) <= 1:
             return 0
 
+        # TEMPORARY
+        if 'donor' not in HAs[5] or 'donor' not in HAs[3]:
+            # The donor doesn't share homology arms with the target.
+            return 0
+
         if self.strand == '+':
             key = lambda al: interval.get_covered(al).start
             reverse = False
@@ -798,29 +958,49 @@ class Layout(object):
 
     @memoized_property
     def genomic_insertion(self):
-        if not self.has_unexplained_integration:
+        min_gap_length = 10
+        gap = self.gap_between_primer_alignments
+        
+        covered_by_normal = interval.get_disjoint_covered(self.alignments)
+        unexplained_gap = gap - covered_by_normal
+
+        if unexplained_gap.total_length < min_gap_length:
             return None
-        elif self.use_mappy:
-            int_als = self.target_info.interval_aligner(self.seq, self.qual, self.integration_interval.start, self.integration_interval.end, self.name)
-
-            if len(int_als) == 0:
-                return None
-            else:
-                return int_als
-
+        elif self.gap_alignments:
+            # gap aligns to the target in the amplicon region
+            return None
         else:
-            need_to_cover = self.integration_interval
+            relevant_ref_names = []
+
+            for genome_name, header in self.target_info.supplemental_headers.items():
+                for ref_name in header.references:
+                    full_ref_name = f'{genome_name}_{ref_name}'
+                    relevant_ref_names.append(full_ref_name)
 
             covering_als = []
             for al in self.supplemental_alignments:
                 covered = interval.get_covered(al)
-                if len(need_to_cover - covered) == 0:
-                    covering_als.append(al)
+                if (gap - covered).total_length <= 1:
+                    edit_distance = sam.edit_distance_in_query_interval(al, gap)
+                    error_rate = edit_distance / len(gap)
+                    if error_rate < 0.1:
+                        covering_als.append(al)
                     
             if len(covering_als) == 0:
                 covering_als = None
-                
+
             return covering_als
+
+    @memoized_property
+    def min_edit_distance_genomic_insertions(self):
+        covering_als = self.genomic_insertion
+        if covering_als is None:
+            return None
+        else:
+            edit_distances = [sam.edit_distance_in_query_interval(al) for al in covering_als]
+            min_distance = min(edit_distances)
+            best_als = [al for al, distance in zip(covering_als, edit_distances) if distance == min_distance]
+            return best_als
 
     @memoized_property
     def nonspecific_amplification(self):
@@ -831,27 +1011,31 @@ class Layout(object):
         not_primer_length = {}
         primer_interval = {}
 
-        for side in [5, 3]:
-            al = self.primer_alignments[side]
-            primer = self.target_info.primers_by_side_of_target[side]
+        # If alignments from the primers extend substantially into the read,
+        # don't consider this nonspecific amplification. 
+        for target_side in [5, 3]:
+            al = self.primer_alignments[target_side]
+            primer = self.target_info.primers_by_side_of_target[target_side]
             just_primer_al = sam.crop_al_to_ref_int(al, primer.start, primer.end)
             start, end = sam.query_interval(just_primer_al)
-            if side == 5:
-                primer_interval[side] = interval.Interval(0, end)
-            elif side == 3:
-                primer_interval[side] = interval.Interval(start, len(self.seq) - 1)
+            if (target_side == 5 and self.strand == '+') or (target_side == 3 and self.strand == '-'):
+                read_side = 'left'
+                primer_interval[read_side] = interval.Interval(0, end)
+            elif (target_side == 3 and self.strand == '+') or (target_side == 5 and self.strand == '-'):
+                read_side = 'right'
+                primer_interval[read_side] = interval.Interval(start, len(self.seq) - 1)
 
-            not_primer_interval = whole_read - primer_interval[side]
+            not_primer_interval = whole_read - primer_interval[read_side]
             not_primer_al = sam.crop_al_to_query_int(al, not_primer_interval.start, not_primer_interval.end)
             if not_primer_al is None:
-                not_primer_length[side] = 0
+                not_primer_length[read_side] = 0
             else:
-                not_primer_length[side] = not_primer_al.query_alignment_length
+                not_primer_length[read_side] = not_primer_al.query_alignment_length
 
-        if not_primer_length[5] >= 10 or not_primer_length[3] >= 10:
+        if not_primer_length['left'] >= 20 or not_primer_length['right'] >= 20:
             return None
 
-        need_to_cover = whole_read - primer_interval[5] - primer_interval[3]
+        need_to_cover = whole_read - primer_interval['left'] - primer_interval['right']
 
         covering_als = []
         for al in self.supplemental_alignments:

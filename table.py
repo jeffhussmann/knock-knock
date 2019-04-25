@@ -225,12 +225,12 @@ def make_table(base_dir, conditions=None, drop_outcomes=None, include_images=Tru
     
     return styled
 
-def make_table_new(base_dir, conditions=None, drop_outcomes=None, include_images=True):
+def make_table_transpose(base_dir, conditions=None, drop_outcomes=None, include_images=True):
     df = load_counts(base_dir, conditions, drop_outcomes)
     totals = df.loc[totals_row_label]
 
     df = df.T
-    
+
     modal_maker = ModalMaker()
 
     def link_maker(val, outcome, exp_group, exp_name, include_images):
@@ -313,7 +313,7 @@ import knockin.table
 
 conditions = {conditions}
 drop_outcomes = {drop_outcomes}
-knockin.table.make_table_new('{base_dir}', conditions, drop_outcomes, include_images={include_images})
+knockin.table.make_table_transpose('{base_dir}', conditions, drop_outcomes, include_images={include_images})
 '''
     
     nb['cells'] = [nbf.new_code_cell(cell_contents)]

@@ -25,18 +25,19 @@ stroke-opacity="0.00"
 
 before_svg = '''\
 <head>
-
+<title>{title}</title>
 <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
 
 <style>
-.popover {
+.popover {{
     max-width: 100%;
-}
+}}
 </style>
 
 </head>
 <body>
-<div style="height:5000px;">'''
+<div style="height:5000px;">\
+'''
 
 after_svg = '''\
 </div>
@@ -58,10 +59,11 @@ after_svg = '''\
     });
 </script>
 
-</body>'''
+</body>\
+'''
 
-def length_plot_with_popovers(exp, standalone=False, container_selector='body', x_lims=None):
-    fig = exp.length_distribution_figure(show_ranges=True, x_lims=x_lims)
+def length_plot_with_popovers(exp, outcome=None, standalone=False, container_selector='body', x_lims=None, y_lims=None):
+    fig = exp.length_distribution_figure(outcome=outcome, show_ranges=True, x_lims=x_lims, y_lims=y_lims)
 
     with io.StringIO() as buf:
         fig.savefig(buf, format='svg', bbox_inches='tight')
@@ -77,8 +79,18 @@ def length_plot_with_popovers(exp, standalone=False, container_selector='body', 
 
     output_lines = []
 
+    if outcome is None:
+        title = exp.name
+    else:
+        category, subcategory = outcome
+        title = f'{category}: {subcategory}'
     if standalone:
-        output_lines.append(before_svg)
+        output_lines.append(before_svg.format(title=title))
+
+    if outcome is None:
+        fns = exp.fns
+    else:
+        fns = exp.outcome_fns(outcome)
 
     line_i = 0
     while line_i < len(lines):
@@ -86,7 +98,7 @@ def length_plot_with_popovers(exp, standalone=False, container_selector='body', 
         output_lines.append(line)
         if '<g id="length_range_' in line:
             start, end = extract_length_range(line)
-            fn = exp.fns['length_range_figures'] / '{}_{}.png'.format(start, end)
+            fn = fns['length_range_figures'] / f'{start}_{end}.png'
             if fn.exists():
                 URI, width, height = table.fn_to_URI(fn)
 

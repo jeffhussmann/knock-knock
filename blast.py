@@ -53,7 +53,7 @@ def blast(ref_fn, reads, bam_fn, bam_by_name_fn, max_insertion_length=None):
             '-query', str(ref_fn), # ... and refs are query
             '-out', str(sam_fn),
         ]
-        subprocess.check_call(blast_command)
+        subprocess.run(blast_command, check=True)
 
         def undo_hard_clipping(al):
             strand = sam.get_strand(al)

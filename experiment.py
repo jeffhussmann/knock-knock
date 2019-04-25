@@ -100,6 +100,7 @@ class Experiment(object):
 
             'lengths': self.dir / 'lengths.txt',
             'lengths_figure': self.dir / 'all_lengths.png',
+            'outcome_stratified_lengths_figure': self.dir / 'outcome_stratified_lengths.png',
             'length_ranges': self.dir / 'length_ranges.csv',
             'manual_length_ranges': self.dir / 'manual_length_ranges.csv',
 
@@ -111,15 +112,23 @@ class Experiment(object):
         self.max_qual = 93
         
         self.supplemental_indices = {
-            'hg19': '/nvme/indices/refdata-cellranger-hg19-1.2.0/star',
-            'bosTau7': '/nvme/indices/bosTau7',
+            'hg19': {
+                'STAR': '/nvme/indices/refdata-cellranger-hg19-1.2.0/star',
+                'minimap2': '/nvme/indices/minimap2/hg19_HPC.mmi',
+            },
+            'bosTau7': {
+                'STAR': '/nvme/indices/bosTau7',
+                'minimap2': '/nvme/indices/minimap2/bosTau7_HPC.mmi',
+            },
         }
+        self.supplemental_headers = {name: sam.header_from_STAR_index(d['STAR']) for name, d in self.supplemental_indices.items()}
         
         self.target_info = target_info.TargetInfo(self.base_dir,
                                                   self.target_name,
                                                   donor=self.donor,
                                                   sgRNA=self.sgRNA,
                                                   primer_names=self.primer_names,
+                                                  supplmental_headers=self.supplemental_headers,
                                                  )
 
     @memoized_property
@@ -132,36 +141,41 @@ class Experiment(object):
 
     @memoized_property
     def fns_by_read_type(self):
-        fns = {
-            'fastq': {},
-            'bam' : {},
-            'bam_by_name': {},
-
-            'supplemental_STAR_prefix': {},
-            'supplemental_bam': {},
-            'supplemental_bam_by_name': {},
-
-            'combined_bam': {},
-            'combined_bam_by_name': {},
-        }
+        fns = defaultdict(dict)
 
         for read_type in self.read_types:
-            fns['fastq'][read_type] = self.dir / f'{read_type}.fastq'
-            fns['bam'][read_type] = self.dir / f'{read_type}_alignments.bam'
-            fns['bam_by_name'][read_type] = self.dir / f'{read_type}_alignments.by_name.bam'
+            if read_type is None:
+                fns['fastq'][read_type] = self.fns['fastqs'][0] # TEMPORARY, discards all fns except first
+                fns['bam'][read_type] = self.dir / 'alignments.bam'
+                fns['bam_by_name'][read_type] = self.dir / 'alignments.by_name.bam'
 
-            for index_name in self.supplemental_indices:
-                fns['supplemental_STAR_prefix'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments_STAR.'
-                fns['supplemental_bam'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments.bam'
-                fns['supplemental_bam_by_name'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments.by_name.bam'
+                for index_name in self.supplemental_indices:
+                    fns['supplemental_STAR_prefix'][read_type, index_name] = self.dir / f'{index_name}_alignments_STAR.'
+                    fns['supplemental_bam'][read_type, index_name] = self.dir / f'{index_name}_alignments.bam'
+                    fns['supplemental_bam_by_name'][read_type, index_name] = self.dir / f'{index_name}_alignments.by_name.bam'
+                    fns['supplemental_bam_temp'][read_type, index_name] = self.dir / f'{index_name}_alignments.temp.bam'
 
-            fns['combined_bam'][read_type] = self.dir / f'{read_type}_combined_alignments.bam'
-            fns['combined_bam_by_name'][read_type] = self.dir / f'{read_type}_combined_alignments.by_name.bam'
+                fns['combined_bam'][read_type] = self.dir / 'combined_alignments.bam'
+                fns['combined_bam_by_name'][read_type] = self.dir / 'combined_alignments.by_name.bam'
+            else:
+                fns['fastq'][read_type] = self.dir / f'{read_type}.fastq'
+                fns['bam'][read_type] = self.dir / f'{read_type}_alignments.bam'
+                fns['bam_by_name'][read_type] = self.dir / f'{read_type}_alignments.by_name.bam'
+
+                for index_name in self.supplemental_indices:
+                    fns['supplemental_STAR_prefix'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments_STAR.'
+                    fns['supplemental_bam'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments.bam'
+                    fns['supplemental_bam_by_name'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments.by_name.bam'
+                    fns['supplemental_bam_temp'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments.temp.bam'
+
+                fns['combined_bam'][read_type] = self.dir / f'{read_type}_combined_alignments.bam'
+                fns['combined_bam_by_name'][read_type] = self.dir / f'{read_type}_combined_alignments.by_name.bam'
         
         return fns
 
     def outcome_fns(self, outcome):
-        outcome_string = '_'.join(map(str, outcome))
+        category, subcategory = outcome
+        outcome_string = f'{category}_{subcategory}'
         outcome_dir = self.fns['outcomes_dir'] / outcome_string
         fns = {
             'dir': outcome_dir,
@@ -173,8 +187,11 @@ class Experiment(object):
             'filtered_cell_bam_by_name': outcome_dir / 'filtered_cell_alignments.by_name.bam',
             'first_example': outcome_dir / 'first_examples.png',
             'combined_figure': outcome_dir / 'combined.png',
+            'diagrams_notebook': outcome_dir / f'{self.group}_{self.name}_{category}_{subcategory}.ipynb',
             'lengths_figure': outcome_dir / 'lengths.png',
             'text_alignments': outcome_dir / 'alignments.txt',
+            'length_range_figures': outcome_dir / 'length_ranges',
+            'lengths_svg': outcome_dir / 'by_length.html',
         }
         return fns
 
@@ -213,10 +230,8 @@ class Experiment(object):
     def alignment_groups(self, fn_key='bam_by_name', outcome=None, read_type=None):
         if outcome is not None:
             fn = self.outcome_fns(outcome)[fn_key]
-        elif read_type is not None:
-            fn = self.fns_by_read_type[fn_key][read_type]
         else:
-            raise ValueError
+            fn = self.fns_by_read_type[fn_key][read_type]
 
         grouped = sam.grouped_by_name(fn)
 
@@ -262,7 +277,7 @@ class Experiment(object):
         lengths = utilities.counts_to_array(lengths)
         return lengths
 
-    def generate_alignments(self, read_type):
+    def generate_alignments(self, read_type=None):
         reads = self.reads_by_type(read_type)
 
         bam_fns = []
@@ -304,12 +319,13 @@ class Experiment(object):
         for fn in bam_by_name_fns:
             fn.unlink()
     
-    def generate_supplemental_alignments(self, read_type):
+    def generate_supplemental_alignments(self, read_type=None):
         ''' Use STAR to produce local alignments, post-filtering spurious alignmnents.
         '''
-        for index_name, index in self.supplemental_indices.items():
+        for index_name in self.supplemental_indices:
             fastq_fn = self.fns_by_read_type['fastq'][read_type]
             STAR_prefix = self.fns_by_read_type['supplemental_STAR_prefix'][read_type, index_name]
+            index = self.supplemental_indices[index_name]['STAR']
 
             bam_fn = mapping_tools.map_STAR(fastq_fn,
                                             index,
@@ -332,11 +348,11 @@ class Experiment(object):
                     # or that have too many edits (per aligned nt). Keep this in
                     # mind when interpretting short unexplained gaps in reads.
 
-                    if al.query_alignment_length <= 20:
-                        continue
+                    #if al.query_alignment_length <= 20:
+                    #    continue
 
-                    if al.get_tag('AS') / al.query_alignment_length <= 0.8:
-                        continue
+                    #if al.get_tag('AS') / al.query_alignment_length <= 0.8:
+                    #    continue
 
                     by_name_sorter.write(al)
 
@@ -344,7 +360,7 @@ class Experiment(object):
                          self.fns_by_read_type['supplemental_bam'][read_type, index_name],
                         )
     
-    def combine_alignments(self, read_type):
+    def combine_alignments(self, read_type=None):
         for by_name in [False, True]:
             if by_name:
                 suffix = '_by_name'
@@ -400,9 +416,8 @@ class Experiment(object):
 
         with self.fns['outcome_list'].open('w') as fh:
             for name, als in self.alignment_groups(fn_key, read_type=read_type):
-                layout = self.layout_module.Layout(als, self.target_info)
-
                 try:
+                    layout = self.layout_module.Layout(als, self.target_info)
                     if self.target_info.donor is not None:
                         category, subcategory, details = layout.categorize()
                     else:
@@ -413,7 +428,13 @@ class Experiment(object):
                 
                 outcomes[category, subcategory].append(name)
 
-                fh.write(f'{name}\t{category}\t{subcategory}\t{details}\n')
+                if layout.seq is None:
+                    length = 0
+                else:
+                    length = len(layout.seq)
+
+                outcome = coherence.Outcome(name, length, category, subcategory, details)
+                fh.write(f'{outcome}\n')
 
         counts = {description: len(names) for description, names in outcomes.items()}
         pd.Series(counts).to_csv(self.fns['outcome_counts'], sep='\t')
@@ -425,10 +446,7 @@ class Experiment(object):
         qname_to_outcome = {}
         bam_fhs = {}
 
-        if read_type is not None:
-            full_bam_fn = self.fns_by_read_type[fn_key][read_type]
-        else:
-            full_bam_fh = self.fns[fn_key]
+        full_bam_fn = self.fns_by_read_type[fn_key][read_type]
 
         with pysam.AlignmentFile(full_bam_fn) as full_bam_fh:
         
@@ -458,7 +476,7 @@ class Experiment(object):
             parsimonious=True,
             paired_end_read_length=None,
             #ref_centric=True,
-            size_multiple=0.3,
+            size_multiple=1,
             detect_orientation=True,
             features_to_hide=['forward_primer_illumina', 'reverse_primer_illumina'],
             #process_mappings=self.layout_module.characterize_layout,
@@ -468,8 +486,9 @@ class Experiment(object):
             als = self.get_read_alignments(i, outcome=outcome)
             if als is None:
                 raise StopIteration
-            l = layout.Layout(als, self.target_info)
-            return l.alignments
+            l = self.layout_module.Layout(als, self.target_info)
+            l.categorize()
+            return l.relevant_alignments
 
         for outcome in self.progress(self.outcomes):
             outcome_fns = self.outcome_fns(outcome)
@@ -522,45 +541,285 @@ class Experiment(object):
                                                          num_examples,
                                                         )
 
-    def length_distribution_figure(self, show_ranges=False, x_lims=None, tick_multiple=500):
-        ys = self.read_lengths / sum(self.read_lengths)
+    def length_distribution_figure(self, outcome=None, show_ranges=False, x_lims=None, y_lims=None, tick_multiple=50):
+        max_x = len(self.read_lengths)
+
+        all_ys = self.read_lengths / self.read_lengths.sum()
 
         if x_lims is None:
-            x_lims = (0, len(ys))
+            x_lims = (0, max_x)
 
         fig, ax = plt.subplots(figsize=(18, 8))
 
-        ax.plot(ys, color=self.color)
-        
-        nonzero_xs = ys.nonzero()[0]
-        nonzero_ys = ys[nonzero_xs]
-        ax.scatter(nonzero_xs, nonzero_ys, s=2, c=self.color)
+        if outcome is None:
+            ys_list = [
+                (all_ys, self.color, 0.9),
+            ]
+            max_y = max(all_ys)
+
+            ys_to_check = all_ys
+        else:
+            outcome_lengths = self.outcome_stratified_lengths[outcome]
+            outcome_ys = outcome_lengths / self.total_reads
+
+            other_lengths = self.read_lengths - outcome_lengths
+            other_ys = other_lengths / self.read_lengths.sum()
+
+            max_y = max(outcome_ys)
+
+            ys_list = [
+                (other_ys, 'black', 0.1),
+                (outcome_ys, self.outcome_to_color[outcome], 0.9),
+            ]
+
+            ys_to_check = outcome_ys
+
+        for ys, color, alpha in ys_list:
+            ax.plot(ys, color=color, alpha=alpha)
+            
+            nonzero_xs = ys.nonzero()[0]
+            nonzero_ys = ys[nonzero_xs]
+            ax.scatter(nonzero_xs, nonzero_ys, s=2, c=color, alpha=alpha)
                            
         if show_ranges:
             for _, (start, end) in self.length_ranges.iterrows():
-                print(start, end)
-            #for start in range(501):
-                #end = start
-                ax.axvspan(start - 0.5, end + 0.5,
-                           gid=f'length_range_{start:05d}_{end:05d}',
-                           alpha=0.1,
-                           facecolor='white',
-                           edgecolor='black',
-                           zorder=100,
-                          )
+                if sum(ys_to_check[start:end + 1]) > 0:
+                    ax.axvspan(start - 0.5, end + 0.5,
+                            gid=f'length_range_{start:05d}_{end:05d}',
+                            alpha=0.1,
+                            facecolor='white',
+                            edgecolor='black',
+                            zorder=100,
+                            )
             
-        major = np.arange(0, len(ys), tick_multiple)
-        minor = [x for x in np.arange(0, len(ys), tick_multiple // 2) if x % tick_multiple != 0]
+        major = np.arange(0, max_x, tick_multiple)
+        minor = [x for x in np.arange(0, max_x, tick_multiple // 2) if x % tick_multiple != 0]
                     
         ax.set_xticks(major)
         ax.set_xticks(minor, minor=True)
 
         ax.set_ylabel('Fraction of reads')
-        ax.set_xlabel('Length of read')
+        ax.set_xlabel('Amplicon length')
         
-        ax.set_ylim(0, max(ys) * 1.05)
-        #ax.set_ylim(0, 0.5)
+        if y_lims is None:
+            y_lims = (0, max_y * 1.05)
+
+        ax.set_ylim(*y_lims)
         ax.set_xlim(*x_lims)
+        
+        if outcome is None:
+            title = f'{self.group}\n{self.name}'
+        else:
+            category, subcategory = outcome
+            title = f'{self.group}\n{self.name}\n{category}: {subcategory}'
+
+        ax.set_title(title)
+
+        return fig
+
+    @memoized_property
+    def outcome_stratified_lengths(self):
+        outcome_lengths = defaultdict(Counter)
+
+        for line in self.progress(self.fns['outcome_list'].open()):
+            outcome = coherence.Outcome.from_line(line)
+            outcome_lengths[outcome.category, outcome.subcategory][outcome.length] += 1
+
+        pad_to_length = len(self.read_lengths)
+        outcome_length_arrays = {}
+        for outcome, counts in outcome_lengths.items():
+            array = utilities.counts_to_array(counts)
+            padded = np.zeros(pad_to_length)
+            padded[:len(array)] = array
+            outcome_length_arrays[outcome] = padded
+
+        return outcome_length_arrays
+
+    @memoized_property
+    def total_reads(self):
+        return self.read_lengths.sum()
+
+    @memoized_property
+    def outcome_highest_points(self):
+        ''' Dictionary of {outcome: maximum of that outcome's read length frequency distribution} '''
+        highest_points = {}
+        for outcome, lengths in self.outcome_stratified_lengths.items():
+            highest_points[outcome] = max(lengths / self.total_reads)
+        return highest_points
+
+    @memoized_property
+    def outcome_to_color(self):
+        # To minimize the chance that a color will be used more than once in the same panel in 
+        # outcome_stratified_lengths plots, sort color order by highest point.
+        # Factored out here so that same colors can be used in svgs.
+        color_order = sorted(self.outcome_stratified_lengths, key=self.outcome_highest_points.get, reverse=True)
+        return {outcome: f'C{i % 10}' for i, outcome in enumerate(color_order)}
+
+    def plot_outcome_stratified_lengths(self, x_lims=None):
+        if x_lims is None:
+            x_lims = (0, 2 * self.paired_end_read_length + 1)
+
+        ti = self.target_info
+
+        outcome_lengths = self.outcome_stratified_lengths
+
+        panel_groups = []
+
+        current_max = max(self.outcome_highest_points.values())
+
+        left_after_previous = sorted(self.outcome_highest_points)
+
+        while True:
+            group = []
+            still_left = []
+
+            for outcome in left_after_previous:
+                highest_point = self.outcome_highest_points[outcome]
+                if current_max / 10 < highest_point <= current_max:
+                    group.append(outcome)
+                else:
+                    still_left.append(outcome)
+                    
+            if len(group) > 0:
+                panel_groups.append((current_max, group))
+                
+            if len(still_left) == 0:
+                break
+                
+            current_max = current_max / 10
+            left_after_previous = still_left
+
+        num_panels = len(panel_groups) + 1
+
+        fig, axs = plt.subplots(num_panels, 1, figsize=(18, 8 * num_panels), gridspec_kw=dict(hspace=0.1))
+
+        ax = axs[0]
+        ys = self.read_lengths / self.total_reads
+        ax.plot(ys, color='black', alpha=0.9)
+        ax.set_ylim(0, max(ys) * 1.05)
+
+        ax.annotate('All reads',
+                    xy=(0, 1), xycoords='axes fraction',
+                    xytext=(20, -20), textcoords='offset points',
+                    ha='left',
+                    va='top',
+                    size=20,
+                   )
+        
+        ax.annotate(f'{self.group}: {self.name}',
+                    xy=(0.5, 1), xycoords='axes fraction',
+                    xytext=(0, 40), textcoords='offset points',
+                    ha='center',
+                    va='bottom',
+                    size=18,
+                   )
+
+        y_maxes = []
+
+        listed_order = sorted(outcome_lengths, key=self.layout_module.order)
+
+        for panel_i, (ax, (y_max, group)) in enumerate(zip(axs[1:], panel_groups)):
+            for outcome in listed_order:
+                lengths = outcome_lengths[outcome]
+                ys = lengths / self.total_reads
+
+                if outcome in group:
+                    color = self.outcome_to_color[outcome]
+                    alpha = 1
+                else:
+                    color = 'grey'
+                    # At higher zoom levels, fade the grey lines more to avoid clutter.
+                    if panel_i == 0:
+                        alpha = 0.3
+                    elif panel_i == 1:
+                        alpha = 0.3
+                    else:
+                        alpha = 0.05
+
+                category, subcategory = outcome
+                ax.plot(ys, label=f'{ys.sum():6.2%} {category}: {subcategory}', color=color, alpha=alpha)
+
+            ax.legend(bbox_to_anchor=(0, 1), loc='upper left', prop=dict(family='monospace', size=9))
+
+            expected_lengths = {
+                'expected WT': ti.amplicon_length,
+            }
+            if ti.has_shared_homology_arms:
+                expected_lengths['expected HDR'] = ti.amplicon_length + len(ti.features[ti.donor, 'GFP11'])
+
+            ax.set_ylim(0, y_max * 1.05)
+            y_maxes.append(y_max)
+
+        for panel_i, ax in enumerate(axs):
+            ax.set_xlim(*x_lims)
+            ax.set_ylabel('Fraction of reads', size=14)
+            ax.set_xlabel('amplicon length', size=14)
+
+            for name, length in expected_lengths.items():
+                if panel_i == 0:
+                    ax.axvline(length, color='black', alpha=0.4)
+
+                    ax.annotate(name,
+                                xy=(length, 1), xycoords=('data', 'axes fraction'),
+                                xytext=(0, 5), textcoords='offset points',
+                                ha='center', va='bottom',
+                                size=12,
+                            )
+
+                if panel_i == 1:
+                    ax.axvline(length, color='black', alpha=0.2)
+
+        def draw_inset_guide(fig, top_ax, bottom_ax, bottom_y_max):
+            params_dict = {
+                'top': {
+                    'offset': 0.04,
+                    'width': 0.007,
+                    'transform': top_ax.get_yaxis_transform(),
+                    'ax': top_ax,
+                    'y': bottom_y_max,
+                },
+                'bottom': {
+                    'offset': 0.01,
+                    'width': 0.01,
+                    'transform': bottom_ax.transAxes,
+                    'ax': bottom_ax,
+                    'y': 1,
+                },
+            }
+
+            for which, params in params_dict.items():
+                start = 1 + params['offset']
+                end = start + params['width']
+                y = params['y']
+                transform = params['transform']
+                ax = params['ax']
+
+                params['start'] = start
+                params['end'] = end
+
+                params['top_corner'] = [end, y]
+                params['bottom_corner'] = [end, 0]
+
+                ax.plot([start, end, end, start], [y, y, 0, 0], transform=transform, clip_on=False, color='black', linewidth=3)
+
+            inverted_fig_tranform = fig.transFigure.inverted().transform    
+
+            for top_coords, bottom_coords in ((params_dict['top']['top_corner'], params_dict['bottom']['top_corner']),
+                                              (params_dict['top']['bottom_corner'], params_dict['bottom']['bottom_corner']),
+                                             ):
+                top_in_fig = inverted_fig_tranform(params_dict['top']['transform'].transform((top_coords)))
+                bottom_in_fig = inverted_fig_tranform(params_dict['bottom']['transform'].transform((bottom_coords)))
+
+                xs = [top_in_fig[0], bottom_in_fig[0]]
+                ys = [top_in_fig[1], bottom_in_fig[1]]
+                line = matplotlib.lines.Line2D(xs, ys, transform=fig.transFigure, clip_on=False, linestyle='--', color='black', alpha=0.3)
+                fig.lines.append(line)
+
+        for y_max, top_ax, bottom_ax in zip(y_maxes[1:], axs[1:], axs[2:]):
+            draw_inset_guide(fig, top_ax, bottom_ax, y_max)
+
+        for ax in axs:
+            ax.tick_params(axis='y', which='both', left=True, right=True)
 
         return fig
 
@@ -569,8 +828,17 @@ class Experiment(object):
                     if start <= group[0].query_length <= end)
         return self.groups_to_Image(filtered, num_examples)
 
-    def groups_to_Image(self, groups, num_examples, pairs=False):
+    def groups_to_Image(self, groups, num_examples, pairs=False, only_relevant_alignments=True):
         sample = utilities.reservoir_sample(groups, num_examples)
+
+        if only_relevant_alignments:
+            only_relevant = []
+            for als in sample:
+                l = self.layout_module.Layout(als, self.target_info)
+                l.categorize()
+                only_relevant.append(l.relevant_alignments)
+
+            sample = only_relevant
         
         kwargs = dict(
             parsimonious=True,
@@ -579,31 +847,47 @@ class Experiment(object):
             show_all_guides=True,
             paired_end_read_length=None,
             read_label='amplicon',
-            size_multiple=0.5,
+            size_multiple=1,
             detect_orientation=True,
-            #process_mappings=self.layout_module.characterize_layout,
         )
 
-        return vi.make_stacked_Image(sample, self.target_info, pairs=pairs, **kwargs)
+        return visualize.make_stacked_Image(sample, self.target_info, pairs=pairs, **kwargs)
     
-    def generate_svg(self):
-        html = svg.length_plot_with_popovers(self, standalone=True, x_lims=(0, 505))
+    def generate_svg(self, outcome=None):
+        html = svg.length_plot_with_popovers(self, outcome=outcome, standalone=True, x_lims=(0, 505))
 
-        with self.fns['lengths_svg'].open('w') as fh:
+        if outcome is None:
+            fns = self.fns
+        else:
+            fns = self.outcome_fns(outcome)
+
+        with fns['lengths_svg'].open('w') as fh:
             fh.write(html)
 
     def process(self, stage):
-        #self.count_read_lengths()
-        #self.generate_alignments(self.reads)
+        self.count_read_lengths()
+        self.generate_alignments()
         self.categorize_outcomes()
-        self.make_outcome_plots(num_examples=5)
+        #self.make_outcome_plots(num_examples=5)
 
     def explore(self, by_outcome=True, **kwargs):
         return explore(self.base_dir, by_outcome=by_outcome, target=self.target_name, experiment=(self.group, self.name), **kwargs)
 
+    def get_read_layout(self, read_id, qname_to_als=None, fn_key='combined_bam_by_name', outcome=None, read_type=None):
+        # qname_to_als is to allow caching of many sets of als (e.g. for all
+        # of a particular outcome category) to prevent repeated lookup
+        if qname_to_als is None:
+            als = self.get_read_alignments(read_id, fn_key=fn_key, outcome=outcome, read_type=read_type)
+        else:
+            als = qname_to_als[read_id]
+
+        layout = self.layout_module.Layout(als, self.target_info)
+
+        return layout
+
 class PacbioExperiment(Experiment):
     def __init__(self, *args, **kwargs):
-        super(PacbioExperiment, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.paired_end_read_length = None
 
         fastq_fns = ensure_list(self.description['fastq_fns'])
@@ -611,7 +895,58 @@ class PacbioExperiment(Experiment):
 
         for fn in self.fns['fastqs']:
             if not fn.exists():
-                raise ValueError(f'{group}: {name} specifies non-existent {fn}')
+                raise ValueError(f'{self.group}: {self.name} specifies non-existent {fn}')
+
+        self.read_types = [None]
+
+    def generate_supplemental_alignments(self, read_type=None):
+        ''' Use minimap2 to produce local alignments.
+        '''
+        for index_name in self.supplemental_indices:
+            fastq_fn = self.fns_by_read_type['fastq'][read_type]
+            index = self.supplemental_indices[index_name]['minimap2']
+            bam_fn = self.fns_by_read_type['supplemental_bam_temp'][read_type, index_name]
+
+            mapping_tools.map_minimap2(fastq_fn, index, bam_fn)
+
+            all_mappings = pysam.AlignmentFile(bam_fn)
+            header = all_mappings.header
+            new_references = ['{}_{}'.format(index_name, ref) for ref in header.references]
+            new_header = pysam.AlignmentHeader.from_references(new_references, header.lengths)
+
+            by_name_fn = self.fns_by_read_type['supplemental_bam_by_name'][read_type, index_name]
+            by_name_sorter = sam.AlignmentSorter(by_name_fn, new_header, by_name=True)
+
+            # Unless I am missing an option, minimap2 omits seq and qual for mapped reads.
+            # Add them back.
+            with by_name_sorter:
+                al_groups = sam.grouped_by_name(all_mappings)
+                reads = self.reads_by_type(read_type)
+                for (qname, als), read in zip(al_groups, reads):
+                    if qname != read.name:
+                        raise ValueError('iters out of sync')
+
+                    seq = read.seq
+                    seq_rc = utilities.reverse_complement(seq)
+
+                    qual = fastq.decode_sanger_to_array(read.qual)
+                    qual_rc = qual[::-1]
+
+                    length = len(seq)
+
+                    for al in als:
+                        if not al.is_reverse:
+                            al.query_sequence = seq
+                            al.query_qualities = qual
+                        else:
+                            al.query_sequence = seq_rc
+                            al.query_qualities = qual_rc
+
+                        by_name_sorter.write(al)
+
+            sam.sort_bam(by_name_fn,
+                         self.fns_by_read_type['supplemental_bam'][read_type, index_name],
+                        )
     
     def generate_length_range_figures(self):
         self.fns['length_range_figures'].mkdir(exist_ok=True)
@@ -628,10 +963,18 @@ class PacbioExperiment(Experiment):
 
         with self.fns['lengths_svg'].open('w') as fh:
             fh.write(html)
+    
+    def process(self, stage):
+        self.count_read_lengths()
+        self.generate_alignments()
+        self.generate_supplemental_alignments()
+        self.combine_alignments()
+        self.categorize_outcomes()
+        #self.make_outcome_plots(num_examples=5)
 
 class IlluminaExperiment(Experiment):
     def __init__(self, *args, **kwargs):
-        super(IlluminaExperiment, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.sequencing_primers = self.description.get('sequencing_primers', 'truseq')
         self.paired_end_read_length = self.description.get('paired_end_read_length', None)
@@ -661,12 +1004,15 @@ class IlluminaExperiment(Experiment):
 
         return self.progress(read_pairs)
 
-    def stitched_alignment_groups(self, outcome=None):
-        return self.alignment_groups(fn_key='stitched_bam_by_name', outcome=outcome)
+    @memoized_property
+    def length_ranges(self):
+        nonzero, = np.nonzero(self.read_lengths)
+        ranges = [(i, i) for i in nonzero]
+        return pd.DataFrame(ranges, columns=['start', 'end'])
 
     def no_overlap_alignment_groups(self):
-        R1_groups = self.alignment_groups(fn_key='R1_no_overlap_bam_by_name')
-        R2_groups = self.alignment_groups(fn_key='R2_no_overlap_bam_by_name')
+        R1_groups = self.alignment_groups(fn_key='combined_bam_by_name', read_type='R1_no_overlap')
+        R2_groups = self.alignment_groups(fn_key='combined_bam_by_name', read_type='R2_no_overlap')
 
         for (R1_name, R1_als), (R2_name, R2_als) in zip(R1_groups, R2_groups):
             if R1_name != R2_name:
@@ -707,17 +1053,24 @@ class IlluminaExperiment(Experiment):
         lengths = utilities.counts_to_array(lengths)
         np.savetxt(self.fns['lengths'], lengths, '%d')
     
-    def generate_individual_length_figures(self):
+    def generate_individual_length_figures(self, outcome=None):
         by_length = defaultdict(list)
-        for name, group in self.stitched_alignment_groups():
+
+        al_groups = self.alignment_groups(outcome=outcome, read_type='stitched')
+        for name, group in al_groups:
             length = group[0].query_length
             by_length[length].append(group)
 
         no_overlap_length = 2 * self.paired_end_read_length
-        for name, R1_als, R2_als in self.no_overlap_alignment_groups():
-            by_length[no_overlap_length].append((R1_als, R2_als))
+        #for name, R1_als, R2_als in self.no_overlap_alignment_groups():
+        #    by_length[no_overlap_length].append((R1_als, R2_als))
 
-        self.fns['length_range_figures'].mkdir(exist_ok=True)
+        if outcome is None:
+            fig_dir = self.fns['length_range_figures']
+        else:
+            fig_dir = self.outcome_fns(outcome)['length_range_figures']
+            
+        fig_dir.mkdir(exist_ok=True)
 
         items = self.progress(by_length.items())
 
@@ -725,8 +1078,13 @@ class IlluminaExperiment(Experiment):
             if length == no_overlap_length:
                 continue
             im = self.groups_to_Image(groups, 3, pairs=(length == no_overlap_length))
-            fn = self.fns['length_range_figures'] / f'{length}_{length}.png'
+            fn = fig_dir / f'{length}_{length}.png'
             im.save(fn)
+
+    def generate_figures(self):
+        fig = self.plot_outcome_stratified_lengths()
+        fig.savefig(self.fns['outcome_stratified_lengths_figure'], bbox_inches='tight')
+        plt.close(fig)
 
     def process(self, stage=0):
         #self.stitch_read_pairs()
@@ -739,7 +1097,7 @@ class IlluminaExperiment(Experiment):
         #    self.combine_alignments(read_type)
 
         self.categorize_outcomes(read_type='stitched')
-        self.make_outcome_plots(num_examples=6)
+        #self.make_outcome_plots(num_examples=6)
         #self.generate_individual_length_figures()
         #self.generate_svg()
         #self.make_text_visualizations()
@@ -755,7 +1113,7 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
         'experiment': ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='450px')),
         'read_id': ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='600px')),
         'outcome': ipywidgets.Select(options=[], continuous_update=False, layout=ipywidgets.Layout(height='200px', width='450px')),
-        'zoom_in': ipywidgets.FloatRangeSlider(value=[-0.02, 1.02], min=-0.02, max=1.02, step=0.001, continuous_update=False, layout=ipywidgets.Layout(width='1200px')),
+        #'zoom_in': ipywidgets.FloatRangeSlider(value=[-0.02, 1.02], min=-0.02, max=1.02, step=0.001, continuous_update=False, layout=ipywidgets.Layout(width='1200px')),
     }
     toggles = [
         'parsimonious',
@@ -878,9 +1236,8 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
         else:
             paired_end_read_length = None
         
-        if widgets['draw_sequence'].value:
-            print(als[0].query_name)
-            print(als[0].get_forward_sequence())
+        print(als[0].query_name)
+        print(als[0].get_forward_sequence())
 
         l = exp.layout_module.Layout(als, exp.target_info)
         info = l.categorize()

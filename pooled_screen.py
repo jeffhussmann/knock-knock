@@ -1,7 +1,8 @@
 import shutil
 import bisect
 import pickle
-import functools
+import contextlib
+import subprocess
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -11,6 +12,8 @@ import numpy as np
 import yaml
 import ipywidgets
 import pysam
+import nbconvert
+import nbformat
 
 from sequencing import utilities, sam, fastq, mapping_tools, annotation
 from knockin import experiment, target_info, collapse, coherence, pooled_layout, visualize
@@ -32,15 +35,11 @@ class SingleGuideExperiment(experiment.Experiment):
 
             'filtered_cell_bam': self.dir / 'filtered_cell_aligments.bam',
             'reads_per_UMI': self.dir / 'reads_per_UMI.pkl',
-            
-            'genomic_insertions_bam': lambda name: self.dir / '{}_genomic_insertions.bam'.format(name),
         })
         
         self.layout_module = pooled_layout
         self.max_insertion_length = None
         self.max_qual = 41
-
-        self.supplemental_headers = {n: sam.header_from_STAR_index(p) for n, p in self.supplemental_indices.items()}
 
         self.min_reads_per_cluster = 2
         self.min_reads_per_UMI = 4
@@ -72,7 +71,8 @@ class SingleGuideExperiment(experiment.Experiment):
 
         return self.progress(fastq.reads(fn, up_to_space=True))
 
-    def get_read_alignments(self, read_id, fn_key='combined_bam_by_name', outcome=None):
+    def get_read_alignments(self, read_id, fn_key='combined_bam_by_name', outcome=None, read_type=None):
+        # Note: read_type is ignored but needed for function signature.
         looked_up_common = False
 
         if self.use_memoized_outcomes:
@@ -88,6 +88,28 @@ class SingleGuideExperiment(experiment.Experiment):
             als = super().get_read_alignments(read_id, fn_key=fn_key, outcome=outcome, read_type=read_type)
 
         return als
+
+    def alignment_group_dictionary(self, category, subcategory, n=100):
+        relevant_cells = self.filtered_cell_outcomes.query('category == @category and subcategory == @subcategory')
+        sample = relevant_cells.sample(min(n, len(relevant_cells)), random_state=0)
+        qnames = set(sample['original_name'])
+
+        outcome_alignment_groups = self.alignment_groups(outcome=(category, subcategory))
+        name_with_uncommon_seq_to_als = dict(outcome_alignment_groups)
+
+        name_to_als = {}
+        for qname in qnames:
+            als = name_with_uncommon_seq_to_als.get(qname)
+            if als is None:
+                seq = self.names_with_common_seq.get(qname)
+                if seq is None:
+                    raise ValueError(qname)
+                else:
+                    als = self.pool.get_common_seq_alignments(seq)
+
+            name_to_als[qname] = als
+
+        return name_to_als
     
     def collapse_UMI_reads(self):
         ''' Takes R2_fn sorted by UMI and collapses reads with the same UMI and
@@ -215,12 +237,19 @@ class SingleGuideExperiment(experiment.Experiment):
                 if read.seq in outcome_lookup:
                     category, subcategory, details = outcome_lookup[read.seq]
                     special_alignment = special_alignment_lookup.get(read.seq)
+
+                    # In order to make sure that (possibly empty) outcome-specific
+                    # bam files get make below for all outcomes, register this outcome
+                    # as having been seen in a read with a common sequence.
+                    if (category, subcategory) not in outcomes:
+                        outcomes[category, subcategory] = []
+
                 else:
                     name, als = next(alignment_groups)
                     if name != read.name:
                         raise ValueError('iters out of sync', name, read.name)
 
-                    layout = self.layout_module.Layout(als, self.target_info, self.supplemental_headers)
+                    layout = self.layout_module.Layout(als, self.target_info)
                     total += 1
                     try:
                         category, subcategory, details = layout.categorize()
@@ -352,15 +381,13 @@ class SingleGuideExperiment(experiment.Experiment):
         bam_fn = self.fns_by_read_type['combined_bam'][bam_read_type]
 
         with pysam.AlignmentFile(bam_fn) as combined_bam_fh:
-            header = combined_bam_fh.header
-
-            sorters = {'all': sam.AlignmentSorter(self.fns['filtered_cell_bam'], header)}
+            sorters = sam.multiple_AlignmentSorters(combined_bam_fh.header)
+            sorters['all'] = self.fns['filtered_cell_bam']
 
             for outcome in outcomes_seen:
-                bam_fn = self.outcome_fns(outcome)['filtered_cell_bam']
-                sorters[outcome] = sam.AlignmentSorter(bam_fn, header)
+                sorters[outcome] = self.outcome_fns(outcome)['filtered_cell_bam']
 
-            with sam.multiple_AlignmentSorters(list(sorters.values())):
+            with sorters:
                 for alignment in self.progress(combined_bam_fh):
                     outcome = name_to_outcome.get(alignment.query_name)
                     if outcome is not None:
@@ -371,34 +398,7 @@ class SingleGuideExperiment(experiment.Experiment):
             in_fn = self.outcome_fns(outcome)['filtered_cell_bam']
             out_fn = self.outcome_fns(outcome)['filtered_cell_bam_by_name']
             sam.sort_bam(in_fn, out_fn, by_name=True)
-
-    def make_genomic_insertion_bams(self):
-        headers = self.supplemental_headers
-
-        sorters = {}
-        for organism, header in headers.items():
-            fn = self.fns['genomic_insertions_bam'](organism)
-            sorters[organism] = sam.AlignmentSorter(fn, header)
-            
-        with sam.multiple_AlignmentSorters(sorters.values()):
-            rows = self.filtered_cell_outcomes.query('category == "genomic insertion" and guide_mismatch == -1')
-            for _, row in rows.iterrows():
-                name = row['original_name']
-                organism = row['subcategory']
-                als = self.get_read_alignments(name, outcome=('genomic insertion', organism))
-
-                layout = pooled_layout.Layout(als, self.target_info, supplemental_headers=headers)
-                if layout.genomic_insertion is None:
-                    layout = pooled_layout.Layout(als, self.pool.target_info, supplemental_headers=headers)
-                    if layout.genomic_insertion is None:
-                        print(self.name, name)
-                        continue
-
-                original_al = layout.genomic_insertion[0]['original_alignment']
-                original_al.query_name = name + '_' + self.name
-                
-                sorters[organism].write(original_al)
-
+    
     def make_reads_per_UMI(self):
         reads_per_UMI = {}
 
@@ -426,6 +426,101 @@ class SingleGuideExperiment(experiment.Experiment):
         df = pd.read_table(self.fns['filtered_cell_outcomes'], header=None, na_filter=False, names=coherence.Pooled_UMI_Outcome.columns)
         return df
 
+    def make_diagram_notebook(self, category, subcategory):
+        qname_to_als = self.alignment_group_dictionary(category, subcategory)
+        
+        code_cell_contents = [
+'''\
+from knockin import pooled_screen, visualize, pooled_layout
+plt.rcParams.update({'figure.max_open_warning': 0})
+''',
+        
+f'''\
+pools = pooled_screen.get_all_pools()
+pool = pools['{self.group}']
+exp = pool.single_guide_experiment('{self.name}')
+qname_to_als = exp.alignment_group_dictionary('{category}', '{subcategory}')
+''',
+]
+        for qname in sorted(qname_to_als):
+            common_seq = self.names_with_common_seq.get(qname)
+            if common_seq is not None:
+                common_name = self.pool.common_sequence_to_common_name[common_seq]
+            else:
+                common_name = ''
+            qname_cell = f'''\
+print('{qname}', '{common_name}')
+diagram = exp.get_read_diagram('{qname}', qname_to_als=qname_to_als)
+'''
+            code_cell_contents.append(qname_cell)
+
+        code_cells = [nbformat.v4.new_code_cell(cell) for cell in code_cell_contents]
+
+        markdown_cell_contents = [
+f'''\
+## {self.group}: {self.name}
+## {category}, {subcategory}
+''',
+]
+        markdown_cells = [nbformat.v4.new_markdown_cell(cell) for cell in markdown_cell_contents]
+        
+        nb = nbformat.v4.new_notebook()
+
+        nb['cells'] = markdown_cells + code_cells
+
+        nb['metadata'] = {'title': f'{category}, {subcategory}'}
+
+        ep = nbconvert.preprocessors.ExecutePreprocessor(timeout=None, kernel_name='python3.6')
+        ep.preprocess(nb, {})
+
+        notebook_fn = self.outcome_fns((category, subcategory))['diagrams_notebook']
+        nbformat.write(nb, str(notebook_fn))
+
+        subprocess.run(['jupyter', 'nbconvert', '--to=html', str(notebook_fn), '--TemplateExporter.exclude_input=True'])
+
+    def get_category_subcategory_pairs(self):
+        pairs = self.filtered_cell_outcomes.groupby(by=['category', 'subcategory']).size().sort_values(ascending=False).index.values
+        return pairs
+
+    def make_all_diagram_notebooks(self):
+        for category, subcategory in self.progress(self.get_category_subcategory_pairs()):
+            self.make_diagram_notebook(category, subcategory)
+
+    def get_read_layout(self, read_id, qname_to_als=None):
+        if qname_to_als is None:
+            als = self.get_read_alignments(read_id)
+        else:
+            als = qname_to_als[read_id]
+        layout = self.layout_module.Layout(als, self.target_info)
+        return layout
+
+    def get_read_diagram(self, read_id, only_relevant=True, qname_to_als=None):
+        diagram_kwargs = dict(
+            ref_centric=True,
+            highlight_SNPs=True,
+            flip_target=True,
+            target_on_top=True,
+            split_at_indels=True,
+            force_left_aligned=True,
+            draw_sequence=True,
+            draw_mismatches=True,    
+            features_to_hide={'sequencing_start', 'ssODN_Cpf1_deletion'},
+            refs_to_hide={'ssODN_dummy', 'ssODN_Cpf1'},
+            title='',
+        )
+
+        layout = self.get_read_layout(read_id, qname_to_als=qname_to_als)
+
+        if only_relevant:
+            layout.categorize()
+            to_plot = layout.relevant_alignments
+        else:
+            to_plot = layout.alignments
+
+        diagram = visualize.ReadDiagram(to_plot, self.target_info, **diagram_kwargs)
+
+        return diagram
+
     def process(self, stage):
         if stage == 0:
             self.collapse_UMI_reads()
@@ -444,7 +539,6 @@ class SingleGuideExperiment(experiment.Experiment):
             self.collapse_UMI_outcomes()
             self.make_reads_per_UMI()
             self.make_filtered_cell_bams()
-            #self.make_genomic_insertion_bams()
             #self.make_outcome_plots(num_examples=3)
         else:
             raise ValueError(stage)
@@ -535,7 +629,6 @@ class PooledScreen():
             'collapsed_total_outcome_counts': self.base_dir / 'results' / group / 'collapsed_total_outcome_counts.txt',
 
             'filtered_cell_bam': self.base_dir / 'results' / group / 'filtered_cell_alignments.bam',
-            'genomic_insertions_bam': lambda name: self.base_dir / 'results' / group / '{}_{}_genomic_insertions.bam'.format(self.group, name),
             'reads_per_UMI': self.base_dir / 'reads_per_UMI.pkl',
 
             'quantiles': self.base_dir / 'results' / group / 'quantiles.hdf5',
@@ -564,7 +657,7 @@ class PooledScreen():
 
     @memoized_property
     def guides_df(self):
-        guides_df = pd.read_table(self.base_dir / 'guides' / 'guides.txt', index_col='short_name')
+        guides_df = pd.read_table(self.base_dir / 'guides' / 'DDR_library' / 'guides.txt', index_col='short_name')
 
         guides_df.loc[guides_df['promoter'].isnull(), 'promoter'] = 'P1P2'
 
@@ -578,7 +671,7 @@ class PooledScreen():
 
     @memoized_property
     def old_gene_to_new_gene(self):
-        updated_gene_names = pd.read_table(self.base_dir / 'guides' / 'updated_gene_names.txt', index_col=0, squeeze=True)
+        updated_gene_names = pd.read_table(self.base_dir / 'guides' / 'DDR_library' / 'updated_gene_names.txt', index_col=0, squeeze=True)
         return updated_gene_names
     
     @memoized_property
@@ -591,7 +684,7 @@ class PooledScreen():
     
     @memoized_property
     def best_promoters(self):
-        df = pd.read_table(self.base_dir / 'guides' / 'best_promoters.txt', index_col='gene', squeeze=True)
+        df = pd.read_table(self.base_dir / 'guides' / 'DDR_library' / 'best_promoters.txt', index_col='gene', squeeze=True)
         return df
 
     @memoized_property
@@ -889,27 +982,6 @@ class PooledScreen():
 
         sam.merge_sorted_bam_files(input_fns, self.fns['filtered_cell_bam'])
     
-    def merge_genomic_insertion_bams(self):
-        exp = self.single_guide_experiment(self.guides[0])
-        organisms = sorted(exp.supplemental_headers)
-
-        input_fns = defaultdict(list)
-        i = 0
-        for exp in self.single_guide_experiments():
-            i += 1
-            if i > 10000:
-                break
-            for organism in organisms:
-                input_fn = exp.fns['genomic_insertions_bam'](organism)
-                if input_fn.exists():
-                    input_fns[organism].append(input_fn)
-                else:
-                    print(organism, guide)
-
-        for organism, fns in input_fns.items():
-            merged_fn = self.fns['genomic_insertions_bam'](organism)
-            sam.merge_sorted_bam_files(fns, merged_fn)
-
     def merge_common_sequence_special_alignments(self):
         chunks = self.common_sequence_chunks()
 
@@ -1295,7 +1367,7 @@ def explore(base_dir, group,
         'guide': Select(options=guides, value=initial_guide, layout=Layout(height='200px', width='450px')),
         'read_id': Select(options=[], layout=Layout(height='200px', width='600px')),
         'outcome': Select(options=[], continuous_update=False, layout=Layout(height='200px', width='450px')),
-        'zoom_in': ipywidgets.FloatRangeSlider(value=[-0.02, 1.02], min=-0.02, max=1.02, step=0.001, continuous_update=False, layout=ipywidgets.Layout(width='1200px')),
+        #'zoom_in': ipywidgets.FloatRangeSlider(value=[-0.02, 1.02], min=-0.02, max=1.02, step=0.001, continuous_update=False, layout=ipywidgets.Layout(width='1200px')),
         'save': ipywidgets.Button(description='Save'),
         'file_name': ipywidgets.Text(value=str(Path(base_dir) / 'figures')),
     }
@@ -1411,7 +1483,7 @@ def explore(base_dir, group,
         if als is None:
             return None
 
-        l = pooled_layout.Layout(als, exp.target_info, supplemental_headers=exp.supplemental_headers)
+        l = pooled_layout.Layout(als, exp.target_info)
         info = l.categorize()
         if widgets['relevant'].value:
             als = l.relevant_alignments

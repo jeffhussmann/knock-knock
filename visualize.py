@@ -56,17 +56,23 @@ def get_mismatch_info(alignment, target_info):
 def get_indel_info(alignment):
     indels = []
     for i, (kind, length) in enumerate(alignment.cigar):
-        if kind == sam.BAM_CDEL:
+        if kind == sam.BAM_CDEL or kind == sam.BAM_CREF_SKIP:
+            if kind == sam.BAM_CDEL:
+                name = 'deletion'
+            else:
+                name = 'splicing'
+
             nucs_before = sam.total_read_nucs(alignment.cigar[:i])
             centered_at = np.mean([sam.true_query_position(p, alignment) for p in [nucs_before - 1, nucs_before]])
-            indels.append(('deletion', (centered_at, length)))
+
+            indels.append((name, (centered_at, length)))
 
         elif kind == sam.BAM_CINS:
             first_edge = sam.total_read_nucs(alignment.cigar[:i])
             second_edge = first_edge + length
             starts_at, ends_at = sorted(sam.true_query_position(p, alignment) for p in [first_edge, second_edge])
             indels.append(('insertion', (starts_at, ends_at)))
-            
+
     return indels
 
 class ReadDiagram():
@@ -118,10 +124,10 @@ class ReadDiagram():
             split_als = []
             for al in self.alignments:
                 if al.reference_name in [self.target_info.target, self.target_info.donor]:
-                    split_at_dels = sam.split_at_deletions(al, 1)
+                    split_at_dels = sam.split_at_deletions(al, 2)
                     split_at_ins = []
                     for al in split_at_dels:
-                        split_at_ins.extend(sam.split_at_large_insertions(al, 1))
+                        split_at_ins.extend(sam.split_at_large_insertions(al, 2))
 
                     target_seq_bytes = self.target_info.reference_sequences[al.reference_name].encode()
                     extended = [sw.extend_alignment(al, target_seq_bytes) for al in split_at_ins]
@@ -187,7 +193,7 @@ class ReadDiagram():
             self.query_name = None
         
         if self.ref_centric:
-            if self.query_length > 1000:
+            if self.query_length is not None and self.query_length > 1000:
                 self.gap_between_als = 0.006
             else:
                 self.gap_between_als = 0.003
@@ -234,7 +240,7 @@ class ReadDiagram():
         
         self.ref_name_to_color = defaultdict(lambda: default_color)
         for i, name in enumerate(self.target_info.reference_sequences):
-            self.ref_name_to_color[name] = 'C{0}'.format(i)
+            self.ref_name_to_color[name] = f'C{i % 10}'
         
         for name, color in self.color_overrides.items():
             self.ref_name_to_color[name] = color
@@ -447,11 +453,18 @@ class ReadDiagram():
                 ys = [y]
                 indels = sorted(get_indel_info(alignment), key=lambda t: t[1][0])
                 for kind, info in indels:
-                    if kind == 'deletion':
+                    if kind == 'deletion' or kind == 'splicing':
                         centered_at, length = info
 
+                        if kind == 'deletion':
+                            max_length = 100
+                            label = str(length)
+                        else:
+                            max_length = 10
+                            label = 'splicing'
+
                         # Cap how wide the loop can be.
-                        capped_length = min(100, length)
+                        capped_length = min(max_length, length)
                         
                         if length <= 1:
                             height = 0.0015
@@ -469,7 +482,7 @@ class ReadDiagram():
                             ]
                             indel_ys = [y, y + height, y + height, y]
 
-                            ax.annotate(str(length),
+                            ax.annotate(label,
                                         xy=(centered_at, y + height),
                                         xytext=(0, 1),
                                         textcoords='offset points',
@@ -602,7 +615,7 @@ class ReadDiagram():
                     if not qs:
                         continue
 
-                    xs = [min(qs) - 0.5, max(qs) + 0.5]
+                    query_extent = [min(qs), max(qs)]
                     
                     rs = [feature.start, feature.end]
                     if strand == '-':
@@ -616,9 +629,9 @@ class ReadDiagram():
                         text_y = -1
 
                     if not self.ref_centric:
-                        for ha, q, r in zip(['left', 'right'], xs, rs):
+                        for ha, q, r in zip(['left', 'right'], query_extent, rs):
                             nts_missing = abs(q_to_r[q] - r)
-                            if nts_missing != 0 and xs[1] - xs[0] > 20:
+                            if nts_missing != 0 and query_extent[1] - query_extent[0] > 20:
                                 ax.annotate(str(nts_missing),
                                             xy=(q, 0),
                                             ha=ha,
@@ -628,11 +641,11 @@ class ReadDiagram():
                                             va=va,
                                         )
                         
-                        if xs[1] - xs[0] > 18 or feature.attribute['ID'] == self.target_info.sgRNA:
+                        if query_extent[1] - query_extent[0] > 18 or feature.attribute['ID'] == self.target_info.sgRNA:
                             label = feature.attribute['ID']
 
                             ax.annotate(label,
-                                        xy=(np.mean(xs), 0),
+                                        xy=(np.mean(query_extent), 0),
                                         xycoords='data',
                                         xytext=(0, self.text_y),
                                         textcoords='offset points',
@@ -642,8 +655,9 @@ class ReadDiagram():
                                         size=10,
                                         weight='bold',
                                     )
-                    
+
                     if self.features_on_alignments:
+                        xs = [min(qs) - 0.5, max(qs) + 0.5]
                         ax.fill_between(xs, [y] * 2, [0] * 2, color=feature_color, alpha=0.7)
                         
 
@@ -659,8 +673,8 @@ class ReadDiagram():
             alignments = layout_info['to_plot']
 
         if self.zoom_in is not None:
-            self.min_x = self.zoom_in[0] * self.query_length
-            self.max_x = self.zoom_in[1] * self.query_length
+            self.min_x = self.zoom_in[0]
+            self.max_x = self.zoom_in[1]
         else:
             self.min_x = -0.02 * self.query_length
             self.max_x = 1.02 * self.query_length
@@ -815,11 +829,11 @@ class ReadDiagram():
             self.max_y = max(self.max_y, ref_y)
 
             if ref_al_min < ref_start:
-                ref_start = max(0, ref_al_min - 30, ref_start - 30)
+                ref_start = max(0, ref_al_min - 50, ref_start - 50)
                 self.min_x = min(self.min_x, ref_p_to_x(ref_start))
 
             if ref_al_max > ref_end:
-                ref_end = min(ref_edge, ref_al_max + 30, ref_end + 30)
+                ref_end = min(ref_edge, ref_al_max + 50, ref_end + 50)
                 self.max_x = max(self.max_x, ref_p_to_x(ref_end))
 
             self.ax.set_xlim(self.min_x, self.max_x)

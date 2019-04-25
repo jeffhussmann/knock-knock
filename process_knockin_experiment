@@ -160,9 +160,9 @@ elif args.parallel_pool is not None:
     #process_stage(0)
 
     #pool.make_common_sequences()
-    parallel_pool_common_sequences(base_dir, group_name, max_procs)
-    pool.write_common_outcome_files()
-    pool.merge_common_sequence_special_alignments()
+    #parallel_pool_common_sequences(base_dir, group_name, max_procs)
+    #pool.write_common_outcome_files()
+    #pool.merge_common_sequence_special_alignments()
 
     process_stage(1)
 
