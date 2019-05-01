@@ -94,18 +94,20 @@ class Experiment(object):
         self.description['name'] = name
 
         self.fns = {
+            'dir': self.dir,
             'outcomes_dir': self.dir / 'outcomes',
             'outcome_counts': self.dir / 'outcome_counts.csv',
             'outcome_list': self.dir / 'outcome_list.txt',
 
             'lengths': self.dir / 'lengths.txt',
             'lengths_figure': self.dir / 'all_lengths.png',
-            'outcome_stratified_lengths_figure': self.dir / 'outcome_stratified_lengths.png',
+            'outcome_stratified_lengths_figure': self.dir / 'outcome_stratified_lengths.svg',
             'length_ranges': self.dir / 'length_ranges.csv',
             'manual_length_ranges': self.dir / 'manual_length_ranges.csv',
 
             'length_range_figures': self.dir / 'length_ranges',
             'lengths_svg': self.dir / (self.name + '_by_length.html'),
+            'outcome_browser': self.dir / 'outcome_browser.html',
         }
         
         self.color = extract_color(self.description)
@@ -175,7 +177,9 @@ class Experiment(object):
 
     def outcome_fns(self, outcome):
         category, subcategory = outcome
-        outcome_string = f'{category}_{subcategory}'
+        # To allow outcomes to have arbitrary names without causing file path problems,
+        # escape the names.
+        outcome_string = layout.outcome_to_escaped_string(outcome)
         outcome_dir = self.fns['outcomes_dir'] / outcome_string
         fns = {
             'dir': outcome_dir,
@@ -187,7 +191,7 @@ class Experiment(object):
             'filtered_cell_bam_by_name': outcome_dir / 'filtered_cell_alignments.by_name.bam',
             'first_example': outcome_dir / 'first_examples.png',
             'combined_figure': outcome_dir / 'combined.png',
-            'diagrams_notebook': outcome_dir / f'{self.group}_{self.name}_{category}_{subcategory}.ipynb',
+            'diagrams_notebook': outcome_dir / f'{self.group}_{self.name}_{outcome_string}.ipynb',
             'lengths_figure': outcome_dir / 'lengths.png',
             'text_alignments': outcome_dir / 'alignments.txt',
             'length_range_figures': outcome_dir / 'length_ranges',
@@ -585,12 +589,12 @@ class Experiment(object):
             for _, (start, end) in self.length_ranges.iterrows():
                 if sum(ys_to_check[start:end + 1]) > 0:
                     ax.axvspan(start - 0.5, end + 0.5,
-                            gid=f'length_range_{start:05d}_{end:05d}',
-                            alpha=0.1,
-                            facecolor='white',
-                            edgecolor='black',
-                            zorder=100,
-                            )
+                               gid=f'length_range_{start:05d}_{end:05d}',
+                               alpha=0.1,
+                               facecolor='white',
+                               edgecolor='black',
+                               zorder=100,
+                              )
             
         major = np.arange(0, max_x, tick_multiple)
         minor = [x for x in np.arange(0, max_x, tick_multiple // 2) if x % tick_multiple != 0]
@@ -675,7 +679,7 @@ class Experiment(object):
 
             for outcome in left_after_previous:
                 highest_point = self.outcome_highest_points[outcome]
-                if current_max / 10 < highest_point <= current_max:
+                if current_max * 0.05 < highest_point <= current_max:
                     group.append(outcome)
                 else:
                     still_left.append(outcome)
@@ -686,60 +690,78 @@ class Experiment(object):
             if len(still_left) == 0:
                 break
                 
-            current_max = current_max / 10
+            current_max = current_max * 0.05
             left_after_previous = still_left
 
-        num_panels = len(panel_groups) + 1
+        num_panels = len(panel_groups)
 
-        fig, axs = plt.subplots(num_panels, 1, figsize=(18, 8 * num_panels), gridspec_kw=dict(hspace=0.1))
+        fig, axs = plt.subplots(num_panels, 1, figsize=(14, 6 * num_panels), gridspec_kw=dict(hspace=0.12))
 
         ax = axs[0]
-        ys = self.read_lengths / self.total_reads
-        ax.plot(ys, color='black', alpha=0.9)
-        ax.set_ylim(0, max(ys) * 1.05)
-
-        ax.annotate('All reads',
-                    xy=(0, 1), xycoords='axes fraction',
-                    xytext=(20, -20), textcoords='offset points',
-                    ha='left',
-                    va='top',
-                    size=20,
-                   )
-        
         ax.annotate(f'{self.group}: {self.name}',
                     xy=(0.5, 1), xycoords='axes fraction',
                     xytext=(0, 40), textcoords='offset points',
                     ha='center',
                     va='bottom',
-                    size=18,
+                    size=14,
                    )
 
         y_maxes = []
 
         listed_order = sorted(outcome_lengths, key=self.layout_module.order)
 
-        for panel_i, (ax, (y_max, group)) in enumerate(zip(axs[1:], panel_groups)):
+        non_highlight_color = 'grey'
+
+        for panel_i, (ax, (y_max, group)) in enumerate(zip(axs, panel_groups)):
             for outcome in listed_order:
                 lengths = outcome_lengths[outcome]
                 ys = lengths / self.total_reads
 
+                escaped_string = layout.outcome_to_escaped_string(outcome)
+
                 if outcome in group:
+                    gid = f'line_highlighted_{escaped_string}_{panel_i}'
                     color = self.outcome_to_color[outcome]
                     alpha = 1
                 else:
-                    color = 'grey'
+                    color = non_highlight_color
                     # At higher zoom levels, fade the grey lines more to avoid clutter.
                     if panel_i == 0:
-                        alpha = 0.3
+                        alpha = 0.6
+                        gid = f'line_nonhighlighted_6_{escaped_string}_{panel_i}'
                     elif panel_i == 1:
                         alpha = 0.3
+                        gid = f'line_nonhighlighted_3_{escaped_string}_{panel_i}'
                     else:
                         alpha = 0.05
+                        gid = f'line_nonhighlighted_05_{escaped_string}_{panel_i}'
 
                 category, subcategory = outcome
-                ax.plot(ys, label=f'{ys.sum():6.2%} {category}: {subcategory}', color=color, alpha=alpha)
 
-            ax.legend(bbox_to_anchor=(0, 1), loc='upper left', prop=dict(family='monospace', size=9))
+                label = f'{ys.sum():6.2%} {category}: {subcategory}'
+                ax.plot(ys, label=label, color=color, alpha=alpha, gid=gid)
+
+                if outcome in group:
+                    for _, (start, end) in self.length_ranges.iterrows():
+                        if sum(ys[start:end + 1]) > 0:
+                            ax.axvspan(start - 0.5, end + 0.5,
+                                       gid=f'length_range_{escaped_string}_{start}_{end}',
+                                       alpha=0.1,
+                                       facecolor='white',
+                                       edgecolor='black',
+                                       zorder=100,
+                                      )
+
+            legend = ax.legend(bbox_to_anchor=(0, 1),
+                               loc='upper left',
+                               prop=dict(family='monospace', size=9),
+                               framealpha=0.3,
+                              )
+            for outcome, line in zip(listed_order, legend.get_lines()):
+                if line.get_color() != non_highlight_color:
+                    line.set_linewidth(5)
+                    escaped_string = layout.outcome_to_escaped_string(outcome)
+                    line.set_gid(f'outcome_{escaped_string}')
 
             expected_lengths = {
                 'expected WT': ti.amplicon_length,
@@ -752,24 +774,21 @@ class Experiment(object):
 
         for panel_i, ax in enumerate(axs):
             ax.set_xlim(*x_lims)
-            ax.set_ylabel('Fraction of reads', size=14)
-            ax.set_xlabel('amplicon length', size=14)
+            ax.set_ylabel('Fraction of reads', size=12)
+            ax.set_xlabel('amplicon length', size=12)
 
             for name, length in expected_lengths.items():
                 if panel_i == 0:
-                    ax.axvline(length, color='black', alpha=0.4)
+                    ax.axvline(length, color='black', alpha=0.3)
 
                     ax.annotate(name,
                                 xy=(length, 1), xycoords=('data', 'axes fraction'),
                                 xytext=(0, 5), textcoords='offset points',
                                 ha='center', va='bottom',
-                                size=12,
-                            )
+                                size=10,
+                               )
 
-                if panel_i == 1:
-                    ax.axvline(length, color='black', alpha=0.2)
-
-        def draw_inset_guide(fig, top_ax, bottom_ax, bottom_y_max):
+        def draw_inset_guide(fig, top_ax, bottom_ax, bottom_y_max, panel_i):
             params_dict = {
                 'top': {
                     'offset': 0.04,
@@ -800,23 +819,44 @@ class Experiment(object):
                 params['top_corner'] = [end, y]
                 params['bottom_corner'] = [end, 0]
 
-                ax.plot([start, end, end, start], [y, y, 0, 0], transform=transform, clip_on=False, color='black', linewidth=3)
+                ax.plot([start, end, end, start],
+                        [y, y, 0, 0],
+                        transform=transform,
+                        clip_on=False,
+                        color='black',
+                        linewidth=3,
+                        )
+
+                ax.fill([start, end, end, start],
+                        [y, y, 0, 0],
+                        transform=transform,
+                        clip_on=False,
+                        color='white',
+                        gid=f'zoom_toggle_{which}_{panel_i}',
+                        )
 
             inverted_fig_tranform = fig.transFigure.inverted().transform    
 
-            for top_coords, bottom_coords in ((params_dict['top']['top_corner'], params_dict['bottom']['top_corner']),
-                                              (params_dict['top']['bottom_corner'], params_dict['bottom']['bottom_corner']),
-                                             ):
+            for which, top_coords, bottom_coords in (('top', params_dict['top']['top_corner'], params_dict['bottom']['top_corner']),
+                                                     ('bottom', params_dict['top']['bottom_corner'], params_dict['bottom']['bottom_corner']),
+                                                    ):
                 top_in_fig = inverted_fig_tranform(params_dict['top']['transform'].transform((top_coords)))
                 bottom_in_fig = inverted_fig_tranform(params_dict['bottom']['transform'].transform((bottom_coords)))
 
                 xs = [top_in_fig[0], bottom_in_fig[0]]
                 ys = [top_in_fig[1], bottom_in_fig[1]]
-                line = matplotlib.lines.Line2D(xs, ys, transform=fig.transFigure, clip_on=False, linestyle='--', color='black', alpha=0.3)
+                line = matplotlib.lines.Line2D(xs, ys,
+                                               transform=fig.transFigure,
+                                               clip_on=False,
+                                               linestyle='--',
+                                               color='black',
+                                               alpha=0.3,
+                                               gid=f'zoom_dotted_line_{panel_i}_{which}',
+                                              )
                 fig.lines.append(line)
 
-        for y_max, top_ax, bottom_ax in zip(y_maxes[1:], axs[1:], axs[2:]):
-            draw_inset_guide(fig, top_ax, bottom_ax, y_max)
+        for panel_i, (y_max, top_ax, bottom_ax) in enumerate(zip(y_maxes[1:], axs, axs[1:])):
+            draw_inset_guide(fig, top_ax, bottom_ax, y_max, panel_i)
 
         for ax in axs:
             ax.tick_params(axis='y', which='both', left=True, right=True)
@@ -841,7 +881,6 @@ class Experiment(object):
             sample = only_relevant
         
         kwargs = dict(
-            parsimonious=True,
             ref_centric=True,
             label_layout=True,
             show_all_guides=True,
@@ -849,12 +888,13 @@ class Experiment(object):
             read_label='amplicon',
             size_multiple=1,
             detect_orientation=True,
+            force_left_aligned=True,
         )
 
         return visualize.make_stacked_Image(sample, self.target_info, pairs=pairs, **kwargs)
     
     def generate_svg(self, outcome=None):
-        html = svg.length_plot_with_popovers(self, outcome=outcome, standalone=True, x_lims=(0, 505))
+        html = svg.length_plot_with_popovers(self, outcome=outcome, standalone=True, x_lims=(0, 505), inline_images=False)
 
         if outcome is None:
             fns = self.fns
@@ -1053,7 +1093,7 @@ class IlluminaExperiment(Experiment):
         lengths = utilities.counts_to_array(lengths)
         np.savetxt(self.fns['lengths'], lengths, '%d')
     
-    def generate_individual_length_figures(self, outcome=None):
+    def generate_individual_length_figures(self, outcome=None, num_examples=2):
         by_length = defaultdict(list)
 
         al_groups = self.alignment_groups(outcome=outcome, read_type='stitched')
@@ -1077,9 +1117,14 @@ class IlluminaExperiment(Experiment):
         for length, groups in items:
             if length == no_overlap_length:
                 continue
-            im = self.groups_to_Image(groups, 3, pairs=(length == no_overlap_length))
+            im = self.groups_to_Image(groups, num_examples, pairs=(length == no_overlap_length))
             fn = fig_dir / f'{length}_{length}.png'
             im.save(fn)
+
+    def generate_all_outcome_individual_length_figures(self):
+        outcomes = self.load_outcome_counts().index.values
+        for outcome in self.progress(outcomes):
+            self.generate_individual_length_figures(outcome=outcome)
 
     def generate_figures(self):
         fig = self.plot_outcome_stratified_lengths()

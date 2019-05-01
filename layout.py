@@ -1,3 +1,5 @@
+import re
+import html
 from collections import defaultdict
 
 import numpy as np
@@ -157,16 +159,17 @@ class Layout(object):
             else:
                 category = 'WT'
                 subcategory = 'WT'
+                self.relevant_alignments = self.parsimonious_target_alignments
 
         elif self.integration_summary == 'donor':
             if self.junction_summary_per_side[5] == 'HDR' and self.junction_summary_per_side[3] == 'HDR':
                 category = 'HDR'
                 subcategory = 'HDR'
-                self.relevant_alignments = self.parsimonious_alignments
+                self.relevant_alignments = self.parsimonious_and_gap_alignments
             else:
                 category = 'misintegration'
                 subcategory = '5\' {}, 3\' {}'.format(self.junction_summary_per_side[5], self.junction_summary_per_side[3])
-                self.relevant_alignments = self.alignments
+                self.relevant_alignments = self.parsimonious_and_gap_alignments
 
         elif self.integration_summary == 'concatamer':
             category = 'concatamer'
@@ -190,7 +193,7 @@ class Layout(object):
             category = 'uncategorized'
             subcategory = self.integration_summary
 
-            self.relevant_alignments = self.parsimonious_alignments + self.supplemental_alignments + self.gap_alignments
+            self.relevant_alignments = self.parsimonious_and_gap_alignments + self.supplemental_alignments
 
         else:
             print(self.integration_summary)
@@ -517,12 +520,17 @@ class Layout(object):
         return interval.make_parsimonious(self.alignments)
 
     @memoized_property
+    def parsimonious_and_gap_alignments(self):
+        ''' identification of gap_alignments requires further processing of parsimonious alignments '''
+        return sam.make_nonredundant(interval.make_parsimonious(self.parsimonious_alignments + self.gap_alignments))
+
+    @memoized_property
     def parsimonious_target_alignments(self):
-        return [al for al in self.parsimonious_alignments if al.reference_name == self.target_info.target]
+        return [al for al in self.parsimonious_and_gap_alignments if al.reference_name == self.target_info.target]
 
     @memoized_property
     def parsimonious_donor_alignments(self):
-        return [al for al in self.parsimonious_alignments if al.reference_name == self.target_info.donor]
+        return [al for al in self.parsimonious_and_gap_alignments if al.reference_name == self.target_info.donor]
 
     @memoized_property
     def closest_donor_alignment_to_edge(self):
@@ -1152,3 +1160,17 @@ def order(outcome):
     except:
         print(category, subcategory)
         raise
+
+def outcome_to_escaped_string(outcome):
+    c, s = order(outcome)
+    return f'category{c:03d}_subcategory{s:03d}'
+
+def escaped_string_to_outcome(escaped_string):
+    match = re.match('category(\d+)_subcategory(\d+)', escaped_string)
+    if not match:
+        raise ValueError(escaped_string)
+
+    c, s = map(int, match.groups())
+    category, subcats = category_order[c]
+    subcategory = subcats[s]
+    return category, subcategory
