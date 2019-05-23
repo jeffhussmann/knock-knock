@@ -3,3 +3,5 @@ build/
 .ipynb_checkpoints/
 *.swp
 *.pyc
+*.so
+*cython.c
