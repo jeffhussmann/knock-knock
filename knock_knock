@@ -149,7 +149,6 @@ elif args.parallel_pool is not None:
         ]
 
         guides = pool.guides
-        #guides = list(pool.gene_guides(['POLQ', 'HUS1', 'RAD17', 'POLL', 'RAD1', 'RAD9A'])) + pool.non_targeting_guides
 
         arg_tuples = [(group_name, guide, str(stage)) for guide in guides]
         for t in sorted(arg_tuples):
@@ -157,12 +156,12 @@ elif args.parallel_pool is not None:
         
         subprocess.check_call(parallel_command)
 
-    #process_stage(0)
+    process_stage(0)
 
-    #pool.make_common_sequences()
-    #parallel_pool_common_sequences(base_dir, group_name, max_procs)
-    #pool.write_common_outcome_files()
-    #pool.merge_common_sequence_special_alignments()
+    pool.make_common_sequences()
+    parallel_pool_common_sequences(base_dir, group_name, max_procs)
+    pool.write_common_outcome_files()
+    pool.merge_common_sequence_special_alignments()
 
     process_stage(1)
 

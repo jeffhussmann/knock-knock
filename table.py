@@ -46,9 +46,9 @@ def load_counts(base_dir, conditions=None, drop_outcomes=None):
 
     return df
 
-def png_bytes_to_URI(bs):
-    encoded = base64.b64encode(bs).decode('UTF-8')
-    URI = "'data:image/png;base64,{0}'".format(encoded)
+def png_bytes_to_URI(png_bytes):
+    encoded = base64.b64encode(png_bytes).decode('UTF-8')
+    URI = f"'data:image/png;base64,{encoded}'"
     return URI
 
 def fn_to_URI(fn):
@@ -60,7 +60,20 @@ def Image_to_png_URI(im):
     with io.BytesIO() as buf:
         im.save(buf, format='png')
         png_bytes = buf.getvalue()
+        
     URI = png_bytes_to_URI(png_bytes)
+    
+    return URI, im.width, im.height
+
+def fig_to_png_URI(fig):
+    with io.BytesIO() as buffer:
+        fig.savefig(buffer, format='png', bbox_inches='tight')
+        png_bytes = buffer.getvalue()
+        im = PIL.Image.open(buffer)
+        im.load()
+       
+    URI = png_bytes_to_URI(png_bytes)
+    
     return URI, im.width, im.height
 
 link_template = '''\
@@ -85,14 +98,16 @@ link_without_modal_template = '''\
     data-placement="auto"
     data-content="<img width={width} height={height} src={URI}>"
     style="text-decoration:none; color:black"
+    href="{URL}"
+    target="_blank"
 >
     {text}
 </a>
 '''
 
 modal_template = '''\
-<div class="modal fade" tabindex="-1" id="{modal_id}" role="dialog">
-    <div class="modal-dialog" style="width:95%; margin:auto;">
+<div class="modal" tabindex="-1" id="{modal_id}" role="dialog">
+    <div class="modal-dialog" style="width:90%; margin:auto">
         <div class="modal-content">
             <div class="modal-header">
                 <h2 class="modal-title">{title}</h2>
@@ -116,10 +131,10 @@ class ModalMaker(object):
         self.current_number += 1
         return next_id
         
-    def make_length(self, exp):
+    def make_length(self, exp, outcome=None, inline_images=True):
         modal_id = self.get_next_id()
         
-        svg_text = svg.length_plot_with_popovers(exp, container_selector='#{0}'.format(modal_id))
+        svg_text = svg.length_plot_with_popovers(exp, outcome=outcome, container_selector=f'#{modal_id}', inline_images=inline_images)
         modal_div = modal_template.format(modal_id=modal_id, contents=svg_text, title=exp.name)
         
         return modal_div, modal_id
@@ -142,7 +157,7 @@ class ModalMaker(object):
         
         return modal_div, modal_id
         
-def make_table(base_dir, conditions=None, drop_outcomes=None, include_images=True):
+def make_table(base_dir, conditions=None, drop_outcomes=None, include_images=False):
     df = load_counts(base_dir, conditions, drop_outcomes)
     totals = df.loc[totals_row_label]
 
@@ -225,7 +240,7 @@ def make_table(base_dir, conditions=None, drop_outcomes=None, include_images=Tru
     
     return styled
 
-def make_table_transpose(base_dir, conditions=None, drop_outcomes=None, include_images=True):
+def make_table_transpose(base_dir, conditions=None, drop_outcomes=None, include_images=False, inline_images=False):
     df = load_counts(base_dir, conditions, drop_outcomes)
     totals = df.loc[totals_row_label]
 
@@ -238,13 +253,12 @@ def make_table_transpose(base_dir, conditions=None, drop_outcomes=None, include_
             html = ''
         else:
             exp = experiment.Experiment(base_dir, exp_group, exp_name)
-            outcome_fns = exp.outcome_fns(outcome)
             
             fraction = val / totals[(exp_group, exp_name)]
             
             if outcome == totals_row_label:
                 text = '{:,}'.format(val)
-                if include_images:
+                if False:#include_images:
                     #modal_div, modal_id = modal_maker.make_length(exp)
 
                     hover_image_fn = str(exp.fns['lengths_figure'])
@@ -262,18 +276,35 @@ def make_table_transpose(base_dir, conditions=None, drop_outcomes=None, include_
 
             else:
                 text = '{:.2%}'.format(fraction)
+                
                 if include_images:
-                    modal_div, modal_id = modal_maker.make_outcome(exp, outcome)
-                    hover_image_fn = str(outcome_fns['first_example'])
-                    hover_URI, width, height = fn_to_URI(hover_image_fn)
+                    #modal_div, modal_id = modal_maker.make_outcome(exp, outcome)
+
+                    hover_image_fn = exp.outcome_fns(outcome)['first_example']
+                    click_html_fn = exp.outcome_fns(outcome)['diagrams_html']
                     
-                    link = link_template.format(text=text,
-                                                modal_id=modal_id,
+                    if inline_images:
+                        hover_URI, width, height = fn_to_URI(hover_image_fn)
+                    else:
+                        relative_path = hover_image_fn.relative_to(exp.fns['dir'].parent)
+                        hover_URI = str(relative_path)
+                        if hover_image_fn.exists():
+                            with PIL.Image.open(hover_image_fn) as im:
+                                width, height = im.size
+                                width = width * 0.75
+                                height = height * 0.75
+                        else:
+                            width, height = 100, 100
+
+                    relative_path = click_html_fn.relative_to(exp.fns['dir'].parent)
+                    link = link_without_modal_template.format(text=text,
+                                                #modal_id=modal_id,
                                                 URI=hover_URI,
                                                 width=width,
                                                 height=height,
+                                                URL=str(relative_path),
                                                )
-                    html = link + modal_div
+                    html = link# + modal_div
                 else:
                     html = text
 

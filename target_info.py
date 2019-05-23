@@ -30,6 +30,7 @@ effectors = {
 class TargetInfo():
     def __init__(self, base_dir, name,
                  donor=None,
+                 nonhomologous_donor=None,
                  sgRNA=None,
                  primer_names=None,
                  supplmental_headers=None,
@@ -44,8 +45,11 @@ class TargetInfo():
 
         self.sgRNA = sgRNA
         self.donor = donor
+        self.nonhomologous_donor = nonhomologous_donor
         self.donor_specific = manifest.get('donor_specific', 'GFP11') 
         self.supplemental_headers = supplmental_headers
+
+        self.default_HAs = manifest.get('default_HAs')
 
         self.fns = {
             'ref_fasta': self.dir / 'refs.fasta',
@@ -171,6 +175,28 @@ class TargetInfo():
         return features
 
     @memoized_property
+    def features_to_show(self):
+        whitelist = {
+            (self.donor, 'GFP'),
+            (self.donor, 'GFP11'),
+            (self.donor, 'PPX'),
+        }
+
+        for side in [5, 3]:
+            primer = (self.target, self.primers_by_side_of_target[side].attribute['ID'])
+            target_HA = (self.target, self.homology_arms[side]['target'].attribute['ID'])
+
+            whitelist.add(primer)
+            whitelist.add(target_HA)
+
+            if self.has_shared_homology_arms:
+                donor_HA = (self.donor, self.homology_arms[side]['donor'].attribute['ID'])
+                whitelist.add(donor_HA)
+
+
+        return whitelist
+
+    @memoized_property
     def sequencing_start(self):
         return self.features.get((self.target, 'sequencing_start'))
 
@@ -214,53 +240,6 @@ class TargetInfo():
 
         return extenders
 
-    @memoized_property
-    def interval_aligner(self):
-        aligner = mappy.Aligner(fn_idx_in='/home/jah/projects/manu/GRCh38_HPC.mmi', preset='map-pb')
-        header = sam.header_from_fasta('/nvme/indices/refdata-cellranger-GRCh38-1.2.0/fasta/genome.fa')
-
-        def get_interval_alignments(full_seq, full_qual, interval_start, interval_end, query_name):
-            padded_interval_start = max(0, interval_start - 20)
-            padded_interval_end = min(len(full_seq) - 1, interval_end + 20)
-
-            int_seq = full_seq[padded_interval_start:padded_interval_end + 1]
-            int_qual = full_qual[padded_interval_start:padded_interval_end + 1]
-
-            p_als = []
-
-            for m_al in aligner.map(int_seq, MD=True):
-                ## Note: hasn't been rigorously tested for off-by-one errors.
-                p_al = pysam.AlignedSegment(header)
-                p_al.query_name = query_name
-                p_al.reference_name = m_al.ctg
-                p_al.reference_start = m_al.r_st
-                p_al.is_reverse = (m_al.strand == -1)
-                p_al.cigar = [(op, length) for length, op in m_al.cigar]
-                p_al.set_tag('MD', m_al.MD)
-
-                total_skipped_at_start = padded_interval_start + m_al.q_st
-                if total_skipped_at_start > 0:
-                    p_al.cigar = [(sam.BAM_CSOFT_CLIP, total_skipped_at_start)] + p_al.cigar
-
-                total_skipped_at_end = (len(full_seq) - 1 - padded_interval_end) + (len(int_seq) - m_al.q_en)
-
-                if total_skipped_at_end > 0:
-                    p_al.cigar = p_al.cigar + [(sam.BAM_CSOFT_CLIP, total_skipped_at_end)]
-
-                if p_al.is_reverse:
-                    p_al.cigar = p_al.cigar[::-1]
-
-                p_al.query_sequence = full_seq
-                p_al.query_qualities = array.array('B', full_qual) # This is wonky
-                #p_al.query_sequence = int_seq
-                #p_al.query_qualities = array.array('B', int_qual) # This is wonky
-
-                p_als.append(p_al)
-
-            return p_als
-        
-        return get_interval_alignments
-    
     @memoized_property
     def donor_sequence(self):
         if self.donor is None:
@@ -512,14 +491,12 @@ class TargetInfo():
                 if feature_name.startswith('HA_'):
                     HAs[feature_name][source] = feature
                     
-        if len(HAs) != 2:
-            print('expected 2 HAs, got {} ({})'.format(len(HAs), sorted(HAs)))
-            
+        paired_HAs = {}
+
         # Confirm that every HA name that exists on both the target and donor has the same
         # sequence on each.
         for name in HAs:
             if 'target' not in HAs[name] or 'donor' not in HAs[name]:
-                print('{} not present on either target or donor'.format(name))
                 continue
             
             seqs = {}
@@ -533,11 +510,25 @@ class TargetInfo():
                 seqs[source] = HA_seq
                 
             if seqs['target'] != seqs['donor']:
-                raise ValueError('{} not identical sequence on target and donor'.format(name))
+                print(f'warning: {name} not identical sequence on target and donor')
 
-        HAs_on_target = {n for n in HAs if 'target' in HAs[n]}
+            paired_HAs[name] = HAs[name]
+
+        if len(paired_HAs) != 2:
+            # If there is only one set of homology arms to use, just use it.
+            if len(HAs) == 2:
+                for name in HAs:
+                    paired_HAs[name] = HAs[name]
+            else:
+                # otherwise need a default set to be specified
+                if self.default_HAs is None:
+                    raise ValueError('need to specify default_HAs if no homologous donor')
+                else:
+                    for name in self.default_HAs:
+                        paired_HAs[name] = HAs[name]
+
         by_target_side = {}
-        by_target_side[5], by_target_side[3] = sorted(HAs_on_target, key=lambda n: HAs[n]['target'].start)
+        by_target_side[5], by_target_side[3] = sorted(paired_HAs, key=lambda n: HAs[n]['target'].start)
 
         for target_side, name in by_target_side.items():
             PAM_side = self.target_side_to_PAM_side[target_side]
@@ -598,6 +589,14 @@ class TargetInfo():
     @memoized_property
     def amplicon_length(self):
         return len(self.amplicon_interval)
+
+    @memoized_property
+    def clean_HDR_length(self):
+        if self.has_shared_homology_arms:
+            HAs = self.homology_arms
+            return self.amplicon_length + HAs[3]['donor'].start - HAs[5]['donor'].end - 1
+        else:
+            return None
 
     @memoized_property
     def fingerprints(self):

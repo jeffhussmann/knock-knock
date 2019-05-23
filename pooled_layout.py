@@ -1755,3 +1755,17 @@ class DeletionPlusMismatchOutcome():
 
     def __str__(self):
         return f'{self.deletion_outcome};{self.mismatch_outcome}'
+
+def outcome_to_escaped_string(outcome):
+    c, s = order(outcome)
+    return f'category{c:03d}_subcategory{s:03d}'
+
+def escaped_string_to_outcome(escaped_string):
+    match = re.match('category(\d+)_subcategory(\d+)', escaped_string)
+    if not match:
+        raise ValueError(escaped_string)
+
+    c, s = map(int, match.groups())
+    category, subcats = category_order[c]
+    subcategory = subcats[s]
+    return category, subcategory

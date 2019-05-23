@@ -2,10 +2,10 @@ import matplotlib
 matplotlib.use('Agg', warn=False)
 
 import shutil
-import functools
 from pathlib import Path
-from itertools import islice
+from itertools import islice, chain
 from collections import defaultdict, Counter
+from contextlib import ExitStack
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -16,10 +16,10 @@ import yaml
 import scipy.signal
 import ipywidgets
 
-from sequencing import sam, fastq, utilities, visualize_structure, sw, adapters, mapping_tools
+from sequencing import sam, fastq, utilities, visualize_structure, sw, adapters, mapping_tools, interval
 from sequencing.utilities import memoized_property
 
-from . import target_info, blast, layout, visualize, coherence, collapse, svg
+from . import target_info, blast, layout, visualize, coherence, svg, table
 
 group_by = utilities.group_by
 
@@ -101,7 +101,9 @@ class Experiment(object):
 
         self.sgRNA = self.description.get('sgRNA')
         self.donor = self.description.get('donor')
+        self.nonhomologous_donor = self.description.get('nonhomologous_donor')
         self.primer_names = self.description.get('primer_names')
+        self.max_relevant_length = self.description.get('max_relevant_length')
 
         # When checking if an Experiment meets filtering conditions, want to be
         # able to just test description.
@@ -195,15 +197,17 @@ class Experiment(object):
         return fns
 
     def outcome_fns(self, outcome):
-        category, subcategory = outcome
         # To allow outcomes to have arbitrary names without causing file path problems,
         # escape the names.
-        outcome_string = layout.outcome_to_escaped_string(outcome)
+        outcome_string = self.layout_module.outcome_to_escaped_string(outcome)
         outcome_dir = self.fns['outcomes_dir'] / outcome_string
         fns = {
             'dir': outcome_dir,
             'query_names': outcome_dir / 'qnames.txt',
+            'no_overlap_query_names': outcome_dir / 'no_overlap_qnames.txt',
             'bam_by_name': outcome_dir / 'alignments.by_name.bam',
+            'R1_no_overlap_bam_by_name': outcome_dir / 'R1_no_overlap_alignments.by_name.bam',
+            'R2_no_overlap_bam_by_name': outcome_dir / 'R2_no_overlap_alignments.by_name.bam',
             'special_alignments': outcome_dir / 'special_alignments.bam',
             'filtered_cell_special_alignments': outcome_dir / 'filtered_cell_special_alignments.bam',
             'filtered_cell_bam': outcome_dir / 'filtered_cell_alignments.bam',
@@ -211,6 +215,7 @@ class Experiment(object):
             'first_example': outcome_dir / 'first_examples.png',
             'combined_figure': outcome_dir / 'combined.png',
             'diagrams_notebook': outcome_dir / f'{self.group}_{self.name}_{outcome_string}.ipynb',
+            'diagrams_html': outcome_dir / 'diagrams.html',
             'lengths_figure': outcome_dir / 'lengths.png',
             'text_alignments': outcome_dir / 'alignments.txt',
             'length_range_figures': outcome_dir / 'length_ranges',
@@ -241,22 +246,37 @@ class Experiment(object):
         lengths = utilities.counts_to_array(lengths)
         np.savetxt(self.fns['lengths'], lengths, '%d')
 
-    @property
-    def length_ranges(self):
-        path = self.fns['length_ranges']
-        if path.exists():
-            ranges = pd.read_csv(path, sep='\t', header=None, names=['start', 'end'])
+    def length_ranges(self, outcome=None):
+        #path = self.fns['length_ranges']
+        #if path.exists():
+        #    ranges = pd.read_csv(path, sep='\t', header=None, names=['start', 'end'])
+        #else:
+        #    ranges = pd.DataFrame(columns=['start', 'end'])
+        #return ranges
+        interval_length = self.max_relevant_length // 50
+        starts = np.arange(0, self.max_relevant_length + interval_length, interval_length)
+        if outcome is None:
+            lengths = self.read_lengths
         else:
-            ranges = pd.DataFrame(columns=['start', 'end'])
-        return ranges
+            lengths = self.outcome_stratified_lengths[outcome]
 
-    def alignment_groups(self, fn_key='bam_by_name', outcome=None, read_type=None):
+        ranges = []
+        for start in starts:
+            if sum(lengths[start:start + interval_length]) > 0:
+                ranges.append((start, start + interval_length - 1))
+
+        return pd.DataFrame(ranges, columns=['start', 'end'])
+
+    def alignment_groups(self, fn_key='combined_bam_by_name', outcome=None, read_type=None):
         if outcome is not None:
-            fn = self.outcome_fns(outcome)[fn_key]
+            fn = self.outcome_fns(outcome)['bam_by_name']
         else:
             fn = self.fns_by_read_type[fn_key][read_type]
 
-        grouped = sam.grouped_by_name(fn)
+        if fn.exists():
+            grouped = sam.grouped_by_name(fn)
+        else:
+            grouped = []
 
         return self.progress(grouped)
 
@@ -292,14 +312,6 @@ class Experiment(object):
         df = pd.DataFrame(length_ranges)                  
         df.to_csv(self.fns['length_ranges'], index=False, header=None, sep='\t')
 
-    def outcome_read_lengths(self, outcome):
-        lengths = Counter()
-        for _, group in self.alignment_groups(outcome=outcome):
-            lengths[group[0].query_length] += 1
-
-        lengths = utilities.counts_to_array(lengths)
-        return lengths
-
     def generate_alignments(self, read_type=None):
         reads = self.reads_by_type(read_type)
 
@@ -327,7 +339,7 @@ class Experiment(object):
         if len(bam_fns) == 0:
             # There weren't any reads. Make empty bam files.
             header = sam.header_from_fasta(self.target_info.fns['ref_fasta'])
-            for fn in [base_bam_fh, base_bam_by_name_fn]:
+            for fn in [base_bam_fn, base_bam_by_name_fn]:
                 with pysam.AlignmentFile(fn, 'wb', header=header) as fh:
                     pass
 
@@ -440,8 +452,8 @@ class Experiment(object):
         with self.fns['outcome_list'].open('w') as fh:
             for name, als in self.alignment_groups(fn_key, read_type=read_type):
                 try:
-                    layout = self.layout_module.Layout(als, self.target_info)
-                    if self.target_info.donor is not None:
+                    layout = self.layout_module.Layout(als, self.target_info, mode=self.layout_mode)
+                    if self.target_info.donor is not None or self.target_info.nonhomologous_donor is not None:
                         category, subcategory, details = layout.categorize()
                     else:
                         category, subcategory, details = layout.categorize_no_donor()
@@ -490,46 +502,46 @@ class Experiment(object):
         for outcome, fh in bam_fhs.items():
             fh.close()
 
-    def make_outcome_plots(self, num_examples=10):
-        fig = self.length_distribution_figure()
-        fig.savefig(str(self.fns['lengths_figure']), bbox_inches='tight')
-        plt.close(fig)
+    def make_length_plot(self, outcome=None):
+        def plot_nonzero(ax, xs, ys, color, highlight):
+            nonzero = ys.nonzero()
+            if highlight:
+                alpha = 0.95
+                markersize = 2
+            else:
+                alpha = 0.7
+                markersize = 0
 
-        kwargs = dict(
-            parsimonious=True,
-            paired_end_read_length=None,
-            #ref_centric=True,
-            size_multiple=1,
-            detect_orientation=True,
-            features_to_hide=['forward_primer_illumina', 'reverse_primer_illumina'],
-            #process_mappings=self.layout_module.characterize_layout,
-        )
+            ax.plot(xs[nonzero], ys[nonzero], 'o', color=color, markersize=markersize, alpha=alpha)
+            ax.plot(xs, ys, '-', color=color, alpha=0.3 * alpha)
 
-        def relevant_alignments(i, outcome):
-            als = self.get_read_alignments(i, outcome=outcome)
-            if als is None:
-                raise StopIteration
-            l = self.layout_module.Layout(als, self.target_info)
-            l.categorize()
-            return l.relevant_alignments
+        fig, ax = plt.subplots(figsize=(14, 5))
 
-        for outcome in self.progress(self.outcomes):
-            outcome_fns = self.outcome_fns(outcome)
-            
-            als = relevant_alignments(0, outcome)
-            diagram = visualize.ReadDiagram(als, self.target_info, **kwargs)
-            diagram.fig.axes[0].set_title('')
-            diagram.fig.savefig(str(outcome_fns['first_example']), bbox_inches='tight')
-            plt.close(diagram.fig)
-            
-            als_iter = (relevant_alignments(i, outcome) for i in range(num_examples))
-            stacked_im = visualize.make_stacked_Image(als_iter, self.target_info, **kwargs)
-            stacked_im.save(outcome_fns['combined_figure'])
+        ys = self.read_lengths
+        xs = np.arange(len(ys))
 
-            lengths = self.outcome_read_lengths(outcome)
-            fig = visualize.make_length_plot(self.read_lengths, self.color, lengths)
-            fig.savefig(str(outcome_fns['lengths_figure']), bbox_inches='tight')
-            plt.close(fig)
+        if outcome is None:
+            all_color = self.color
+            highlight = True
+        else:
+            all_color = 'black'
+            highlight = False
+
+        plot_nonzero(ax, xs, ys, all_color, highlight=highlight)
+        ax.set_ylim(0, max(ys) * 1.05)
+
+        if outcome is not None:
+            ys = self.outcome_stratified_lengths[outcome]
+            xs = np.arange(len(ys))
+            outcome_color = color
+            plot_nonzero(ax, xs, ys, outcome_color, highlight=True)
+
+        ax.set_xlabel('Length of read')
+        ax.set_ylabel('Number of reads')
+        ax.set_xlim(0, len(self.read_lengths) * 1.05)
+        ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
+
+        return fig
                 
     def get_read_alignments(self, read_id, fn_key='bam_by_name', outcome=None, read_type=None):
         # iter() necessary because tqdm objects aren't iterators
@@ -555,6 +567,29 @@ class Experiment(object):
             else:
                 return None
 
+    def get_read_diagram(self, read_id, outcome=None, relevant=True, read_type=None, **kwargs):
+        if outcome is None:
+            fn_key = 'combined_bam_by_name'
+        else:
+            fn_key = 'bam_by_name'
+
+        als = self.get_read_alignments(read_id, fn_key=fn_key, outcome=outcome, read_type=read_type)
+        if als is None:
+            return None
+
+        if relevant:
+            layout = self.layout_module.Layout(als, self.target_info, mode=self.layout_mode)
+            layout.categorize()
+            to_plot = layout.relevant_alignments
+        else:
+            to_plot = als
+
+        diagram = visualize.ReadDiagram(to_plot, self.target_info,
+                                        features_to_show=self.target_info.features_to_show,
+                                        **kwargs)
+
+        return diagram
+
     def make_text_visualizations(self, num_examples=10):
         for outcome in self.outcomes:
             outcome_fns = self.outcome_fns(outcome)
@@ -564,19 +599,25 @@ class Experiment(object):
                                                          num_examples,
                                                         )
 
-    def length_distribution_figure(self, outcome=None, show_ranges=False, x_lims=None, y_lims=None, tick_multiple=50):
-        max_x = len(self.read_lengths)
+    def length_distribution_figure(self, outcome=None, show_ranges=False, show_title=False):
+        capped_read_lengths = np.zeros(self.max_relevant_length + 1)
+        max_length = self.max_relevant_length
+        if len(self.read_lengths) > self.max_relevant_length + 1:
+            capped_read_lengths[max_length] = sum(self.read_lengths[self.max_relevant_length:])
+        
+        copy_up_to = min(len(self.read_lengths) - 1, max_length - 1)
+        capped_read_lengths[:copy_up_to + 1] = self.read_lengths[:copy_up_to + 1]
+        
+        if sum(capped_read_lengths) != sum(self.read_lengths):
+            raise ValueError('bug in capping')
+        
+        all_ys = capped_read_lengths / self.total_reads
 
-        all_ys = self.read_lengths / self.read_lengths.sum()
-
-        if x_lims is None:
-            x_lims = (0, max_x)
-
-        fig, ax = plt.subplots(figsize=(18, 8))
+        fig, ax = plt.subplots(figsize=(12, 6))
 
         if outcome is None:
             ys_list = [
-                (all_ys, self.color, 0.9),
+                (all_ys, self.color, 0.9, 'all reads'),
             ]
             max_y = max(all_ys)
 
@@ -585,24 +626,26 @@ class Experiment(object):
             outcome_lengths = self.outcome_stratified_lengths[outcome]
             outcome_ys = outcome_lengths / self.total_reads
 
-            other_lengths = self.read_lengths - outcome_lengths
-            other_ys = other_lengths / self.read_lengths.sum()
+            other_lengths = capped_read_lengths - outcome_lengths
+            other_ys = other_lengths / self.total_reads
 
             max_y = max(outcome_ys)
 
             ys_list = [
-                (other_ys, 'black', 0.1),
-                (outcome_ys, self.outcome_to_color[outcome], 0.9),
+                (other_ys, 'black', 0.2, 'all other reads'),
+                (outcome_ys, self.outcome_to_color[outcome], 0.9, ': '.join(outcome)),
             ]
 
             ys_to_check = outcome_ys
 
-        for ys, color, alpha in ys_list:
-            ax.plot(ys, color=color, alpha=alpha)
+        for ys, color, alpha, label in ys_list:
+            ax.plot(ys, color=color, alpha=alpha, label=label)
             
             nonzero_xs = ys.nonzero()[0]
             nonzero_ys = ys[nonzero_xs]
-            ax.scatter(nonzero_xs, nonzero_ys, s=2, c=color, alpha=alpha)
+            
+            if label != 'all other reads':
+                ax.scatter(nonzero_xs, nonzero_ys, s=2, c=color, alpha=alpha)
                            
         if show_ranges:
             for _, (start, end) in self.length_ranges.iterrows():
@@ -615,46 +658,93 @@ class Experiment(object):
                                zorder=100,
                               )
             
-        major = np.arange(0, max_x, tick_multiple)
-        minor = [x for x in np.arange(0, max_x, tick_multiple // 2) if x % tick_multiple != 0]
-                    
-        ax.set_xticks(major)
-        ax.set_xticks(minor, minor=True)
-
         ax.set_ylabel('Fraction of reads')
         ax.set_xlabel('Amplicon length')
         
-        if y_lims is None:
-            y_lims = (0, max_y * 1.05)
-
+        y_lims = (0, max_y * 1.05)
         ax.set_ylim(*y_lims)
-        ax.set_xlim(*x_lims)
-        
-        if outcome is None:
-            title = f'{self.group}\n{self.name}'
-        else:
-            category, subcategory = outcome
-            title = f'{self.group}\n{self.name}\n{category}: {subcategory}'
 
-        ax.set_title(title)
+        x_max = int(self.max_relevant_length * 1.005)
+        ax.set_xlim(0, x_max)
+        
+        if show_title:
+            if outcome is None:
+                title = f'{self.group}: {self.name}'
+            else:
+                category, subcategory = outcome
+                title = f'{self.group}: {self.name}\n{category}: {subcategory}'
+
+            ax.set_title(title)
+            
+        ax.legend(framealpha=0.5)
+        
+        expected_lengths = {
+            'expected\nWT': self.target_info.amplicon_length,
+        }
+        if self.target_info.clean_HDR_length is not None:
+            expected_lengths['expected\nHDR'] = self.target_info.clean_HDR_length
+        
+        for name, length in expected_lengths.items():
+            ax.axvline(length, ymin=0, ymax=1.02, color='black', alpha=0.4, clip_on=False)
+
+            ax.annotate(name,
+                        xy=(length, 1.02), xycoords=('data', 'axes fraction'),
+                        xytext=(0, 1), textcoords='offset points',
+                        ha='center', va='bottom',
+                        size=10,
+                       )
+        
+        main_ticks = list(range(0, self.max_relevant_length, self.x_tick_multiple))
+        main_tick_labels = [str(x) for x in main_ticks]
+
+        extra_ticks = [self.max_relevant_length]
+        extra_tick_labels = [f'$\geq${self.max_relevant_length}']
+
+        if self.length_to_store_unknown is not None:
+            extra_ticks.append(self.length_to_store_unknown)
+            extra_tick_labels.append('?')
+
+        ax.set_xticks(main_ticks + extra_ticks)
+        ax.set_xticklabels(main_tick_labels + extra_tick_labels)
+        
+        minor = [x for x in np.arange(0, x_max, self.x_tick_multiple // 2) if x % self.x_tick_multiple != 0]
+        ax.set_xticks(minor, minor=True)
+
+        ax.set_ylabel('Fraction of reads', size=12)
+        ax.set_xlabel('amplicon length', size=12)
 
         return fig
+
+    def outcome_iter(self):
+        fhs = [self.fns[key].open() for key in self.outcome_fn_keys]
+        chained = chain.from_iterable(fhs)
+        for line in self.progress(chained):
+            outcome = coherence.Outcome.from_line(line)
+            yield outcome
 
     @memoized_property
     def outcome_stratified_lengths(self):
         outcome_lengths = defaultdict(Counter)
 
-        for line in self.progress(self.fns['outcome_list'].open()):
-            outcome = coherence.Outcome.from_line(line)
+        for outcome in self.outcome_iter():
             outcome_lengths[outcome.category, outcome.subcategory][outcome.length] += 1
 
-        pad_to_length = len(self.read_lengths)
+        max_length = self.max_relevant_length
+        if self.length_to_store_unknown is not None:
+            max_length = max(max_length, self.length_to_store_unknown)
+
         outcome_length_arrays = {}
         for outcome, counts in outcome_lengths.items():
-            array = utilities.counts_to_array(counts)
-            padded = np.zeros(pad_to_length)
-            padded[:len(array)] = array
-            outcome_length_arrays[outcome] = padded
+            array = np.zeros(max_length + 1)
+            for length, value in counts.items():
+                if length == -1:
+                    array[self.length_to_store_unknown] = value
+                elif length >= self.max_relevant_length:
+                    array[self.max_relevant_length] += value
+                else:
+                    array[length] = value
+
+            outcome_length_arrays[outcome] = array
 
         return outcome_length_arrays
 
@@ -678,13 +768,15 @@ class Experiment(object):
         color_order = sorted(self.outcome_stratified_lengths, key=self.outcome_highest_points.get, reverse=True)
         return {outcome: f'C{i % 10}' for i, outcome in enumerate(color_order)}
 
-    def plot_outcome_stratified_lengths(self, x_lims=None):
+    def plot_outcome_stratified_lengths(self, x_lims=None, min_total_to_label=0.1 * 0.01, zoom_factor=0.1):
+        outcome_lengths = self.outcome_stratified_lengths
+
         if x_lims is None:
-            x_lims = (0, 2 * self.paired_end_read_length + 1)
+            ys = list(outcome_lengths.values())[0]
+            x_max = int(len(ys) * 1.005)
+            x_lims = (0, x_max)
 
         ti = self.target_info
-
-        outcome_lengths = self.outcome_stratified_lengths
 
         panel_groups = []
 
@@ -698,7 +790,7 @@ class Experiment(object):
 
             for outcome in left_after_previous:
                 highest_point = self.outcome_highest_points[outcome]
-                if current_max * 0.05 < highest_point <= current_max:
+                if current_max * zoom_factor < highest_point <= current_max:
                     group.append(outcome)
                 else:
                     still_left.append(outcome)
@@ -709,7 +801,7 @@ class Experiment(object):
             if len(still_left) == 0:
                 break
                 
-            current_max = current_max * 0.05
+            current_max = current_max * zoom_factor
             left_after_previous = still_left
 
         num_panels = len(panel_groups)
@@ -728,6 +820,7 @@ class Experiment(object):
         y_maxes = []
 
         listed_order = sorted(outcome_lengths, key=self.layout_module.order)
+        high_enough_to_show = []
 
         non_highlight_color = 'grey'
 
@@ -757,48 +850,69 @@ class Experiment(object):
 
                 category, subcategory = outcome
 
-                label = f'{ys.sum():6.2%} {category}: {subcategory}'
+                total = ys.sum()
+                if total > min_total_to_label:
+                    high_enough_to_show.append(outcome)
+                    label = f'{ys.sum():6.2%} {category}: {subcategory}'
+                else:
+                    label = None
+
                 ax.plot(ys, label=label, color=color, alpha=alpha, gid=gid)
 
                 if outcome in group:
-                    for _, (start, end) in self.length_ranges.iterrows():
-                        if sum(ys[start:end + 1]) > 0:
-                            ax.axvspan(start - 0.5, end + 0.5,
-                                       gid=f'length_range_{escaped_string}_{start}_{end}',
-                                       alpha=0.1,
-                                       facecolor='white',
-                                       edgecolor='black',
-                                       zorder=100,
-                                      )
+                    length_ranges = self.length_ranges(outcome)
+                    for _, row in length_ranges.iterrows():
+                        ax.axvspan(row.start - 0.5, row.end + 0.5,
+                                   gid=f'length_range_{escaped_string}_{row.start}_{row.end}',
+                                   alpha=0.0,
+                                   facecolor='white',
+                                   edgecolor='black',
+                                   zorder=100,
+                                  )
 
-            legend = ax.legend(bbox_to_anchor=(0, 1),
-                               loc='upper left',
+            legend = ax.legend(bbox_to_anchor=(-0.06, 1),
+                               #loc='upper left',
+                               loc='upper right',
                                prop=dict(family='monospace', size=9),
                                framealpha=0.3,
                               )
-            for outcome, line in zip(listed_order, legend.get_lines()):
+
+            for outcome, line in zip(high_enough_to_show, legend.get_lines()):
                 if line.get_color() != non_highlight_color:
                     line.set_linewidth(5)
                     escaped_string = layout.outcome_to_escaped_string(outcome)
                     line.set_gid(f'outcome_{escaped_string}')
 
             expected_lengths = {
-                'expected WT': ti.amplicon_length,
+                'expected\nWT': ti.amplicon_length,
             }
-            if ti.has_shared_homology_arms:
-                expected_lengths['expected HDR'] = ti.amplicon_length + len(ti.features[ti.donor, 'GFP11'])
+            if ti.clean_HDR_length is not None:
+                expected_lengths['expected\nHDR'] = ti.clean_HDR_length
 
             ax.set_ylim(0, y_max * 1.05)
             y_maxes.append(y_max)
 
         for panel_i, ax in enumerate(axs):
+            main_ticks = list(range(0, self.max_relevant_length, self.x_tick_multiple))
+            main_tick_labels = [str(x) for x in main_ticks]
+
+            extra_ticks = [self.max_relevant_length]
+            extra_tick_labels = [f'$\geq${self.max_relevant_length}']
+
+            if self.length_to_store_unknown is not None:
+                extra_ticks.append(self.length_to_store_unknown)
+                extra_tick_labels.append('?')
+
+            ax.set_xticks(main_ticks + extra_ticks)
+            ax.set_xticklabels(main_tick_labels + extra_tick_labels)
+
             ax.set_xlim(*x_lims)
             ax.set_ylabel('Fraction of reads', size=12)
             ax.set_xlabel('amplicon length', size=12)
 
             for name, length in expected_lengths.items():
                 if panel_i == 0:
-                    ax.axvline(length, color='black', alpha=0.3)
+                    ax.axvline(length, color='black', alpha=0.2)
 
                     ax.annotate(name,
                                 xy=(length, 1), xycoords=('data', 'axes fraction'),
@@ -882,36 +996,39 @@ class Experiment(object):
 
         return fig
 
-    def span_to_Image(self, start, end, num_examples=5):
-        filtered = (group for name, group in self.alignment_groups()
-                    if start <= group[0].query_length <= end)
-        return self.groups_to_Image(filtered, num_examples)
+    def alignment_groups_to_diagrams(self, alignment_groups, num_examples, relevant=True, label_layout=False):
+        subsample = utilities.reservoir_sample(alignment_groups, num_examples)
 
-    def groups_to_Image(self, groups, num_examples, pairs=False, only_relevant_alignments=True):
-        sample = utilities.reservoir_sample(groups, num_examples)
-
-        if only_relevant_alignments:
+        if relevant:
             only_relevant = []
-            for als in sample:
-                l = self.layout_module.Layout(als, self.target_info)
+            for qname, als in subsample:
+                if isinstance(als, dict):
+                    l = self.layout_module.NonoverlappingLayout(als['R1'], als['R2'], self.target_info, mode=self.layout_mode)
+                else:
+                    l = self.layout_module.Layout(als, self.target_info, mode=self.layout_mode)
                 l.categorize()
+                
                 only_relevant.append(l.relevant_alignments)
 
-            sample = only_relevant
+            subsample = only_relevant
         
         kwargs = dict(
             ref_centric=True,
-            label_layout=True,
-            show_all_guides=True,
-            paired_end_read_length=None,
+            label_layout=label_layout,
             read_label='amplicon',
-            size_multiple=1,
-            detect_orientation=True,
             force_left_aligned=True,
+            title='',
+            features_to_show=self.target_info.features_to_show,
         )
-
-        return visualize.make_stacked_Image(sample, self.target_info, pairs=pairs, **kwargs)
-    
+        
+        for als in subsample:
+            if isinstance(als, dict):
+                d = visualize.ReadDiagram(als['R1'], self.target_info, R2_alignments=als['R2'], **kwargs)
+            else:
+                d = visualize.ReadDiagram(als, self.target_info, **kwargs)
+                
+            yield d
+            
     def generate_svg(self, outcome=None):
         html = svg.length_plot_with_popovers(self, outcome=outcome, standalone=True, x_lims=(0, 505), inline_images=False)
 
@@ -923,6 +1040,74 @@ class Experiment(object):
         with fns['lengths_svg'].open('w') as fh:
             fh.write(html)
 
+    def generate_all_outcome_length_range_figures(self):
+        outcomes = sorted(self.outcome_stratified_lengths)
+        for outcome in self.progress(outcomes):
+            #if outcome[0] != 'uncategorized':
+            #    continue
+            self.generate_length_range_figures(outcome=outcome)
+
+    def generate_figures(self):
+        self.generate_all_outcome_length_range_figures()
+        self.generate_all_diagrams_html()
+        svg.decorate_outcome_browser(self)
+    
+    def generate_diagrams_html(self, outcome, num_examples):
+        category, subcategory = outcome
+        al_groups = self.alignment_groups(outcome=outcome)
+        diagrams = self.alignment_groups_to_diagrams(al_groups, num_examples=num_examples)
+        
+        def fig_to_img_tag(fig):
+            URI, width, height = table.fig_to_png_URI(fig)
+            plt.close(fig)
+            tag = f"<img src={URI} height='{height}' width='{width}' class='center'>"
+            return tag
+        
+        outcome_fns = self.outcome_fns(outcome)
+        fn = outcome_fns['diagrams_html']
+        with fn.open('w') as fh:
+            fh.write('''\
+<html>
+<head>
+<style>
+h2 {
+  text-align: center;
+}
+
+p {
+  text-align: center;
+  font-family: monospace;
+}
+
+.center {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+</style>
+</head>
+<body>
+''')
+            fh.write(f'<h2>{self.group}: {self.name}</h1>\n')
+            fh.write(f'<h2>{category}: {subcategory}</h2>\n')
+            
+            fig = self.length_distribution_figure(outcome=outcome)
+            tag = fig_to_img_tag(fig)
+            fh.write(f'{tag}\n<hr>\n')
+                
+            for i, diagram in enumerate(self.progress(diagrams)):
+                if i == 0:
+                    diagram.fig.savefig(outcome_fns['first_example'], bbox_inches='tight')
+                fh.write(f'<p>{diagram.query_name}</p>\n')
+                tag = fig_to_img_tag(diagram.fig)
+                fh.write(f'{tag}\n')
+    
+    def generate_all_diagrams_html(self, num_examples=25):
+        outcomes = sorted(self.outcome_stratified_lengths)
+        for outcome in self.progress(outcomes):
+            self.generate_diagrams_html(outcome=outcome, num_examples=num_examples)
+            
     def process(self, stage):
         self.count_read_lengths()
         self.generate_alignments()
@@ -940,14 +1125,24 @@ class Experiment(object):
         else:
             als = qname_to_als[read_id]
 
-        layout = self.layout_module.Layout(als, self.target_info)
+        layout = self.layout_module.Layout(als, self.target_info, mode=self.layout_mode)
 
         return layout
 
 class PacbioExperiment(Experiment):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
         self.paired_end_read_length = None
+
+        if self.max_relevant_length is None:
+            self.max_relevant_length = 3000
+
+        self.length_to_store_unknown = None
+
+        self.x_tick_multiple = 500
+
+        self.layout_mode = 'pacbio'
 
         fastq_fns = ensure_list(self.description['fastq_fns'])
         self.fns['fastqs'] = [self.data_dir / name for name in fastq_fns]
@@ -957,6 +1152,8 @@ class PacbioExperiment(Experiment):
                 raise ValueError(f'{self.group}: {self.name} specifies non-existent {fn}')
 
         self.read_types = [None]
+
+        self.outcome_fn_keys = ['outcome_list']
 
     def generate_supplemental_alignments(self, read_type=None):
         ''' Use minimap2 to produce local alignments.
@@ -1007,14 +1204,37 @@ class PacbioExperiment(Experiment):
                          self.fns_by_read_type['supplemental_bam'][read_type, index_name],
                         )
     
-    def generate_length_range_figures(self):
-        self.fns['length_range_figures'].mkdir(exist_ok=True)
+    def generate_length_range_figures(self, outcome=None, num_examples=1):
+        by_length_range = defaultdict(list)
+        length_ranges = [interval.Interval(row['start'], row['end']) for _, row in self.length_ranges(outcome).iterrows()]
 
-        rows = self.progress(list(self.length_ranges.iterrows()))
+        if outcome is None:
+            fn_key = 'combined_bam_by_name'
+        else:
+            fn_key = 'bam_by_name'
 
-        for _, row in rows:
-            im = self.span_to_Image(row.start, row.end)
-            fn = self.fns['length_range_figures'] / f'{row.start}_{row.end}.png'
+        al_groups = self.alignment_groups(outcome=outcome, fn_key=fn_key)
+        for name, group in al_groups:
+            length = group[0].query_length
+            for length_range in length_ranges:
+                if length in length_range:
+                    by_length_range[length_range.start, length_range.end].append((name, group))
+        
+        if outcome is None:
+            fig_dir = self.fns['length_range_figures']
+        else:
+            fig_dir = self.outcome_fns(outcome)['length_range_figures']
+            
+        if fig_dir.is_dir():
+            shutil.rmtree(str(fig_dir))
+        fig_dir.mkdir()
+
+        items = self.progress(by_length_range.items())
+
+        for (start, end), groups in items:
+            diagrams = self.alignment_groups_to_diagrams(groups, num_examples=num_examples)
+            im = visualize.make_stacked_Image(diagrams, titles='')
+            fn = fig_dir / f'{start}_{end}.png'
             im.save(fn)
     
     def generate_svg(self):
@@ -1024,20 +1244,33 @@ class PacbioExperiment(Experiment):
             fh.write(html)
     
     def process(self, stage):
-        self.count_read_lengths()
-        self.generate_alignments()
-        self.generate_supplemental_alignments()
-        self.combine_alignments()
+        #self.count_read_lengths()
+        #self.generate_alignments()
+        #self.generate_supplemental_alignments()
+        #self.combine_alignments()
         self.categorize_outcomes()
-        #self.make_outcome_plots(num_examples=5)
+        self.generate_figures()
 
 class IlluminaExperiment(Experiment):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        
+        self.fns.update({
+            'no_overlap_outcome_counts': self.dir / 'no_overlap_outcome_counts.csv',
+            'no_overlap_outcome_list': self.dir / 'no_overlap_outcome_list.txt',
+        })
 
         self.sequencing_primers = self.description.get('sequencing_primers', 'truseq')
         self.paired_end_read_length = self.description.get('paired_end_read_length', None)
+        self.max_relevant_length = 2 * self.paired_end_read_length + 100
+        self.length_to_store_unknown = int(self.max_relevant_length * 1.05)
+        self.x_tick_multiple = 100
+
+        self.layout_mode = 'illumina'
+
         self.max_qual = 41
+
+        self.outcome_fn_keys = ['outcome_list', 'no_overlap_outcome_list']
 
         for k in ['R1', 'R2', 'I1', 'I2']:
             if k in self.description:
@@ -1056,28 +1289,125 @@ class IlluminaExperiment(Experiment):
 
     def get_read_alignments(self, read_id, fn_key='bam_by_name', outcome=None, read_type=None):
         return super().get_read_alignments(read_id, fn_key=fn_key, outcome=outcome, read_type=read_type)
+
+    def get_read_diagram(self, qname, outcome=None, relevant=True, **kwargs):
+        if qname in self.no_overlap_qnames:
+            als = {which: self.get_read_alignments(qname, fn_key='combined_bam_by_name', outcome=outcome, read_type=f'{which}_no_overlap')
+                   for which in ['R1', 'R2']
+                  }
+
+            if relevant:
+                layout = self.layout_module.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
+                layout.categorize()
+                to_plot = layout.relevant_alignments
+            else:
+                to_plot = als
+
+            diagram = visualize.ReadDiagram(to_plot['R1'], self.target_info, R2_alignments=to_plot['R2'],
+                                            features_to_show=self.target_info.features_to_show,
+                                            **kwargs)
+
+        else:
+            diagram = super().get_read_diagram(qname, outcome=outcome, relevant=relevant, read_type='stitched', **kwargs)
+
+        return diagram
     
     @property
     def read_pairs(self):
-        read_pairs = fastq.read_pairs(self.fns['R1'], self.fns['R2'])
+        read_pairs = fastq.read_pairs(self.fns['R1'], self.fns['R2'], up_to_space=True)
 
         return self.progress(read_pairs)
 
     @memoized_property
-    def length_ranges(self):
-        nonzero, = np.nonzero(self.read_lengths)
+    def no_overlap_qnames(self):
+        fn = self.fns_by_read_type['fastq']['R1_no_overlap']
+        return {r.name for r in fastq.reads(fn, up_to_space=True)}
+
+    def length_ranges(self, outcome=None):
+        if outcome is None:
+            lengths = self.read_lengths
+        else:
+            lengths = self.outcome_stratified_lengths[outcome]
+
+        nonzero, = np.nonzero(lengths)
         ranges = [(i, i) for i in nonzero]
         return pd.DataFrame(ranges, columns=['start', 'end'])
+    
+    def load_outcome_counts(self):
+        stitched = super().load_outcome_counts(key='outcome_counts')
+        no_overlap = super().load_outcome_counts(key='no_overlap_outcome_counts')
+        combined = stitched.add(no_overlap, fill_value=0).astype(int)
 
-    def no_overlap_alignment_groups(self):
-        R1_groups = self.alignment_groups(fn_key='combined_bam_by_name', read_type='R1_no_overlap')
-        R2_groups = self.alignment_groups(fn_key='combined_bam_by_name', read_type='R2_no_overlap')
+        return combined
 
-        for (R1_name, R1_als), (R2_name, R2_als) in zip(R1_groups, R2_groups):
+    def no_overlap_alignment_groups(self, outcome=None):
+        R1_read_type = 'R1_no_overlap'
+        R2_read_type = 'R2_no_overlap'
+        
+        if outcome is not None:
+            R1_fn_key = 'R1_no_overlap_bam_by_name'
+            R2_fn_key = 'R2_no_overlap_bam_by_name'
+            
+        else:
+            R1_fn_key = 'combined_bam_by_name'
+            R2_fn_key = 'combined_bam_by_name'
+
+        R1_groups = self.alignment_groups(outcome=outcome, fn_key=R1_fn_key, read_type=R1_read_type)
+        R2_groups = self.alignment_groups(outcome=outcome, fn_key=R2_fn_key, read_type=R2_read_type)
+
+        for (R1_name, R1_als), (R2_name, R2_als) in self.progress(zip(R1_groups, R2_groups)):
             if R1_name != R2_name:
                 raise ValueError(R1_name, R2_name)
             else:
-                yield R1_name, R1_als, R2_als
+                yield R1_name, {'R1': R1_als, 'R2': R2_als}
+    
+    def categorize_no_overlap_outcomes(self):
+        outcomes = defaultdict(list)
+
+        with self.fns['no_overlap_outcome_list'].open('w') as fh:
+            for name, als in self.no_overlap_alignment_groups():
+                try:
+                    pair_layout = layout.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
+                    category, subcategory, details = pair_layout.categorize()
+                except:
+                    print(self.name, name)
+                    raise
+                
+                outcomes[category, subcategory].append(name)
+
+                outcome = coherence.Outcome(name, pair_layout.length, category, subcategory, details)
+                fh.write(f'{outcome}\n')
+
+        counts = {description: len(names) for description, names in outcomes.items()}
+        pd.Series(counts).to_csv(self.fns['no_overlap_outcome_counts'], sep='\t')
+
+        # To make plotting easier, for each outcome, make a file listing all of
+        # qnames for the outcome and a bam file (sorted by name) with all of the
+        # alignments for these qnames.
+
+        qname_to_outcome = {}
+        bam_fhs = {}
+
+        with ExitStack() as stack:
+            full_bam_fns = {which: self.fns_by_read_type['combined_bam_by_name'][f'{which}_no_overlap'] for which in ['R1', 'R2']}
+            full_bam_fhs = {which: stack.enter_context(pysam.AlignmentFile(full_bam_fns[which])) for which in ['R1', 'R2']}
+        
+            for outcome, qnames in outcomes.items():
+                outcome_fns = self.outcome_fns(outcome)
+                outcome_fns['dir'].mkdir(exist_ok=True)
+                for which in ['R1', 'R2']:
+                    bam_fn = outcome_fns[f'{which}_no_overlap_bam_by_name']
+                    bam_fhs[outcome, which] = stack.enter_context(pysam.AlignmentFile(bam_fn, 'wb', template=full_bam_fhs[which]))
+                
+                fh = stack.enter_context(outcome_fns['no_overlap_query_names'].open('w'))
+                for qname in qnames:
+                    qname_to_outcome[qname] = outcome
+                    fh.write(qname + '\n')
+            
+            for which in ['R1', 'R2']:
+                for al in full_bam_fhs[which]:
+                    outcome = qname_to_outcome[al.query_name]
+                    bam_fhs[outcome, which].write(al)
 
     def stitch_read_pairs(self):
         before_R1 = adapters.primers[self.sequencing_primers]['R1']
@@ -1090,7 +1420,7 @@ class IlluminaExperiment(Experiment):
              fns['R2_no_overlap'].open('w') as R2_fh:
 
             for R1, R2 in self.read_pairs:
-                stitched = sw.stitch_read_pair(R1, R2, before_R1, before_R2)
+                stitched = sw.stitch_read_pair(R1, R2, before_R1, before_R2, indel_penalty=-1000)
                 if len(stitched) == 2 * self.paired_end_read_length:
                     R1_fh.write(str(R1))
                     R2_fh.write(str(R2))
@@ -1111,44 +1441,56 @@ class IlluminaExperiment(Experiment):
 
         lengths = utilities.counts_to_array(lengths)
         np.savetxt(self.fns['lengths'], lengths, '%d')
+        
+    def alignment_groups(outcome=None):
+        stitched_groups = super().alignment_groups(outcome=outcome, read_type='stitched')
+        for als in stitched_groups:
+            yield als
+            
+        no_overlap_groups = self.no_overlap_alignment_groups(outcome=outcome)
+        for als in no_overlap_groups:
+            yield als
     
-    def generate_individual_length_figures(self, outcome=None, num_examples=2):
+    def generate_length_range_figures(self, outcome=None, num_examples=1):
+        def extract_length(als):
+            if isinstance(als, dict):
+                pair_layout = self.layout_module.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
+                pair_layout.categorize()
+                length = pair_layout.length
+            else:
+                length = als[0].query_length
+                
+            if length == -1:
+                converted = self.length_to_store_unknown
+            elif length > self.max_relevant_length:
+                converted = self.max_relevant_length
+            else:
+                converted = length
+            
+            return converted
+
         by_length = defaultdict(list)
 
-        al_groups = self.alignment_groups(outcome=outcome, read_type='stitched')
-        for name, group in al_groups:
-            length = group[0].query_length
-            by_length[length].append(group)
-
-        no_overlap_length = 2 * self.paired_end_read_length
-        #for name, R1_als, R2_als in self.no_overlap_alignment_groups():
-        #    by_length[no_overlap_length].append((R1_als, R2_als))
-
+        al_groups = self.alignment_groups(outcome=outcome)
+        for name, als in al_groups:
+            length = extract_length(als)
+            by_length[length].append(als)
+        
         if outcome is None:
             fig_dir = self.fns['length_range_figures']
         else:
             fig_dir = self.outcome_fns(outcome)['length_range_figures']
             
-        fig_dir.mkdir(exist_ok=True)
+        if fig_dir.is_dir():
+            shutil.rmtree(str(fig_dir))
+        fig_dir.mkdir()
 
         items = self.progress(by_length.items())
 
         for length, groups in items:
-            if length == no_overlap_length:
-                continue
-            im = self.groups_to_Image(groups, num_examples, pairs=(length == no_overlap_length))
+            im = self.groups_to_Image(groups, num_examples)
             fn = fig_dir / f'{length}_{length}.png'
             im.save(fn)
-
-    def generate_all_outcome_individual_length_figures(self):
-        outcomes = self.load_outcome_counts().index.values
-        for outcome in self.progress(outcomes):
-            self.generate_individual_length_figures(outcome=outcome)
-
-    def generate_figures(self):
-        fig = self.plot_outcome_stratified_lengths()
-        fig.savefig(self.fns['outcome_stratified_lengths_figure'], bbox_inches='tight')
-        plt.close(fig)
 
     def process(self, stage=0):
         #self.stitch_read_pairs()
@@ -1160,11 +1502,11 @@ class IlluminaExperiment(Experiment):
         #    self.generate_supplemental_alignments(read_type)
         #    self.combine_alignments(read_type)
 
-        self.categorize_outcomes(read_type='stitched')
-        #self.make_outcome_plots(num_examples=6)
-        #self.generate_individual_length_figures()
-        #self.generate_svg()
-        #self.make_text_visualizations()
+        #self.categorize_outcomes(read_type='stitched')
+        #self.categorize_no_overlap_outcomes()
+        self.make_outcome_plots(num_examples=1)
+        #self.generate_all_outcome_length_range_figures()
+        #self.generate_figures()
 
 def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
     if target is None:
@@ -1303,7 +1645,7 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
         print(als[0].query_name)
         print(als[0].get_forward_sequence())
 
-        l = exp.layout_module.Layout(als, exp.target_info)
+        l = exp.layout_module.Layout(als, exp.target_info, mode=exp.layout_mode)
         info = l.categorize()
         
         if widgets['relevant'].value:

@@ -113,6 +113,10 @@ div#notebook-container{
                 .find('th[rowspan]')
                 .removeClass("hover");
         });
+        // Make links to outcome browser htmls.
+        $(".row_heading.level1").html(function() {
+            return "<a href='" + $( this ).text() + "/outcome_browser.html' target='_blank'>" + $( this ).text() + "</a>"
+        });
     });
 </script>
 

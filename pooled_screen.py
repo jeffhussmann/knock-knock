@@ -48,6 +48,11 @@ class SingleGuideExperiment(experiment.Experiment):
 
         self.read_types = ['collapsed_R2', 'collapsed_uncommon_R2']
 
+        self.supplemental_index_names = [
+            'hg19',
+            'bosTau7',
+        ]
+
     @memoized_property
     def pool(self):
         return PooledScreen(self.base_dir, self.group)
@@ -427,6 +432,7 @@ class SingleGuideExperiment(experiment.Experiment):
         return df
 
     def make_diagram_notebook(self, category, subcategory):
+        # TODO: replace this with simple html a la experiment.outcome_diagrams_html
         qname_to_als = self.alignment_group_dictionary(category, subcategory)
         
         code_cell_contents = [
@@ -525,15 +531,15 @@ f'''\
         if stage == 0:
             self.collapse_UMI_reads()
         elif stage == 1:
-            if self.use_memoized_outcomes:
-                self.make_uncommon_sequence_fastq()
-                read_type = 'collapsed_uncommon_R2'
-            else:
-                read_type = 'collapsed_R2'
+            #if self.use_memoized_outcomes:
+            #    self.make_uncommon_sequence_fastq()
+            #    read_type = 'collapsed_uncommon_R2'
+            #else:
+            #    read_type = 'collapsed_R2'
 
-            self.generate_alignments(read_type)
-            self.generate_supplemental_alignments(read_type)
-            self.combine_alignments(read_type)
+            #self.generate_alignments(read_type)
+            #self.generate_supplemental_alignments(read_type)
+            #self.combine_alignments(read_type)
 
             self.categorize_outcomes()
             self.collapse_UMI_outcomes()
@@ -618,7 +624,10 @@ class PooledScreen():
         self.sgRNA = sample_sheet.get('sgRNA')
         self.donor = sample_sheet.get('donor')
         self.target_name = sample_sheet['target_info_prefix']
-        self.target_info = target_info.TargetInfo(self.base_dir, self.target_name, self.donor, self.sgRNA)
+        self.target_info = target_info.TargetInfo(self.base_dir, self.target_name,
+                                                  donor=self.donor,
+                                                  sgRNA=self.sgRNA,
+                                                )
 
         self.fns = {
             'guides': self.base_dir / 'guides' / 'guides.txt',
@@ -934,8 +943,8 @@ class PooledScreen():
             'ACG_____',
             'ACG_GTTT',
             'ACAAGTTT',
-            '___',
             'ACG',
+            '___',
         ]
 
         groups = {

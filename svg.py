@@ -192,14 +192,17 @@ def decorate_outcome_browser(exp):
         # TODO: this shouldn't be hard-coded
         fn = fns['length_range_figures'] / f'{start}_{end}.png'
 
-        if fn.exists():
+        if fn.exists() or not inline_images:
             if inline_images:
                 URI, width, height = table.fn_to_URI(fn)
             else:
                 relative_path = fn.relative_to(exp.fns['dir'])
                 URI = str(relative_path)
-                with PIL.Image.open(fn) as im:
-                    width, height = im.size
+                if fn.exists():
+                    with PIL.Image.open(fn) as im:
+                        width, height = im.size
+                else:
+                    width, height = 100, 100
 
             width = width * 0.75
             height = height * 0.75
