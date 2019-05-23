@@ -36,6 +36,21 @@ cap_to_color = {
     'IDDT': palette[2],
 }
 
+supplemental_indices = {
+    'hg19': {
+        'STAR': '/nvme/indices/refdata-cellranger-hg19-1.2.0/star',
+        'minimap2': '/nvme/indices/minimap2/hg19_HPC.mmi',
+    },
+    'bosTau7': {
+        'STAR': '/nvme/indices/bosTau7',
+        'minimap2': '/nvme/indices/minimap2/bosTau7_HPC.mmi',
+    },
+    'e_coli_K12_MG1655': {
+        'STAR': '/nvme/indices/e_coli_K12_MG1655',
+        'minimap2': '/nvme/indices/minimap2/e_coli_K12_MG1655.mmi',
+    }
+}
+
 def extract_color(description):
     if 'color' in description:
         color = description['color']
@@ -113,29 +128,33 @@ class Experiment(object):
         self.color = extract_color(self.description)
         self.max_qual = 93
         
-        self.supplemental_indices = {
-            'hg19': {
-                'STAR': '/nvme/indices/refdata-cellranger-hg19-1.2.0/star',
-                'minimap2': '/nvme/indices/minimap2/hg19_HPC.mmi',
-            },
-            'bosTau7': {
-                'STAR': '/nvme/indices/bosTau7',
-                'minimap2': '/nvme/indices/minimap2/bosTau7_HPC.mmi',
-            },
-        }
-        self.supplemental_headers = {name: sam.header_from_STAR_index(d['STAR']) for name, d in self.supplemental_indices.items()}
+        self.supplemental_index_names = [
+            'hg19',
+            'e_coli_K12_MG1655',
+        ]
         
-        self.target_info = target_info.TargetInfo(self.base_dir,
-                                                  self.target_name,
-                                                  donor=self.donor,
-                                                  sgRNA=self.sgRNA,
-                                                  primer_names=self.primer_names,
-                                                  supplmental_headers=self.supplemental_headers,
-                                                 )
-
     @memoized_property
     def dir(self):
         return self.base_dir / 'results' / self.group / self.name
+
+    @memoized_property
+    def supplemental_indices(self):
+        return {name: supplemental_indices[name] for name in self.supplemental_index_names}
+
+    @memoized_property
+    def supplemental_headers(self):
+       return {name: sam.header_from_STAR_index(d['STAR']) for name, d in self.supplemental_indices.items()}
+
+    @memoized_property
+    def target_info(self):
+        return target_info.TargetInfo(self.base_dir,
+                                      self.target_name,
+                                      donor=self.donor,
+                                      nonhomologous_donor=self.nonhomologous_donor,
+                                      sgRNA=self.sgRNA,
+                                      primer_names=self.primer_names,
+                                      supplmental_headers=self.supplemental_headers,
+                                     )
 
     @memoized_property
     def target_name(self):
