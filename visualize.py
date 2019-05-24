@@ -15,7 +15,7 @@ import matplotlib.ticker
 import ipywidgets
 import pandas as pd
 
-from sequencing import utilities, interval, sam, sw
+from hits import utilities, interval, sam, sw
 
 from . import experiment as experiment_module
 from . import target_info as target_info_module

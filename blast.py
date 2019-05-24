@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pysam
 
-from sequencing import sam, fasta, fastq
+from hits import sam, fasta, fastq
 
 def h_to_s(kind):
     if kind == sam.BAM_CHARD_CLIP:

@@ -6,8 +6,8 @@ import numpy as np
 import pandas as pd
 
 from . import experiment, collapse
-from sequencing import fastq
-from sequencing.utilities import group_by
+from hits import fastq
+from hits.utilities import group_by
 
 from .collapse_cython import hamming_distance_matrix, register_corrections
 

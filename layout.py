@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import pysam
 
-from sequencing import sam, interval, utilities, fastq, sw
+from hits import sam, interval, utilities, fastq, sw
 from .target_info import DegenerateDeletion, DegenerateInsertion
 
 memoized_property = utilities.memoized_property

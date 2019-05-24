@@ -15,8 +15,8 @@ import yaml
 import tqdm
 import pysam
 
-from sequencing import fastq, utilities, sw, sam
-from sequencing import annotation as annotation_module
+from hits import fastq, utilities, sw, sam
+from hits import annotation as annotation_module
 
 from .collapse_cython import hq_mismatches_from_seed, hq_hamming_distance, hamming_distance_matrix, register_corrections
 

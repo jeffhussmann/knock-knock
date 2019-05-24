@@ -16,8 +16,8 @@ import yaml
 import scipy.signal
 import ipywidgets
 
-from sequencing import sam, fastq, utilities, visualize_structure, sw, adapters, mapping_tools, interval
-from sequencing.utilities import memoized_property
+from hits import sam, fastq, utilities, visualize_structure, sw, adapters, mapping_tools, interval
+from hits.utilities import memoized_property
 
 from . import target_info, blast, layout, visualize, coherence, svg, table
 

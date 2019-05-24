@@ -9,7 +9,7 @@ import Bio.SeqUtils
 import numpy as np
 import mappy
 
-from sequencing import fasta, gff, utilities, mapping_tools, interval, sam, sw, genomes
+from hits import fasta, gff, utilities, mapping_tools, interval, sam, sw, genomes
 
 memoized_property = utilities.memoized_property
 
