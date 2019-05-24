@@ -8,7 +8,7 @@ import pandas as pd
 import pysam
 
 from sequencing import sam, interval, utilities, fastq, sw
-from knockin.target_info import DegenerateDeletion, DegenerateInsertion
+from .target_info import DegenerateDeletion, DegenerateInsertion
 
 memoized_property = utilities.memoized_property
 idx = pd.IndexSlice

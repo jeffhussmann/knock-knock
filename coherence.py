@@ -5,11 +5,11 @@ import yaml
 import numpy as np
 import pandas as pd
 
-from knockin import experiment, collapse
+from . import experiment, collapse
 from sequencing import fastq
 from sequencing.utilities import group_by
 
-from knockin.collapse_cython import hamming_distance_matrix, register_corrections
+from .collapse_cython import hamming_distance_matrix, register_corrections
 
 def Outcome_factory(columns, converters):
     field_index_to_converter = {}

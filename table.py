@@ -340,11 +340,11 @@ def generate_html(base_dir, fn, conditions=None, drop_outcomes=None, include_ima
     nb = nbf.new_notebook()
 
     cell_contents = f'''\
-import knockin.table
+import knock_knock.table
 
 conditions = {conditions}
 drop_outcomes = {drop_outcomes}
-knockin.table.make_table_transpose('{base_dir}', conditions, drop_outcomes, include_images={include_images})
+knock_knock.table.make_table_transpose('{base_dir}', conditions, drop_outcomes, include_images={include_images})
 '''
     
     nb['cells'] = [nbf.new_code_cell(cell_contents)]

@@ -18,7 +18,7 @@ import pysam
 from sequencing import fastq, utilities, sw, sam
 from sequencing import annotation as annotation_module
 
-from knockin.collapse_cython import hq_mismatches_from_seed, hq_hamming_distance, hamming_distance_matrix, register_corrections
+from .collapse_cython import hq_mismatches_from_seed, hq_hamming_distance, hamming_distance_matrix, register_corrections
 
 progress = tqdm.tqdm_notebook
 
