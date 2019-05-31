@@ -76,9 +76,14 @@ class Experiment(object):
         self.name = name
 
         if progress is None:
-            self.progress = utilities.identity
-        else:
-            self.progress = progress
+            def ignore_kwargs(x, **kwargs):
+                return x
+            progress = ignore_kwargs
+
+        def pass_along_kwargs(iterable, **kwargs):
+            return progress(iterable, **kwargs)
+
+        self.progress = pass_along_kwargs
 
         self.base_dir = Path(base_dir)
         self.dir.mkdir(exist_ok=True, parents=True)
@@ -278,7 +283,7 @@ class Experiment(object):
         else:
             grouped = []
 
-        return self.progress(grouped)
+        return grouped
 
     def call_peaks_in_length_distribution(self):
         if self.paired_end_read_length is not None:
@@ -450,7 +455,13 @@ class Experiment(object):
         outcomes = defaultdict(list)
 
         with self.fns['outcome_list'].open('w') as fh:
-            for name, als in self.alignment_groups(fn_key, read_type=read_type):
+            alignment_groups = self.alignment_groups(fn_key, read_type=read_type)
+            if read_type is None:
+                description = 'Categorizing reads'
+            else:
+                description = f'Categorizing {read_type} reads'
+
+            for name, als in self.progress(alignment_groups, desc=description):
                 try:
                     layout = self.layout_module.Layout(als, self.target_info, mode=self.layout_mode)
                     if self.target_info.donor is not None or self.target_info.nonhomologous_donor is not None:
@@ -718,7 +729,7 @@ class Experiment(object):
     def outcome_iter(self):
         fhs = [self.fns[key].open() for key in self.outcome_fn_keys]
         chained = chain.from_iterable(fhs)
-        for line in self.progress(chained):
+        for line in chained:
             outcome = coherence.Outcome.from_line(line)
             yield outcome
 
@@ -726,7 +737,9 @@ class Experiment(object):
     def outcome_stratified_lengths(self):
         outcome_lengths = defaultdict(Counter)
 
-        for outcome in self.outcome_iter():
+        outcomes = self.outcome_iter()
+        description = 'Counting outcome-specific lengths'
+        for outcome in self.progress(outcomes, desc=description):
             outcome_lengths[outcome.category, outcome.subcategory][outcome.length] += 1
 
         max_length = self.max_relevant_length
@@ -1042,17 +1055,15 @@ class Experiment(object):
 
     def generate_all_outcome_length_range_figures(self):
         outcomes = sorted(self.outcome_stratified_lengths)
-        for outcome in self.progress(outcomes):
-            #if outcome[0] != 'uncategorized':
-            #    continue
+        for outcome in self.progress(outcomes, desc='Generating outcome-specific length range diagrams'):
             self.generate_length_range_figures(outcome=outcome)
 
     def generate_figures(self):
-        self.generate_all_outcome_length_range_figures()
-        self.generate_all_diagrams_html()
+        #self.generate_all_outcome_length_range_figures()
+        self.generate_all_outcome_example_figures()
         svg.decorate_outcome_browser(self)
     
-    def generate_diagrams_html(self, outcome, num_examples):
+    def generate_outcome_example_figures(self, outcome, num_examples):
         category, subcategory = outcome
         al_groups = self.alignment_groups(outcome=outcome)
         diagrams = self.alignment_groups_to_diagrams(al_groups, num_examples=num_examples)
@@ -1096,24 +1107,20 @@ p {
             tag = fig_to_img_tag(fig)
             fh.write(f'{tag}\n<hr>\n')
                 
-            for i, diagram in enumerate(self.progress(diagrams)):
+            description = ': '.join(outcome)
+            for i, diagram in enumerate(self.progress(diagrams, desc=description)):
                 if i == 0:
                     diagram.fig.savefig(outcome_fns['first_example'], bbox_inches='tight')
+
                 fh.write(f'<p>{diagram.query_name}</p>\n')
                 tag = fig_to_img_tag(diagram.fig)
                 fh.write(f'{tag}\n')
     
-    def generate_all_diagrams_html(self, num_examples=25):
+    def generate_all_outcome_example_figures(self, num_examples=25):
         outcomes = sorted(self.outcome_stratified_lengths)
-        for outcome in self.progress(outcomes):
-            self.generate_diagrams_html(outcome=outcome, num_examples=num_examples)
+        for outcome in self.progress(outcomes, desc='Outcome categories'):
+            self.generate_outcome_example_figures(outcome=outcome, num_examples=num_examples)
             
-    def process(self, stage):
-        self.count_read_lengths()
-        self.generate_alignments()
-        self.categorize_outcomes()
-        #self.make_outcome_plots(num_examples=5)
-
     def explore(self, by_outcome=True, **kwargs):
         return explore(self.base_dir, by_outcome=by_outcome, target=self.target_name, experiment=(self.group, self.name), **kwargs)
 
@@ -1229,7 +1236,12 @@ class PacbioExperiment(Experiment):
             shutil.rmtree(str(fig_dir))
         fig_dir.mkdir()
 
-        items = self.progress(by_length_range.items())
+        if outcome is not None:
+            description = ': '.join(outcome)
+        else:
+            description = 'Generating length-specific diagrams'
+
+        items = self.progress(by_length_range.items(), desc=description)
 
         for (start, end), groups in items:
             diagrams = self.alignment_groups_to_diagrams(groups, num_examples=num_examples)
