@@ -127,10 +127,15 @@ class Experiment(object):
             'length_ranges': self.dir / 'length_ranges.csv',
             'manual_length_ranges': self.dir / 'manual_length_ranges.csv',
 
-            'length_range_figures': self.dir / 'length_ranges',
+            'length_ranges_dir': self.dir / 'length_ranges',
             'lengths_svg': self.dir / (self.name + '_by_length.html'),
             'outcome_browser': self.dir / 'outcome_browser.html',
         }
+
+        def make_length_range_fig_fn(start, end):
+            return self.fns['length_ranges_dir'] / f'{start}_{end}.png'
+
+        self.fns['length_range_figure'] = make_length_range_fig_fn
         
         self.color = extract_color(self.description)
         self.max_qual = 93
@@ -223,9 +228,24 @@ class Experiment(object):
             'diagrams_html': outcome_dir / 'diagrams.html',
             'lengths_figure': outcome_dir / 'lengths.png',
             'text_alignments': outcome_dir / 'alignments.txt',
-            'length_range_figures': outcome_dir / 'length_ranges',
+            'length_ranges_dir': outcome_dir / 'length_ranges',
             'lengths_svg': outcome_dir / 'by_length.html',
         }
+
+        fns['bam_by_name'] = {
+            None: outcome_dir / 'alignments.by_name.bam',
+        }
+        for read_type in self.read_types:
+            if read_type is None:
+                pass
+            else:
+                fns['bam_by_name'][read_type] = outcome_dir / f'{read_type}.by_name.bam'
+
+        def make_length_range_fig_fn(start, end):
+            return fns['length_ranges_dir'] / f'{start}_{end}.png'
+
+        fns['length_range_figure'] = make_length_range_fig_fn
+
         return fns
 
     @property
@@ -499,7 +519,8 @@ class Experiment(object):
             for outcome, qnames in outcomes.items():
                 outcome_fns = self.outcome_fns(outcome)
                 outcome_fns['dir'].mkdir()
-                bam_fhs[outcome] = pysam.AlignmentFile(outcome_fns['bam_by_name'], 'wb', template=full_bam_fh)
+                bam_fn = outcome_fns['bam_by_name'][read_type]
+                bam_fhs[outcome] = pysam.AlignmentFile(bam_fn, 'wb', template=full_bam_fh)
                 
                 with outcome_fns['query_names'].open('w') as fh:
                     for qname in qnames:

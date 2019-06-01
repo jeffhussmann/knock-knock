@@ -189,8 +189,7 @@ def decorate_outcome_browser(exp):
             outcome = layout.escaped_string_to_outcome(outcome_escaped)
             fns = exp.outcome_fns(outcome)
 
-        # TODO: this shouldn't be hard-coded
-        fn = fns['length_range_figures'] / f'{start}_{end}.png'
+        fn = fns['length_range_figure'](start, end)
 
         if fn.exists() or not inline_images:
             if inline_images:
