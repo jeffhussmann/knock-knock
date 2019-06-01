@@ -9,7 +9,7 @@ import yaml
 import pandas as pd
 import tqdm
 
-from knockin import experiment, table, pooled_screen
+from knock_knock import experiment, table
 
 def check_blastn():
     no_blastn = False
@@ -39,181 +39,85 @@ def check_parallel():
         print('GNU parallel is required and couldn\'t be found')
         sys.exit(0)
 
-def parallel_pool_common_sequences(base_dir, group_name, max_procs):
-    pool = pooled_screen.PooledScreen(base_dir, group_name)
-    
-    parallel_command = [
-        'parallel',
-        '-n', '2', 
-        '--bar',
-        '--max-procs', max_procs,
-        'process_knockin_experiment',
-        '--base_dir', args.base_dir,
-        '--no_progress',
-        '--process_common_sequences', ':::',
-    ]
-
-    arg_pairs = [(group_name, chunk_name) for chunk_name in pool.common_sequence_chunk_names]
-    for pair in sorted(arg_pairs):
-        parallel_command.extend(pair)
-    
-    subprocess.check_call(parallel_command)
-
-parser = argparse.ArgumentParser()
-
-parser.add_argument('--base_dir', required=True)
-parser.add_argument('--no_progress', action='store_true')
-
-mode_group = parser.add_mutually_exclusive_group(required=True)
-mode_group.add_argument('--process', nargs=3, metavar=('GROUP_NAME', 'EXP_NAME', 'STAGE'))
-mode_group.add_argument('--parallel_pool_common_sequences', nargs=2, metavar=('GROUP_NAME', 'MAX_PROCS'))
-mode_group.add_argument('--process_common_sequences', nargs=2, metavar=('GROUP_NAME', 'CHUNK_NAME'))
-mode_group.add_argument('--parallel', metavar='MAX_PROCS')
-mode_group.add_argument('--parallel_pool', nargs=2, metavar=('GROUP_NAME', 'MAX_PROCS'))
-mode_group.add_argument('--html', metavar='FILE_NAME')
-mode_group.add_argument('--csv', metavar='FILE_NAME')
-
-parser.add_argument('--conditions')
-parser.add_argument('--drop_outcomes')
-parser.add_argument('--include_images', action='store_true')
-
-args = parser.parse_args()
-
-if args.no_progress:
-    progress = None
-else:
-    progress = tqdm.tqdm
-        
-base_dir = Path(args.base_dir)
-
-if args.conditions is None:
-    conditions = {}
-else:
-    conditions = yaml.load(args.conditions)
-
-if args.drop_outcomes is None:
-    drop_outcomes = []
-else:
-    drop_outcomes = yaml.load(args.drop_outcomes)
-
-if args.parallel is not None:
+def parallel(args):
     check_parallel()
 
-    max_procs = args.parallel
-
-    exps = experiment.get_all_experiments(base_dir, conditions)
+    exps = experiment.get_all_experiments(args.base_dir, args.conditions)
 
     if len(exps) == 0:
         print('No experiments satify conditions:')
-        print(conditions)
+        print(args.conditions)
         sys.exit(0)
 
     parallel_command = [
         'parallel',
         '-n', '3', 
         '--bar',
-        '--max-procs', max_procs,
-        'process_knockin_experiment',
-        '--base_dir', str(base_dir),
-        '--no_progress',
-        '--process', ':::',
+        '--max-procs', str(args.max_procs),
+        'knock_knock',
+        '--base_dir', str(args.base_dir),
+        'process', ':::',
     ]
 
-    arg_tuples = [(e.group, e.name, '0') for e in exps]
+    arg_tuples = [(exp.group, exp.name, '0') for exp in exps]
     for t in sorted(arg_tuples):
         parallel_command.extend(t)
     
     subprocess.check_call(parallel_command)
 
-elif args.parallel_pool is not None:
-    check_parallel()
-
-    group_name, max_procs = args.parallel_pool
-
-    pool = pooled_screen.PooledScreen(base_dir, group_name, progress=tqdm.tqdm)
-
-    # Create parent results dir to avoid race condition
-    results_dir = base_dir / 'results' / group_name
-    results_dir.mkdir(exist_ok=True)
-
-    def process_stage(stage):
-        parallel_command = [
-            'parallel',
-            '-n', '3', 
-            '--bar',
-            '--max-procs', max_procs,
-            'process_knockin_experiment',
-            '--base_dir', args.base_dir,
-            '--no_progress',
-            '--process', ':::',
-        ]
-
-        guides = pool.guides
-
-        arg_tuples = [(group_name, guide, str(stage)) for guide in guides]
-        for t in sorted(arg_tuples):
-            parallel_command.extend(t)
-        
-        subprocess.check_call(parallel_command)
-
-    process_stage(0)
-
-    pool.make_common_sequences()
-    parallel_pool_common_sequences(base_dir, group_name, max_procs)
-    pool.write_common_outcome_files()
-    pool.merge_common_sequence_special_alignments()
-
-    process_stage(1)
-
-    pool.make_outcome_counts()
-    pool.merge_special_alignments()
-
-elif args.parallel_pool_common_sequences is not None:
-    group_name, max_procs = args.parallel_pool_common_sequences
-    parallel_pool_common_sequences(base_dir, group_name, max_procs)
-
-elif args.process_common_sequences is not None:
-    group, chunk_name = args.process_common_sequences
-
-    exp = pooled_screen.CommonSequenceExperiment(base_dir, group, chunk_name, progress=progress)
-    exp.process()
-
-elif args.process is not None:
+def process(args):
     check_blastn()
 
-    group, name, stage = args.process
-    stage = int(stage)
-
-    data_dir = Path(args.base_dir) / 'data' / group
+    data_dir = Path(args.base_dir) / 'data' / args.group
     sample_sheet_fn = data_dir / 'sample_sheet.yaml'
     sample_sheet = yaml.load(sample_sheet_fn.read_text())
 
-    if name in sample_sheet:
-        description = sample_sheet[name]
+    if args.experiment in sample_sheet:
+        description = sample_sheet[args.experiment]
 
         if description.get('experiment_type') == 'pacbio':
             exp_class = experiment.PacbioExperiment
         elif description.get('experiment_type') == 'illumina':
             exp_class = experiment.IlluminaExperiment
-        elif description.get('experiment_type') == 'britt_illumina':
-            exp_class = experiment.BrittIlluminaExperiment
         else:
-            exp_class = experiment.Experiment
+            raise ValueError(description)
     else:
-        description = sample_sheet
-        exp_class = pooled_screen.SingleGuideExperiment
+        raise ValueError(args.experiment)
 
-    exp = exp_class(args.base_dir, group, name, description, progress)
+    exp = exp_class(args.base_dir, args.group, args.experiment, description, args.progress)
 
-    exp.process(stage)
+    exp.process(args.stage)
 
-elif args.html:
-    #drop_outcomes = ['malformed layout']
+def make_tables(args):
     drop_outcomes = None
-    table.generate_html(args.base_dir, args.html, conditions, drop_outcomes, args.include_images)
+    html_fn = Path(args.file_name).with_suffix('.html')
+    table.generate_html(args.base_dir, html_fn, args.conditions, drop_outcomes, args.show_subcategories)
 
-elif args.csv:
-    #drop_outcomes = ['malformed layout', ('indel', 'complex indel')]
-    drop_outcomes = None
-    df = table.load_counts(args.base_dir, conditions, drop_outcomes)
-    df.to_csv(args.csv)
+    csv_fn = Path(args.file_name).with_suffix('.csv')
+    df = table.load_counts(args.base_dir, args.conditions, drop_outcomes)
+    df.to_csv(csv_fn)
+
+parser = argparse.ArgumentParser()
+subparsers = parser.add_subparsers(dest='subparser_name')
+
+parser_process = subparsers.add_parser('process')
+parser_process.add_argument('group')
+parser_process.add_argument('experiment')
+parser_process.add_argument('stage', type=int, choices=[0, 1])
+parser_process.add_argument('--progress', const=tqdm.tqdm, action='store_const')
+parser_process.set_defaults(func=process)
+
+parser_parallel = subparsers.add_parser('parallel')
+parser_parallel.add_argument('max_procs', type=int)
+parser_parallel.add_argument('--conditions', type=yaml.load, default={})
+parser_parallel.set_defaults(func=parallel)
+
+parser_table = subparsers.add_parser('table')
+parser_table.add_argument('file_name')
+parser_table.add_argument('--show_subcategories', action='store_true')
+parser_table.add_argument('--conditions', type=yaml.load, default={})
+parser_table.set_defaults(func=make_tables)
+
+parser.add_argument('--base_dir', type=Path, required=True)
+args = parser.parse_args()
+args.func(args)
