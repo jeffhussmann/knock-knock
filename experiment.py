@@ -19,7 +19,7 @@ import ipywidgets
 from hits import sam, fastq, utilities, visualize_structure, sw, adapters, mapping_tools, interval
 from hits.utilities import memoized_property
 
-from . import target_info, blast, layout, visualize, coherence, svg, table
+from . import target_info, blast, layout, visualize, read_outcome, svg, table
 
 group_by = utilities.group_by
 
@@ -499,7 +499,7 @@ class Experiment(object):
                 else:
                     length = len(layout.seq)
 
-                outcome = coherence.Outcome(name, length, category, subcategory, details)
+                outcome = read_outcome.Outcome(name, length, category, subcategory, details)
                 fh.write(f'{outcome}\n')
 
         counts = {description: len(names) for description, names in outcomes.items()}
@@ -751,7 +751,7 @@ class Experiment(object):
         fhs = [self.fns[key].open() for key in self.outcome_fn_keys]
         chained = chain.from_iterable(fhs)
         for line in chained:
-            outcome = coherence.Outcome.from_line(line)
+            outcome = read_outcome.Outcome.from_line(line)
             yield outcome
 
     @memoized_property

@@ -1,13 +1,33 @@
-from distutils.core import setup
-from distutils.extension import Extension
-from Cython.Distutils import build_ext
-
-ext_modules = [
-    Extension('collapse_cython', ['collapse_cython.pyx']),
-]
+from setuptools import setup
 
 setup(
-  name = 'cython stuff',
-  cmdclass = {'build_ext': build_ext},
-  ext_modules = ext_modules
+    name='knock_knock',
+    version='0.1',
+    
+    packages=[
+        'knockin',
+    ],
+
+    package_data={
+        'knockin': ['modal_template.tpl'],
+    },
+
+    scripts=[
+        'knock_knock/knock_knock',
+    ],
+
+    install_requires=[
+        'bokeh>=0.12.14',
+        'biopython>=1.70',
+        'ipywidgets>=7.1.2',
+        'matplotlib>=2.1.2',
+        'nbconvert>=5.3.1',
+        'nbformat>=4.4.0',
+        'numpy>=1.14.2',
+        'pandas>=0.22.0',
+        'Pillow>=5.0.0',
+        'pysam>=0.14',
+        'PyYAML>=3.12',
+        'hits>=0.0.1',
+    ],
 )
