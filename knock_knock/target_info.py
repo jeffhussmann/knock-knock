@@ -39,7 +39,7 @@ class TargetInfo():
         self.dir = Path(base_dir) / 'targets' / name
 
         manifest_fn = self.dir / 'manifest.yaml'
-        manifest = yaml.load(manifest_fn.open())
+        manifest = yaml.safe_load(manifest_fn.open())
         self.target = manifest['target']
         self.sources = manifest['sources']
 

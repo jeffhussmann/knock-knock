@@ -92,7 +92,7 @@ class Experiment(object):
 
         if description is None:
             sample_sheet_fn = self.data_dir / 'sample_sheet.yaml'
-            self.sample_sheet = yaml.load(sample_sheet_fn.read_text())
+            self.sample_sheet = yaml.safe_load(sample_sheet_fn.read_text())
             if name in self.sample_sheet:
                 self.description = self.sample_sheet[name]
             else:
@@ -503,7 +503,7 @@ class Experiment(object):
                 fh.write(f'{outcome}\n')
 
         counts = {description: len(names) for description, names in outcomes.items()}
-        pd.Series(counts).to_csv(self.fns['outcome_counts'], sep='\t')
+        pd.Series(counts).to_csv(self.fns['outcome_counts'], sep='\t', header=False)
 
         # To make plotting easier, for each outcome, make a file listing all of
         # qnames for the outcome and a bam file (sorted by name) with all of the
@@ -1412,7 +1412,7 @@ class IlluminaExperiment(Experiment):
                 fh.write(f'{outcome}\n')
 
         counts = {description: len(names) for description, names in outcomes.items()}
-        pd.Series(counts).to_csv(self.fns['no_overlap_outcome_counts'], sep='\t')
+        pd.Series(counts).to_csv(self.fns['no_overlap_outcome_counts'], sep='\t', header=False)
 
         # To make plotting easier, for each outcome, make a file listing all of
         # qnames for the outcome and a bam file (sorted by name) with all of the
@@ -1742,7 +1742,7 @@ def get_all_experiments(base_dir, conditions=None):
     
     for group in groups:
         sample_sheet_fn = data_dir / group / 'sample_sheet.yaml'
-        sample_sheet = yaml.load(sample_sheet_fn.read_text())
+        sample_sheet = yaml.safe_load(sample_sheet_fn.read_text())
 
         for name, description in sample_sheet.items():
             if description.get('experiment_type') == 'illumina':
