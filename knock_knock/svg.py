@@ -181,12 +181,12 @@ def decorate_outcome_browser(exp):
         
         match = re.match('length_range_(?P<outcome>.+)_(?P<start>\d+)_(?P<end>\d+)', group.attrib['id'])
         
-        outcome_escaped, start, end = match.groups()
+        sanitized_outcome, start, end = match.groups()
 
-        if outcome_escaped == 'all':
+        if sanitized_outcome == 'all':
             fns = exp.fns
         else:
-            outcome = layout.escaped_string_to_outcome(outcome_escaped)
+            outcome = layout.sanitized_string_to_outcome(sanitized_outcome)
             fns = exp.outcome_fns(outcome)
 
         fn = fns['length_range_figure'](start, end)

@@ -208,8 +208,8 @@ class Experiment(object):
 
     def outcome_fns(self, outcome):
         # To allow outcomes to have arbitrary names without causing file path problems,
-        # escape the names.
-        outcome_string = self.layout_module.outcome_to_escaped_string(outcome)
+        # sanitize the names.
+        outcome_string = self.layout_module.outcome_to_sanitized_string(outcome)
         outcome_dir = self.fns['outcomes_dir'] / outcome_string
         fns = {
             'dir': outcome_dir,
@@ -863,10 +863,10 @@ class Experiment(object):
                 lengths = outcome_lengths[outcome]
                 ys = lengths / self.total_reads
 
-                escaped_string = layout.outcome_to_escaped_string(outcome)
+                sanitized_string = layout.outcome_to_sanitized_string(outcome)
 
                 if outcome in group:
-                    gid = f'line_highlighted_{escaped_string}_{panel_i}'
+                    gid = f'line_highlighted_{sanitized_string}_{panel_i}'
                     color = self.outcome_to_color[outcome]
                     alpha = 1
                 else:
@@ -874,13 +874,13 @@ class Experiment(object):
                     # At higher zoom levels, fade the grey lines more to avoid clutter.
                     if panel_i == 0:
                         alpha = 0.6
-                        gid = f'line_nonhighlighted_6_{escaped_string}_{panel_i}'
+                        gid = f'line_nonhighlighted_6_{sanitized_string}_{panel_i}'
                     elif panel_i == 1:
                         alpha = 0.3
-                        gid = f'line_nonhighlighted_3_{escaped_string}_{panel_i}'
+                        gid = f'line_nonhighlighted_3_{sanitized_string}_{panel_i}'
                     else:
                         alpha = 0.05
-                        gid = f'line_nonhighlighted_05_{escaped_string}_{panel_i}'
+                        gid = f'line_nonhighlighted_05_{sanitized_string}_{panel_i}'
 
                 category, subcategory = outcome
 
@@ -897,7 +897,7 @@ class Experiment(object):
                     length_ranges = self.length_ranges(outcome)
                     for _, row in length_ranges.iterrows():
                         ax.axvspan(row.start - 0.5, row.end + 0.5,
-                                   gid=f'length_range_{escaped_string}_{row.start}_{row.end}',
+                                   gid=f'length_range_{sanitized_string}_{row.start}_{row.end}',
                                    alpha=0.0,
                                    facecolor='white',
                                    edgecolor='black',

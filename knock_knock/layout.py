@@ -1719,26 +1719,43 @@ categories = [c for c, scs in category_order]
 subcategories = dict(category_order)
 
 def order(outcome):
-    category, subcategory = outcome
+    if isinstance(outcome, tuple):
+        category, subcategory = outcome
 
-    try:
-        return (categories.index(category),
-                subcategories[category].index(subcategory),
-               )
-    except:
-        print(category, subcategory)
-        raise
+        try:
+            return (categories.index(category),
+                    subcategories[category].index(subcategory),
+                )
+        except:
+            print(category, subcategory)
+            raise
+    else:
+        category = outcome
+        try:
+            return categories.index(category)
+        except:
+            print(category)
+            raise
 
-def outcome_to_escaped_string(outcome):
-    c, s = order(outcome)
-    return f'category{c:03d}_subcategory{s:03d}'
+def outcome_to_sanitized_string(outcome):
+    if isinstance(outcome, tuple):
+        c, s = order(outcome)
+        return f'category{c:03d}_subcategory{s:03d}'
+    else:
+        c = order(outcome)
+        return f'category{c:03d}'
 
-def escaped_string_to_outcome(escaped_string):
-    match = re.match('category(\d+)_subcategory(\d+)', escaped_string)
-    if not match:
-        raise ValueError(escaped_string)
-
-    c, s = map(int, match.groups())
-    category, subcats = category_order[c]
-    subcategory = subcats[s]
-    return category, subcategory
+def sanitized_string_to_outcome(sanitized_string):
+    match = re.match('category(\d+)_subcategory(\d+)', sanitized_string)
+    if match:
+        c, s = map(int, match.groups())
+        category, subcats = category_order[c]
+        subcategory = subcats[s]
+        return category, subcategory
+    else:
+        match = re.match('category(\d+)', sanitized_string)
+        if not match:
+            raise ValueError(sanitized_string)
+        c = int(match.group(1))
+        category, subcats = category_order[c]
+        return category
