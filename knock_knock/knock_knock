@@ -9,7 +9,7 @@ import yaml
 import pandas as pd
 import tqdm
 
-from knock_knock import experiment, table
+from knock_knock import experiment, table, target_info
 
 def check_blastn():
     no_blastn = False
@@ -97,6 +97,9 @@ def make_tables(args):
     df = table.load_counts(args.base_dir, args.conditions, drop_outcomes)
     df.to_csv(csv_fn)
 
+def build_targets(args):
+    target_info.build_target_infos_from_csv(args.base_dir)
+
 parser = argparse.ArgumentParser()
 subparsers = parser.add_subparsers()
 
@@ -117,6 +120,9 @@ parser_table.add_argument('file_name')
 parser_table.add_argument('--show_subcategories', action='store_true')
 parser_table.add_argument('--conditions', type=yaml.safe_load, default={})
 parser_table.set_defaults(func=make_tables)
+
+parser_targets = subparsers.add_parser('build_targets')
+parser_targets.set_defaults(func=build_targets)
 
 parser.add_argument('--base_dir', type=Path, required=True)
 args = parser.parse_args()

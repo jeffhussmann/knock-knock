@@ -1,4 +1,5 @@
 import array
+import warnings
 from pathlib import Path
 from collections import defaultdict
 
@@ -7,9 +8,15 @@ import pysam
 import Bio.SeqIO
 import Bio.SeqUtils
 import numpy as np
-import mappy
+import pandas as pd
 
-from hits import fasta, gff, utilities, mapping_tools, interval, sam, sw, genomes
+from Bio import BiopythonWarning
+from Bio.SeqFeature import SeqFeature, FeatureLocation
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
+from Bio.Alphabet import generic_dna
+
+from hits import fasta, fastq, gff, utilities, mapping_tools, interval, sam, sw, genomes
 
 memoized_property = utilities.memoized_property
 
@@ -997,3 +1004,295 @@ def get_all_targets(base_dir):
     names = (p.name for p in targets_dir.glob('*') if p.is_dir())
     targets = [TargetInfo(base_dir, n) for n in names]
     return targets
+
+def build_target_info(info, target_dir):
+    target_dir = Path(target_dir)
+    
+    name = info['name']
+    donor_name = f'{name}_donor'
+    
+    protospacer = info['sgRNA_sequence'].upper()
+    amplicon_primers = info['amplicon_primers'].split(';')
+    donor_seq = info['donor_sequence'].upper()
+    
+    protospacer_dir = target_dir / 'protospacer_alignment'
+    protospacer_dir.mkdir(exist_ok=True)
+    fastq_fn = protospacer_dir / 'protospacer.fastq'
+    STAR_prefix = protospacer_dir / 'protospacer_'
+    bam_fn = protospacer_dir / 'protospacer.bam'
+
+    index_location = '/nvme/indices/refdata-cellranger-hg19-1.2.0/star'
+
+    target_gb_fn = target_dir / f'{name}.gb'
+    donor_gb_fn = target_dir / f'{donor_name}.gb'
+
+    # Make a fastq file with a single read containing the protospacer sequence.
+    
+    with fastq_fn.open('w') as fh:
+        quals = fastq.encode_sanger([40]*len(protospacer))
+        read = fastq.Read('protospacer', protospacer, quals)
+        fh.write(str(read))
+        
+    # Align the protospacer to the reference genome.
+    mapping_tools.map_STAR(fastq_fn, index_location, STAR_prefix, mode='guide_alignment', bam_fn=bam_fn)
+
+    with pysam.AlignmentFile(bam_fn) as bam_fh:
+        perfect_als = [al for al in bam_fh if not al.is_unmapped and sam.total_edit_distance(al) == 0]
+    
+    region_fetcher = genomes.build_region_fetcher('/nvme/indices/refdata-cellranger-hg19-1.2.0/fasta')
+    
+    def generate_records(al):
+        full_window_around = 5000
+
+        full_around = region_fetcher(al.reference_name, al.reference_start - full_window_around, al.reference_end + full_window_around).upper()
+
+        if sam.get_strand(al) == '+':
+            ps_seq = protospacer
+            ps_strand = 1
+            PAM_offset = len(protospacer)
+            PAM_transform = utilities.identity
+        else:
+            ps_seq = utilities.reverse_complement(protospacer)
+            ps_strand = -1
+            PAM_offset = -3
+            PAM_transform = utilities.reverse_complement
+
+        ps_start = full_around.index(ps_seq)
+        
+        PAM = PAM_transform(full_around[ps_start + PAM_offset:ps_start + PAM_offset + 3])
+        pattern, *matches = Bio.SeqUtils.nt_search(PAM, 'NGG')
+        if 0 not in matches:
+            print('bad PAM')
+            return None
+        
+        if amplicon_primers[0] in full_around:
+            final_fwd_primer = amplicon_primers[0]
+            final_rev_primer = utilities.reverse_complement(amplicon_primers[1])
+            if final_rev_primer not in full_around:
+                return None
+        else:
+            final_fwd_primer = amplicon_primers[1]
+            final_rev_primer = utilities.reverse_complement(amplicon_primers[0])
+
+            if final_fwd_primer not in full_around or final_rev_primer not in full_around:
+                return None
+
+        fwd_start = full_around.index(final_fwd_primer)
+        rev_start = full_around.index(final_rev_primer)
+        
+        if fwd_start >= rev_start:
+            # Non-physical.
+            return None
+        
+        final_window_around = 500    
+
+        offset = fwd_start - final_window_around
+
+        final_start = fwd_start - final_window_around
+        final_end = rev_start + len(final_rev_primer) + final_window_around
+
+        target_seq = full_around[final_start:final_end]
+
+        # Identify the homology arms.
+
+        donor_prefix = donor_seq[:20]
+        
+        if donor_prefix in target_seq:
+            possibly_flipped_donor_seq = donor_seq
+        elif utilities.reverse_complement(donor_prefix) in target_seq:
+            possibly_flipped_donor_seq = utilities.reverse_complement(donor_seq)
+            donor_prefix = possibly_flipped_donor_seq[:20]
+        else:
+            print('no donor prefix')
+            return None
+
+        donor_suffix = possibly_flipped_donor_seq[-20:]
+
+        try:
+            donor_start = target_seq.index(donor_prefix)
+            donor_end = target_seq.index(donor_suffix) + len(donor_suffix)
+        except ValueError:
+            print('no donor suffix')
+            return None
+
+        relevant_target_seq = target_seq[donor_start:donor_end]
+
+        total_HA_length = donor_end - donor_start
+
+        mismatches_before_deletion = np.cumsum([t != d for t, d in zip(relevant_target_seq, possibly_flipped_donor_seq)])
+
+        flipped_target = relevant_target_seq[::-1]
+        flipped_donor = possibly_flipped_donor_seq[::-1]
+        mismatches_after_deletion = np.cumsum([0] + [t != d for t, d in zip(flipped_target, flipped_donor)][:-1])[::-1]
+
+        total_mismatches = mismatches_before_deletion + mismatches_after_deletion
+
+        last_index_in_HA_1 = int(np.argmin(total_mismatches))
+
+        lengths = {}
+        lengths['HA_1'] = last_index_in_HA_1 + 1
+        lengths['HA_2'] = total_HA_length - lengths['HA_1']
+        lengths['donor_specific'] = len(donor_seq) - total_HA_length
+        
+        # Support for donors that have fixed sequences outside of their homology arms added by PCR.
+        if info.get('donor_primers', '') != '':
+            donor_primers = info['donor_primers'].split(';')
+            
+            suffix_nts = 15
+
+            forward_suffix = donor_primers[0][-suffix_nts:]
+            
+            if forward_suffix in possibly_flipped_donor_seq:
+                donor_fwd = donor_primers[0]
+                donor_rev = utilities.reverse_complement(donor_primers[1])
+
+            else:
+                forward_suffix = donor_primers[1][-suffix_nts:]
+
+                if forward_suffix in possibly_flipped_donor_seq:
+                    donor_fwd = donor_primers[1]
+                    donor_rev = utilities.reverse_complement(donor_primers[0])
+
+                else:
+                    print('no fwd suffix')
+                    return None
+
+            forward_suffix_start = possibly_flipped_donor_seq.index(forward_suffix)
+            extra_nts_at_start = len(donor_fwd[:-suffix_nts]) - forward_suffix_start
+
+            reverse_suffix = donor_rev[:suffix_nts]
+
+            try:
+                reverse_suffix_start = possibly_flipped_donor_seq.index(reverse_suffix)
+            except ValueError:
+                print('no rev suffix')
+                return None
+
+            possibly_flipped_donor_seq = donor_fwd[:-suffix_nts] + possibly_flipped_donor_seq[forward_suffix_start:reverse_suffix_start] + donor_rev
+        else:
+            extra_nts_at_start = 0
+        
+        starts = {
+            'HA_1': extra_nts_at_start + 0,
+            'donor_specific': extra_nts_at_start + lengths['HA_1'],
+            'HA_2': extra_nts_at_start + len(donor_seq) - lengths['HA_2'], # note: donor_seq is still original
+        }
+        
+        colors = {
+            'HA_1': '#c7b0e3',
+            'HA_2': '#85dae9',
+            'forward_primer': '#ff9ccd',
+            'reverse_primer': '#9eafd2',
+            'sgRNA': '#c6c9d1',
+            'donor_specific': '#b1ff67',
+        }
+        
+        donor_features = [
+            SeqFeature(location=FeatureLocation(starts['HA_1'], starts['HA_1'] + lengths['HA_1'], strand=1),
+                       id='HA_1',
+                       type='misc_feature',
+                       qualifiers={'label': 'HA_1',
+                                   'ApEinfo_fwdcolor': colors['HA_1'],
+                                  },
+                      ),
+            SeqFeature(location=FeatureLocation(starts['donor_specific'], starts['donor_specific'] + lengths['donor_specific'], strand=1),
+                       id='donor_specific',
+                       type='misc_feature',
+                       qualifiers={'label': 'donor_specific',
+                                   'ApEinfo_fwdcolor': colors['donor_specific'],
+                                  },
+                      ),
+            SeqFeature(location=FeatureLocation(starts['HA_2'], starts['HA_2'] + lengths['HA_2'], strand=1),
+                       id='HA_2',
+                       type='misc_feature',
+                       qualifiers={'label': 'HA_2',
+                                   'ApEinfo_fwdcolor': colors['HA_2'],
+                                  },
+                      ),
+        ]
+
+        donor_record = Bio.SeqRecord.SeqRecord(Seq(possibly_flipped_donor_seq, generic_dna), id=donor_name, name=donor_name, features=donor_features)
+
+        target_features = [
+            SeqFeature(location=FeatureLocation(fwd_start - offset, fwd_start - offset + len(final_fwd_primer), strand=1),
+                       id='forward_primer',
+                       type='misc_feature',
+                       qualifiers={'label': 'forward_primer',
+                                   'ApEinfo_fwdcolor': colors['forward_primer'],
+                                  },
+                      ),
+            SeqFeature(location=FeatureLocation(rev_start - offset, rev_start - offset + len(final_rev_primer), strand=-1),
+                       id='reverse_primer',
+                       type='misc_feature',
+                       qualifiers={'label': 'reverse_primer',
+                                   'ApEinfo_fwdcolor': colors['reverse_primer'],
+                                  },
+                      ),
+            SeqFeature(location=FeatureLocation(ps_start - offset, ps_start - offset + len(protospacer), strand=ps_strand),
+                       id='sgRNA',
+                       type='sgRNA_SpCas9',
+                       qualifiers={'label': 'sgRNA',
+                                   'ApEinfo_fwdcolor': colors['sgRNA'],
+                                  },
+                      ),
+            SeqFeature(location=FeatureLocation(donor_start, donor_start + lengths['HA_1'], strand=1),
+                       id='HA_1',
+                       type='misc_feature',
+                       qualifiers={'label': 'HA_1',
+                                   'ApEinfo_fwdcolor': colors['HA_1'],
+                                  },
+                      ),
+            SeqFeature(location=FeatureLocation(donor_end - lengths['HA_2'], donor_end, strand=1),
+                       id='HA_2',
+                       type='misc_feature',
+                       qualifiers={'label': 'HA_2',
+                                   'ApEinfo_fwdcolor': colors['HA_2'],
+                                  },
+                      ),
+        ]
+
+        target_record = SeqRecord(Seq(target_seq, generic_dna), id=name, name=name, features=target_features)
+        
+        return target_record, donor_record
+    
+    records = []
+    
+    for al in perfect_als:
+        record_pair = generate_records(al)
+        if record_pair is not None:
+            records.append(record_pair)
+    
+    if len(records) != 1:
+        raise ValueError(name, records)
+    else:
+        target_record, donor_record = records[0]
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore', category=BiopythonWarning)
+        Bio.SeqIO.write(donor_record, donor_gb_fn, 'genbank')
+        Bio.SeqIO.write(target_record, target_gb_fn, 'genbank')
+
+    manifest_fn = target_dir / 'manifest.yaml'
+    manifest = {
+        'sources': [name, donor_name],
+        'target': name,
+        'donor_specific': 'donor_specific',
+    }
+    manifest_fn.write_text(yaml.dump(manifest, default_flow_style=False))
+
+def build_target_infos_from_csv(base_dir):
+    base_dir = Path(base_dir)
+    csv_fn = base_dir / 'targets' / 'targets.csv'
+
+    df = pd.read_csv(csv_fn)
+
+    for _, row in df.iterrows():
+        name = row['name']
+        print(f'Building {name}...')
+        target_dir = base_dir / 'targets' / name
+        target_dir.mkdir(parents=True, exist_ok=True)
+        build_target_info(row, target_dir)
+
+        ti = TargetInfo(base_dir, name)
+        ti.make_references()
+        ti.identify_degenerate_indels()
