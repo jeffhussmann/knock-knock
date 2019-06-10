@@ -927,10 +927,10 @@ class ReadDiagram():
             self.max_y = max(self.max_y, ref_y)
 
             if ref_al_min <= ref_start:
-                ref_start = max(0, ref_al_min - 10, ref_start - 50)
+                ref_start = max(0, ref_al_min - 10, ref_start - 250)
 
             if ref_al_max >= ref_end:
-                ref_end = min(ref_edge, ref_al_max + 10, ref_end + 50)
+                ref_end = min(ref_edge, ref_al_max + 10, ref_end + 250)
 
             new_left = ref_p_to_x(ref_start)
             new_right = ref_p_to_x(ref_end)
@@ -1088,4 +1088,3 @@ def make_stacked_Image(diagrams, titles=None, pairs=False, **kwargs):
         y_start += im.height
 
     return stacked_im
-
