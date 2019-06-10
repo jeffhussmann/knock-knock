@@ -1,19 +1,34 @@
 from setuptools import setup
+from pathlib import Path
+
+example_data_fns = []
+base_dir = Path('knock_knock/example_data')
+for fn in base_dir.glob('**/*'):
+    example_data_fns.append(str(fn.relative_to('knock_knock')))
 
 setup(
     name='knock_knock',
-    version='0.1',
-    
+    version='0.1.2',
+
+    author='Jeff Hussmann',
+    author_email='jeff.hussmann@gmail.com',
+
     packages=[
-        'knockin',
+        'knock_knock',
     ],
 
     package_data={
-        'knockin': ['modal_template.tpl'],
+        'knock_knock': [
+            'modal_template.tpl',
+        ] + example_data_fns,
     },
 
     scripts=[
         'knock_knock/knock_knock',
+    ],
+
+    data_files=[
+        ('bin', ['knock_knock/blastn']),
     ],
 
     install_requires=[
@@ -28,6 +43,9 @@ setup(
         'Pillow>=5.0.0',
         'pysam>=0.14',
         'PyYAML>=3.12',
-        'hits>=0.0.1',
+        'hits>=0.0.3',
+        'tqdm>=4.31.1',
     ],
+
+    python_requires='>=3.6',
 )
