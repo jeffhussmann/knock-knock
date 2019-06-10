@@ -35,7 +35,11 @@ supplemental_indices = {
     'e_coli_K12_MG1655': {
         'STAR': '/nvme/indices/e_coli_K12_MG1655',
         'minimap2': '/nvme/indices/minimap2/e_coli_K12_MG1655.mmi',
-    }
+    },
+    'phiX': {
+        'STAR': '/nvme/indices/phiX',
+        'minimap2': '/nvme/indices/minimap2/phiX.mmi',
+    },
 }
 
 def extract_color(description):
@@ -127,8 +131,9 @@ class Experiment(object):
         self.max_qual = 93
         
         self.supplemental_index_names = [
-            'hg19',
-            'e_coli_K12_MG1655',
+            #'hg19',
+            #'e_coli_K12_MG1655',
+            #'phiX',
         ]
         
     @memoized_property
@@ -253,8 +258,7 @@ class Experiment(object):
         return np.loadtxt(self.fns['lengths'], dtype=int)
     
     def count_read_lengths(self):
-        lengths = Counter(len(r.seq) for r in self.reads)
-        lengths = utilities.counts_to_array(lengths)
+        lengths = sum(self.outcome_stratified_lengths.values())
         np.savetxt(self.fns['lengths'], lengths, '%d')
 
     def length_ranges(self, outcome=None):
@@ -279,17 +283,26 @@ class Experiment(object):
         return pd.DataFrame(ranges, columns=['start', 'end'])
 
     def alignment_groups(self, fn_key='combined_bam_by_name', outcome=None, read_type=None):
-        if outcome is not None:
-            fn = self.outcome_fns(outcome)['bam_by_name']
-        else:
-            fn = self.fns_by_read_type[fn_key][read_type]
+        if isinstance(outcome, str):
+            # outcome is a single category, so need to chain together all relevant
+            # (category, subcategory) pairs.
+            pairs = [(c, s) for c, s in self.outcomes if c == outcome]
+            pair_groups = [self.alignment_groups(fn_key=fn_key, outcome=pair, read_type=read_type) for pair in pairs]
+            return chain.from_iterable(pair_groups)
 
-        if fn.exists():
-            grouped = sam.grouped_by_name(fn)
         else:
-            grouped = []
+            if isinstance(outcome, tuple):
+                # outcome is a (category, subcategory) pair
+                fn = self.outcome_fns(outcome)['bam_by_name'][read_type]
+            else:
+                fn = self.fns_by_read_type[fn_key][read_type]
 
-        return grouped
+            if fn.exists():
+                grouped = sam.grouped_by_name(fn)
+            else:
+                grouped = []
+
+            return grouped
 
     def call_peaks_in_length_distribution(self):
         if self.paired_end_read_length is not None:
@@ -618,18 +631,7 @@ class Experiment(object):
                                                         )
 
     def length_distribution_figure(self, outcome=None, show_ranges=False, show_title=False):
-        capped_read_lengths = np.zeros(self.max_relevant_length + 1)
-        max_length = self.max_relevant_length
-        if len(self.read_lengths) > self.max_relevant_length + 1:
-            capped_read_lengths[max_length] = sum(self.read_lengths[self.max_relevant_length:])
-        
-        copy_up_to = min(len(self.read_lengths) - 1, max_length - 1)
-        capped_read_lengths[:copy_up_to + 1] = self.read_lengths[:copy_up_to + 1]
-        
-        if sum(capped_read_lengths) != sum(self.read_lengths):
-            raise ValueError('bug in capping')
-        
-        all_ys = capped_read_lengths / self.total_reads
+        all_ys = self.read_lengths / self.total_reads
 
         fig, ax = plt.subplots(figsize=(12, 6))
 
@@ -641,17 +643,25 @@ class Experiment(object):
 
             ys_to_check = all_ys
         else:
-            outcome_lengths = self.outcome_stratified_lengths[outcome]
+            if isinstance(outcome, tuple):
+                outcome_lengths = self.outcome_stratified_lengths[outcome]
+                color = self.outcome_to_color[outcome]
+                label = ': '.join(outcome)
+            else:
+                outcome_lengths = sum([v for (c, s), v in self.outcome_stratified_lengths.items() if c == outcome])
+                color = 'C0' # placeholder
+                label = outcome
+
             outcome_ys = outcome_lengths / self.total_reads
 
-            other_lengths = capped_read_lengths - outcome_lengths
+            other_lengths = self.read_lengths - outcome_lengths
             other_ys = other_lengths / self.total_reads
 
             max_y = max(outcome_ys)
 
             ys_list = [
                 (other_ys, 'black', 0.2, 'all other reads'),
-                (outcome_ys, self.outcome_to_color[outcome], 0.9, ': '.join(outcome)),
+                (outcome_ys, color, 0.9, label),
             ]
 
             ys_to_check = outcome_ys
@@ -776,8 +786,10 @@ class Experiment(object):
     def outcome_highest_points(self):
         ''' Dictionary of {outcome: maximum of that outcome's read length frequency distribution} '''
         highest_points = {}
+
         for outcome, lengths in self.outcome_stratified_lengths.items():
-            highest_points[outcome] = max(lengths / self.total_reads)
+            highest_points[outcome] = max(lengths / self.total_reads * 100)
+
         return highest_points
 
     @memoized_property
@@ -788,7 +800,7 @@ class Experiment(object):
         color_order = sorted(self.outcome_stratified_lengths, key=self.outcome_highest_points.get, reverse=True)
         return {outcome: f'C{i % 10}' for i, outcome in enumerate(color_order)}
 
-    def plot_outcome_stratified_lengths(self, x_lims=None, min_total_to_label=0.1 * 0.01, zoom_factor=0.1):
+    def plot_outcome_stratified_lengths(self, x_lims=None, min_total_to_label=0.1, zoom_factor=0.1):
         outcome_lengths = self.outcome_stratified_lengths
 
         if x_lims is None:
@@ -870,14 +882,14 @@ class Experiment(object):
 
                 category, subcategory = outcome
 
-                total = ys.sum()
+                total = ys.sum() * 100
                 if total > min_total_to_label:
                     high_enough_to_show.append(outcome)
                     label = f'{ys.sum():6.2%} {category}: {subcategory}'
                 else:
                     label = None
 
-                ax.plot(ys, label=label, color=color, alpha=alpha, gid=gid)
+                ax.plot(ys * 100, label=label, color=color, alpha=alpha, gid=gid)
 
                 if outcome in group:
                     length_ranges = self.length_ranges(outcome)
@@ -890,9 +902,8 @@ class Experiment(object):
                                    zorder=100,
                                   )
 
-            legend = ax.legend(bbox_to_anchor=(-0.06, 1),
-                               #loc='upper left',
-                               loc='upper right',
+            legend = ax.legend(bbox_to_anchor=(1.05, 1),
+                               loc='upper left',
                                prop=dict(family='monospace', size=9),
                                framealpha=0.3,
                               )
@@ -900,8 +911,8 @@ class Experiment(object):
             for outcome, line in zip(high_enough_to_show, legend.get_lines()):
                 if line.get_color() != non_highlight_color:
                     line.set_linewidth(5)
-                    escaped_string = layout.outcome_to_escaped_string(outcome)
-                    line.set_gid(f'outcome_{escaped_string}')
+                    sanitized_string = layout.outcome_to_sanitized_string(outcome)
+                    line.set_gid(f'outcome_{sanitized_string}')
 
             expected_lengths = {
                 'expected\nWT': ti.amplicon_length,
@@ -927,7 +938,7 @@ class Experiment(object):
             ax.set_xticklabels(main_tick_labels + extra_tick_labels)
 
             ax.set_xlim(*x_lims)
-            ax.set_ylabel('Fraction of reads', size=12)
+            ax.set_ylabel('Percentage of reads', size=12)
             ax.set_xlabel('amplicon length', size=12)
 
             for name, length in expected_lengths.items():
@@ -1003,7 +1014,7 @@ class Experiment(object):
                                                clip_on=False,
                                                linestyle='--',
                                                color='black',
-                                               alpha=0.3,
+                                               alpha=0.5,
                                                gid=f'zoom_dotted_line_{panel_i}_{which}',
                                               )
                 fig.lines.append(line)
@@ -1023,7 +1034,7 @@ class Experiment(object):
             only_relevant = []
             for qname, als in subsample:
                 if isinstance(als, dict):
-                    l = self.layout_module.NonoverlappingLayout(als['R1'], als['R2'], self.target_info, mode=self.layout_mode)
+                    l = self.layout_module.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
                 else:
                     l = self.layout_module.Layout(als, self.target_info, mode=self.layout_mode)
                 l.categorize()
@@ -1066,12 +1077,16 @@ class Experiment(object):
             self.generate_length_range_figures(outcome=outcome)
 
     def generate_figures(self):
-        #self.generate_all_outcome_length_range_figures()
+        self.generate_all_outcome_length_range_figures()
         self.generate_all_outcome_example_figures()
         svg.decorate_outcome_browser(self)
     
     def generate_outcome_example_figures(self, outcome, num_examples):
-        category, subcategory = outcome
+        if isinstance(outcome, tuple):
+            description = ': '.join(outcome)
+        else:
+            description = outcome
+
         al_groups = self.alignment_groups(outcome=outcome)
         diagrams = self.alignment_groups_to_diagrams(al_groups, num_examples=num_examples)
         
@@ -1082,6 +1097,10 @@ class Experiment(object):
             return tag
         
         outcome_fns = self.outcome_fns(outcome)
+        outcome_dir = outcome_fns['dir']
+        if not outcome_dir.is_dir():
+            outcome_dir.mkdir()
+
         fn = outcome_fns['diagrams_html']
         with fn.open('w') as fh:
             fh.write('''\
@@ -1108,13 +1127,12 @@ p {
 <body>
 ''')
             fh.write(f'<h2>{self.group}: {self.name}</h1>\n')
-            fh.write(f'<h2>{category}: {subcategory}</h2>\n')
+            fh.write(f'<h2>{description}</h2>\n')
             
             fig = self.length_distribution_figure(outcome=outcome)
             tag = fig_to_img_tag(fig)
             fh.write(f'{tag}\n<hr>\n')
                 
-            description = ': '.join(outcome)
             for i, diagram in enumerate(self.progress(diagrams, desc=description)):
                 if i == 0:
                     diagram.fig.savefig(outcome_fns['first_example'], bbox_inches='tight')
@@ -1124,8 +1142,11 @@ p {
                 fh.write(f'{tag}\n')
     
     def generate_all_outcome_example_figures(self, num_examples=25):
-        outcomes = sorted(self.outcome_stratified_lengths)
-        for outcome in self.progress(outcomes, desc='Outcome categories'):
+        for outcome in self.progress(self.outcomes, desc='Detailed outcome categories'):
+            self.generate_outcome_example_figures(outcome=outcome, num_examples=num_examples)
+        
+        categories = sorted(set(c for c, s in self.outcomes))
+        for outcome in self.progress(categories, desc='Grouped outcome categories'):
             self.generate_outcome_example_figures(outcome=outcome, num_examples=num_examples)
             
     def explore(self, by_outcome=True, **kwargs):
@@ -1148,10 +1169,7 @@ class PacbioExperiment(Experiment):
         super().__init__(*args, **kwargs)
 
         self.paired_end_read_length = None
-
-        if self.max_relevant_length is None:
-            self.max_relevant_length = 3000
-
+        self.max_relevant_length = self.description.get('max_relevant_length', 3000)
         self.length_to_store_unknown = None
 
         self.x_tick_multiple = 500
@@ -1234,10 +1252,13 @@ class PacbioExperiment(Experiment):
                 if length in length_range:
                     by_length_range[length_range.start, length_range.end].append((name, group))
         
+
         if outcome is None:
-            fig_dir = self.fns['length_range_figures']
+            fns = self.fns
         else:
-            fig_dir = self.outcome_fns(outcome)['length_range_figures']
+            fns = self.outcome_fns(outcome)
+
+        fig_dir = fns['length_ranges_dir']
             
         if fig_dir.is_dir():
             shutil.rmtree(str(fig_dir))
@@ -1253,7 +1274,7 @@ class PacbioExperiment(Experiment):
         for (start, end), groups in items:
             diagrams = self.alignment_groups_to_diagrams(groups, num_examples=num_examples)
             im = visualize.make_stacked_Image(diagrams, titles='')
-            fn = fig_dir / f'{start}_{end}.png'
+            fn = fns['length_range_figure'](start, end)
             im.save(fn)
     
     def generate_svg(self):
@@ -1263,11 +1284,11 @@ class PacbioExperiment(Experiment):
             fh.write(html)
     
     def process(self, stage):
-        #self.count_read_lengths()
-        #self.generate_alignments()
-        #self.generate_supplemental_alignments()
-        #self.combine_alignments()
+        self.generate_alignments()
+        self.generate_supplemental_alignments()
+        self.combine_alignments()
         self.categorize_outcomes()
+        self.count_read_lengths()
         self.generate_figures()
 
 class IlluminaExperiment(Experiment):
@@ -1280,9 +1301,6 @@ class IlluminaExperiment(Experiment):
         })
 
         self.sequencing_primers = self.description.get('sequencing_primers', 'truseq')
-        self.paired_end_read_length = self.description.get('paired_end_read_length', None)
-        self.max_relevant_length = 2 * self.paired_end_read_length + 100
-        self.length_to_store_unknown = int(self.max_relevant_length * 1.05)
         self.x_tick_multiple = 100
 
         self.layout_mode = 'illumina'
@@ -1305,6 +1323,19 @@ class IlluminaExperiment(Experiment):
             'R1_no_overlap',
             'R2_no_overlap',
         ]
+
+    @memoized_property
+    def paired_end_read_length(self):
+        R1, R2 = next(self.read_pairs)
+        return len(R1)
+    
+    @memoized_property
+    def max_relevant_length(self):
+        return 2 * self.paired_end_read_length + 100
+
+    @memoized_property
+    def length_to_store_unknown(self):
+        return int(self.max_relevant_length * 1.05)
 
     def get_read_alignments(self, read_id, fn_key='bam_by_name', outcome=None, read_type=None):
         return super().get_read_alignments(read_id, fn_key=fn_key, outcome=outcome, read_type=read_type)
@@ -1334,8 +1365,7 @@ class IlluminaExperiment(Experiment):
     @property
     def read_pairs(self):
         read_pairs = fastq.read_pairs(self.fns['R1'], self.fns['R2'], up_to_space=True)
-
-        return self.progress(read_pairs)
+        return read_pairs
 
     @memoized_property
     def no_overlap_qnames(self):
@@ -1374,7 +1404,9 @@ class IlluminaExperiment(Experiment):
         R1_groups = self.alignment_groups(outcome=outcome, fn_key=R1_fn_key, read_type=R1_read_type)
         R2_groups = self.alignment_groups(outcome=outcome, fn_key=R2_fn_key, read_type=R2_read_type)
 
-        for (R1_name, R1_als), (R2_name, R2_als) in self.progress(zip(R1_groups, R2_groups)):
+        group_pairs = zip(R1_groups, R2_groups)
+
+        for (R1_name, R1_als), (R2_name, R2_als) in group_pairs:
             if R1_name != R2_name:
                 raise ValueError(R1_name, R2_name)
             else:
@@ -1384,7 +1416,8 @@ class IlluminaExperiment(Experiment):
         outcomes = defaultdict(list)
 
         with self.fns['no_overlap_outcome_list'].open('w') as fh:
-            for name, als in self.no_overlap_alignment_groups():
+            alignment_groups = self.no_overlap_alignment_groups()
+            for name, als in self.progress(alignment_groups, desc='Categorizing non-overlapping read pairs'):
                 try:
                     pair_layout = layout.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
                     category, subcategory, details = pair_layout.categorize()
@@ -1394,7 +1427,7 @@ class IlluminaExperiment(Experiment):
                 
                 outcomes[category, subcategory].append(name)
 
-                outcome = coherence.Outcome(name, pair_layout.length, category, subcategory, details)
+                outcome = read_outcome.Outcome(name, pair_layout.length, category, subcategory, details)
                 fh.write(f'{outcome}\n')
 
         counts = {description: len(names) for description, names in outcomes.items()}
@@ -1415,7 +1448,7 @@ class IlluminaExperiment(Experiment):
                 outcome_fns = self.outcome_fns(outcome)
                 outcome_fns['dir'].mkdir(exist_ok=True)
                 for which in ['R1', 'R2']:
-                    bam_fn = outcome_fns[f'{which}_no_overlap_bam_by_name']
+                    bam_fn = outcome_fns['bam_by_name'][f'{which}_no_overlap']
                     bam_fhs[outcome, which] = stack.enter_context(pysam.AlignmentFile(bam_fn, 'wb', template=full_bam_fhs[which]))
                 
                 fh = stack.enter_context(outcome_fns['no_overlap_query_names'].open('w'))
@@ -1438,7 +1471,8 @@ class IlluminaExperiment(Experiment):
              fns['R1_no_overlap'].open('w') as R1_fh, \
              fns['R2_no_overlap'].open('w') as R2_fh:
 
-            for R1, R2 in self.read_pairs:
+            description = 'Stitching read pairs:'
+            for R1, R2 in self.progress(self.read_pairs, desc=description):
                 stitched = sw.stitch_read_pair(R1, R2, before_R1, before_R2, indel_penalty=-1000)
                 if len(stitched) == 2 * self.paired_end_read_length:
                     R1_fh.write(str(R1))
@@ -1451,24 +1485,19 @@ class IlluminaExperiment(Experiment):
         for read in self.stitched_reads:
             yield read.name
 
-    def count_read_lengths(self):
-        lengths = Counter(len(r.seq) for r in self.reads_by_type('stitched'))
-
-        no_overlap_length = self.paired_end_read_length * 2
-
-        lengths[no_overlap_length] += sum(1 for _ in self.reads_by_type('R1_no_overlap'))
-
-        lengths = utilities.counts_to_array(lengths)
-        np.savetxt(self.fns['lengths'], lengths, '%d')
-        
-    def alignment_groups(outcome=None):
-        stitched_groups = super().alignment_groups(outcome=outcome, read_type='stitched')
-        for als in stitched_groups:
-            yield als
-            
-        no_overlap_groups = self.no_overlap_alignment_groups(outcome=outcome)
-        for als in no_overlap_groups:
-            yield als
+    def alignment_groups(self, fn_key=None, outcome=None, read_type=None):
+        if fn_key is not None or read_type is not None:
+            groups = super().alignment_groups(fn_key=fn_key, outcome=outcome, read_type=read_type)
+            for name, als in groups:
+                yield name, als
+        else:
+            stitched_groups = super().alignment_groups(outcome=outcome, read_type='stitched')
+            for name, als in stitched_groups:
+                yield name, als
+                
+            no_overlap_groups = self.no_overlap_alignment_groups(outcome=outcome)
+            for name, als in no_overlap_groups:
+                yield name, als
     
     def generate_length_range_figures(self, outcome=None, num_examples=1):
         def extract_length(als):
@@ -1493,29 +1522,35 @@ class IlluminaExperiment(Experiment):
         al_groups = self.alignment_groups(outcome=outcome)
         for name, als in al_groups:
             length = extract_length(als)
-            by_length[length].append(als)
+            by_length[length].append((name, als))
         
         if outcome is None:
-            fig_dir = self.fns['length_range_figures']
+            fns = self.fns
         else:
-            fig_dir = self.outcome_fns(outcome)['length_range_figures']
+            fns = self.outcome_fns(outcome)
+
+        fig_dir = fns['length_ranges_dir']
             
         if fig_dir.is_dir():
             shutil.rmtree(str(fig_dir))
         fig_dir.mkdir()
 
-        items = self.progress(by_length.items())
+        if outcome is not None:
+            description = ': '.join(outcome)
+        else:
+            description = 'Generating length-specific diagrams'
+
+        items = self.progress(by_length.items(), desc=description)
 
         for length, groups in items:
-            im = self.groups_to_Image(groups, num_examples)
-            fn = fig_dir / f'{length}_{length}.png'
+            diagrams = self.alignment_groups_to_diagrams(groups, num_examples=num_examples)
+            im = visualize.make_stacked_Image(diagrams, titles='')
+            fn = fns['length_range_figure'](length, length)
             im.save(fn)
 
     def process(self, stage=0):
         #self.stitch_read_pairs()
         
-        #self.count_read_lengths()
-
         #for read_type in self.read_types:
         #    self.generate_alignments(read_type)
         #    self.generate_supplemental_alignments(read_type)
@@ -1523,9 +1558,10 @@ class IlluminaExperiment(Experiment):
 
         #self.categorize_outcomes(read_type='stitched')
         #self.categorize_no_overlap_outcomes()
-        self.make_outcome_plots(num_examples=1)
-        #self.generate_all_outcome_length_range_figures()
-        #self.generate_figures()
+
+        #self.count_read_lengths()
+
+        self.generate_figures()
 
 def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
     if target is None:

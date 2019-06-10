@@ -13,6 +13,7 @@ from . import experiment
 from . import svg
 
 totals_row_label = (' ', 'Total reads')
+totals_row_label_collapsed = 'Total reads'
 
 def load_counts(base_dir, conditions=None, drop_outcomes=None):
     if drop_outcomes is None:
@@ -240,25 +241,39 @@ def make_table(base_dir, conditions=None, drop_outcomes=None, include_images=Fal
     
     return styled
 
-def make_table_transpose(base_dir, conditions=None, drop_outcomes=None, include_images=False, inline_images=False):
+def make_table_transpose(base_dir,
+                         conditions=None,
+                         drop_outcomes=None,
+                         inline_images=False,
+                         show_subcategories=True,
+                        ):
     df = load_counts(base_dir, conditions, drop_outcomes)
     totals = df.loc[totals_row_label]
 
     df = df.T
 
+    if not show_subcategories:
+        level_0 = list(df.columns.levels[0])
+        level_0[0] = 'Total reads'
+        df.columns = df.columns.set_levels(level_0, level=0)
+
+        df = df.sum(axis=1, level=0)
+
+    exps = experiment.get_all_experiments(base_dir, conditions=conditions, as_dictionary=True)
+
     modal_maker = ModalMaker()
 
-    def link_maker(val, outcome, exp_group, exp_name, include_images):
+    def link_maker(val, outcome, exp_group, exp_name):
         if val == 0:
             html = ''
         else:
-            exp = experiment.Experiment(base_dir, exp_group, exp_name)
+            exp = exps[exp_group, exp_name]
             
             fraction = val / totals[(exp_group, exp_name)]
             
-            if outcome == totals_row_label:
+            if outcome == totals_row_label or outcome == totals_row_label_collapsed:
                 text = '{:,}'.format(val)
-                if False:#include_images:
+                if False:
                     #modal_div, modal_id = modal_maker.make_length(exp)
 
                     hover_image_fn = str(exp.fns['lengths_figure'])
@@ -277,41 +292,42 @@ def make_table_transpose(base_dir, conditions=None, drop_outcomes=None, include_
             else:
                 text = '{:.2%}'.format(fraction)
                 
-                if include_images:
-                    #modal_div, modal_id = modal_maker.make_outcome(exp, outcome)
+                #modal_div, modal_id = modal_maker.make_outcome(exp, outcome)
 
-                    hover_image_fn = exp.outcome_fns(outcome)['first_example']
-                    click_html_fn = exp.outcome_fns(outcome)['diagrams_html']
-                    
-                    if inline_images:
-                        hover_URI, width, height = fn_to_URI(hover_image_fn)
-                    else:
-                        relative_path = hover_image_fn.relative_to(exp.fns['dir'].parent)
-                        hover_URI = str(relative_path)
-                        if hover_image_fn.exists():
-                            with PIL.Image.open(hover_image_fn) as im:
-                                width, height = im.size
-                                width = width * 0.75
-                                height = height * 0.75
-                        else:
-                            width, height = 100, 100
-
-                    relative_path = click_html_fn.relative_to(exp.fns['dir'].parent)
-                    link = link_without_modal_template.format(text=text,
-                                                #modal_id=modal_id,
-                                                URI=hover_URI,
-                                                width=width,
-                                                height=height,
-                                                URL=str(relative_path),
-                                               )
-                    html = link# + modal_div
+                hover_image_fn = exp.outcome_fns(outcome)['first_example']
+                click_html_fn = exp.outcome_fns(outcome)['diagrams_html']
+                
+                if inline_images:
+                    hover_URI, width, height = fn_to_URI(hover_image_fn)
                 else:
-                    html = text
+                    relative_path = hover_image_fn.relative_to(exp.fns['dir'].parent)
+                    hover_URI = str(relative_path)
+                    if hover_image_fn.exists():
+                        with PIL.Image.open(hover_image_fn) as im:
+                            width, height = im.size
+                            width = width * 0.75
+                            height = height * 0.75
+                    else:
+                        width, height = 100, 100
+
+                relative_path = click_html_fn.relative_to(exp.fns['dir'].parent)
+                link = link_without_modal_template.format(text=text,
+                                            #modal_id=modal_id,
+                                            URI=hover_URI,
+                                            width=width,
+                                            height=height,
+                                            URL=str(relative_path),
+                                            )
+                html = link# + modal_div
 
         return html
     
     def bind_link_maker(exp_group, exp_name):
-        return {outcome: functools.partial(link_maker, outcome=outcome, exp_group=exp_group, exp_name=exp_name, include_images=include_images) for outcome in df}
+        bound = {}
+        for outcome in df:
+            bound[outcome] = functools.partial(link_maker, outcome=outcome, exp_group=exp_group, exp_name=exp_name)
+
+        return bound
 
     styled = df.style
     
@@ -336,7 +352,7 @@ def make_table_transpose(base_dir, conditions=None, drop_outcomes=None, include_
     
     return styled
 
-def generate_html(base_dir, fn, conditions=None, drop_outcomes=None, include_images=False):
+def generate_html(base_dir, fn, conditions=None, drop_outcomes=None, show_subcategories=True):
     nb = nbf.new_notebook()
 
     cell_contents = f'''\
@@ -344,12 +360,12 @@ import knock_knock.table
 
 conditions = {conditions}
 drop_outcomes = {drop_outcomes}
-knock_knock.table.make_table_transpose('{base_dir}', conditions, drop_outcomes, include_images={include_images})
+knock_knock.table.make_table_transpose('{base_dir}', conditions, drop_outcomes, show_subcategories={show_subcategories})
 '''
     
     nb['cells'] = [nbf.new_code_cell(cell_contents)]
 
-    nb['metadata'] = {'title': fn}
+    nb['metadata'] = {'title': str(fn)}
 
     exporter = nbconvert.HTMLExporter(exclude_input=True, exclude_output_prompt=True)
     template_path = Path(os.path.realpath(__file__)).parent / 'modal_template.tpl'
