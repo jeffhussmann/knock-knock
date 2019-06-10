@@ -151,7 +151,7 @@ class Experiment(object):
                                       nonhomologous_donor=self.nonhomologous_donor,
                                       sgRNA=self.sgRNA,
                                       primer_names=self.primer_names,
-                                      supplmental_headers=self.supplemental_headers,
+                                      supplemental_headers=self.supplemental_headers,
                                      )
 
     @memoized_property

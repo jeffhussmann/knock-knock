@@ -40,7 +40,7 @@ class TargetInfo():
                  nonhomologous_donor=None,
                  sgRNA=None,
                  primer_names=None,
-                 supplmental_headers=None,
+                 supplemental_headers=None,
                  ):
         self.name = name
         self.dir = Path(base_dir) / 'targets' / name
@@ -54,7 +54,7 @@ class TargetInfo():
         self.donor = donor
         self.nonhomologous_donor = nonhomologous_donor
         self.donor_specific = manifest.get('donor_specific', 'GFP11') 
-        self.supplemental_headers = supplmental_headers
+        self.supplemental_headers = supplemental_headers
 
         self.default_HAs = manifest.get('default_HAs')
 
