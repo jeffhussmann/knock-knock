@@ -17,24 +17,11 @@ import scipy.signal
 import ipywidgets
 
 from hits import sam, fastq, utilities, visualize_structure, sw, adapters, mapping_tools, interval
-from hits.utilities import memoized_property
+from hits.utilities import memoized_property, group_by
 
 from . import target_info, blast, layout, visualize, read_outcome, svg, table
 
-group_by = utilities.group_by
-
-palette = bokeh.palettes.Category20c_20
-source_to_color = {}
-for i, source in enumerate(['PCR', 'plasmid', 'ssDNA', 'CT']):
-    for replicate in [1, 2, 3]:
-        source_to_color[source, replicate] = palette[4 * i  + (replicate - 1)]
-
-palette = bokeh.palettes.Set2[8]
-cap_to_color = {
-    'AmMC6': palette[0],
-    'Biotin': palette[1],
-    'IDDT': palette[2],
-}
+palette = bokeh.palettes.Category20c_20[1::4]
 
 supplemental_indices = {
     'hg19': {
@@ -52,14 +39,14 @@ supplemental_indices = {
 }
 
 def extract_color(description):
-    if 'color' in description:
-        color = description['color']
-    elif description.get('capped', False):
-        color = cap_to_color[description['cap']]
-    else:
-        donor = description.get('donor_type')
-        rep = description.get('replicate', 1)
-        color = source_to_color.get((donor, rep), 'grey')
+    color = description.get('color', 'grey')
+
+    try:
+        num = int(color)
+        num = (num - 1) % len(palette)
+        color = palette[num]
+    except ValueError:
+        pass
 
     return color
         
