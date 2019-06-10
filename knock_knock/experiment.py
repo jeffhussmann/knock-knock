@@ -91,11 +91,10 @@ class Experiment(object):
         self.layout_module = layout
         self.max_insertion_length = 20
 
-        self.sgRNA = self.description.get('sgRNA')
+        self.sgRNA = self.description.get('sgRNA', 'sgRNA')
         self.donor = self.description.get('donor')
         self.nonhomologous_donor = self.description.get('nonhomologous_donor')
-        self.primer_names = self.description.get('primer_names')
-        self.max_relevant_length = self.description.get('max_relevant_length')
+        self.primer_names = self.description.get('primer_names', ['forward_primer', 'reverse_primer'])
 
         # When checking if an Experiment meets filtering conditions, want to be
         # able to just test description.
