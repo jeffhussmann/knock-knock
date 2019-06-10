@@ -336,7 +336,8 @@ class TargetInfo():
                     cut_after = PAM_5 + offset
                 else:
                     PAM_5 = self.PAM_slices[name].stop - 1
-                    cut_after = PAM_5 - offset
+                    # -1 extra because cut_after is on the other side of the cut
+                    cut_after = PAM_5 - offset - 1
                 
                 cut_afters[name + key_suffix] = cut_after
 
