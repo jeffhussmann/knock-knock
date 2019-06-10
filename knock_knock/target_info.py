@@ -191,15 +191,15 @@ class TargetInfo():
 
         for side in [5, 3]:
             primer = (self.target, self.primers_by_side_of_target[side].attribute['ID'])
-            target_HA = (self.target, self.homology_arms[side]['target'].attribute['ID'])
-
             whitelist.add(primer)
-            whitelist.add(target_HA)
 
-            if self.has_shared_homology_arms:
-                donor_HA = (self.donor, self.homology_arms[side]['donor'].attribute['ID'])
-                whitelist.add(donor_HA)
+            if self.homology_arms is not None:
+                target_HA = (self.target, self.homology_arms[side]['target'].attribute['ID'])
+                whitelist.add(target_HA)
 
+                if self.has_shared_homology_arms:
+                    donor_HA = (self.donor, self.homology_arms[side]['donor'].attribute['ID'])
+                    whitelist.add(donor_HA)
 
         return whitelist
 
@@ -498,6 +498,9 @@ class TargetInfo():
             if source is not None:
                 if feature_name.startswith('HA_'):
                     HAs[feature_name][source] = feature
+
+        if len(HAs) == 0:
+            return None
                     
         paired_HAs = {}
 
@@ -557,13 +560,16 @@ class TargetInfo():
 
     @memoized_property
     def has_shared_homology_arms(self):
-        has_shared_arms = False
+        if self.homology_arms is None:
+            return False
+        else:
+            has_shared_arms = False
 
-        for name, d in self.homology_arms.items():
-            if 'target' in d and 'donor' in d:
-                has_shared_arms = True
+            for name, d in self.homology_arms.items():
+                if 'target' in d and 'donor' in d:
+                    has_shared_arms = True
 
-        return has_shared_arms
+            return has_shared_arms
 
     @memoized_property
     def HA_ref_p_to_offset(self):
