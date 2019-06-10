@@ -1757,9 +1757,9 @@ def get_all_experiments(base_dir, conditions=None, as_dictionary=False, progress
         sample_sheet = yaml.safe_load(sample_sheet_fn.read_text())
 
         for name, description in sample_sheet.items():
-            if description.get('experiment_type') == 'illumina':
+            if description.get('platform') == 'illumina':
                 exp_class = IlluminaExperiment
-            elif description.get('experiment_type') == 'pacbio':
+            elif description.get('platform') == 'pacbio':
                 exp_class = PacbioExperiment
             else:
                 exp_class = Experiment

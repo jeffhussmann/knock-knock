@@ -75,9 +75,9 @@ def process(args):
     if args.experiment in sample_sheet:
         description = sample_sheet[args.experiment]
 
-        if description.get('experiment_type') == 'pacbio':
+        if description.get('platform') == 'pacbio':
             exp_class = experiment.PacbioExperiment
-        elif description.get('experiment_type') == 'illumina':
+        elif description.get('platform') == 'illumina':
             exp_class = experiment.IlluminaExperiment
         else:
             raise ValueError(description)
