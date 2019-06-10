@@ -18,8 +18,10 @@ class Layout(object):
         self.mode = mode
         if mode == 'illumina':
             self.indel_size_to_split_at = 3
+            self.max_indel_allowed_in_donor = 1
         elif mode == 'pacbio':
             self.indel_size_to_split_at = 4
+            self.max_indel_allowed_in_donor = 3
 
         self.target_info = target_info
 
@@ -167,6 +169,9 @@ class Layout(object):
         return interval.Interval(0, len(self.seq) - 1)
 
     def categorize(self):
+        if self.target_info.donor is None and self.target_info.nonhomologous_donor is None:
+           return self.categorize_no_donor()
+
         details = 'n/a'
 
         if all(al.is_unmapped for al in self.alignments):
@@ -303,11 +308,16 @@ class Layout(object):
             category = 'malformed layout'
             subcategory = 'primer far from read edge'
 
-        else:
-            if self.indel_near_cut is not None:
+        elif len(self.seq) <= 50:
+            category = 'uncategorized'
+            subcategory = 'too short'
+
+        elif self.single_merged_primer_alignment is not None:
+            num_indels = len(self.all_indels_near_cuts)
+            if num_indels > 0:
                 category = 'indel'
-                if len(self.indel_near_cut) > 1:
-                    subcategory = 'complex indel'
+                if num_indels > 1:
+                    subcategory = 'multiple indels'
                 else:
                     indel = self.indel_near_cut[0]
                     if indel.kind == 'D':
@@ -318,10 +328,40 @@ class Layout(object):
                     elif indel.kind == 'I':
                         subcategory = 'insertion'
 
-                details = self.indel_string
+                # Split at every indel
+                split_at_both = []
+
+                for al in self.parsimonious_target_alignments:
+                    split_at_dels = sam.split_at_deletions(al, 1)
+                    for split_al in split_at_dels:
+                        split_at_both.extend(sam.split_at_large_insertions(split_al, 1))
+
+                self.relevant_alignments = split_at_both
+
+                details = ' '.join(map(str, self.all_indels_near_cuts))
             else:
                 category = 'WT'
                 subcategory = 'WT'
+                self.relevant_alignments = self.parsimonious_target_alignments
+        
+        elif self.nonspecific_amplification is not None:
+            category = 'nonspecific amplification'
+            subcategory = 'nonspecific amplification'
+            details = 'n/a'
+            
+            self.relevant_alignments = self.parsimonious_target_alignments + self.nonspecific_amplification
+
+        elif self.genomic_insertion is not None:
+            category = 'genomic insertion'
+            subcategory = 'genomic insertion'
+            details = 'n/a'
+
+            self.relevant_alignments = self.parsimonious_target_alignments + self.min_edit_distance_genomic_insertions
+
+        else:
+            category = 'uncategorized'
+            subcategory = 'uncategorized'
+            details = 'n/a'
 
         return category, subcategory, details
     
@@ -404,11 +444,11 @@ class Layout(object):
 
     @memoized_property
     def gap_alignments(self):
-        seq_bytes = self.seq.encode()
         gap_als = []
 
         gap = self.gap_between_primer_alignments
         if len(gap) >= 4:
+            seq_bytes = self.seq.encode()
             for on in ['target', 'donor']:
                 aligner = self.target_info.seed_and_extender[on]
                 als = aligner(seq_bytes, gap.start, gap.end, self.name)
@@ -495,15 +535,27 @@ class Layout(object):
 
     @memoized_property
     def single_merged_primer_alignment(self):
-        ''' If the alignments from the primers are adjacent to each other on the query, merge them. '''
+        ''' If the alignments from the primers are adjacent to each other on the query, merge them.
+        If there is only one expected cut site, only try to perform a single merge. If there are
+        more than one cut sites, merge all target alignments. '''
 
         primer_als = self.primer_alignments
         ref_seqs = self.target_info.reference_sequences
 
-        if primer_als[5] is not None and primer_als[3] is not None:
-            merged = sam.merge_adjacent_alignments(primer_als[5], primer_als[3], ref_seqs)
+        if len(self.target_info.sgRNAs) <= 1:
+            if primer_als[5] is not None and primer_als[3] is not None:
+                merged = sam.merge_adjacent_alignments(primer_als[5], primer_als[3], ref_seqs)
+            else:
+                merged = None
         else:
-            merged = None
+            merged = sam.merge_multiple_adjacent_alignments(self.parsimonious_target_alignments, ref_seqs)
+            if merged is not None:
+                primers = self.target_info.primers_by_side_of_target.values()
+                # Prefer to have the primers annotated on the strand they anneal to,
+                # so don't require strand match here.
+                reaches_primers = all(sam.overlaps_feature(merged, primer, False) for primer in primers)
+                if not reaches_primers:
+                    merged = None
 
         return merged
     
@@ -528,8 +580,8 @@ class Layout(object):
             mismatches = []
             tuples = sam.aligned_tuples(merged_primer_al, self.target_info.target_sequence)
             for true_read_i, read_b, ref_i, ref_b, qual in tuples:
-                if ref_i is not None and true_read_i is not None and ref_i in self.near_cut_intervals:
-                    if read_b != ref_b:
+                if ref_i is not None and true_read_i is not None:
+                    if read_b != ref_b and ref_i in self.near_cut_intervals:
                         mismatches.append(ref_i)
 
             return mismatches
@@ -559,6 +611,22 @@ class Layout(object):
             scar = [d, i]
 
         return scar
+
+    @memoized_property
+    def all_indels_near_cuts(self):
+        indels_near_cuts = []
+        for indel in self.indels:
+            if indel.kind == 'D':
+                d = indel
+                d_interval = interval.Interval(min(d.starts_ats), max(d.starts_ats) + d.length - 1)
+                if d_interval & self.near_cut_intervals:
+                    indels_near_cuts.append(d)
+            elif indel.kind == 'I':
+                ins = indel
+                if any(sa in self.near_cut_intervals for sa in ins.starts_afters):
+                    indels_near_cuts.append(ins)
+
+        return indels_near_cuts
 
     @memoized_property
     def near_cut_intervals(self):
@@ -1040,7 +1108,7 @@ class Layout(object):
             else:
                 donor_al = integration_donor_als[0]
                 max_indel_length = sam.max_block_length(donor_al, {sam.BAM_CDEL, sam.BAM_CINS})
-                if max_indel_length > 1:
+                if max_indel_length > self.max_indel_allowed_in_donor:
                     summary = 'donor with indel'
                 else:
                     summary = 'donor'
@@ -1369,8 +1437,8 @@ class NonoverlappingPairLayout():
     def __init__(self, R1_als, R2_als, target_info):
         self.target_info = target_info
         self.layouts = {
-            'R1': Layout(R1_als, target_info),
-            'R2': Layout(R2_als, target_info),
+            'R1': Layout(R1_als, target_info, mode='illumina'),
+            'R2': Layout(R2_als, target_info, mode='illumina'),
         }
         if self.layouts['R1'].name != self.layouts['R2'].name:
             raise ValueError
@@ -1654,7 +1722,7 @@ category_order = [
          'deletion',
          'deletion <50 nt',
          'deletion >=50 nt',
-         'complex indel',
+         'multiple indels',
         ),
     ),
     ('HDR',
@@ -1692,6 +1760,7 @@ category_order = [
     ('uncategorized',
         ('uncategorized',
          'non-overlapping',
+         'too short',
          'donor with indel',
          'mismatch(es) near cut',
          'multiple indels near cut',
