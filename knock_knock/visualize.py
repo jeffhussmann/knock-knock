@@ -661,7 +661,7 @@ class ReadDiagram():
                         continue
 
                     feature = features[feature_reference, feature_name]
-                    feature_color = feature.attribute['color']
+                    feature_color = feature.attribute.get('color', 'grey')
                     
                     qs = [q for q, r in q_to_r.items() if feature.start <= r <= feature.end]
                     if not qs:
@@ -967,7 +967,7 @@ class ReadDiagram():
                 feature = ti.features.get((feature_reference, feature_name))
                 if feature is None:
                     continue
-                feature_color = feature.attribute['color']
+                feature_color = feature.attribute.get('color', 'grey')
                 
                 xs = adjust_edges([ref_p_to_x(p) for p in [feature.start, feature.end]])
                     
