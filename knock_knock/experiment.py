@@ -1705,7 +1705,23 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
 
     return layout
 
-def get_all_experiments(base_dir, conditions=None):
+def build_yaml_sample_sheet_from_csv(csv_fn):
+    csv_fn = Path(csv_fn)
+
+    df = pd.read_csv(csv_fn, index_col='sample')
+
+    sample_sheet = df.to_dict(orient='index')
+
+    for name, d in sample_sheet.items():
+        if 'forward_primer' in d:
+            d['primer_names'] = [d['forward_primer'], d['reverse_primer']]
+            d.pop('forward_primer')
+            d.pop('reverse_primer')
+
+    yaml_fn = csv_fn.with_suffix('.yaml')
+    yaml_fn.write_text(yaml.dump(sample_sheet, default_flow_style=False))
+
+def get_all_experiments(base_dir, conditions=None, as_dictionary=False, progress=None):
     data_dir = Path(base_dir) / 'data'
 
     if conditions is None:
@@ -1729,6 +1745,15 @@ def get_all_experiments(base_dir, conditions=None):
     
     for group in groups:
         sample_sheet_fn = data_dir / group / 'sample_sheet.yaml'
+
+        if not sample_sheet_fn.exists():
+            csv_fn = sample_sheet_fn.with_suffix('.csv')
+            if not csv_fn.exists():
+                print(f'Warning: {group} has no sample sheet')
+                continue
+            else:
+                build_yaml_sample_sheet_from_csv(csv_fn)
+
         sample_sheet = yaml.safe_load(sample_sheet_fn.read_text())
 
         for name, description in sample_sheet.items():
@@ -1739,11 +1764,18 @@ def get_all_experiments(base_dir, conditions=None):
             else:
                 exp_class = Experiment
             
-            exp = exp_class(base_dir, group, name, description=description)
+            exp = exp_class(base_dir, group, name, description=description, progress=progress)
             exps.append(exp)
 
     filtered = [exp for exp in exps if check_conditions(exp)]
     if len(filtered) == 0:
         raise ValueError('No experiments met conditions')
+
+    if as_dictionary:
+        d = {}
+        for exp in filtered:
+            d[exp.group, exp.name] = exp
+        
+        filtered = d
 
     return filtered
