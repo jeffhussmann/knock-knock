@@ -227,7 +227,7 @@ class ReadDiagram():
 
         self.text_y = -7
 
-        self.cross_x = self.query_length * 0.002
+        self.cross_x = max(0.5, self.query_length * 0.002)
         self.cross_y = self.cross_x * self.width_per_unit / self.height_per_unit
 
         if self.ax is None:
