@@ -958,7 +958,8 @@ class ReadDiagram():
                                     and 'sgRNA' not in f_name
                                    ]
 
-                features_to_show.append((self.target_info.target, self.target_info.sgRNA))
+                for sgRNA in self.target_info.sgRNAs:
+                    features_to_show.append((self.target_info.target, sgRNA))
 
             for feature_reference, feature_name in features_to_show:
                 if feature_name is None or feature_name in self.features_to_hide:
