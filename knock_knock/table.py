@@ -21,10 +21,19 @@ def load_counts(base_dir, conditions=None, drop_outcomes=None):
 
     exps = experiment.get_all_experiments(base_dir, conditions)
 
-    counts = {(exp.group, exp.name): exp.load_outcome_counts() for exp in exps}
-    no_outcomes = [k for k, v in counts.items() if v is None]
+    counts = {}
+    no_outcomes = []
+
+    for exp in exps:
+        exp_counts = exp.load_outcome_counts()
+        if exp_counts is None:
+            no_outcomes.append((exp.group, exp.name))
+        else:
+            counts[exp.group, exp.name] = exp_counts
+
     if no_outcomes:
-        raise ValueError('Can\'t find outcome counts for {0}'.format(no_outcomes))
+        no_outcomes_string = '\n'.join(f'\t{group}: {name}' for group, name in no_outcomes)
+        print(f'Warning: can\'t find outcome counts for\n{no_outcomes_string}') 
 
     df = pd.DataFrame(counts).fillna(0).drop(drop_outcomes)
 

@@ -1363,9 +1363,12 @@ class IlluminaExperiment(Experiment):
     def load_outcome_counts(self):
         stitched = super().load_outcome_counts(key='outcome_counts')
         no_overlap = super().load_outcome_counts(key='no_overlap_outcome_counts')
-        combined = stitched.add(no_overlap, fill_value=0).astype(int)
 
-        return combined
+        if stitched is None or no_overlap is None:
+            return None
+        else:
+            combined = stitched.add(no_overlap, fill_value=0).astype(int)
+            return combined
 
     def no_overlap_alignment_groups(self, outcome=None):
         R1_read_type = 'R1_no_overlap'
