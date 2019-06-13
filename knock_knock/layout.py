@@ -1677,6 +1677,12 @@ class NonoverlappingPairLayout():
                     'R1': [R1_primer, bridging_als['R1']],
                     'R2': [R2_primer, bridging_als['R2']],
                 }
+            else:
+                self.length = -1
+                category = 'uncategorized'
+                subcategory = 'non-overlapping'
+                details = 'n/a'
+                self.relevant_alignments = self.uncategorized_relevant_alignments
             
         else:
             self.length = -1
@@ -1687,7 +1693,6 @@ class NonoverlappingPairLayout():
 
             self.relevant_alignments = self.uncategorized_relevant_alignments
             
-
         return category, subcategory, details
     
 def max_del_nearby(alignment, ref_pos, window):
