@@ -1,5 +1,6 @@
 import array
 import warnings
+import subprocess
 from pathlib import Path
 from collections import defaultdict
 
@@ -521,7 +522,9 @@ class TargetInfo():
                 seqs[source] = HA_seq
                 
             if seqs['target'] != seqs['donor']:
-                print(f'warning: {name} not identical sequence on target and donor')
+                # May want to warn here:
+                #print(f'warning: {name} not identical sequence on target and donor')
+                pass
 
             paired_HAs[name] = HAs[name]
 
@@ -1012,11 +1015,14 @@ def get_all_targets(base_dir):
     targets = [TargetInfo(base_dir, n) for n in names]
     return targets
 
-def build_target_info(info, target_dir):
-    target_dir = Path(target_dir)
-    
+def build_target_info(base_dir, info, reference_name):
+    base_dir = Path(base_dir)
+
     name = info['name']
     donor_name = f'{name}_donor'
+
+    target_dir = base_dir / 'targets' / name
+    target_dir.mkdir(parents=True, exist_ok=True)
     
     protospacer = info['sgRNA_sequence'].upper()
     amplicon_primers = info['amplicon_primers'].split(';')
@@ -1028,7 +1034,8 @@ def build_target_info(info, target_dir):
     STAR_prefix = protospacer_dir / 'protospacer_'
     bam_fn = protospacer_dir / 'protospacer.bam'
 
-    index_location = '/nvme/indices/refdata-cellranger-hg19-1.2.0/star'
+    index_locations = locate_supplemental_indices(base_dir)
+    STAR_index = index_locations[reference_name]['STAR']
 
     target_gb_fn = target_dir / f'{name}.gb'
     donor_gb_fn = target_dir / f'{donor_name}.gb'
@@ -1041,14 +1048,18 @@ def build_target_info(info, target_dir):
         fh.write(str(read))
         
     # Align the protospacer to the reference genome.
-    mapping_tools.map_STAR(fastq_fn, index_location, STAR_prefix, mode='guide_alignment', bam_fn=bam_fn)
+    mapping_tools.map_STAR(fastq_fn, STAR_index, STAR_prefix, mode='guide_alignment', bam_fn=bam_fn)
 
     with pysam.AlignmentFile(bam_fn) as bam_fh:
         perfect_als = [al for al in bam_fh if not al.is_unmapped and sam.total_edit_distance(al) == 0]
     
-    region_fetcher = genomes.build_region_fetcher('/nvme/indices/refdata-cellranger-hg19-1.2.0/fasta')
+    region_fetcher = genomes.build_region_fetcher(index_locations[reference_name]['fasta'])
     
-    def generate_records(al):
+    def evaluate_candidate(al):
+        results = {
+            'location': f'{al.reference_name} {al.reference_start:,} {sam.get_strand(al)}',
+        }
+
         full_window_around = 5000
 
         full_around = region_fetcher(al.reference_name, al.reference_start - full_window_around, al.reference_end + full_window_around).upper()
@@ -1069,27 +1080,33 @@ def build_target_info(info, target_dir):
         PAM = PAM_transform(full_around[ps_start + PAM_offset:ps_start + PAM_offset + 3])
         pattern, *matches = Bio.SeqUtils.nt_search(PAM, 'NGG')
         if 0 not in matches:
-            print('bad PAM')
-            return None
+            results['failed'] = f'bad PAM: {PAM}'
+            return results
         
         if amplicon_primers[0] in full_around:
             final_fwd_primer = amplicon_primers[0]
             final_rev_primer = utilities.reverse_complement(amplicon_primers[1])
             if final_rev_primer not in full_around:
-                return None
+                results['failed'] = f'primer {amplicon_primers[1]} not present near protospacer'
+                return results
         else:
             final_fwd_primer = amplicon_primers[1]
             final_rev_primer = utilities.reverse_complement(amplicon_primers[0])
 
-            if final_fwd_primer not in full_around or final_rev_primer not in full_around:
-                return None
+            if final_fwd_primer not in full_around:
+                results['failed'] = f'primer {amplicon_primers[1]} not present near protospacer'
+                return results
+
+            if final_rev_primer not in full_around:
+                results['failed'] = f'primer {amplicon_primers[0]} not present near protospacer'
+                return results
 
         fwd_start = full_around.index(final_fwd_primer)
         rev_start = full_around.index(final_rev_primer)
         
         if fwd_start >= rev_start:
-            # Non-physical.
-            return None
+            results['failed'] = f'primer don\'t flank protospacer'
+            return results
         
         final_window_around = 500    
 
@@ -1110,8 +1127,8 @@ def build_target_info(info, target_dir):
             possibly_flipped_donor_seq = utilities.reverse_complement(donor_seq)
             donor_prefix = possibly_flipped_donor_seq[:20]
         else:
-            print('no donor prefix')
-            return None
+            results['failed'] = f'beginning of donor sequence ({donor_prefix}) not present near protospacer'
+            return results
 
         donor_suffix = possibly_flipped_donor_seq[-20:]
 
@@ -1119,8 +1136,8 @@ def build_target_info(info, target_dir):
             donor_start = target_seq.index(donor_prefix)
             donor_end = target_seq.index(donor_suffix) + len(donor_suffix)
         except ValueError:
-            print('no donor suffix')
-            return None
+            results['failed'] = f'end of donor sequence ({donor_suffix}) not present near protospacer'
+            return results
 
         relevant_target_seq = target_seq[donor_start:donor_end]
 
@@ -1161,8 +1178,8 @@ def build_target_info(info, target_dir):
                     donor_rev = utilities.reverse_complement(donor_primers[0])
 
                 else:
-                    print('no fwd suffix')
-                    return None
+                    results['failed'] = f'at least one donor primer doesn\'t end in at least {suffix_nts} nts that are present in the donor'
+                    return results
 
             forward_suffix_start = possibly_flipped_donor_seq.index(forward_suffix)
             extra_nts_at_start = len(donor_fwd[:-suffix_nts]) - forward_suffix_start
@@ -1172,8 +1189,8 @@ def build_target_info(info, target_dir):
             try:
                 reverse_suffix_start = possibly_flipped_donor_seq.index(reverse_suffix)
             except ValueError:
-                print('no rev suffix')
-                return None
+                results['failed'] = f'at least one donor primer doesn\'t end in at least {suffix_nts} nts that are present in the donor'
+                return results
 
             possibly_flipped_donor_seq = donor_fwd[:-suffix_nts] + possibly_flipped_donor_seq[forward_suffix_start:reverse_suffix_start] + donor_rev
         else:
@@ -1218,7 +1235,7 @@ def build_target_info(info, target_dir):
                       ),
         ]
 
-        donor_record = Bio.SeqRecord.SeqRecord(Seq(possibly_flipped_donor_seq, generic_dna), id=donor_name, name=donor_name, features=donor_features)
+        results['donor'] = Bio.SeqRecord.SeqRecord(Seq(possibly_flipped_donor_seq, generic_dna), id=donor_name, name=donor_name, features=donor_features)
 
         target_features = [
             SeqFeature(location=FeatureLocation(fwd_start - offset, fwd_start - offset + len(final_fwd_primer), strand=1),
@@ -1258,26 +1275,46 @@ def build_target_info(info, target_dir):
                       ),
         ]
 
-        target_record = SeqRecord(Seq(target_seq, generic_dna), id=name, name=name, features=target_features)
-        
-        return target_record, donor_record
+        results['target'] = SeqRecord(Seq(target_seq, generic_dna), id=name, name=name, features=target_features)
+
+        return results
     
-    records = []
+    good_candidates = []
+    bad_candidates = []
     
     for al in perfect_als:
-        record_pair = generate_records(al)
-        if record_pair is not None:
-            records.append(record_pair)
+        results = evaluate_candidate(al)
+        if 'failed' in results:
+            bad_candidates.append(results)
+        else:
+            good_candidates.append(results)
     
-    if len(records) != 1:
-        raise ValueError(name, records)
+    if len(good_candidates) == 0:
+        if len(bad_candidates) == 0:
+            print(f'Error building {name}: no perfect matches to sgRNA {protospacer} found in {reference_name}')
+            return 
+
+        else:
+            print(f'Error building {name}: no valid genomic locations for {name}')
+
+            for results in bad_candidates:
+                print(f'\t{results["location"]}: {results["failed"]}')
+
+            return 
+
+    elif len(good_candidates) > 1:
+        print(f'Warning: multiple valid genomic locations for {name}:')
+        for results in good_candidates:
+            print(f'\t{results["location"]}')
+        best_candidate = good_candidates[0]
+        print(f'Arbitrarily choosing {best_candidate["location"]}')
     else:
-        target_record, donor_record = records[0]
+        best_candidate = good_candidates[0]
 
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', category=BiopythonWarning)
-        Bio.SeqIO.write(donor_record, donor_gb_fn, 'genbank')
-        Bio.SeqIO.write(target_record, target_gb_fn, 'genbank')
+        Bio.SeqIO.write(best_candidate['donor'], donor_gb_fn, 'genbank')
+        Bio.SeqIO.write(best_candidate['target'], target_gb_fn, 'genbank')
 
     manifest_fn = target_dir / 'manifest.yaml'
     manifest = {
@@ -1286,20 +1323,84 @@ def build_target_info(info, target_dir):
         'donor_specific': 'donor_specific',
     }
     manifest_fn.write_text(yaml.dump(manifest, default_flow_style=False))
+        
+    ti = TargetInfo(base_dir, name)
+    ti.make_references()
+    ti.identify_degenerate_indels()
 
-def build_target_infos_from_csv(base_dir):
+def build_target_infos_from_csv(base_dir, reference_name='hg38'):
     base_dir = Path(base_dir)
     csv_fn = base_dir / 'targets' / 'targets.csv'
 
-    df = pd.read_csv(csv_fn)
+    df = pd.read_csv(csv_fn).fillna('')
 
     for _, row in df.iterrows():
         name = row['name']
         print(f'Building {name}...')
-        target_dir = base_dir / 'targets' / name
-        target_dir.mkdir(parents=True, exist_ok=True)
-        build_target_info(row, target_dir)
+        build_target_info(base_dir, row, reference_name)
 
-        ti = TargetInfo(base_dir, name)
-        ti.make_references()
-        ti.identify_degenerate_indels()
+def build_indices(base_dir, name, num_threads=1):
+    base_dir = Path(base_dir)
+
+    print(f'Building indices for {name}')
+    fasta_dir = base_dir / 'indices' / name / 'fasta'
+
+    fasta_fns = genomes.get_all_fasta_file_names(fasta_dir)
+    if len(fasta_fns) == 0:
+        raise ValueError(f'No fasta files found in {fasta_dir}')
+    elif len(fasta_fns) > 1:
+        raise ValueError(f'Can only build minimap2 index from a single fasta file')
+
+    print('Indexing fastas...')
+    genomes.make_fais(fasta_dir)
+
+    minimap2_dir = base_dir / 'indices' / name / 'minimap2'
+    minimap2_dir.mkdir(exist_ok=True)
+
+    fasta_fn = fasta_fns[0]
+
+    print('Building STAR index...')
+    STAR_dir = base_dir / 'indices' / name / 'STAR'
+    STAR_dir.mkdir(exist_ok=True)
+    mapping_tools.build_STAR_index([fasta_fn], STAR_dir, num_threads=num_threads)
+
+    print('Building minimap2 index...')
+    minimap2_index_fn = minimap2_dir / f'{name}.mmi'
+    mapping_tools.build_minimap2_index(fasta_fn, minimap2_index_fn)
+
+def download_and_build_hg38(base_dir):
+    base_dir = Path(base_dir)
+    hg38_dir = base_dir / 'indices' / 'hg38'
+    fasta_dir = hg38_dir / 'fasta'
+
+    print('Downloading hg38 from ucsc...')
+    wget_command = [
+        'wget', 'http://hgdownload.cse.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz',
+        '-P', str(fasta_dir),
+    ]
+    subprocess.run(wget_command, check=True)
+
+    print('Uncompressing...')
+    gunzip_command = [
+        'gunzip',  str(fasta_dir / 'hg38.fa'),
+    ]
+    subprocess.run(gunzip_command, check=True)
+
+def locate_supplemental_indices(base_dir):
+    base_dir = Path(base_dir)
+    override_fn = base_dir / 'index_locations.yaml'
+    if override_fn.exists():
+        locations = yaml.safe_load(override_fn.read_text())
+    else:
+        locations = {}
+        indices_dir = base_dir / 'indices'
+        if indices_dir.is_dir():
+            for d in indices_dir.iterdir():
+                if d.is_dir():
+                    locations[d.name] = {
+                        'STAR': d / 'STAR',
+                        'fasta': d / 'fasta',
+                        'minimap2': d / f'minimap2/{d.name}.mmi',
+                    }
+
+    return locations

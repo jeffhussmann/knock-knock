@@ -2,9 +2,12 @@ from setuptools import setup
 from pathlib import Path
 
 example_data_fns = []
-base_dir = Path('knock_knock/example_data')
+base_dir = Path('knock_knock/example_data/data')
 for fn in base_dir.glob('**/*'):
     example_data_fns.append(str(fn.relative_to('knock_knock')))
+
+target_csv_fn = Path('knock_knock/example_data/targets/targets.csv')
+example_data_fns.append(str(target_csv_fn.relative_to('knock_knock')))
 
 setup(
     name='knock_knock',
