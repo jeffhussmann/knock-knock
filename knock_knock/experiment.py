@@ -818,6 +818,10 @@ class Experiment(object):
 
         fig, axs = plt.subplots(num_panels, 1, figsize=(14, 6 * num_panels), gridspec_kw=dict(hspace=0.12))
 
+        if num_panels == 1:
+            # Want to be able to treat axs as a 1D array.
+            axs = [axs]
+
         ax = axs[0]
         ax.annotate(f'{self.group}: {self.name}',
                     xy=(0.5, 1), xycoords='axes fraction',
