@@ -3,6 +3,7 @@
 import argparse
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 import yaml
@@ -90,12 +91,40 @@ def process(args):
 
 def make_tables(args):
     drop_outcomes = None
-    html_fn = Path(args.file_name).with_suffix('.html')
-    table.generate_html(args.base_dir, html_fn, args.conditions, drop_outcomes, args.show_subcategories)
 
-    csv_fn = Path(args.file_name).with_suffix('.csv')
+    results_dir = args.base_dir / 'results'
+    html_fn = (results_dir / args.file_name_prefix).with_suffix('.html')
+    table.generate_html(args.base_dir, html_fn, args.conditions, drop_outcomes, show_subcategories=False)
+
+    html_with_subcategories_fn = (results_dir / f'{args.file_name_prefix}_with_subcategories').with_suffix('.html')
+    table.generate_html(args.base_dir, html_with_subcategories_fn, args.conditions, drop_outcomes, show_subcategories=True)
+
+    csv_fn = (results_dir / args.file_name_prefix).with_suffix('.csv')
     df = table.load_counts(args.base_dir, args.conditions, drop_outcomes)
     df.to_csv(csv_fn)
+
+    exps = experiment.get_all_experiments(args.base_dir, args.conditions)
+
+    fns_to_add = [html_fn, html_with_subcategories_fn]
+    for exp in exps:
+        fns_to_add.append(exp.fns['outcome_browser'])
+        for outcome in exp.outcomes:
+            outcome_fns = exp.outcome_fns(outcome)
+            fns_to_add.append(outcome_fns['diagrams_html'])
+            fns_to_add.append(outcome_fns['first_example'])
+            for fn in outcome_fns['length_ranges_dir'].iterdir():
+                fns_to_add.append(fn)
+
+        categories = set(c for c, s in exp.outcomes)
+        for category in categories:
+            outcome_fns = exp.outcome_fns(category)
+            fns_to_add.append(outcome_fns['diagrams_html'])
+            fns_to_add.append(outcome_fns['first_example'])
+
+    zip_fn = (results_dir / args.file_name_prefix).with_suffix('.zip')
+    with zipfile.ZipFile(zip_fn, mode='w', compression=zipfile.ZIP_DEFLATED) as zip_fh:
+        for fn in fns_to_add:
+            zip_fh.write(fn, arcname=fn.relative_to(results_dir))
 
 def build_targets(args):
     target_info.build_target_infos_from_csv(args.base_dir)
@@ -116,8 +145,7 @@ parser_parallel.add_argument('--conditions', type=yaml.safe_load, default={})
 parser_parallel.set_defaults(func=parallel)
 
 parser_table = subparsers.add_parser('table')
-parser_table.add_argument('file_name')
-parser_table.add_argument('--show_subcategories', action='store_true')
+parser_table.add_argument('file_name_prefix')
 parser_table.add_argument('--conditions', type=yaml.safe_load, default={})
 parser_table.set_defaults(func=make_tables)
 

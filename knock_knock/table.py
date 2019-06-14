@@ -247,7 +247,7 @@ def make_table(base_dir, conditions=None, drop_outcomes=None, include_images=Fal
         styled = styled.bar(subset=pd.IndexSlice[:, [col]], color=exp.color)
         
     styled.set_table_styles(styles)
-    
+
     return styled
 
 def make_table_transpose(base_dir,
@@ -260,6 +260,9 @@ def make_table_transpose(base_dir,
     totals = df.loc[totals_row_label]
 
     df = df.T
+
+    # Hack to give the html the information it needs to build links to diagram htmls
+    df.index = df.index.set_levels(['/'.join(levels) for levels in df.index.values], level=1)
 
     if not show_subcategories:
         level_0 = list(df.columns.levels[0])
@@ -309,7 +312,7 @@ def make_table_transpose(base_dir,
                 if inline_images:
                     hover_URI, width, height = fn_to_URI(hover_image_fn)
                 else:
-                    relative_path = hover_image_fn.relative_to(exp.fns['dir'].parent)
+                    relative_path = hover_image_fn.relative_to(exp.base_dir / 'results')
                     hover_URI = str(relative_path)
                     if hover_image_fn.exists():
                         with PIL.Image.open(hover_image_fn) as im:
@@ -319,14 +322,14 @@ def make_table_transpose(base_dir,
                     else:
                         width, height = 100, 100
 
-                relative_path = click_html_fn.relative_to(exp.fns['dir'].parent)
+                relative_path = click_html_fn.relative_to(exp.base_dir / 'results')
                 link = link_without_modal_template.format(text=text,
-                                            #modal_id=modal_id,
-                                            URI=hover_URI,
-                                            width=width,
-                                            height=height,
-                                            URL=str(relative_path),
-                                            )
+                                                          #modal_id=modal_id,
+                                                          URI=hover_URI,
+                                                          width=width,
+                                                          height=height,
+                                                          URL=str(relative_path),
+                                                         )
                 html = link# + modal_div
 
         return html
@@ -345,17 +348,19 @@ def make_table_transpose(base_dir,
         dict(selector="tr:hover", props=[("background-color", "#cccccc")]),
     ]
     
-    for exp_group, exp_name in df.index:
-        sl = pd.IndexSlice[[(exp_group, exp_name)], :]
+    for exp_group, group_and_name in df.index:
+        _, exp_name = group_and_name.split('/')
+        sl = pd.IndexSlice[[(exp_group, group_and_name)], :]
         styled = styled.format(bind_link_maker(exp_group, exp_name), subset=sl)
     
     styled = styled.set_properties(**{'border': '1px solid black'})
-    for exp_group, exp_name in df.index:
+    for exp_group, group_and_name in df.index:
+        _, exp_name = group_and_name.split('/')
         exp = experiment.Experiment(base_dir, exp_group, exp_name)
         # Note: as of pandas 0.22, col needs to be in brackets here so that
         # apply is ultimately called on a df, not a series, to prevent
         # TypeError: _bar_left() got an unexpected keyword argument 'axis'
-        styled = styled.bar(subset=pd.IndexSlice[[(exp_group, exp_name)], :], axis=1, color=exp.color)
+        styled = styled.bar(subset=pd.IndexSlice[[(exp_group, group_and_name)], :], axis=1, color=exp.color)
         
     styled.set_table_styles(styles)
     
