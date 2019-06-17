@@ -224,12 +224,6 @@ class Layout(object):
                 details = 'n/a'
                 self.relevant_alignments = self.uncategorized_relevant_alignments
 
-            elif self.any_donor_specific_present:
-                category = 'uncategorized'
-                subcategory = 'donor specific present'
-                details = 'n/a'
-                self.relevant_alignments = self.uncategorized_relevant_alignments
-
             else:
                 category = 'WT'
                 subcategory = 'WT'
@@ -275,6 +269,12 @@ class Layout(object):
             category = 'uncategorized'
             subcategory = self.integration_summary
 
+            self.relevant_alignments = self.uncategorized_relevant_alignments
+
+        elif self.any_donor_specific_present:
+            category = 'uncategorized'
+            subcategory = 'donor specific present'
+            details = 'n/a'
             self.relevant_alignments = self.uncategorized_relevant_alignments
 
         else:
