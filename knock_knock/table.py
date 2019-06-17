@@ -15,10 +15,7 @@ from . import svg
 totals_row_label = (' ', 'Total reads')
 totals_row_label_collapsed = 'Total reads'
 
-def load_counts(base_dir, conditions=None, drop_outcomes=None):
-    if drop_outcomes is None:
-        drop_outcomes = []
-
+def load_counts(base_dir, conditions=None):
     exps = experiment.get_all_experiments(base_dir, conditions)
 
     counts = {}
@@ -35,7 +32,7 @@ def load_counts(base_dir, conditions=None, drop_outcomes=None):
         no_outcomes_string = '\n'.join(f'\t{group}: {name}' for group, name in no_outcomes)
         print(f'Warning: can\'t find outcome counts for\n{no_outcomes_string}') 
 
-    df = pd.DataFrame(counts).fillna(0).drop(drop_outcomes)
+    df = pd.DataFrame(counts).fillna(0)
 
     totals = df.sum(axis=0)
     totals_row = pd.DataFrame.from_dict({totals_row_label: totals}, orient='index')
@@ -49,7 +46,7 @@ def load_counts(base_dir, conditions=None, drop_outcomes=None):
     layout_module = layout_modules.pop()
     
     df['_sort_order'] = df.index.map(layout_module.order)
-    df = df.sort_values('_sort_order').drop('_sort_order', axis=1)
+    df = df.sort_values('_sort_order').drop('_sort_order', axis=1, level=0)
     
     df = pd.concat([totals_row, df]).astype(int)
     df.index.names = (None, None)
@@ -167,8 +164,8 @@ class ModalMaker(object):
         
         return modal_div, modal_id
         
-def make_table(base_dir, conditions=None, drop_outcomes=None, include_images=False):
-    df = load_counts(base_dir, conditions, drop_outcomes)
+def make_table(base_dir, conditions=None, include_images=False):
+    df = load_counts(base_dir, conditions)
     totals = df.loc[totals_row_label]
 
     modal_maker = ModalMaker()
@@ -252,18 +249,17 @@ def make_table(base_dir, conditions=None, drop_outcomes=None, include_images=Fal
 
 def make_table_transpose(base_dir,
                          conditions=None,
-                         drop_outcomes=None,
                          inline_images=False,
                          show_subcategories=True,
                         ):
-    df = load_counts(base_dir, conditions, drop_outcomes)
+    df = load_counts(base_dir, conditions)
     totals = df.loc[totals_row_label]
 
     df = df.T
 
     # Hack to give the html the information it needs to build links to diagram htmls
-    df.index = df.index.set_levels(['/'.join(levels) for levels in df.index.values], level=1)
-
+    df.index = pd.MultiIndex.from_tuples([(g, f'{g}/{n}') for g, n in df.index.values])
+    
     if not show_subcategories:
         level_0 = list(df.columns.levels[0])
         level_0[0] = 'Total reads'
@@ -282,7 +278,7 @@ def make_table_transpose(base_dir,
             exp = exps[exp_group, exp_name]
             
             fraction = val / totals[(exp_group, exp_name)]
-            
+
             if outcome == totals_row_label or outcome == totals_row_label_collapsed:
                 text = '{:,}'.format(val)
                 if False:
@@ -342,7 +338,7 @@ def make_table_transpose(base_dir,
         return bound
 
     styled = df.style
-    
+
     styles = [
         dict(selector="th", props=[("border", "1px solid black")]),
         dict(selector="tr:hover", props=[("background-color", "#cccccc")]),
@@ -366,15 +362,14 @@ def make_table_transpose(base_dir,
     
     return styled
 
-def generate_html(base_dir, fn, conditions=None, drop_outcomes=None, show_subcategories=True):
+def generate_html(base_dir, fn, conditions=None, show_subcategories=True):
     nb = nbf.new_notebook()
 
     cell_contents = f'''\
 import knock_knock.table
 
 conditions = {conditions}
-drop_outcomes = {drop_outcomes}
-knock_knock.table.make_table_transpose('{base_dir}', conditions, drop_outcomes, show_subcategories={show_subcategories})
+knock_knock.table.make_table_transpose('{base_dir}', conditions, show_subcategories={show_subcategories})
 '''
     
     nb['cells'] = [nbf.new_code_cell(cell_contents)]

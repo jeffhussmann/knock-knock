@@ -220,11 +220,11 @@ class Experiment(object):
     @property
     def reads(self):
         reads = fastq.reads(self.fns['fastqs'], up_to_space=True)
-        return self.progress(reads)
+        return reads
     
     def reads_by_type(self, read_type):
         reads = fastq.reads(self.fns_by_read_type['fastq'][read_type], up_to_space=True)
-        return self.progress(reads)
+        return reads
     
     @property
     def query_names(self):
@@ -316,6 +316,8 @@ class Experiment(object):
 
     def generate_alignments(self, read_type=None):
         reads = self.reads_by_type(read_type)
+        description = 'Generating alignment'
+        reads = self.progress(reads, desc=description)
 
         bam_fns = []
         bam_by_name_fns = []
@@ -1124,11 +1126,11 @@ p {
                 fh.write(f'{tag}\n')
     
     def generate_all_outcome_example_figures(self, num_examples=25):
-        for outcome in self.progress(self.outcomes, desc='Detailed outcome categories'):
+        for outcome in self.progress(self.outcomes, desc='Making diagrams for detailed subcategories'):
             self.generate_outcome_example_figures(outcome=outcome, num_examples=num_examples)
         
         categories = sorted(set(c for c, s in self.outcomes))
-        for outcome in self.progress(categories, desc='Grouped outcome categories'):
+        for outcome in self.progress(categories, desc='Making diagrams for grouped categories'):
             self.generate_outcome_example_figures(outcome=outcome, num_examples=num_examples)
             
     def explore(self, by_outcome=True, **kwargs):
@@ -1456,7 +1458,7 @@ class IlluminaExperiment(Experiment):
              fns['R1_no_overlap'].open('w') as R1_fh, \
              fns['R2_no_overlap'].open('w') as R2_fh:
 
-            description = 'Stitching read pairs:'
+            description = 'Stitching read pairs'
             for R1, R2 in self.progress(self.read_pairs, desc=description):
                 stitched = sw.stitch_read_pair(R1, R2, before_R1, before_R2, indel_penalty=-1000)
                 if len(stitched) == 2 * self.paired_end_read_length:
