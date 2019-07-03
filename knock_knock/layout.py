@@ -20,7 +20,7 @@ class Layout(object):
             self.indel_size_to_split_at = 3
             self.max_indel_allowed_in_donor = 1
         elif mode == 'pacbio':
-            self.indel_size_to_split_at = 4
+            self.indel_size_to_split_at = 5
             self.max_indel_allowed_in_donor = 3
 
         self.target_info = target_info
@@ -170,8 +170,16 @@ class Layout(object):
 
     def categorize(self):
         if self.target_info.donor is None and self.target_info.nonhomologous_donor is None:
-           return self.categorize_no_donor()
+           c, s, d = self.categorize_no_donor()
+        else:
+            c, s, d = self.categorize_with_donor()
+        
+        if self.strand == '-':
+            self.relevant_alignments = [sam.flip_alignment(al) for al in self.relevant_alignments]
 
+        return c, s, d
+
+    def categorize_with_donor(self):
         details = 'n/a'
 
         if all(al.is_unmapped for al in self.alignments):
@@ -205,7 +213,7 @@ class Layout(object):
                     category = 'uncategorized'
                     subcategory = 'multiple indels near cut'
                 else:
-                    category = 'indel'
+                    category = 'simple indel'
                     indel = self.indel_near_cut[0]
                     if indel.kind == 'D':
                         if indel.length < 50:
@@ -229,23 +237,47 @@ class Layout(object):
                 subcategory = 'WT'
                 self.relevant_alignments = self.parsimonious_target_alignments
 
+        # TODO: check here for HA extensions into donor specific
+        elif self.gap_covered_by_target_alignment:
+            category = 'complex indel'
+            subcategory = 'templated insertion'
+            details = 'n/a'
+            self.relevant_alignments = self.parsimonious_and_gap_alignments
+
+        elif self.integration_interval.total_length <= 5:
+            if self.target_to_at_least_cut[5] and self.target_to_at_least_cut[3]:
+                category = 'simple indel'
+                subcategory = 'insertion'
+            else:
+                category = 'complex indel'
+                subcategory = 'deletion plus insertion'
+            details = 'n/a'
+            self.relevant_alignments = self.parsimonious_and_gap_alignments
+
         elif self.integration_summary == 'donor':
-            if self.junction_summary_per_side[5] == 'HDR' and self.junction_summary_per_side[3] == 'HDR':
+            junctions = set(self.junction_summary_per_side.values())
+            if junctions == set(['HDR']):
                 category = 'HDR'
                 subcategory = 'HDR'
                 self.relevant_alignments = self.parsimonious_and_gap_alignments
             else:
-                category = 'misintegration'
+                if junctions == set(['truncated']) or junctions == set(['truncated', 'HDR']):
+                    category = 'truncated misintegration'
+                elif junctions == set(['blunt']) or junctions == set(['blunt', 'HDR']):
+                    category = 'blunt misintegration'
+                else:
+                    category = 'complex misintegration'
+
                 subcategory = '5\' {}, 3\' {}'.format(self.junction_summary_per_side[5], self.junction_summary_per_side[3])
                 self.relevant_alignments = self.parsimonious_and_gap_alignments
 
         elif self.integration_summary == 'concatamer':
-            category = 'concatamer'
+            category = 'concatenated misintegration'
             subcategory = self.junction_summary
             self.relevant_alignments = self.parsimonious_target_alignments + self.parsimonious_donor_alignments
 
         elif self.nonhomologous_donor_integration is not None:
-            category = 'misintegration'
+            category = 'non-homologous donor'
             subcategory = 'non-homologous donor'
             details = 'n/a'
             
@@ -264,6 +296,12 @@ class Layout(object):
             details = 'n/a'
 
             self.relevant_alignments = self.parsimonious_target_alignments + self.min_edit_distance_genomic_insertions
+        
+        elif self.any_donor_specific_present:
+            category = 'complex misintegration'
+            subcategory = 'other'
+            details = 'n/a'
+            self.relevant_alignments = self.parsimonious_and_gap_alignments
 
         elif self.integration_summary in ['donor with indel', 'other', 'unexpected length', 'unexpected source']:
             category = 'uncategorized'
@@ -271,17 +309,8 @@ class Layout(object):
 
             self.relevant_alignments = self.uncategorized_relevant_alignments
 
-        elif self.any_donor_specific_present:
-            category = 'uncategorized'
-            subcategory = 'donor specific present'
-            details = 'n/a'
-            self.relevant_alignments = self.uncategorized_relevant_alignments
-
         else:
             print(self.integration_summary)
-
-        if self.strand == '-':
-            self.relevant_alignments = [sam.flip_alignment(al) for al in self.relevant_alignments]
 
         return category, subcategory, details
     
@@ -315,10 +344,11 @@ class Layout(object):
         elif self.single_merged_primer_alignment is not None:
             num_indels = len(self.all_indels_near_cuts)
             if num_indels > 0:
-                category = 'indel'
                 if num_indels > 1:
+                    category = 'complex indel'
                     subcategory = 'multiple indels'
                 else:
+                    category = 'simple indel'
                     indel = self.indel_near_cut[0]
                     if indel.kind == 'D':
                         if indel.length < 50:
@@ -462,6 +492,21 @@ class Layout(object):
         return gap_als
 
     @memoized_property
+    def possibly_imperfect_gap_alignments(self):
+        gap_als = []
+        if self.integration_interval.total_length >= 10:
+            for al in self.target_alignments + self.donor_alignments:
+                if (self.integration_interval - interval.get_covered(al)).total_length <= 2:
+                    gap_als.append(al)
+
+        return gap_als
+
+    @memoized_property
+    def gap_covered_by_target_alignment(self):
+        all_gap_als = self.gap_alignments + self.possibly_imperfect_gap_alignments
+        return any(al.reference_name == self.target_info.target for al in all_gap_als)
+
+    @memoized_property
     def extra_copy_of_primer(self):
         ''' Check if too many alignments containing either primer were found. '''
         return any(len(als) > 1 for side, als in self.all_primer_alignments.items())
@@ -531,7 +576,8 @@ class Layout(object):
             return False
         else:
             donor_specific = ti.features[ti.donor, ti.donor_specific]
-            return any(sam.overlaps_feature(al, donor_specific, False) for al in self.donor_alignments)
+            als_to_check = self.parsimonious_and_gap_alignments
+            return any(sam.overlaps_feature(al, donor_specific, False) for al in als_to_check)
 
     @memoized_property
     def single_merged_primer_alignment(self):
@@ -1008,7 +1054,7 @@ class Layout(object):
             if self.clean_handoff[side]:
                 per_side[side] = 'HDR'
             elif self.donor_integration_contains_full_HA[side]:
-                per_side[side] = 'NHEJ'
+                per_side[side] = 'blunt'
             else:
                 per_side[side] = 'truncated'
 
@@ -1023,20 +1069,20 @@ class Layout(object):
 
             summary = 'HDR'
 
-        elif (per_side[5] == 'NHEJ' and
+        elif (per_side[5] == 'blunt' and
               per_side[3] == 'HDR'):
 
-            summary = "5' NHEJ"
+            summary = "5' blunt"
         
         elif (per_side[5] == 'HDR' and
-              per_side[3] == 'NHEJ'):
+              per_side[3] == 'blunt'):
 
-            summary = "3' NHEJ"
+            summary = "3' blunt"
         
-        elif (per_side[5] == 'NHEJ' and
-              per_side[3] == 'NHEJ'):
+        elif (per_side[5] == 'blunt' and
+              per_side[3] == 'blunt'):
 
-            summary = "5' and 3' NHEJ"
+            summary = "5' and 3' blunt"
 
         else:
             summary = 'uncategorized'
@@ -1611,13 +1657,13 @@ class NonoverlappingPairLayout():
                 'R2': self.layouts['R2'].parsimonious_target_alignments + self.layouts['R2'].parsimonious_donor_alignments,
             }
 
-            if self.junctions['R1'] == 'NHEJ' and self.junctions['R2'] == 'NHEJ':
-                category = 'misintegration'
-                subcategory = "5' NHEJ, 3' NHEJ"
+            if self.junctions['R1'] == 'blunt' and self.junctions['R2'] == 'blunt':
+                category = 'blunt misintegration'
+                subcategory = "5' blunt, 3' blunt"
                 details = self.bridging_strand[kind]
 
             elif self.junctions['R1'] == 'truncated' and self.junctions['R2'] == 'truncated':
-                category = 'misintegration'
+                category = 'truncated misintegration'
                 subcategory = "5' truncated, 3' truncated"
                 details = self.bridging_strand[kind]
 
@@ -1631,7 +1677,7 @@ class NonoverlappingPairLayout():
         elif kind == 'nh' and self.inferred_length > 0:
             self.length = self.inferred_length
 
-            category = 'misintegration'
+            category = 'non-homologous donor'
             subcategory = 'non-homologous donor'
             details = 'n/a'
             self.relevant_alignments = {
@@ -1722,36 +1768,51 @@ category_order = [
         ('WT',
         ),
     ),
-    ('indel',
+    ('simple indel',
         ('insertion',
          'deletion',
          'deletion <50 nt',
          'deletion >=50 nt',
-         'multiple indels',
         ),
+    ),
+    ('complex indel',
+         ('deletion plus insertion',
+          'templated insertion',
+          'multiple indels',
+         ),
     ),
     ('HDR',
         ('HDR',
         ),
     ),
-    ('concatamer',
+    ('blunt misintegration',
+        ("5' HDR, 3' blunt",
+         "5' blunt, 3' HDR",
+         "5' blunt, 3' blunt",
+        ),
+    ),
+    ('truncated misintegration',
+        ("5' HDR, 3' truncated",
+         "5' truncated, 3' HDR",
+         "5' truncated, 3' truncated",
+        ),
+    ),
+    ('complex misintegration',
+        ("5' blunt, 3' truncated",
+         "5' truncated, 3' blunt",
+         'other',
+        ),
+    ),
+    ('concatenated misintegration',
         ('HDR',
-         '5\' NHEJ',
-         '3\' NHEJ',
-         '5\' and 3\' NHEJ',
+         '5\' blunt',
+         '3\' blunt',
+         '5\' and 3\' blunt',
          'uncategorized',
         ),
     ),
-    ('misintegration',
-        ("5' HDR, 3' NHEJ",
-         "5' NHEJ, 3' HDR",
-         "5' HDR, 3' truncated",
-         "5' truncated, 3' HDR",
-         "5' NHEJ, 3' truncated",
-         "5' truncated, 3' NHEJ",
-         "5' NHEJ, 3' NHEJ",
-         "5' truncated, 3' truncated",
-         'non-homologous donor',
+    ('non-homologous donor',
+        ('non-homologous donor',
         ),
     ),
     ('nonspecific amplification',
