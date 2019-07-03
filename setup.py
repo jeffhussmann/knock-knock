@@ -46,7 +46,7 @@ setup(
         'Pillow>=5.0.0',
         'pysam>=0.14',
         'PyYAML>=3.12',
-        'hits>=0.0.3',
+        'hits>=0.0.5',
         'tqdm>=4.31.1',
     ],
 
