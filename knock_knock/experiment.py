@@ -76,7 +76,7 @@ class Experiment(object):
         self.layout_module = layout
         self.max_insertion_length = 20
 
-        self.sgRNA = self.description.get('sgRNA', 'sgRNA')
+        self.sgRNA = self.description.get('sgRNA')
         self.donor = self.description.get('donor')
         self.nonhomologous_donor = self.description.get('nonhomologous_donor')
         self.primer_names = self.description.get('primer_names', ['forward_primer', 'reverse_primer'])
