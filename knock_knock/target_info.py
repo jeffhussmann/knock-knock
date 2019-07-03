@@ -42,6 +42,7 @@ class TargetInfo():
                  sgRNA=None,
                  primer_names=None,
                  supplemental_headers=None,
+                 gb_records=None,
                  ):
         self.name = name
         self.dir = Path(base_dir) / 'targets' / name
@@ -50,6 +51,7 @@ class TargetInfo():
         manifest = yaml.safe_load(manifest_fn.open())
         self.target = manifest['target']
         self.sources = manifest['sources']
+        self.gb_records = gb_records
 
         self.sgRNA = sgRNA
         self.donor = donor
@@ -93,13 +95,19 @@ class TargetInfo():
 
     def make_references(self):
         ''' Generate fasta and gff files from genbank inputs. '''
-        gbs = [self.dir / (source + '.gb') for source in self.sources]
+        gb_fns = [self.dir / (source + '.gb') for source in self.sources]
         
         fasta_records = []
         all_gff_features = []
-        
-        for gb in gbs:
-            fasta_record, gff_features = parse_benchling_genbank(gb)
+            
+        if self.gb_records is None:
+            self.gb_records = []
+            for gb_fn in gb_fns:
+                self.gb_records.append(Bio.SeqIO.read(str(gb_fn), 'genbank'))
+
+        for gb_record in self.gb_records:
+            fasta_record, gff_features = parse_benchling_genbank(gb_record)
+
             fasta_records.append(fasta_record)
             all_gff_features.extend(gff_features)
             
@@ -188,6 +196,7 @@ class TargetInfo():
             (self.donor, 'GFP'),
             (self.donor, 'GFP11'),
             (self.donor, 'PPX'),
+            (self.donor, 'donor_specific'),
         }
 
         for side in [5, 3]:
@@ -968,13 +977,11 @@ class SNVs():
             else:
                 return False
 
-def parse_benchling_genbank(genbank_fn):
+def parse_benchling_genbank(gb_record):
     convert_strand = {
         -1: '-',
         1: '+',
     }
-
-    gb_record = Bio.SeqIO.read(str(genbank_fn), 'genbank')
 
     fasta_record = fasta.Read(gb_record.name, str(gb_record.seq))
 
@@ -982,7 +989,7 @@ def parse_benchling_genbank(genbank_fn):
 
     for gb_feature in gb_record.features:
         feature = gff.Feature.from_fields(
-            gb_record.id,
+            gb_record.name,
             '.',
             gb_feature.type,
             gb_feature.location.start,
@@ -992,7 +999,11 @@ def parse_benchling_genbank(genbank_fn):
             '.',
             '.',
         )
-        attribute = {k: v[0] for k, v in gb_feature.qualifiers.items()}
+        attribute = {}
+        for k, v in gb_feature.qualifiers.items():
+            if isinstance(v, list):
+                v = v[0]
+            attribute[k] = v
 
         if 'label' in attribute:
             attribute['ID'] = attribute.pop('label')
@@ -1015,7 +1026,7 @@ def get_all_targets(base_dir):
     targets = [TargetInfo(base_dir, n) for n in names]
     return targets
 
-def build_target_info(base_dir, info, reference_name):
+def build_target_info(base_dir, info, genome):
     base_dir = Path(base_dir)
 
     name = info['name']
@@ -1024,9 +1035,10 @@ def build_target_info(base_dir, info, reference_name):
     target_dir = base_dir / 'targets' / name
     target_dir.mkdir(parents=True, exist_ok=True)
     
-    protospacer = info['sgRNA_sequence'].upper()
+    protospacer, *other_protospacers = info['sgRNA_sequence'].upper().split(';')
     amplicon_primers = info['amplicon_primers'].split(';')
     donor_seq = info['donor_sequence'].upper()
+    has_donor = (donor_seq is not None)
     
     protospacer_dir = target_dir / 'protospacer_alignment'
     protospacer_dir.mkdir(exist_ok=True)
@@ -1035,7 +1047,7 @@ def build_target_info(base_dir, info, reference_name):
     bam_fn = protospacer_dir / 'protospacer.bam'
 
     index_locations = locate_supplemental_indices(base_dir)
-    STAR_index = index_locations[reference_name]['STAR']
+    STAR_index = index_locations[genome]['STAR']
 
     target_gb_fn = target_dir / f'{name}.gb'
     donor_gb_fn = target_dir / f'{donor_name}.gb'
@@ -1048,12 +1060,12 @@ def build_target_info(base_dir, info, reference_name):
         fh.write(str(read))
         
     # Align the protospacer to the reference genome.
-    mapping_tools.map_STAR(fastq_fn, STAR_index, STAR_prefix, mode='guide_alignment', bam_fn=bam_fn)
+    mapping_tools.map_STAR(fastq_fn, STAR_index, STAR_prefix, mode='guide_alignment', bam_fn=bam_fn, sort=False)
 
     with pysam.AlignmentFile(bam_fn) as bam_fh:
         perfect_als = [al for al in bam_fh if not al.is_unmapped and sam.total_edit_distance(al) == 0]
     
-    region_fetcher = genomes.build_region_fetcher(index_locations[reference_name]['fasta'])
+    region_fetcher = genomes.build_region_fetcher(index_locations[genome]['fasta'])
     
     def evaluate_candidate(al):
         results = {
@@ -1067,22 +1079,46 @@ def build_target_info(base_dir, info, reference_name):
         if sam.get_strand(al) == '+':
             ps_seq = protospacer
             ps_strand = 1
-            PAM_offset = len(protospacer)
-            PAM_transform = utilities.identity
         else:
             ps_seq = utilities.reverse_complement(protospacer)
-            ps_strand = -1
-            PAM_offset = -3
-            PAM_transform = utilities.reverse_complement
-
+            ps_strand  = -1
+        
         ps_start = full_around.index(ps_seq)
-        
-        PAM = PAM_transform(full_around[ps_start + PAM_offset:ps_start + PAM_offset + 3])
-        pattern, *matches = Bio.SeqUtils.nt_search(PAM, 'NGG')
-        if 0 not in matches:
-            results['failed'] = f'bad PAM: {PAM}'
-            return results
-        
+
+        protospacer_locations = [(ps_seq, ps_start, ps_strand)]
+
+        for other_protospacer in other_protospacers:
+            if other_protospacer in full_around:
+                ps_seq = other_protospacer
+                ps_strand = 1
+            else:
+                ps_seq =  utilities.reverse_complement(other_protospacer)
+                if ps_seq not in full_around:
+                    results['failed'] = f'protospacer {other_protospacer} not present near protospacer {protospacer}'
+                    return results
+                ps_strand = -1
+
+            ps_start = full_around.index(ps_seq)
+            protospacer_locations.append((ps_seq, ps_start, ps_strand))
+
+        for ps_seq, ps_start, ps_strand in protospacer_locations:
+            if ps_strand == 1:
+                PAM_offset = len(protospacer)
+                PAM_transform = utilities.identity
+            else:
+                PAM_offset = -3
+                PAM_transform = utilities.reverse_complement
+
+            PAM_start = ps_start + PAM_offset
+            PAM = PAM_transform(full_around[PAM_start:PAM_start + 3])
+            pattern, *matches = Bio.SeqUtils.nt_search(PAM, 'NGG')
+
+            if 0 not in matches:
+                # Note: this could incorrectly fail if there are multiple exact matches for an other_protospacer
+                # in full_around.
+                results['failed'] = f'bad PAM: {PAM} next to {ps_seq} (strand {ps_strand})'
+                return results
+
         if amplicon_primers[0] in full_around:
             final_fwd_primer = amplicon_primers[0]
             final_rev_primer = utilities.reverse_complement(amplicon_primers[1])
@@ -1117,91 +1153,6 @@ def build_target_info(base_dir, info, reference_name):
 
         target_seq = full_around[final_start:final_end]
 
-        # Identify the homology arms.
-
-        donor_prefix = donor_seq[:20]
-        
-        if donor_prefix in target_seq:
-            possibly_flipped_donor_seq = donor_seq
-        elif utilities.reverse_complement(donor_prefix) in target_seq:
-            possibly_flipped_donor_seq = utilities.reverse_complement(donor_seq)
-            donor_prefix = possibly_flipped_donor_seq[:20]
-        else:
-            results['failed'] = f'beginning of donor sequence ({donor_prefix}) not present near protospacer'
-            return results
-
-        donor_suffix = possibly_flipped_donor_seq[-20:]
-
-        try:
-            donor_start = target_seq.index(donor_prefix)
-            donor_end = target_seq.index(donor_suffix) + len(donor_suffix)
-        except ValueError:
-            results['failed'] = f'end of donor sequence ({donor_suffix}) not present near protospacer'
-            return results
-
-        relevant_target_seq = target_seq[donor_start:donor_end]
-
-        total_HA_length = donor_end - donor_start
-
-        mismatches_before_deletion = np.cumsum([t != d for t, d in zip(relevant_target_seq, possibly_flipped_donor_seq)])
-
-        flipped_target = relevant_target_seq[::-1]
-        flipped_donor = possibly_flipped_donor_seq[::-1]
-        mismatches_after_deletion = np.cumsum([0] + [t != d for t, d in zip(flipped_target, flipped_donor)][:-1])[::-1]
-
-        total_mismatches = mismatches_before_deletion + mismatches_after_deletion
-
-        last_index_in_HA_1 = int(np.argmin(total_mismatches))
-
-        lengths = {}
-        lengths['HA_1'] = last_index_in_HA_1 + 1
-        lengths['HA_2'] = total_HA_length - lengths['HA_1']
-        lengths['donor_specific'] = len(donor_seq) - total_HA_length
-        
-        # Support for donors that have fixed sequences outside of their homology arms added by PCR.
-        if info.get('donor_primers', '') != '':
-            donor_primers = info['donor_primers'].split(';')
-            
-            suffix_nts = 15
-
-            forward_suffix = donor_primers[0][-suffix_nts:]
-            
-            if forward_suffix in possibly_flipped_donor_seq:
-                donor_fwd = donor_primers[0]
-                donor_rev = utilities.reverse_complement(donor_primers[1])
-
-            else:
-                forward_suffix = donor_primers[1][-suffix_nts:]
-
-                if forward_suffix in possibly_flipped_donor_seq:
-                    donor_fwd = donor_primers[1]
-                    donor_rev = utilities.reverse_complement(donor_primers[0])
-
-                else:
-                    results['failed'] = f'at least one donor primer doesn\'t end in at least {suffix_nts} nts that are present in the donor'
-                    return results
-
-            forward_suffix_start = possibly_flipped_donor_seq.index(forward_suffix)
-            extra_nts_at_start = len(donor_fwd[:-suffix_nts]) - forward_suffix_start
-
-            reverse_suffix = donor_rev[:suffix_nts]
-
-            try:
-                reverse_suffix_start = possibly_flipped_donor_seq.index(reverse_suffix)
-            except ValueError:
-                results['failed'] = f'at least one donor primer doesn\'t end in at least {suffix_nts} nts that are present in the donor'
-                return results
-
-            possibly_flipped_donor_seq = donor_fwd[:-suffix_nts] + possibly_flipped_donor_seq[forward_suffix_start:reverse_suffix_start] + donor_rev
-        else:
-            extra_nts_at_start = 0
-        
-        starts = {
-            'HA_1': extra_nts_at_start + 0,
-            'donor_specific': extra_nts_at_start + lengths['HA_1'],
-            'HA_2': extra_nts_at_start + len(donor_seq) - lengths['HA_2'], # note: donor_seq is still original
-        }
-        
         colors = {
             'HA_1': '#c7b0e3',
             'HA_2': '#85dae9',
@@ -1211,33 +1162,141 @@ def build_target_info(base_dir, info, reference_name):
             'donor_specific': '#b1ff67',
         }
         
-        donor_features = [
-            SeqFeature(location=FeatureLocation(starts['HA_1'], starts['HA_1'] + lengths['HA_1'], strand=1),
-                       id='HA_1',
-                       type='misc_feature',
-                       qualifiers={'label': 'HA_1',
-                                   'ApEinfo_fwdcolor': colors['HA_1'],
-                                  },
-                      ),
-            SeqFeature(location=FeatureLocation(starts['donor_specific'], starts['donor_specific'] + lengths['donor_specific'], strand=1),
-                       id='donor_specific',
-                       type='misc_feature',
-                       qualifiers={'label': 'donor_specific',
-                                   'ApEinfo_fwdcolor': colors['donor_specific'],
-                                  },
-                      ),
-            SeqFeature(location=FeatureLocation(starts['HA_2'], starts['HA_2'] + lengths['HA_2'], strand=1),
-                       id='HA_2',
-                       type='misc_feature',
-                       qualifiers={'label': 'HA_2',
-                                   'ApEinfo_fwdcolor': colors['HA_2'],
-                                  },
-                      ),
-        ]
+        if has_donor:
+            # Identify the homology arms.
 
-        results['donor'] = Bio.SeqRecord.SeqRecord(Seq(possibly_flipped_donor_seq, generic_dna), id=donor_name, name=donor_name, features=donor_features)
+            required_match_length = 15
+            donor_prefix = donor_seq[:required_match_length]
+            
+            if donor_prefix in target_seq:
+                possibly_flipped_donor_seq = donor_seq
+            elif utilities.reverse_complement(donor_prefix) in target_seq:
+                possibly_flipped_donor_seq = utilities.reverse_complement(donor_seq)
+                donor_prefix = possibly_flipped_donor_seq[:required_match_length]
+            else:
+                results['failed'] = f'beginning of donor sequence ({donor_prefix}) not present near protospacer'
+                return results
 
-        target_features = [
+            donor_suffix = possibly_flipped_donor_seq[-required_match_length:]
+
+            try:
+                donor_start = target_seq.index(donor_prefix)
+                donor_end = target_seq.index(donor_suffix) + len(donor_suffix)
+            except ValueError:
+                results['failed'] = f'end of donor sequence ({donor_suffix}) not present near protospacer'
+                return results
+
+            relevant_target_seq = target_seq[donor_start:donor_end]
+
+            total_HA_length = donor_end - donor_start
+
+            mismatches_before_deletion = np.cumsum([t != d for t, d in zip(relevant_target_seq, possibly_flipped_donor_seq)])
+
+            flipped_target = relevant_target_seq[::-1]
+            flipped_donor = possibly_flipped_donor_seq[::-1]
+            mismatches_after_deletion = np.cumsum([0] + [t != d for t, d in zip(flipped_target, flipped_donor)][:-1])[::-1]
+
+            total_mismatches = mismatches_before_deletion + mismatches_after_deletion
+
+            last_index_in_HA_1 = int(np.argmin(total_mismatches))
+
+            lengths = {}
+            lengths['HA_1'] = last_index_in_HA_1 + 1
+            lengths['HA_2'] = total_HA_length - lengths['HA_1']
+            lengths['donor_specific'] = len(donor_seq) - total_HA_length
+            
+            # Support for donors that have fixed sequences outside of their homology arms added by PCR.
+            if info.get('donor_primers') is not None:
+                donor_primers = info['donor_primers'].split(';')
+                
+                suffix_nts = 15
+
+                forward_suffix = donor_primers[0][-suffix_nts:]
+                
+                if forward_suffix in possibly_flipped_donor_seq:
+                    donor_fwd = donor_primers[0]
+                    donor_rev = utilities.reverse_complement(donor_primers[1])
+
+                else:
+                    forward_suffix = donor_primers[1][-suffix_nts:]
+
+                    if forward_suffix in possibly_flipped_donor_seq:
+                        donor_fwd = donor_primers[1]
+                        donor_rev = utilities.reverse_complement(donor_primers[0])
+
+                    else:
+                        results['failed'] = f'at least one donor primer doesn\'t end in at least {suffix_nts} nts that are present in the donor'
+                        return results
+
+                forward_suffix_start = possibly_flipped_donor_seq.index(forward_suffix)
+                extra_nts_at_start = len(donor_fwd[:-suffix_nts]) - forward_suffix_start
+
+                reverse_suffix = donor_rev[:suffix_nts]
+
+                try:
+                    reverse_suffix_start = possibly_flipped_donor_seq.index(reverse_suffix)
+                except ValueError:
+                    results['failed'] = f'at least one donor primer doesn\'t end in at least {suffix_nts} nts that are present in the donor'
+                    return results
+
+                possibly_flipped_donor_seq = donor_fwd[:-suffix_nts] + possibly_flipped_donor_seq[forward_suffix_start:reverse_suffix_start] + donor_rev
+            else:
+                extra_nts_at_start = 0
+            
+            starts = {
+                'HA_1': extra_nts_at_start + 0,
+                'donor_specific': extra_nts_at_start + lengths['HA_1'],
+                'HA_2': extra_nts_at_start + len(donor_seq) - lengths['HA_2'], # note: donor_seq is still original
+            }
+        
+            donor_features = [
+                SeqFeature(location=FeatureLocation(starts['HA_1'], starts['HA_1'] + lengths['HA_1'], strand=1),
+                        id='HA_1',
+                        type='misc_feature',
+                        qualifiers={'label': 'HA_1',
+                                    'ApEinfo_fwdcolor': colors['HA_1'],
+                                    },
+                        ),
+                SeqFeature(location=FeatureLocation(starts['donor_specific'], starts['donor_specific'] + lengths['donor_specific'], strand=1),
+                        id='donor_specific',
+                        type='misc_feature',
+                        qualifiers={'label': 'donor_specific',
+                                    'ApEinfo_fwdcolor': colors['donor_specific'],
+                                    },
+                        ),
+                SeqFeature(location=FeatureLocation(starts['HA_2'], starts['HA_2'] + lengths['HA_2'], strand=1),
+                        id='HA_2',
+                        type='misc_feature',
+                        qualifiers={'label': 'HA_2',
+                                    'ApEinfo_fwdcolor': colors['HA_2'],
+                                    },
+                        ),
+            ]
+
+            results['donor'] = Bio.SeqRecord.SeqRecord(Seq(possibly_flipped_donor_seq, generic_dna), name=donor_name, features=donor_features)
+
+            target_features = [
+                SeqFeature(location=FeatureLocation(donor_start, donor_start + lengths['HA_1'], strand=1),
+                        id='HA_1',
+                        type='misc_feature',
+                        qualifiers={'label': 'HA_1',
+                                    'ApEinfo_fwdcolor': colors['HA_1'],
+                                    },
+                        ),
+                SeqFeature(location=FeatureLocation(donor_end - lengths['HA_2'], donor_end, strand=1),
+                        id='HA_2',
+                        type='misc_feature',
+                        qualifiers={'label': 'HA_2',
+                                    'ApEinfo_fwdcolor': colors['HA_2'],
+                                    },
+                        ),
+            ]
+        
+        else:
+            results['donor'] = None
+            target_features = []
+
+        target_features.extend([
             SeqFeature(location=FeatureLocation(fwd_start - offset, fwd_start - offset + len(final_fwd_primer), strand=1),
                        id='forward_primer',
                        type='misc_feature',
@@ -1252,30 +1311,19 @@ def build_target_info(base_dir, info, reference_name):
                                    'ApEinfo_fwdcolor': colors['reverse_primer'],
                                   },
                       ),
-            SeqFeature(location=FeatureLocation(ps_start - offset, ps_start - offset + len(protospacer), strand=ps_strand),
-                       id='sgRNA',
-                       type='sgRNA_SpCas9',
-                       qualifiers={'label': 'sgRNA',
-                                   'ApEinfo_fwdcolor': colors['sgRNA'],
-                                  },
-                      ),
-            SeqFeature(location=FeatureLocation(donor_start, donor_start + lengths['HA_1'], strand=1),
-                       id='HA_1',
-                       type='misc_feature',
-                       qualifiers={'label': 'HA_1',
-                                   'ApEinfo_fwdcolor': colors['HA_1'],
-                                  },
-                      ),
-            SeqFeature(location=FeatureLocation(donor_end - lengths['HA_2'], donor_end, strand=1),
-                       id='HA_2',
-                       type='misc_feature',
-                       qualifiers={'label': 'HA_2',
-                                   'ApEinfo_fwdcolor': colors['HA_2'],
-                                  },
-                      ),
-        ]
+        ])
 
-        results['target'] = SeqRecord(Seq(target_seq, generic_dna), id=name, name=name, features=target_features)
+        for sgRNA_i, (ps_seq, ps_start, ps_strand) in enumerate(protospacer_locations):
+            sgRNA_feature = SeqFeature(location=FeatureLocation(ps_start - offset, ps_start - offset + len(protospacer), strand=ps_strand),
+                                       id=f'sgRNA_{sgRNA_i}',
+                                       type='sgRNA_SpCas9',
+                                       qualifiers={'label': f'sgRNA_{sgRNA_i}',
+                                                   'ApEinfo_fwdcolor': colors['sgRNA'],
+                                                   },
+                                       )
+            target_features.append(sgRNA_feature)
+
+        results['target'] = SeqRecord(Seq(target_seq, generic_dna), name=name, features=target_features)
 
         return results
     
@@ -1291,7 +1339,7 @@ def build_target_info(base_dir, info, reference_name):
     
     if len(good_candidates) == 0:
         if len(bad_candidates) == 0:
-            print(f'Error building {name}: no perfect matches to sgRNA {protospacer} found in {reference_name}')
+            print(f'Error building {name}: no perfect matches to sgRNA {protospacer} found in {genome}')
             return 
 
         else:
@@ -1313,31 +1361,44 @@ def build_target_info(base_dir, info, reference_name):
 
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', category=BiopythonWarning)
-        Bio.SeqIO.write(best_candidate['donor'], donor_gb_fn, 'genbank')
-        Bio.SeqIO.write(best_candidate['target'], target_gb_fn, 'genbank')
+
+        try:
+            Bio.SeqIO.write(best_candidate['target'], target_gb_fn, 'genbank')
+
+            if has_donor:
+                Bio.SeqIO.write(best_candidate['donor'], donor_gb_fn, 'genbank')
+        except ValueError:
+            # locus line too long, can't write genbank file with BioPython
+            pass
 
     manifest_fn = target_dir / 'manifest.yaml'
     manifest = {
-        'sources': [name, donor_name],
+        'sources': [name, donor_name] if has_donor else [name],
         'target': name,
-        'donor_specific': 'donor_specific',
     }
+    if has_donor:
+        manifest['donor_specific'] = 'donor_specific'
+
     manifest_fn.write_text(yaml.dump(manifest, default_flow_style=False))
         
-    ti = TargetInfo(base_dir, name)
+    gb_records = [best_candidate['target']]
+    if has_donor:
+        gb_records.append(best_candidate['donor'])
+
+    ti = TargetInfo(base_dir, name, gb_records=gb_records)
     ti.make_references()
     ti.identify_degenerate_indels()
 
-def build_target_infos_from_csv(base_dir, reference_name='hg38'):
+def build_target_infos_from_csv(base_dir, genome='hg19'):
     base_dir = Path(base_dir)
     csv_fn = base_dir / 'targets' / 'targets.csv'
 
-    df = pd.read_csv(csv_fn).fillna('')
+    df = pd.read_csv(csv_fn).replace({np.nan: None})
 
     for _, row in df.iterrows():
         name = row['name']
         print(f'Building {name}...')
-        build_target_info(base_dir, row, reference_name)
+        build_target_info(base_dir, row, genome)
 
 def build_indices(base_dir, name, num_threads=1):
     base_dir = Path(base_dir)
@@ -1368,7 +1429,7 @@ def build_indices(base_dir, name, num_threads=1):
     minimap2_index_fn = minimap2_dir / f'{name}.mmi'
     mapping_tools.build_minimap2_index(fasta_fn, minimap2_index_fn)
 
-def download_and_build_hg38(base_dir):
+def download_and_build_hg38(base_dir, num_threads=8):
     base_dir = Path(base_dir)
     hg38_dir = base_dir / 'indices' / 'hg38'
     fasta_dir = hg38_dir / 'fasta'
@@ -1382,9 +1443,11 @@ def download_and_build_hg38(base_dir):
 
     print('Uncompressing...')
     gunzip_command = [
-        'gunzip',  str(fasta_dir / 'hg38.fa'),
+        'gunzip',  str(fasta_dir / 'hg38.fa.gz'),
     ]
     subprocess.run(gunzip_command, check=True)
+
+    build_indices(base_dir, 'hg38', num_threads=num_threads)
 
 def locate_supplemental_indices(base_dir):
     base_dir = Path(base_dir)
