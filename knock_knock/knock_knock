@@ -46,7 +46,7 @@ def parallel(args):
     if args.group:
         args.conditions['group'] = args.group
 
-    exps = experiment.get_all_experiments(args.base_dir, args.conditions)
+    exps = experiment.get_all_experiments(args.project_directory, args.conditions)
 
     if len(exps) == 0:
         print('No experiments satify conditions:')
@@ -55,11 +55,12 @@ def parallel(args):
 
     parallel_command = [
         'parallel',
+        '--will-cite',
         '-n', '3', 
         '--bar',
         '--max-procs', str(args.max_procs),
         'knock_knock',
-        '--base_dir', str(args.base_dir),
+        str(args.project_directory),
         'process', ':::',
     ]
 
@@ -72,12 +73,12 @@ def parallel(args):
 def process(args):
     check_blastn()
 
-    data_dir = Path(args.base_dir) / 'data' / args.group
+    data_dir = Path(args.project_directory) / 'data' / args.group
     sample_sheet_fn = data_dir / 'sample_sheet.yaml'
     sample_sheet = yaml.safe_load(sample_sheet_fn.read_text())
 
-    if args.experiment in sample_sheet:
-        description = sample_sheet[args.experiment]
+    if args.sample in sample_sheet:
+        description = sample_sheet[args.sample]
 
         if description.get('platform') == 'pacbio':
             exp_class = experiment.PacbioExperiment
@@ -86,9 +87,9 @@ def process(args):
         else:
             raise ValueError(description)
     else:
-        raise ValueError(args.experiment)
+        raise ValueError(args.sample)
 
-    exp = exp_class(args.base_dir, args.group, args.experiment, description, args.progress)
+    exp = exp_class(args.project_directory, args.group, args.sample, description, args.progress)
 
     exp.process(args.stage)
 
@@ -98,20 +99,21 @@ def make_tables(args):
 
     fns_to_zip = []
 
-    results_dir = args.base_dir / 'results'
+    results_dir = args.project_directory / 'results'
+
     html_fn = (results_dir / args.file_name_prefix).with_suffix('.html')
-    table.generate_html(args.base_dir, html_fn, args.conditions, show_subcategories=False)
+    table.generate_html(args.project_directory, html_fn, args.conditions, show_subcategories=False)
     fns_to_zip.append(html_fn)
 
     html_fn = (results_dir / f'{args.file_name_prefix}_with_subcategories').with_suffix('.html')
-    table.generate_html(args.base_dir, html_fn, args.conditions, show_subcategories=True)
+    table.generate_html(args.project_directory, html_fn, args.conditions, show_subcategories=True)
     fns_to_zip.append(html_fn)
 
     csv_fn = (results_dir / args.file_name_prefix).with_suffix('.csv')
-    df = table.load_counts(args.base_dir, args.conditions)
+    df = table.load_counts(args.project_directory, args.conditions)
     df.to_csv(csv_fn)
 
-    exps = experiment.get_all_experiments(args.base_dir, args.conditions)
+    exps = experiment.get_all_experiments(args.project_directory, args.conditions)
 
     exps_missing_files = set()
 
@@ -154,34 +156,49 @@ def make_tables(args):
         for fn in tqdm.tqdm(fns_to_zip, desc=description):
             zip_fh.write(fn, arcname=fn.relative_to(results_dir))
 
+    pms_fn = (results_dir / f'{args.file_name_prefix}_performance_metrics').with_suffix('.csv')
+    pms = table.calculate_performance_metrics(args.project_directory, args.conditions)
+    pms.to_csv(pms_fn)
+
 def build_targets(args):
-    target_info.build_target_infos_from_csv(args.base_dir)
+    target_info.build_target_infos_from_csv(args.project_directory, args.genome)
+
+def build_indices(args):
+    target_info.download_and_build_hg38(args.project_directory, args.max_procs)
 
 parser = argparse.ArgumentParser()
-subparsers = parser.add_subparsers()
 
-parser_process = subparsers.add_parser('process')
-parser_process.add_argument('group')
-parser_process.add_argument('experiment')
-parser_process.add_argument('stage', type=int, choices=[0, 1])
-parser_process.add_argument('--progress', const=tqdm.tqdm, action='store_const')
+parser.add_argument('project_directory', type=Path, help='the base directory to store input data, reference annotations, and analysis output for a project')
+
+subparsers = parser.add_subparsers(dest='subcommand', title='subcommands')
+subparsers.required = True
+
+parser_process = subparsers.add_parser('process', help='process a single sample')
+parser_process.add_argument('group', help='group name')
+parser_process.add_argument('sample', help='sample name')
+parser_process.add_argument('stage', type=int, choices=[0, 1], help='stage of processing to carry out')
+parser_process.add_argument('--progress', const=tqdm.tqdm, action='store_const', help='show progress bars')
 parser_process.set_defaults(func=process)
 
-parser_parallel = subparsers.add_parser('parallel')
-parser_parallel.add_argument('max_procs', type=int)
-parser_parallel.add_argument('--group')
-parser_parallel.add_argument('--conditions', type=yaml.safe_load, default={})
+parser_parallel = subparsers.add_parser('parallel', help='process multiple samples in parallel')
+parser_parallel.add_argument('max_procs', type=int, help='maximum number of samples to process at once')
+parser_parallel.add_argument('--group', help='if specified, the single group name to process; if not specified, all groups will be processed')
+parser_parallel.add_argument('--conditions', type=yaml.safe_load, default={}, help='if specified, conditions that samples must satisfy to be processed, given as yaml; if not specified, all samples will be processed')
 parser_parallel.set_defaults(func=parallel)
 
-parser_table = subparsers.add_parser('table')
-parser_table.add_argument('file_name_prefix')
-parser_table.add_argument('--group')
-parser_table.add_argument('--conditions', type=yaml.safe_load, default={})
+parser_table = subparsers.add_parser('table', help='generate tables of outcome frequencies')
+parser_table.add_argument('file_name_prefix', help='prefix for table file names')
+parser_table.add_argument('--group', help='if specified, the single group name to include; if not specified, all groups will be included')
+parser_table.add_argument('--conditions', type=yaml.safe_load, default={}, help='if specified, conditions that samples must satisfy to be processed, given as yaml; if not specified, all samples will be processed')
 parser_table.set_defaults(func=make_tables)
 
-parser_targets = subparsers.add_parser('build_targets')
+parser_targets = subparsers.add_parser('build_targets', help='build annotations of target locii')
+parser_targets.add_argument('--genome', default='hg19', help='name of genome to search for targets')
 parser_targets.set_defaults(func=build_targets)
 
-parser.add_argument('--base_dir', type=Path, required=True)
+parser_indices = subparsers.add_parser('build_indices', help='download hg38 and build alignment indices')
+parser_indices.add_argument('--num_threads', type=int, default=8, help='number of threads to use for index building')
+parser_indices.set_defaults(func=build_indices)
+
 args = parser.parse_args()
 args.func(args)

@@ -53,6 +53,33 @@ def load_counts(base_dir, conditions=None):
 
     return df
 
+def calculate_performance_metrics(base_dir, conditions=None):
+    counts = load_counts(base_dir, conditions=conditions).drop(totals_row_label).sum(level=0)
+    not_real_cell_categories = [
+        'malformed layout',
+        'nonspecific amplification',
+    ]
+
+    real_cells = counts.drop(not_real_cell_categories)
+
+    all_edits_categories = real_cells.drop('WT').index
+
+    all_integration_categories = [
+        'HDR',
+        'truncated misintegration',
+        'blunt misintegration',
+        'complex misintegration',
+        'concatenated misintegration',
+    ]
+
+    performance_metrics = pd.DataFrame({
+        'HDR_rate': real_cells.loc['HDR'] / real_cells.sum(),
+        'specificity_edits': real_cells.loc['HDR'] / real_cells.loc[all_integration_categories].sum(),
+        'specificity_integrations': real_cells.loc['HDR'] / real_cells.loc[all_edits_categories].sum(),
+    })
+
+    return performance_metrics
+
 def png_bytes_to_URI(png_bytes):
     encoded = base64.b64encode(png_bytes).decode('UTF-8')
     URI = f"'data:image/png;base64,{encoded}'"
