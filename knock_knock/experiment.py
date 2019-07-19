@@ -2,6 +2,7 @@ import matplotlib
 matplotlib.use('Agg', warn=False)
 
 import shutil
+import sys
 from pathlib import Path
 from itertools import islice, chain
 from collections import defaultdict, Counter
@@ -146,32 +147,22 @@ class Experiment(object):
         fns = defaultdict(dict)
 
         for read_type in self.read_types:
-            if read_type is None:
-                fns['fastq'][read_type] = self.fns['fastqs'][0] # TEMPORARY, discards all fns except first
-                fns['bam'][read_type] = self.dir / 'alignments.bam'
-                fns['bam_by_name'][read_type] = self.dir / 'alignments.by_name.bam'
-
-                for index_name in self.supplemental_indices:
-                    fns['supplemental_STAR_prefix'][read_type, index_name] = self.dir / f'{index_name}_alignments_STAR.'
-                    fns['supplemental_bam'][read_type, index_name] = self.dir / f'{index_name}_alignments.bam'
-                    fns['supplemental_bam_by_name'][read_type, index_name] = self.dir / f'{index_name}_alignments.by_name.bam'
-                    fns['supplemental_bam_temp'][read_type, index_name] = self.dir / f'{index_name}_alignments.temp.bam'
-
-                fns['combined_bam'][read_type] = self.dir / 'combined_alignments.bam'
-                fns['combined_bam_by_name'][read_type] = self.dir / 'combined_alignments.by_name.bam'
+            if read_type is 'CCS':
+                fns['fastq'][read_type] = self.fns['CCS_fastqs']
             else:
                 fns['fastq'][read_type] = self.dir / f'{read_type}.fastq'
-                fns['bam'][read_type] = self.dir / f'{read_type}_alignments.bam'
-                fns['bam_by_name'][read_type] = self.dir / f'{read_type}_alignments.by_name.bam'
 
-                for index_name in self.supplemental_indices:
-                    fns['supplemental_STAR_prefix'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments_STAR.'
-                    fns['supplemental_bam'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments.bam'
-                    fns['supplemental_bam_by_name'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments.by_name.bam'
-                    fns['supplemental_bam_temp'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments.temp.bam'
+            fns['bam'][read_type] = self.dir / f'{read_type}_alignments.bam'
+            fns['bam_by_name'][read_type] = self.dir / f'{read_type}_alignments.by_name.bam'
 
-                fns['combined_bam'][read_type] = self.dir / f'{read_type}_combined_alignments.bam'
-                fns['combined_bam_by_name'][read_type] = self.dir / f'{read_type}_combined_alignments.by_name.bam'
+            for index_name in self.supplemental_indices:
+                fns['supplemental_STAR_prefix'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments_STAR.'
+                fns['supplemental_bam'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments.bam'
+                fns['supplemental_bam_by_name'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments.by_name.bam'
+                fns['supplemental_bam_temp'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments.temp.bam'
+
+            fns['combined_bam'][read_type] = self.dir / f'{read_type}_combined_alignments.bam'
+            fns['combined_bam_by_name'][read_type] = self.dir / f'{read_type}_combined_alignments.by_name.bam'
         
         return fns
 
@@ -972,7 +963,7 @@ class Experiment(object):
                         clip_on=False,
                         color='white',
                         gid=f'zoom_toggle_{which}_{panel_i}',
-                        )
+                       )
 
             inverted_fig_tranform = fig.transFigure.inverted().transform    
 
@@ -1151,14 +1142,14 @@ class PacbioExperiment(Experiment):
 
         self.layout_mode = 'pacbio'
 
-        fastq_fns = ensure_list(self.description['fastq_fns'])
-        self.fns['fastqs'] = [self.data_dir / name for name in fastq_fns]
+        ccs_fastq_fns = ensure_list(self.description['CCS_fastq_fns'])
+        self.fns['CCS_fastqs'] = [self.data_dir / name for name in ccs_fastq_fns]
 
-        for fn in self.fns['fastqs']:
+        for fn in self.fns['CCS_fastqs']:
             if not fn.exists():
                 raise ValueError(f'{self.group}: {self.name} specifies non-existent {fn}')
 
-        self.read_types = [None]
+        self.read_types = ['CCS']
 
         self.outcome_fn_keys = ['outcome_list']
 
@@ -1520,17 +1511,17 @@ class IlluminaExperiment(Experiment):
             im.save(fn)
 
     def process(self, stage=0):
-        #self.stitch_read_pairs()
+        self.stitch_read_pairs()
         
-        #for read_type in self.read_types:
-        #    self.generate_alignments(read_type)
-        #    self.generate_supplemental_alignments(read_type)
-        #    self.combine_alignments(read_type)
+        for read_type in self.read_types:
+            self.generate_alignments(read_type)
+            self.generate_supplemental_alignments(read_type)
+            self.combine_alignments(read_type)
 
-        #self.categorize_outcomes(read_type='stitched')
-        #self.categorize_no_overlap_outcomes()
+        self.categorize_outcomes(read_type='stitched')
+        self.categorize_no_overlap_outcomes()
 
-        #self.count_read_lengths()
+        self.count_read_lengths()
 
         self.generate_figures()
 
