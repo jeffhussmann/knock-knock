@@ -1727,10 +1727,15 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
 
     return layout
 
-def build_yaml_sample_sheet_from_csv(csv_fn):
+def load_sample_sheet_from_csv(csv_fn):
     csv_fn = Path(csv_fn)
 
-    df = pd.read_csv(csv_fn, index_col='sample')
+    df = pd.read_csv(csv_fn, index_col='sample').replace({np.nan: None})
+    if not df.index.is_unique:
+        print(f'Error parsing sample sheet {csv_fn}')
+        print(f'Sample names are not unique:')
+        print(df[df.index.duplicated()])
+        sys.exit(1)
 
     sample_sheet = df.to_dict(orient='index')
 
@@ -1740,8 +1745,7 @@ def build_yaml_sample_sheet_from_csv(csv_fn):
             d.pop('forward_primer')
             d.pop('reverse_primer')
 
-    yaml_fn = csv_fn.with_suffix('.yaml')
-    yaml_fn.write_text(yaml.dump(sample_sheet, default_flow_style=False))
+    return sample_sheet
 
 def get_all_experiments(base_dir, conditions=None, as_dictionary=False, progress=None):
     data_dir = Path(base_dir) / 'data'
@@ -1766,17 +1770,18 @@ def get_all_experiments(base_dir, conditions=None, as_dictionary=False, progress
         groups = (n for n in groups if n in conditions['group'])
     
     for group in groups:
-        sample_sheet_fn = data_dir / group / 'sample_sheet.yaml'
+        sample_sheet_yaml_fn = data_dir / group / 'sample_sheet.yaml'
 
-        if not sample_sheet_fn.exists():
-            csv_fn = sample_sheet_fn.with_suffix('.csv')
-            if not csv_fn.exists():
-                print(f'Warning: {group} has no sample sheet')
+        if sample_sheet_yaml_fn.exists():
+            sample_sheet = yaml.safe_load(sample_sheet_yaml_fn.read_text())
+        else:
+            sample_sheet_csv_fn = sample_sheet_yaml_fn.with_suffix('.csv')
+            if not sample_sheet_csv_fn.exists():
+                print(f'Error: {group} has no sample sheet')
+                #sys.exit(1)
                 continue
             else:
-                build_yaml_sample_sheet_from_csv(csv_fn)
-
-        sample_sheet = yaml.safe_load(sample_sheet_fn.read_text())
+                sample_sheet = load_sample_sheet_from_csv(csv_fn)
 
         for name, description in sample_sheet.items():
             if description.get('platform') == 'illumina':
