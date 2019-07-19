@@ -11,7 +11,7 @@ example_data_fns.append(str(target_csv_fn.relative_to('knock_knock')))
 
 setup(
     name='knock_knock',
-    version='0.1.2',
+    version='0.1.4',
 
     author='Jeff Hussmann',
     author_email='jeff.hussmann@gmail.com',
