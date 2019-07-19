@@ -181,8 +181,13 @@ class Layout(object):
 
     def categorize_with_donor(self):
         details = 'n/a'
+        
+        if len(self.seq) <= 50:
+            category = 'malformed layout'
+            subcategory = 'too short'
+            self.relevant_alignments = self.uncategorized_relevant_alignments
 
-        if all(al.is_unmapped for al in self.alignments):
+        elif all(al.is_unmapped for al in self.alignments):
             category = 'malformed layout'
             subcategory = 'no alignments detected'
             self.relevant_alignments = self.uncategorized_relevant_alignments
@@ -317,7 +322,11 @@ class Layout(object):
     def categorize_no_donor(self):
         details = 'n/a'
 
-        if all(al.is_unmapped for al in self.alignments):
+        if len(self.seq) <= 50:
+            category = 'malformed layout'
+            subcategory = 'too short'
+
+        elif all(al.is_unmapped for al in self.alignments):
             category = 'malformed layout'
             subcategory = 'no alignments detected'
 
@@ -336,10 +345,6 @@ class Layout(object):
         elif not self.primer_alignments_reach_edges:
             category = 'malformed layout'
             subcategory = 'primer far from read edge'
-
-        elif len(self.seq) <= 50:
-            category = 'uncategorized'
-            subcategory = 'too short'
 
         elif self.single_merged_primer_alignment is not None:
             num_indels = len(self.all_indels_near_cuts)
@@ -1826,7 +1831,6 @@ category_order = [
     ('uncategorized',
         ('uncategorized',
          'non-overlapping',
-         'too short',
          'donor with indel',
          'mismatch(es) near cut',
          'multiple indels near cut',
@@ -1843,6 +1847,7 @@ category_order = [
     ('malformed layout',
         ('extra copy of primer',
          'missing a primer',
+         'too short',
          'primer far from read edge',
          'primers not in same orientation',
          'no alignments detected',
