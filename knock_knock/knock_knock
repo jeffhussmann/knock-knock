@@ -164,7 +164,7 @@ def build_targets(args):
     target_info.build_target_infos_from_csv(args.project_directory, args.genome)
 
 def build_indices(args):
-    target_info.download_and_build_hg38(args.project_directory, args.max_procs)
+    target_info.download_and_build_hg38(args.project_directory, args.num_threads)
 
 parser = argparse.ArgumentParser()
 
