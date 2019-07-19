@@ -1,6 +1,7 @@
 import array
 import warnings
 import subprocess
+import sys
 from pathlib import Path
 from collections import defaultdict
 
@@ -1037,8 +1038,12 @@ def build_target_info(base_dir, info, genome):
     
     protospacer, *other_protospacers = info['sgRNA_sequence'].upper().split(';')
     amplicon_primers = info['amplicon_primers'].split(';')
-    donor_seq = info['donor_sequence'].upper()
-    has_donor = (donor_seq is not None)
+    donor_seq = info['donor_sequence']
+    if donor_seq is None:
+        has_donor = False
+    else:
+        has_donor = True
+        donor_seq = donor_seq.upper()
     
     protospacer_dir = target_dir / 'protospacer_alignment'
     protospacer_dir.mkdir(exist_ok=True)
