@@ -30,10 +30,6 @@ setup(
         'knock_knock/knock_knock',
     ],
 
-    data_files=[
-        ('bin', ['knock_knock/blastn']),
-    ],
-
     install_requires=[
         'bokeh>=0.12.14',
         'biopython>=1.70',
