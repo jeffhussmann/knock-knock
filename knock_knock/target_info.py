@@ -1393,6 +1393,11 @@ def build_target_infos_from_csv(base_dir, genome='hg19'):
     base_dir = Path(base_dir)
     csv_fn = base_dir / 'targets' / 'targets.csv'
 
+    index_locations = locate_supplemental_indices(base_dir)
+    if genome not in index_locations:
+        print(f'Error: can\'t locate indices for {genome}')
+        sys.exit(0)
+
     df = pd.read_csv(csv_fn).replace({np.nan: None})
 
     for _, row in df.iterrows():
