@@ -168,12 +168,11 @@ def build_indices(args):
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('project_directory', type=Path, help='the base directory to store input data, reference annotations, and analysis output for a project')
-
 subparsers = parser.add_subparsers(dest='subcommand', title='subcommands')
 subparsers.required = True
 
 parser_process = subparsers.add_parser('process', help='process a single sample')
+parser_process.add_argument('project_directory', type=Path, help='the base directory to store input data, reference annotations, and analysis output for a project')
 parser_process.add_argument('group', help='group name')
 parser_process.add_argument('sample', help='sample name')
 parser_process.add_argument('stage', type=int, choices=[0, 1], help='stage of processing to carry out')
@@ -181,22 +180,26 @@ parser_process.add_argument('--progress', const=tqdm.tqdm, action='store_const',
 parser_process.set_defaults(func=process)
 
 parser_parallel = subparsers.add_parser('parallel', help='process multiple samples in parallel')
+parser_parallel.add_argument('project_directory', type=Path, help='the base directory to store input data, reference annotations, and analysis output for a project')
 parser_parallel.add_argument('max_procs', type=int, help='maximum number of samples to process at once')
 parser_parallel.add_argument('--group', help='if specified, the single group name to process; if not specified, all groups will be processed')
 parser_parallel.add_argument('--conditions', type=yaml.safe_load, default={}, help='if specified, conditions that samples must satisfy to be processed, given as yaml; if not specified, all samples will be processed')
 parser_parallel.set_defaults(func=parallel)
 
 parser_table = subparsers.add_parser('table', help='generate tables of outcome frequencies')
+parser_table.add_argument('project_directory', type=Path, help='the base directory to store input data, reference annotations, and analysis output for a project')
 parser_table.add_argument('file_name_prefix', help='prefix for table file names')
 parser_table.add_argument('--group', help='if specified, the single group name to include; if not specified, all groups will be included')
 parser_table.add_argument('--conditions', type=yaml.safe_load, default={}, help='if specified, conditions that samples must satisfy to be processed, given as yaml; if not specified, all samples will be processed')
 parser_table.set_defaults(func=make_tables)
 
 parser_targets = subparsers.add_parser('build_targets', help='build annotations of target locii')
+parser_targets.add_argument('project_directory', type=Path, help='the base directory to store input data, reference annotations, and analysis output for a project')
 parser_targets.add_argument('--genome', default='hg19', help='name of genome to search for targets')
 parser_targets.set_defaults(func=build_targets)
 
 parser_indices = subparsers.add_parser('build_indices', help='download hg38 and build alignment indices')
+parser_indices.add_argument('project_directory', type=Path, help='the base directory to store input data, reference annotations, and analysis output for a project')
 parser_indices.add_argument('--num_threads', type=int, default=8, help='number of threads to use for index building')
 parser_indices.set_defaults(func=build_indices)
 
