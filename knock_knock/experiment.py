@@ -217,20 +217,11 @@ class Experiment(object):
 
         return fns
 
-    @property
-    def reads(self):
-        reads = fastq.reads(self.fns['fastqs'], up_to_space=True)
-        return reads
-    
     def reads_by_type(self, read_type):
         reads = fastq.reads(self.fns_by_read_type['fastq'][read_type], up_to_space=True)
         return reads
     
     @property
-    def query_names(self):
-        for read in self.reads:
-            yield read.name
-
     @memoized_property
     def read_lengths(self):
         return np.loadtxt(self.fns['lengths'], dtype=int)
@@ -1204,8 +1195,6 @@ class PacbioExperiment(Experiment):
                     qual = fastq.decode_sanger_to_array(read.qual)
                     qual_rc = qual[::-1]
 
-                    length = len(seq)
-
                     for al in als:
                         if not al.is_reverse:
                             al.query_sequence = seq
@@ -1466,11 +1455,6 @@ class IlluminaExperiment(Experiment):
                     R2_fh.write(str(R2))
                 else:
                     stitched_fh.write(str(stitched))
-
-    @property
-    def query_names(self):
-        for read in self.stitched_reads:
-            yield read.name
 
     def alignment_groups(self, fn_key=None, outcome=None, read_type=None):
         if fn_key is not None or read_type is not None:
