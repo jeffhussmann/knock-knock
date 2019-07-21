@@ -212,7 +212,6 @@ class Experiment(object):
         reads = fastq.reads(self.fns_by_read_type['fastq'][read_type], up_to_space=True)
         return reads
     
-    @property
     @memoized_property
     def read_lengths(self):
         return np.loadtxt(self.fns['lengths'], dtype=int)
