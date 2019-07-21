@@ -60,8 +60,9 @@ def parallel(args):
         '--bar',
         '--max-procs', str(args.max_procs),
         'knock_knock',
+        'process',
         str(args.project_directory),
-        'process', ':::',
+        ':::',
     ]
 
     arg_tuples = [(exp.group, exp.name, '0') for exp in exps]
