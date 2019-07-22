@@ -7,10 +7,7 @@ import zipfile
 from pathlib import Path
 
 import yaml
-import pandas as pd
 import tqdm
-
-from knock_knock import experiment, table, target_info
 
 def check_blastn():
     no_blastn = False
@@ -41,6 +38,8 @@ def check_parallel():
         sys.exit(0)
 
 def parallel(args):
+    from knock_knock import experiment
+
     check_parallel()
 
     if args.group:
@@ -72,6 +71,8 @@ def parallel(args):
     subprocess.check_call(parallel_command)
 
 def process(args):
+    from knock_knock import experiment
+
     check_blastn()
 
     data_dir = Path(args.project_directory) / 'data' / args.group
@@ -95,6 +96,8 @@ def process(args):
     exp.process(args.stage)
 
 def make_tables(args):
+    from knock_knock import experiment, table
+
     if args.group:
         args.conditions['group'] = args.group
 
@@ -162,9 +165,11 @@ def make_tables(args):
     pms.to_csv(pms_fn)
 
 def build_targets(args):
+    from knock_knock import target_info
     target_info.build_target_infos_from_csv(args.project_directory, args.genome)
 
 def build_indices(args):
+    from knock_knock import target_info
     target_info.download_and_build_hg38(args.project_directory, args.num_threads)
 
 parser = argparse.ArgumentParser()
