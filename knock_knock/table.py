@@ -74,8 +74,8 @@ def calculate_performance_metrics(base_dir, conditions=None):
 
     performance_metrics = pd.DataFrame({
         'HDR_rate': real_cells.loc['HDR'] / real_cells.sum(),
-        'specificity_edits': real_cells.loc['HDR'] / real_cells.loc[all_integration_categories].sum(),
-        'specificity_integrations': real_cells.loc['HDR'] / real_cells.loc[all_edits_categories].sum(),
+        'specificity_edits': real_cells.loc['HDR'] / real_cells.reindex(index=all_edits_categories).sum(),
+        'specificity_integrations': real_cells.loc['HDR'] / real_cells.reindex(index=all_integration_categories).sum(),
     })
 
     return performance_metrics
