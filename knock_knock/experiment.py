@@ -1200,7 +1200,7 @@ class PacbioExperiment(Experiment):
                         )
     
     def generate_length_range_figures(self, outcome=None, num_examples=1):
-        by_length_range = defaultdict(list)
+        by_length_range = defaultdict(lambda: utilities.ReservoirSampler(num_examples))
         length_ranges = [interval.Interval(row['start'], row['end']) for _, row in self.length_ranges(outcome).iterrows()]
 
         if outcome is None:
@@ -1213,8 +1213,7 @@ class PacbioExperiment(Experiment):
             length = group[0].query_length
             for length_range in length_ranges:
                 if length in length_range:
-                    by_length_range[length_range.start, length_range.end].append((name, group))
-        
+                    by_length_range[length_range.start, length_range.end].add((name, group))
 
         if outcome is None:
             fns = self.fns
@@ -1234,8 +1233,8 @@ class PacbioExperiment(Experiment):
 
         items = self.progress(by_length_range.items(), desc=description)
 
-        for (start, end), groups in items:
-            diagrams = self.alignment_groups_to_diagrams(groups, num_examples=num_examples)
+        for (start, end), sampler in items:
+            diagrams = self.alignment_groups_to_diagrams(sampler.sample, num_examples=num_examples)
             im = visualize.make_stacked_Image(diagrams, titles='')
             fn = fns['length_range_figure'](start, end)
             im.save(fn)
@@ -1478,12 +1477,12 @@ class IlluminaExperiment(Experiment):
             
             return converted
 
-        by_length = defaultdict(list)
+        by_length = defaultdict(lambda: utilities.ReservoirSampler(num_examples))
 
         al_groups = self.alignment_groups(outcome=outcome)
         for name, als in al_groups:
             length = extract_length(als)
-            by_length[length].append((name, als))
+            by_length[length].add((name, als))
         
         if outcome is None:
             fns = self.fns
@@ -1503,8 +1502,8 @@ class IlluminaExperiment(Experiment):
 
         items = self.progress(by_length.items(), desc=description)
 
-        for length, groups in items:
-            diagrams = self.alignment_groups_to_diagrams(groups, num_examples=num_examples)
+        for length, sampler in items:
+            diagrams = self.alignment_groups_to_diagrams(sampler.sample, num_examples=num_examples)
             im = visualize.make_stacked_Image(diagrams, titles='')
             fn = fns['length_range_figure'](length, length)
             im.save(fn)
