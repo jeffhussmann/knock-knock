@@ -64,8 +64,7 @@ class Experiment(object):
         self.data_dir = self.base_dir / 'data' / group
 
         if description is None:
-            sample_sheet_fn = self.data_dir / 'sample_sheet.yaml'
-            self.sample_sheet = yaml.safe_load(sample_sheet_fn.read_text())
+            self.sample_sheet = load_sample_sheet(self.base_dir, self.group)
             if name in self.sample_sheet:
                 self.description = self.sample_sheet[name]
             else:
@@ -1720,6 +1719,22 @@ def load_sample_sheet_from_csv(csv_fn):
 
     return sample_sheet
 
+def load_sample_sheet(base_dir, group):
+    data_dir = Path(base_dir) / 'data'
+
+    sample_sheet_yaml_fn = data_dir / group / 'sample_sheet.yaml'
+
+    if sample_sheet_yaml_fn.exists():
+        sample_sheet = yaml.safe_load(sample_sheet_yaml_fn.read_text())
+    else:
+        sample_sheet_csv_fn = sample_sheet_yaml_fn.with_suffix('.csv')
+        if not sample_sheet_csv_fn.exists():
+            sample_sheet = None
+        else:
+            sample_sheet = load_sample_sheet_from_csv(sample_sheet_csv_fn)
+
+    return sample_sheet
+
 def get_all_experiments(base_dir, conditions=None, as_dictionary=False, progress=None):
     data_dir = Path(base_dir) / 'data'
 
@@ -1743,18 +1758,11 @@ def get_all_experiments(base_dir, conditions=None, as_dictionary=False, progress
         groups = (n for n in groups if n in conditions['group'])
     
     for group in groups:
-        sample_sheet_yaml_fn = data_dir / group / 'sample_sheet.yaml'
+        sample_sheet = load_sample_sheet(base_dir, group)
 
-        if sample_sheet_yaml_fn.exists():
-            sample_sheet = yaml.safe_load(sample_sheet_yaml_fn.read_text())
-        else:
-            sample_sheet_csv_fn = sample_sheet_yaml_fn.with_suffix('.csv')
-            if not sample_sheet_csv_fn.exists():
-                print(f'Error: {group} has no sample sheet')
-                #sys.exit(1)
-                continue
-            else:
-                sample_sheet = load_sample_sheet_from_csv(csv_fn)
+        if sample_sheet is None:
+            print(f'Error: {group} has no sample sheet')
+            continue
 
         for name, description in sample_sheet.items():
             if description.get('platform') == 'illumina':

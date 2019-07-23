@@ -75,11 +75,15 @@ def process(args):
 
     check_blastn()
 
-    data_dir = Path(args.project_directory) / 'data' / args.group
-    sample_sheet_fn = data_dir / 'sample_sheet.yaml'
-    sample_sheet = yaml.safe_load(sample_sheet_fn.read_text())
+    sample_sheet = experiment.load_sample_sheet(args.project_directory, args.group)
 
-    if args.sample in sample_sheet:
+    if sample_sheet is None:
+        print(f'Error: {args.group} not found in {arg.project_directory}')
+        sys.exit(1)
+    elif args.sample not in sample_sheet:
+        print(f'Error: {args.sample} not found in {arg.group} sample sheet')
+        sys.exit(1)
+    else:
         description = sample_sheet[args.sample]
 
         if description.get('platform') == 'pacbio':
@@ -88,8 +92,6 @@ def process(args):
             exp_class = experiment.IlluminaExperiment
         else:
             raise ValueError(description)
-    else:
-        raise ValueError(args.sample)
 
     exp = exp_class(args.project_directory, args.group, args.sample, description, args.progress)
 
