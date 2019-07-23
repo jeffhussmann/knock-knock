@@ -1027,6 +1027,163 @@ def get_all_targets(base_dir):
     targets = [TargetInfo(base_dir, n) for n in names]
     return targets
 
+def design_amplicon_primers_from_csv(base_dir, genome='hg19'):
+    base_dir = Path(base_dir)
+    csv_fn = base_dir / 'targets' / 'sgRNAs.csv'
+
+    index_locations = locate_supplemental_indices(base_dir)
+    if genome not in index_locations:
+        print(f'Error: can\'t locate indices for {genome}')
+        sys.exit(0)
+
+    df = pd.read_csv(csv_fn).replace({np.nan: None})
+
+    flanking_sequence = {}
+
+    for _, row in df.iterrows():
+        name = row['name']
+        print(f'Designing {name}...')
+        best_candidate = design_amplicon_primers(base_dir, row, genome)
+        if best_candidate is not None:
+            flanking_sequence[name] = best_candidate['target_seq']
+
+    df['flanking_sequence'] = [flanking_sequence.get(name, '') for name in df['name']]
+    final_csv_fn = base_dir / 'targets' / 'sgRNAs_flanking_sequence.csv'
+    df.to_csv(final_csv_fn)
+
+def design_amplicon_primers(base_dir, info, genome):
+    base_dir = Path(base_dir)
+
+    name = info['name']
+
+    target_dir = base_dir / 'targets' / name
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    protospacer, *other_protospacers = info['sgRNA_sequence'].upper().split(';')
+    
+    protospacer_dir = target_dir / 'protospacer_alignment'
+    protospacer_dir.mkdir(exist_ok=True)
+    fastq_fn = protospacer_dir / 'protospacer.fastq'
+    STAR_prefix = protospacer_dir / 'protospacer_'
+    bam_fn = protospacer_dir / 'protospacer.bam'
+
+    index_locations = locate_supplemental_indices(base_dir)
+    STAR_index = index_locations[genome]['STAR']
+
+    # Make a fastq file with a single read containing the protospacer sequence.
+    
+    with fastq_fn.open('w') as fh:
+        quals = fastq.encode_sanger([40]*len(protospacer))
+        read = fastq.Read('protospacer', protospacer, quals)
+        fh.write(str(read))
+        
+    # Align the protospacer to the reference genome.
+    mapping_tools.map_STAR(fastq_fn, STAR_index, STAR_prefix, mode='guide_alignment', bam_fn=bam_fn, sort=False)
+
+    with pysam.AlignmentFile(bam_fn) as bam_fh:
+        perfect_als = [al for al in bam_fh if not al.is_unmapped and sam.total_edit_distance(al) == 0]
+    
+    region_fetcher = genomes.build_region_fetcher(index_locations[genome]['fasta'])
+
+    def evaluate_candidate(al):
+        results = {
+            'location': f'{al.reference_name} {al.reference_start:,} {sam.get_strand(al)}',
+        }
+
+        full_window_around = 5000
+
+        full_around = region_fetcher(al.reference_name, al.reference_start - full_window_around, al.reference_end + full_window_around).upper()
+
+        if sam.get_strand(al) == '+':
+            ps_seq = protospacer
+            ps_strand = 1
+        else:
+            ps_seq = utilities.reverse_complement(protospacer)
+            ps_strand  = -1
+        
+        ps_start = full_around.index(ps_seq)
+
+        protospacer_locations = [(ps_seq, ps_start, ps_strand)]
+
+        for other_protospacer in other_protospacers:
+            if other_protospacer in full_around:
+                ps_seq = other_protospacer
+                ps_strand = 1
+            else:
+                ps_seq =  utilities.reverse_complement(other_protospacer)
+                if ps_seq not in full_around:
+                    results['failed'] = f'protospacer {other_protospacer} not present near protospacer {protospacer}'
+                    return results
+                ps_strand = -1
+
+            ps_start = full_around.index(ps_seq)
+            protospacer_locations.append((ps_seq, ps_start, ps_strand))
+
+        for ps_seq, ps_start, ps_strand in protospacer_locations:
+            if ps_strand == 1:
+                PAM_offset = len(protospacer)
+                PAM_transform = utilities.identity
+            else:
+                PAM_offset = -3
+                PAM_transform = utilities.reverse_complement
+
+            PAM_start = ps_start + PAM_offset
+            PAM = PAM_transform(full_around[PAM_start:PAM_start + 3])
+            pattern, *matches = Bio.SeqUtils.nt_search(PAM, 'NGG')
+
+            if 0 not in matches:
+                # Note: this could incorrectly fail if there are multiple exact matches for an other_protospacer
+                # in full_around.
+                results['failed'] = f'bad PAM: {PAM} next to {ps_seq} (strand {ps_strand})'
+                return results
+
+        min_start = min(ps_start for ps_seq, ps_start, ps_strand in protospacer_locations)
+        max_start = max(ps_start for ps_seq, ps_start, ps_strand in protospacer_locations)
+        
+        final_window_around = 500    
+
+        final_start = min_start - final_window_around
+        final_end = max_start + final_window_around
+
+        target_seq = full_around[final_start:final_end]
+        results['target_seq'] = target_seq
+
+        return results
+
+    good_candidates = []
+    bad_candidates = []
+    
+    for al in perfect_als:
+        results = evaluate_candidate(al)
+        if 'failed' in results:
+            bad_candidates.append(results)
+        else:
+            good_candidates.append(results)
+
+    if len(good_candidates) == 0:
+        if len(bad_candidates) == 0:
+            print(f'Error building {name}: no perfect matches to sgRNA {protospacer} found in {genome}')
+            return 
+
+        else:
+            print(f'Error building {name}: no valid genomic locations for {name}')
+
+            for results in bad_candidates:
+                print(f'\t{results["location"]}: {results["failed"]}')
+
+            return 
+
+    elif len(good_candidates) > 1:
+        print(f'Warning: multiple valid genomic locations for {name}:')
+        for results in good_candidates:
+            print(f'\t{results["location"]}')
+        best_candidate = good_candidates[0]
+        print(f'Arbitrarily choosing {best_candidate["location"]}')
+    else:
+        best_candidate = good_candidates[0]
+
+    return best_candidate
+
 def build_target_info(base_dir, info, genome):
     base_dir = Path(base_dir)
 
