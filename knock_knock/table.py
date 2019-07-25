@@ -62,7 +62,7 @@ def calculate_performance_metrics(base_dir, conditions=None):
 
     real_cells = counts.drop(not_real_cell_categories)
 
-    all_edits_categories = real_cells.drop('WT').index
+    all_edit_categories = [cat for cat in real_cells.index if cat != 'WT']
 
     all_integration_categories = [
         'HDR',
@@ -72,10 +72,15 @@ def calculate_performance_metrics(base_dir, conditions=None):
         'concatenated misintegration',
     ]
 
+    # reindex to handle possibly missing keys
+    HDR_counts = real_cells.reindex(['HDR'], fill_value=0).loc['HDR']
+    edit_counts = real_cells.reindex(all_edit_categories, fill_value=0)
+    integration_counts = real_cells.reindex(all_integration_categories, fill_value=0)
+
     performance_metrics = pd.DataFrame({
-        'HDR_rate': real_cells.loc['HDR'] / real_cells.sum(),
-        'specificity_edits': real_cells.loc['HDR'] / real_cells.reindex(index=all_edits_categories).sum(),
-        'specificity_integrations': real_cells.loc['HDR'] / real_cells.reindex(index=all_integration_categories).sum(),
+        'HDR_rate': HDR_counts / real_cells.sum(),
+        'specificity_edits': HDR_counts / edit_counts.sum(),
+        'specificity_integrations': HDR_counts / integration_counts.sum(),
     })
 
     return performance_metrics
