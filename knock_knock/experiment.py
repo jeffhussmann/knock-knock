@@ -1283,13 +1283,18 @@ class IlluminaExperiment(Experiment):
         ]
 
     @memoized_property
-    def paired_end_read_length(self):
+    def R1_read_length(self):
         R1, R2 = next(self.read_pairs)
         return len(R1)
     
     @memoized_property
+    def R2_read_length(self):
+        R1, R2 = next(self.read_pairs)
+        return len(R2)
+    
+    @memoized_property
     def max_relevant_length(self):
-        return 2 * self.paired_end_read_length + 100
+        return self.R1_read_length + self.R2_read_length + 100
 
     @memoized_property
     def length_to_store_unknown(self):
@@ -1439,7 +1444,7 @@ class IlluminaExperiment(Experiment):
             description = 'Stitching read pairs'
             for R1, R2 in self.progress(self.read_pairs, desc=description):
                 stitched = sw.stitch_read_pair(R1, R2, before_R1, before_R2, indel_penalty=-1000)
-                if len(stitched) == 2 * self.paired_end_read_length:
+                if len(stitched) == self.R1_read_length + self.R2_read_length:
                     R1_fh.write(str(R1))
                     R2_fh.write(str(R2))
                 else:
