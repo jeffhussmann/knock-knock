@@ -151,8 +151,8 @@ class Experiment(object):
             else:
                 fns['fastq'][read_type] = self.dir / f'{read_type}.fastq'
 
-            fns['bam'][read_type] = self.dir / f'{read_type}_alignments.bam'
-            fns['bam_by_name'][read_type] = self.dir / f'{read_type}_alignments.by_name.bam'
+            fns['primary_bam'][read_type] = self.dir / f'{read_type}_alignments.bam'
+            fns['primary_bam_by_name'][read_type] = self.dir / f'{read_type}_alignments.by_name.bam'
 
             for index_name in self.supplemental_indices:
                 fns['supplemental_STAR_prefix'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments_STAR.'
@@ -160,8 +160,8 @@ class Experiment(object):
                 fns['supplemental_bam_by_name'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments.by_name.bam'
                 fns['supplemental_bam_temp'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments.temp.bam'
 
-            fns['combined_bam'][read_type] = self.dir / f'{read_type}_combined_alignments.bam'
-            fns['combined_bam_by_name'][read_type] = self.dir / f'{read_type}_combined_alignments.by_name.bam'
+            fns['bam'][read_type] = self.dir / f'{read_type}_combined_alignments.bam'
+            fns['bam_by_name'][read_type] = self.dir / f'{read_type}_combined_alignments.by_name.bam'
         
         return fns
 
@@ -174,31 +174,19 @@ class Experiment(object):
             'dir': outcome_dir,
             'query_names': outcome_dir / 'qnames.txt',
             'no_overlap_query_names': outcome_dir / 'no_overlap_qnames.txt',
-            'bam_by_name': outcome_dir / 'alignments.by_name.bam',
-            'R1_no_overlap_bam_by_name': outcome_dir / 'R1_no_overlap_alignments.by_name.bam',
-            'R2_no_overlap_bam_by_name': outcome_dir / 'R2_no_overlap_alignments.by_name.bam',
             'special_alignments': outcome_dir / 'special_alignments.bam',
             'filtered_cell_special_alignments': outcome_dir / 'filtered_cell_special_alignments.bam',
             'filtered_cell_bam': outcome_dir / 'filtered_cell_alignments.bam',
             'filtered_cell_bam_by_name': outcome_dir / 'filtered_cell_alignments.by_name.bam',
             'first_example': outcome_dir / 'first_examples.png',
             'combined_figure': outcome_dir / 'combined.png',
-            'diagrams_notebook': outcome_dir / f'{self.group}_{self.name}_{outcome_string}.ipynb',
             'diagrams_html': outcome_dir / 'diagrams.html',
             'lengths_figure': outcome_dir / 'lengths.png',
             'text_alignments': outcome_dir / 'alignments.txt',
             'length_ranges_dir': outcome_dir / 'length_ranges',
             'lengths_svg': outcome_dir / 'by_length.html',
+            'bam_by_name' : {read_type: outcome_dir / f'{read_type}.by_name.bam' for read_type in self.read_types},
         }
-
-        fns['bam_by_name'] = {
-            None: outcome_dir / 'alignments.by_name.bam',
-        }
-        for read_type in self.read_types:
-            if read_type is None:
-                pass
-            else:
-                fns['bam_by_name'][read_type] = outcome_dir / f'{read_type}.by_name.bam'
 
         def make_length_range_fig_fn(start, end):
             return fns['length_ranges_dir'] / f'{start}_{end}.png'
@@ -240,7 +228,7 @@ class Experiment(object):
 
         return pd.DataFrame(ranges, columns=['start', 'end'])
 
-    def alignment_groups(self, fn_key='combined_bam_by_name', outcome=None, read_type=None):
+    def alignment_groups(self, fn_key='bam_by_name', outcome=None, read_type=None):
         if isinstance(outcome, str):
             # outcome is a single category, so need to chain together all relevant
             # (category, subcategory) pairs.
@@ -296,14 +284,13 @@ class Experiment(object):
 
     def generate_alignments(self, read_type=None):
         reads = self.reads_by_type(read_type)
-        description = 'Generating alignments'
-        reads = self.progress(reads, desc=description)
+        reads = self.progress(reads, desc='Generating alignments')
 
         bam_fns = []
         bam_by_name_fns = []
 
-        base_bam_fn = self.fns_by_read_type['bam'][read_type]
-        base_bam_by_name_fn = self.fns_by_read_type['bam_by_name'][read_type]
+        base_bam_fn = self.fns_by_read_type['primary_bam'][read_type]
+        base_bam_by_name_fn = self.fns_by_read_type['primary_bam_by_name'][read_type]
 
         for i, chunk in enumerate(utilities.chunks(reads, 10000)):
             suffix = f'.{i:06d}.bam'
@@ -386,9 +373,9 @@ class Experiment(object):
             else:
                 suffix = ''
 
-            bam_key = 'bam' + suffix
+            bam_key = 'primary_bam' + suffix
             supp_key = 'supplemental_bam' + suffix
-            combined_key = 'combined_bam' + suffix
+            combined_key = 'bam' + suffix
 
             fns_to_merge = [self.fns_by_read_type[bam_key][read_type]]
             for index_name in self.supplemental_indices:
@@ -400,7 +387,7 @@ class Experiment(object):
                                       )
 
     def load_outcome_counts(self, key='outcome_counts'):
-        if self.fns[key].exists():
+        if self.fns[key].exists() and self.fns[key].stat().st_size > 0:
             counts = pd.read_csv(self.fns[key],
                                  index_col=(0, 1),
                                  header=None,
@@ -425,7 +412,7 @@ class Experiment(object):
         qnames = [l.strip() for l in open(str(fns['query_names']))]
         return qnames
     
-    def categorize_outcomes(self, fn_key='combined_bam_by_name', read_type=None):
+    def categorize_outcomes(self, fn_key='bam_by_name', read_type=None):
         if self.fns['outcomes_dir'].is_dir():
             shutil.rmtree(str(self.fns['outcomes_dir']))
 
@@ -559,10 +546,7 @@ class Experiment(object):
                 return None
 
     def get_read_diagram(self, read_id, outcome=None, relevant=True, read_type=None, **kwargs):
-        if outcome is None:
-            fn_key = 'combined_bam_by_name'
-        else:
-            fn_key = 'bam_by_name'
+        fn_key = 'bam_by_name'
 
         als = self.get_read_alignments(read_id, fn_key=fn_key, outcome=outcome, read_type=read_type)
         if als is None:
@@ -1116,7 +1100,7 @@ p {
     def explore(self, by_outcome=True, **kwargs):
         return explore(self.base_dir, by_outcome=by_outcome, target=self.target_name, experiment=(self.group, self.name), **kwargs)
 
-    def get_read_layout(self, read_id, qname_to_als=None, fn_key='combined_bam_by_name', outcome=None, read_type=None):
+    def get_read_layout(self, read_id, qname_to_als=None, fn_key='bam_by_name', outcome=None, read_type=None):
         # qname_to_als is to allow caching of many sets of als (e.g. for all
         # of a particular outcome category) to prevent repeated lookup
         if qname_to_als is None:
@@ -1151,11 +1135,16 @@ class PacbioExperiment(Experiment):
 
         self.outcome_fn_keys = ['outcome_list']
 
+    def alignment_groups(self, fn_key='bam_by_name', outcome=None, read_type='CCS'):
+        groups = super().alignment_groups(fn_key=fn_key, outcome=outcome, read_type=read_type)
+        return groups
+
     def generate_supplemental_alignments(self, read_type=None):
         ''' Use minimap2 to produce local alignments.
         '''
         for index_name in self.supplemental_indices:
-            fastq_fn = self.fns_by_read_type['fastq'][read_type]
+            # Note: this doesn't support multiple intput fastqs.
+            fastq_fn = self.fns_by_read_type['fastq'][read_type][0]
             index = self.supplemental_indices[index_name]['minimap2']
             bam_fn = self.fns_by_read_type['supplemental_bam_temp'][read_type, index_name]
 
@@ -1202,10 +1191,7 @@ class PacbioExperiment(Experiment):
         by_length_range = defaultdict(lambda: utilities.ReservoirSampler(num_examples))
         length_ranges = [interval.Interval(row['start'], row['end']) for _, row in self.length_ranges(outcome).iterrows()]
 
-        if outcome is None:
-            fn_key = 'combined_bam_by_name'
-        else:
-            fn_key = 'bam_by_name'
+        fn_key = 'bam_by_name'
 
         al_groups = self.alignment_groups(outcome=outcome, fn_key=fn_key)
         for name, group in al_groups:
@@ -1243,14 +1229,25 @@ class PacbioExperiment(Experiment):
 
         with self.fns['lengths_svg'].open('w') as fh:
             fh.write(html)
+
+    def preprocess(self):
+        pass
     
     def process(self, stage):
-        self.generate_alignments()
-        self.generate_supplemental_alignments()
-        self.combine_alignments()
-        self.categorize_outcomes()
-        self.count_read_lengths()
-        self.generate_figures()
+        if stage == 0:
+            self.preprocess()
+
+            for read_type in self.read_types:
+                self.generate_alignments(read_type=read_type)
+                self.generate_supplemental_alignments(read_type=read_type)
+                self.combine_alignments(read_type=read_type)
+
+            self.categorize_outcomes(read_type='CCS')
+
+            self.count_read_lengths()
+
+        elif stage == 1:
+            self.generate_figures()
 
 class IlluminaExperiment(Experiment):
     def __init__(self, *args, **kwargs):
@@ -1303,7 +1300,7 @@ class IlluminaExperiment(Experiment):
 
     def get_read_diagram(self, qname, outcome=None, relevant=True, **kwargs):
         if qname in self.no_overlap_qnames:
-            als = {which: self.get_read_alignments(qname, fn_key='combined_bam_by_name', outcome=outcome, read_type=f'{which}_no_overlap')
+            als = {which: self.get_read_alignments(qname, fn_key='bam_by_name', outcome=outcome, read_type=f'{which}_no_overlap')
                    for which in ['R1', 'R2']
                   }
 
@@ -1347,8 +1344,12 @@ class IlluminaExperiment(Experiment):
         stitched = super().load_outcome_counts(key='outcome_counts')
         no_overlap = super().load_outcome_counts(key='no_overlap_outcome_counts')
 
-        if stitched is None or no_overlap is None:
+        if stitched is None and no_overlap is None:
             return None
+        elif stitched is not None and no_overlap is None:
+            return stitched
+        elif stitched is None and no_overlap is not None:
+            return no_overlap
         else:
             combined = stitched.add(no_overlap, fill_value=0).astype(int)
             return combined
@@ -1362,8 +1363,8 @@ class IlluminaExperiment(Experiment):
             R2_fn_key = 'R2_no_overlap_bam_by_name'
             
         else:
-            R1_fn_key = 'combined_bam_by_name'
-            R2_fn_key = 'combined_bam_by_name'
+            R1_fn_key = 'bam_by_name'
+            R2_fn_key = 'bam_by_name'
 
         R1_groups = self.alignment_groups(outcome=outcome, fn_key=R1_fn_key, read_type=R1_read_type)
         R2_groups = self.alignment_groups(outcome=outcome, fn_key=R2_fn_key, read_type=R2_read_type)
@@ -1405,7 +1406,7 @@ class IlluminaExperiment(Experiment):
         bam_fhs = {}
 
         with ExitStack() as stack:
-            full_bam_fns = {which: self.fns_by_read_type['combined_bam_by_name'][f'{which}_no_overlap'] for which in ['R1', 'R2']}
+            full_bam_fns = {which: self.fns_by_read_type['bam_by_name'][f'{which}_no_overlap'] for which in ['R1', 'R2']}
             full_bam_fhs = {which: stack.enter_context(pysam.AlignmentFile(full_bam_fns[which])) for which in ['R1', 'R2']}
         
             for outcome, qnames in outcomes.items():
@@ -1507,20 +1508,25 @@ class IlluminaExperiment(Experiment):
             fn = fns['length_range_figure'](length, length)
             im.save(fn)
 
-    def process(self, stage=0):
+    def preprocess(self):
         self.stitch_read_pairs()
+
+    def process(self, stage=0):
+        if stage == 0:
+            self.preprocess()
+            
+            for read_type in self.read_types:
+                self.generate_alignments(read_type)
+                self.generate_supplemental_alignments(read_type)
+                self.combine_alignments(read_type)
+
+            self.categorize_outcomes(read_type='stitched')
+            self.categorize_no_overlap_outcomes()
+
+            self.count_read_lengths()
         
-        for read_type in self.read_types:
-            self.generate_alignments(read_type)
-            self.generate_supplemental_alignments(read_type)
-            self.combine_alignments(read_type)
-
-        self.categorize_outcomes(read_type='stitched')
-        self.categorize_no_overlap_outcomes()
-
-        self.count_read_lengths()
-
-        self.generate_figures()
+        elif stage == 1:
+            self.generate_figures()
 
 def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
     if target is None:
