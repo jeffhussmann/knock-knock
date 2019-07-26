@@ -1591,7 +1591,7 @@ def build_target_infos_from_csv(base_dir):
 
     indices = locate_supplemental_indices(base_dir)
 
-    df = pd.read_csv(csv_fn).replace({np.nan: None})
+    df = pd.read_csv(csv_fn, comment='#').replace({np.nan: None})
 
     for _, row in df.iterrows():
         name = row['name']
