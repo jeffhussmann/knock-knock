@@ -168,7 +168,7 @@ def make_tables(args):
 
 def build_targets(args):
     from knock_knock import target_info
-    target_info.build_target_infos_from_csv(args.project_directory, args.genome)
+    target_info.build_target_infos_from_csv(args.project_directory)
 
 def design_primers(args):
     from knock_knock import target_info
@@ -207,12 +207,10 @@ parser_table.set_defaults(func=make_tables)
 
 parser_targets = subparsers.add_parser('build_targets', help='build annotations of target locii')
 parser_targets.add_argument('project_directory', type=Path, help='the base directory to store input data, reference annotations, and analysis output for a project')
-parser_targets.add_argument('--genome', default='hg19', help='name of genome to search for targets')
 parser_targets.set_defaults(func=build_targets)
 
 parser_primers = subparsers.add_parser('design_primers', help='design amplicon primers for sgRNAs')
 parser_primers.add_argument('project_directory', type=Path, help='the base directory to store input data, reference annotations, and analysis output for a project')
-parser_primers.add_argument('--genome', default='hg19', help='name of genome to search for targets')
 parser_primers.set_defaults(func=design_primers)
 
 parser_indices = subparsers.add_parser('build_indices', help='download hg38 and build alignment indices')

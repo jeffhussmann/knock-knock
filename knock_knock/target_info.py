@@ -1204,7 +1204,22 @@ def design_amplicon_primers(base_dir, info, genome):
 
     return best_candidate
 
-def build_target_info(base_dir, info, genome):
+def build_target_info(base_dir, info, all_index_locations):
+    ''' info should have keys:
+            name
+            sgRNA_sequence
+            amplicon_primers
+        optional keys:
+            donor_sequence
+            donor_primers
+            nonhomologous_donor_sequence
+    '''
+    if info['genome'] not in all_index_locations:
+        print(f'Error: can\'t locate indices for {info["genome"]}')
+        sys.exit(0)
+    else:
+        index_locations = all_index_locations[info['genome']]
+
     base_dir = Path(base_dir)
 
     name = info['name']
@@ -1228,8 +1243,7 @@ def build_target_info(base_dir, info, genome):
     STAR_prefix = protospacer_dir / 'protospacer_'
     bam_fn = protospacer_dir / 'protospacer.bam'
 
-    index_locations = locate_supplemental_indices(base_dir)
-    STAR_index = index_locations[genome]['STAR']
+    STAR_index = index_locations['STAR']
 
     target_gb_fn = target_dir / f'{name}.gb'
     donor_gb_fn = target_dir / f'{donor_name}.gb'
@@ -1247,7 +1261,7 @@ def build_target_info(base_dir, info, genome):
     with pysam.AlignmentFile(bam_fn) as bam_fh:
         perfect_als = [al for al in bam_fh if not al.is_unmapped and sam.total_edit_distance(al) == 0]
     
-    region_fetcher = genomes.build_region_fetcher(index_locations[genome]['fasta'])
+    region_fetcher = genomes.build_region_fetcher(index_locations['fasta'])
     
     def evaluate_candidate(al):
         results = {
@@ -1571,21 +1585,18 @@ def build_target_info(base_dir, info, genome):
     ti.make_references()
     ti.identify_degenerate_indels()
 
-def build_target_infos_from_csv(base_dir, genome='hg19'):
+def build_target_infos_from_csv(base_dir):
     base_dir = Path(base_dir)
     csv_fn = base_dir / 'targets' / 'targets.csv'
 
-    index_locations = locate_supplemental_indices(base_dir)
-    if genome not in index_locations:
-        print(f'Error: can\'t locate indices for {genome}')
-        sys.exit(0)
+    indices = locate_supplemental_indices(base_dir)
 
     df = pd.read_csv(csv_fn).replace({np.nan: None})
 
     for _, row in df.iterrows():
         name = row['name']
         print(f'Building {name}...')
-        build_target_info(base_dir, row, genome)
+        build_target_info(base_dir, row, indices)
 
 def build_indices(base_dir, name, num_threads=1):
     base_dir = Path(base_dir)
