@@ -1214,7 +1214,7 @@ def build_target_info(base_dir, info, genome):
     target_dir.mkdir(parents=True, exist_ok=True)
     
     protospacer, *other_protospacers = info['sgRNA_sequence'].upper().split(';')
-    amplicon_primers = info['amplicon_primers'].split(';')
+    amplicon_primers = info['amplicon_primers'].upper().split(';')
     donor_seq = info['donor_sequence']
     if donor_seq is None:
         has_donor = False
@@ -1389,7 +1389,7 @@ def build_target_info(base_dir, info, genome):
             
             # Support for donors that have fixed sequences outside of their homology arms added by PCR.
             if info.get('donor_primers') is not None:
-                donor_primers = info['donor_primers'].split(';')
+                donor_primers = info['donor_primers'].upper().split(';')
                 
                 suffix_nts = 15
 
