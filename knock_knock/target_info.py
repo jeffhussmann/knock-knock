@@ -1038,18 +1038,29 @@ def design_amplicon_primers_from_csv(base_dir, genome='hg19'):
 
     df = pd.read_csv(csv_fn).replace({np.nan: None})
 
-    flanking_sequence = {}
+    amplicon_primer_info = {}
 
     for _, row in df.iterrows():
         name = row['name']
         print(f'Designing {name}...')
         best_candidate = design_amplicon_primers(base_dir, row, genome)
         if best_candidate is not None:
-            flanking_sequence[name] = best_candidate['target_seq']
+            amplicon_primer_info[name] = {
+                'flanking_sequence': best_candidate['target_seq'],
+                'genome': genome,
+                'ref_name': best_candidate['ref_name'],
+                'min_cut_after': best_candidate['min_cut_after'],
+                'max_cut_after': best_candidate['max_cut_after'],
+            }
 
-    df['flanking_sequence'] = [flanking_sequence.get(name, '') for name in df['name']]
+    amplicon_primer_info = pd.DataFrame(amplicon_primer_info).T
+    amplicon_primer_info.index.name = 'name'
+
+    column_order = ['flanking_sequence', 'genome', 'ref_name', 'min_cut_after', 'max_cut_after']
+    amplicon_primer_info = amplicon_primer_info[column_order]
+
     final_csv_fn = base_dir / 'targets' / 'sgRNAs_flanking_sequence.csv'
-    df.to_csv(final_csv_fn)
+    amplicon_primer_info.to_csv(final_csv_fn)
 
 def design_amplicon_primers(base_dir, info, genome):
     base_dir = Path(base_dir)
@@ -1088,6 +1099,8 @@ def design_amplicon_primers(base_dir, info, genome):
     def evaluate_candidate(al):
         results = {
             'location': f'{al.reference_name} {al.reference_start:,} {sam.get_strand(al)}',
+            'ref_name': al.reference_name,
+            'cut_afters': [],
         }
 
         full_window_around = 5000
@@ -1123,9 +1136,13 @@ def design_amplicon_primers(base_dir, info, genome):
             if ps_strand == 1:
                 PAM_offset = len(protospacer)
                 PAM_transform = utilities.identity
+                cut_after = al.reference_start - full_window_around + ps_start + PAM_offset - 3
             else:
                 PAM_offset = -3
                 PAM_transform = utilities.reverse_complement
+                cut_after = al.reference_start - full_window_around + ps_start + 2
+
+            results['cut_afters'].append(cut_after)
 
             PAM_start = ps_start + PAM_offset
             PAM = PAM_transform(full_around[PAM_start:PAM_start + 3])
@@ -1139,6 +1156,9 @@ def design_amplicon_primers(base_dir, info, genome):
 
         min_start = min(ps_start for ps_seq, ps_start, ps_strand in protospacer_locations)
         max_start = max(ps_start for ps_seq, ps_start, ps_strand in protospacer_locations)
+
+        results['min_cut_after'] = min(results['cut_afters'])
+        results['max_cut_after'] = max(results['cut_afters'])
         
         final_window_around = 500    
 
