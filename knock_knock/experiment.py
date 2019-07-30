@@ -25,7 +25,9 @@ from . import target_info, blast, layout, visualize, read_outcome, svg, table
 palette = bokeh.palettes.Category20c_20[1::4]
 
 def extract_color(description):
-    color = description.get('color', 'grey')
+    color = description.get('color')
+    if color is None:
+        color = 'grey'
 
     try:
         num = int(color)
