@@ -1234,7 +1234,7 @@ class PacbioExperiment(Experiment):
         pass
     
     def process(self, stage):
-        if stage == 0:
+        if stage == 'align':
             self.preprocess()
 
             for read_type in self.read_types:
@@ -1242,11 +1242,11 @@ class PacbioExperiment(Experiment):
                 self.generate_supplemental_alignments(read_type=read_type)
                 self.combine_alignments(read_type=read_type)
 
+        elif stage == 'categorize':
             self.categorize_outcomes(read_type='CCS')
-
             self.count_read_lengths()
 
-        elif stage == 1:
+        elif stage == 'visualize':
             self.generate_figures()
 
 class IlluminaExperiment(Experiment):
@@ -1517,7 +1517,7 @@ class IlluminaExperiment(Experiment):
         self.stitch_read_pairs()
 
     def process(self, stage=0):
-        if stage == 0:
+        if stage == 'align':
             self.preprocess()
             
             for read_type in self.read_types:
@@ -1525,12 +1525,13 @@ class IlluminaExperiment(Experiment):
                 self.generate_supplemental_alignments(read_type)
                 self.combine_alignments(read_type)
 
+        elif stage == 'categorize':
             self.categorize_outcomes(read_type='stitched')
             self.categorize_no_overlap_outcomes()
 
             self.count_read_lengths()
         
-        elif stage == 1:
+        elif stage == 'visualize':
             self.generate_figures()
 
 def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):

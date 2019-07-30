@@ -55,7 +55,7 @@ def parallel(args):
     parallel_command = [
         'parallel',
         '--will-cite',
-        '-n', '3', 
+        '-n', '4', 
         '--bar',
         '--max-procs', str(args.max_procs),
         'knock_knock',
@@ -64,7 +64,7 @@ def parallel(args):
         ':::',
     ]
 
-    arg_tuples = [(exp.group, exp.name, '0') for exp in exps]
+    arg_tuples = [(exp.group, exp.name, '--stages', args.stages) for exp in exps]
     for t in sorted(arg_tuples):
         parallel_command.extend(t)
 
@@ -95,7 +95,9 @@ def process(args):
 
     exp = exp_class(args.project_directory, args.group, args.sample, description, args.progress)
 
-    exp.process(args.stage)
+    stages = args.stages.split(',')
+    for stage in stages:
+        exp.process(stage)
 
 def make_tables(args):
     from knock_knock import experiment, table
@@ -187,8 +189,8 @@ parser_process = subparsers.add_parser('process', help='process a single sample'
 parser_process.add_argument('project_directory', type=Path, help='the base directory to store input data, reference annotations, and analysis output for a project')
 parser_process.add_argument('group', help='group name')
 parser_process.add_argument('sample', help='sample name')
-parser_process.add_argument('stage', type=int, choices=[0, 1], help='stage of processing to carry out')
 parser_process.add_argument('--progress', const=tqdm.tqdm, action='store_const', help='show progress bars')
+parser_process.add_argument('--stages', default='align,categorize,visualize')
 parser_process.set_defaults(func=process)
 
 parser_parallel = subparsers.add_parser('parallel', help='process multiple samples in parallel')
@@ -196,6 +198,7 @@ parser_parallel.add_argument('project_directory', type=Path, help='the base dire
 parser_parallel.add_argument('max_procs', type=int, help='maximum number of samples to process at once')
 parser_parallel.add_argument('--group', help='if specified, the single group name to process; if not specified, all groups will be processed')
 parser_parallel.add_argument('--conditions', type=yaml.safe_load, default={}, help='if specified, conditions that samples must satisfy to be processed, given as yaml; if not specified, all samples will be processed')
+parser_parallel.add_argument('--stages', default='align,categorize,visualize')
 parser_parallel.set_defaults(func=parallel)
 
 parser_table = subparsers.add_parser('table', help='generate tables of outcome frequencies')
