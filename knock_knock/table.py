@@ -51,6 +51,9 @@ def load_counts(base_dir, conditions=None):
     df = pd.concat([totals_row, df]).astype(int)
     df.index.names = (None, None)
 
+    # Sort by group and sample name.
+    df = df.sort_index(axis=1)
+
     return df
 
 def calculate_performance_metrics(base_dir, conditions=None):
