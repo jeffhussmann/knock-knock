@@ -55,8 +55,16 @@ class TargetInfo():
         self.gb_records = gb_records
 
         self.sgRNA = sgRNA
-        self.donor = donor
-        self.nonhomologous_donor = nonhomologous_donor
+        if donor is None:
+            self.donor = manifest.get('donor')
+        else:
+            self.donor = donor
+
+        if nonhomologous_donor is None:
+            self.nonhomologous_donor = manifest.get('nonhomologous_donor')
+        else:
+            self.nonhomologous_donor = nonhomologous_donor
+
         self.donor_specific = manifest.get('donor_specific', 'GFP11') 
         self.supplemental_headers = supplemental_headers
 
@@ -1214,28 +1222,38 @@ def build_target_info(base_dir, info, all_index_locations):
             donor_primers
             nonhomologous_donor_sequence
     '''
+    genome = info['genome']
     if info['genome'] not in all_index_locations:
-        print(f'Error: can\'t locate indices for {info["genome"]}')
+        print(f'Error: can\'t locate indices for {genome}')
         sys.exit(0)
     else:
-        index_locations = all_index_locations[info['genome']]
+        index_locations = all_index_locations[genome]
 
     base_dir = Path(base_dir)
 
     name = info['name']
     donor_name = f'{name}_donor'
+    nh_donor_name = info.get('nonhomologous_donor_name', f'{name}_NH_donor')
 
     target_dir = base_dir / 'targets' / name
     target_dir.mkdir(parents=True, exist_ok=True)
     
     protospacer, *other_protospacers = info['sgRNA_sequence'].upper().split(';')
     amplicon_primers = info['amplicon_primers'].upper().split(';')
+
     donor_seq = info['donor_sequence']
     if donor_seq is None:
         has_donor = False
     else:
         has_donor = True
         donor_seq = donor_seq.upper()
+
+    nh_donor_seq = info['nonhomologous_donor_sequence']
+    if nh_donor_seq is None:
+        has_nh_donor = False
+    else:
+        has_nh_donor = True
+        nh_donor_seq = nh_donor_seq.upper()
     
     protospacer_dir = target_dir / 'protospacer_alignment'
     protospacer_dir.mkdir(exist_ok=True)
@@ -1245,8 +1263,11 @@ def build_target_info(base_dir, info, all_index_locations):
 
     STAR_index = index_locations['STAR']
 
-    target_gb_fn = target_dir / f'{name}.gb'
-    donor_gb_fn = target_dir / f'{donor_name}.gb'
+    gb_fns = {
+        'target': target_dir / f'{name}.gb',
+        'donor': target_dir / f'{donor_name}.gb',
+        'nh_donor': target_dir / f'{nh_donor_name}.gb',
+    }
 
     # Make a fastq file with a single read containing the protospacer sequence.
     
@@ -1358,6 +1379,35 @@ def build_target_info(base_dir, info, all_index_locations):
             'donor_specific': '#b1ff67',
         }
         
+        target_features = [
+            SeqFeature(location=FeatureLocation(fwd_start - offset, fwd_start - offset + len(final_fwd_primer), strand=1),
+                       id='forward_primer',
+                       type='misc_feature',
+                       qualifiers={'label': 'forward_primer',
+                                   'ApEinfo_fwdcolor': colors['forward_primer'],
+                                  },
+                      ),
+            SeqFeature(location=FeatureLocation(rev_start - offset, rev_start - offset + len(final_rev_primer), strand=-1),
+                       id='reverse_primer',
+                       type='misc_feature',
+                       qualifiers={'label': 'reverse_primer',
+                                   'ApEinfo_fwdcolor': colors['reverse_primer'],
+                                  },
+                      ),
+        ]
+
+        for sgRNA_i, (ps_seq, ps_start, ps_strand) in enumerate(protospacer_locations):
+            sgRNA_feature = SeqFeature(location=FeatureLocation(ps_start - offset, ps_start - offset + len(protospacer), strand=ps_strand),
+                                       id=f'sgRNA_{sgRNA_i}',
+                                       type='sgRNA_SpCas9',
+                                       qualifiers={'label': f'sgRNA_{sgRNA_i}',
+                                                   'ApEinfo_fwdcolor': colors['sgRNA'],
+                                                   },
+                                       )
+            target_features.append(sgRNA_feature)
+
+        results['gb_Records'] = {}
+
         if has_donor:
             # Identify the homology arms.
 
@@ -1469,9 +1519,11 @@ def build_target_info(base_dir, info, all_index_locations):
                         ),
             ]
 
-            results['donor'] = Bio.SeqRecord.SeqRecord(Seq(possibly_flipped_donor_seq, generic_dna), name=donor_name, features=donor_features)
+            donor_Seq = Seq(possibly_flipped_donor_seq, generic_dna)
+            donor_Record = SeqRecord(donor_Seq, name=donor_name, features=donor_features)
+            results['gb_Records']['donor'] = donor_Record
 
-            target_features = [
+            target_features.extend([
                 SeqFeature(location=FeatureLocation(donor_start, donor_start + lengths['HA_1'], strand=1),
                         id='HA_1',
                         type='misc_feature',
@@ -1486,40 +1538,16 @@ def build_target_info(base_dir, info, all_index_locations):
                                     'ApEinfo_fwdcolor': colors['HA_2'],
                                     },
                         ),
-            ]
+            ])
+
+        target_Seq = Seq(target_seq, generic_dna)
+        target_Record = SeqRecord(target_Seq, name=name, features=target_features)
+        results['gb_Records']['target'] = target_Record
         
-        else:
-            results['donor'] = None
-            target_features = []
-
-        target_features.extend([
-            SeqFeature(location=FeatureLocation(fwd_start - offset, fwd_start - offset + len(final_fwd_primer), strand=1),
-                       id='forward_primer',
-                       type='misc_feature',
-                       qualifiers={'label': 'forward_primer',
-                                   'ApEinfo_fwdcolor': colors['forward_primer'],
-                                  },
-                      ),
-            SeqFeature(location=FeatureLocation(rev_start - offset, rev_start - offset + len(final_rev_primer), strand=-1),
-                       id='reverse_primer',
-                       type='misc_feature',
-                       qualifiers={'label': 'reverse_primer',
-                                   'ApEinfo_fwdcolor': colors['reverse_primer'],
-                                  },
-                      ),
-        ])
-
-        for sgRNA_i, (ps_seq, ps_start, ps_strand) in enumerate(protospacer_locations):
-            sgRNA_feature = SeqFeature(location=FeatureLocation(ps_start - offset, ps_start - offset + len(protospacer), strand=ps_strand),
-                                       id=f'sgRNA_{sgRNA_i}',
-                                       type='sgRNA_SpCas9',
-                                       qualifiers={'label': f'sgRNA_{sgRNA_i}',
-                                                   'ApEinfo_fwdcolor': colors['sgRNA'],
-                                                   },
-                                       )
-            target_features.append(sgRNA_feature)
-
-        results['target'] = SeqRecord(Seq(target_seq, generic_dna), name=name, features=target_features)
+        if has_nh_donor:
+            nh_donor_Seq = Seq(nh_donor_seq, generic_dna)
+            nh_donor_Record = SeqRecord(nh_donor_Seq, name=nh_donor_name)
+            results['gb_Records']['nh_donor'] = nh_donor_Record
 
         return results
     
@@ -1558,14 +1586,12 @@ def build_target_info(base_dir, info, all_index_locations):
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', category=BiopythonWarning)
 
-        try:
-            Bio.SeqIO.write(best_candidate['target'], target_gb_fn, 'genbank')
-
-            if has_donor:
-                Bio.SeqIO.write(best_candidate['donor'], donor_gb_fn, 'genbank')
-        except ValueError:
-            # locus line too long, can't write genbank file with BioPython
-            pass
+        for which_seq, Record in best_candidate['gb_Records'].items(): 
+            try:
+                Bio.SeqIO.write(Record, gb_fns[which_seq], 'genbank')
+            except ValueError:
+                # locus line too long, can't write genbank file with BioPython
+                pass
 
     manifest_fn = target_dir / 'manifest.yaml'
     manifest = {
@@ -1573,15 +1599,15 @@ def build_target_info(base_dir, info, all_index_locations):
         'target': name,
     }
     if has_donor:
+        manifest['donor'] = donor_name
         manifest['donor_specific'] = 'donor_specific'
+
+    if has_nh_donor:
+        manifest['nonhomologous_donor'] = nh_donor_name
 
     manifest_fn.write_text(yaml.dump(manifest, default_flow_style=False))
         
-    gb_records = [best_candidate['target']]
-    if has_donor:
-        gb_records.append(best_candidate['donor'])
-
-    ti = TargetInfo(base_dir, name, gb_records=gb_records)
+    ti = TargetInfo(base_dir, name, gb_records=list(best_candidate['gb_Records'].values()))
     ti.make_references()
     ti.identify_degenerate_indels()
 
@@ -1592,6 +1618,34 @@ def build_target_infos_from_csv(base_dir):
     indices = locate_supplemental_indices(base_dir)
 
     df = pd.read_csv(csv_fn, comment='#').replace({np.nan: None})
+
+    # Fill in values for sequences that are specified by name.
+
+    sgRNA_fn = base_dir / 'targets' / 'sgRNAs.csv'
+
+    if sgRNA_fn.exists():
+        sgRNA_sequences = pd.read_csv(sgRNA_fn, index_col='sgRNA_name', squeeze=True)
+    else:
+        sgRNA_sequences = {}
+
+    amplicon_primers_fn = base_dir / 'targets' / 'amplicon_primers.csv'
+
+    if amplicon_primers_fn.exists():
+        amplicon_primers = pd.read_csv(amplicon_primers_fn, index_col='amplicon_primers_name', squeeze=True)
+    else:
+        amplicon_primers = {}
+
+    donors_fn = base_dir / 'targets' / 'donor_sequences.csv'
+
+    if amplicon_primers_fn.exists():
+        donors = pd.read_csv(donors_fn, index_col='donor_name', squeeze=True)
+    else:
+        donors = {}
+
+    df['donor_sequence'] = [donors.get(v, v) for v in df['donor_sequence']]
+    df['sgRNA_sequence'] = [sgRNA_sequences.get(v, v) for v in df['sgRNA_sequence']]
+    df['amplicon_primers'] = [amplicon_primers.get(v, v) for v in df['amplicon_primers']]
+    df['nonhomologous_donor_sequence'] = [donors.get(v, v) for v in df['nonhomologous_donor_sequence']]
 
     for _, row in df.iterrows():
         name = row['name']
