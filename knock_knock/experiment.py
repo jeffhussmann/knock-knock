@@ -111,7 +111,8 @@ class Experiment(object):
         self.color = extract_color(self.description)
         self.max_qual = 93
         
-        self.supplemental_index_names = sorted(target_info.locate_supplemental_indices(self.base_dir))
+        #self.supplemental_index_names = sorted(target_info.locate_supplemental_indices(self.base_dir))
+        self.supplemental_index_names = self.description.get('supplemental_indices', '').split(';')
         
     @memoized_property
     def dir(self):
@@ -340,34 +341,36 @@ class Experiment(object):
                                             mode='permissive',
                                            )
 
-            all_mappings = pysam.AlignmentFile(bam_fn)
-            header = all_mappings.header
-            new_references = ['{}_{}'.format(index_name, ref) for ref in header.references]
-            new_header = pysam.AlignmentHeader.from_references(new_references, header.lengths)
+            with pysam.AlignmentFile(bam_fn) as all_mappings:
+                header = all_mappings.header
+                new_references = ['{}_{}'.format(index_name, ref) for ref in header.references]
+                new_header = pysam.AlignmentHeader.from_references(new_references, header.lengths)
 
-            by_name_fn = self.fns_by_read_type['supplemental_bam_by_name'][read_type, index_name]
-            by_name_sorter = sam.AlignmentSorter(by_name_fn, new_header, by_name=True)
+                by_name_fn = self.fns_by_read_type['supplemental_bam_by_name'][read_type, index_name]
+                by_name_sorter = sam.AlignmentSorter(by_name_fn, new_header, by_name=True)
 
-            with by_name_sorter:
-                for al in all_mappings:
-                    # To reduce noise, filter out alignments that are too short
-                    # or that have too many edits (per aligned nt). Keep this in
-                    # mind when interpretting short unexplained gaps in reads.
+                with by_name_sorter:
+                    for al in all_mappings:
+                        # To reduce noise, filter out alignments that are too short
+                        # or that have too many edits (per aligned nt). Keep this in
+                        # mind when interpretting short unexplained gaps in reads.
 
-                    #if al.query_alignment_length <= 20:
-                    #    continue
+                        #if al.query_alignment_length <= 20:
+                        #    continue
 
-                    #if al.get_tag('AS') / al.query_alignment_length <= 0.8:
-                    #    continue
+                        #if al.get_tag('AS') / al.query_alignment_length <= 0.8:
+                        #    continue
 
-                    by_name_sorter.write(al)
+                        by_name_sorter.write(al)
 
-            sam.sort_bam(by_name_fn,
-                         self.fns_by_read_type['supplemental_bam'][read_type, index_name],
-                        )
+            Path(bam_fn).unlink()
+
+            #sam.sort_bam(by_name_fn,
+            #             self.fns_by_read_type['supplemental_bam'][read_type, index_name],
+            #            )
     
     def combine_alignments(self, read_type=None):
-        for by_name in [False, True]:
+        for by_name in [True]:
             if by_name:
                 suffix = '_by_name'
             else:
@@ -385,6 +388,9 @@ class Experiment(object):
                                        self.fns_by_read_type[combined_key][read_type],
                                        by_name=by_name,
                                       )
+
+            for fn in fns_to_merge:
+                fn.unlink()
 
     def load_outcome_counts(self, key='outcome_counts'):
         if self.fns[key].exists() and self.fns[key].stat().st_size > 0:
