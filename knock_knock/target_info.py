@@ -44,7 +44,8 @@ class TargetInfo():
                  primer_names=None,
                  supplemental_headers=None,
                  gb_records=None,
-                 ):
+                 infer_homology_arms=False,
+                ):
         self.name = name
         self.dir = Path(base_dir) / 'targets' / name
 
@@ -67,6 +68,8 @@ class TargetInfo():
 
         self.donor_specific = manifest.get('donor_specific', 'GFP11') 
         self.supplemental_headers = supplemental_headers
+
+        self.infer_homology_arms = infer_homology_arms
 
         self.default_HAs = manifest.get('default_HAs')
 
@@ -112,7 +115,8 @@ class TargetInfo():
         if self.gb_records is None:
             self.gb_records = []
             for gb_fn in gb_fns:
-                self.gb_records.append(Bio.SeqIO.read(str(gb_fn), 'genbank'))
+                for record in Bio.SeqIO.parse(str(gb_fn), 'genbank'):
+                    self.gb_records.append(record)
 
         for gb_record in self.gb_records:
             fasta_record, gff_features = parse_benchling_genbank(gb_record)
@@ -507,16 +511,19 @@ class TargetInfo():
         # Load homology arms from gff features.
         HAs = defaultdict(dict)
 
-        ref_name_to_source = {
-            self.target: 'target',
-            self.donor: 'donor',
-        }
+        if self.infer_homology_arms:
+            donor_SNVs, HAs = self.inferred_donor_SNVs_and_HAs
+        else:
+            ref_name_to_source = {
+                self.target: 'target',
+                self.donor: 'donor',
+            }
 
-        for (ref_name, feature_name), feature in self.features.items():
-            source = ref_name_to_source.get(ref_name)
-            if source is not None:
-                if feature_name.startswith('HA_'):
-                    HAs[feature_name][source] = feature
+            for (ref_name, feature_name), feature in self.features.items():
+                source = ref_name_to_source.get(ref_name)
+                if source is not None:
+                    if feature_name.startswith('HA_'):
+                        HAs[feature_name][source] = feature
 
         if len(HAs) == 0:
             return None
@@ -634,7 +641,7 @@ class TargetInfo():
             return None
 
     @memoized_property
-    def fingerprints(self):
+    def fingerprints_old(self):
         fps = {
             self.target: [],
             self.donor: [],
@@ -654,12 +661,27 @@ class TargetInfo():
         return fps
 
     @memoized_property
+    def fingerprints(self):
+        fps = {
+            self.target: [],
+            self.donor: [],
+        }
+
+        for seq_type, name in [('donor', self.donor), ('target', self.target)]:
+            fps[name] = [((v['strand'], v['position']), v['base']) for _, v in sorted(self.donor_SNVs[seq_type].items())]
+
+        return fps
+
+    @memoized_property
     def SNP_names(self):
         return sorted([name for seq_name, name in self.features if seq_name == self.donor and name.startswith('SNP')])
 
     @memoized_property
-    def donor_SNVs(self):
-        SNVs = {'target': {}, 'donor': {}}
+    def donor_SNVs_old(self):
+        SNVs = {
+            'target': {},
+            'donor': {},
+        }
 
         if self.donor is None:
             return SNVs
@@ -677,10 +699,125 @@ class TargetInfo():
                 SNVs[key][name] = {
                     'position': position,
                     'strand': strand,
-                    'base': b
+                    'base': b,
                 }
             
         return SNVs
+
+    @memoized_property
+    def inferred_donor_SNVs_and_HAs(self):
+        SNVs = {
+            'target': {},
+            'donor': {},
+        }
+        
+        donor_bytes = {
+            False: self.donor_sequence_bytes,
+        }
+        donor_bytes[True] = utilities.reverse_complement(donor_bytes[False])
+        
+        target_bytes = self.target_sequence_bytes
+        
+        candidates = []
+        for is_reverse_complement in [False, True]:
+            mismatches = sw.mismatches_at_offset(donor_bytes[is_reverse_complement], target_bytes)
+            candidates.extend([(m, i, is_reverse_complement) for i, m in enumerate(mismatches)])
+            
+        num_mismatches, offset, is_reverse_complement = min(candidates) 
+
+        if num_mismatches > 8:
+            return SNVs, []
+        
+        donor_substring = donor_bytes[is_reverse_complement].decode()
+        target_substring = target_bytes[offset:offset + len(donor_bytes[is_reverse_complement])].decode()
+        
+        for i, (d, t) in enumerate(zip(donor_substring, target_substring)):
+            if d != t:
+                name = f'SNV_{offset + i:05d}_{t}-{d}'
+                
+                SNVs['target'][name] = {
+                    'position': offset + i,
+                    'strand': '+',
+                    'base': t,
+                }
+                
+                if is_reverse_complement:
+                    donor_position = len(donor_substring) - 1 - i
+                    donor_strand = '-'
+                else:
+                    donor_position = i
+                    donor_strand = '+'
+                    
+                SNVs['donor'][name] = {
+                    'position': donor_position,
+                    'strand': donor_strand,
+                    'base': d,
+                }
+
+        donor_ps = [d['position'] for d in SNVs['donor'].values()]
+        target_ps = [d['position'] for d in SNVs['target'].values()]
+        
+        names = {
+            1: f'HA_{self.donor}_1',
+            2: f'HA_{self.donor}_2',
+        }
+        
+        colors = {
+            1: '%23b7e6d7',
+            2: '%2385dae9',
+        }
+        
+        lengths = {
+            1: min(donor_ps),
+            2: len(donor_substring) - 1 - max(donor_ps),
+        }
+        
+        bounds = {
+            1: (0, min(donor_ps) - 1),
+            2: (max(donor_ps) + 1, len(donor_substring) - 1),
+        }
+            
+        if is_reverse_complement:
+            left_num = 2
+            right_num = 1
+            
+            strand = '-'
+            
+        else:
+            left_num = 1
+            right_num = 2
+            
+            strand = '+'
+            
+        def make_feature(seqname, start, end, name, color):
+            return gff.Feature.from_fields(seqname,
+                                    '.',
+                                    'misc_feature',
+                                    start,
+                                    end,
+                                    '.',
+                                    strand,
+                                    '.',
+                                    f'ID={name};color={color}',
+                                )
+        
+        HAs = {
+            names[left_num]: {
+                'donor': make_feature(self.donor, bounds[left_num][0], bounds[left_num][1], names[left_num], colors[left_num]),
+                'target': make_feature(self.target, min(target_ps) - lengths[left_num], min(target_ps) - 1, names[left_num], colors[left_num]),
+            },
+            names[right_num]: {
+                'donor': make_feature(self.donor, bounds[right_num][0], bounds[right_num][1], names[right_num], colors[right_num]),
+                'target': make_feature(self.target, max(target_ps) + 1, max(target_ps) + lengths[right_num], names[right_num], colors[right_num]),
+            },
+        }
+                
+        return SNVs, HAs
+    
+    @memoized_property
+    def donor_SNVs(self):
+        donor_SNVs, HAs = self.inferred_donor_SNVs_and_HAs
+        return donor_SNVs
     
     @memoized_property
     def simple_donor_SNVs(self):
@@ -1248,7 +1385,7 @@ def build_target_info(base_dir, info, all_index_locations):
         has_donor = True
         donor_seq = donor_seq.upper()
 
-    nh_donor_seq = info['nonhomologous_donor_sequence']
+    nh_donor_seq = info.get('nonhomologous_donor_sequence')
     if nh_donor_seq is None:
         has_nh_donor = False
     else:
@@ -1645,7 +1782,8 @@ def build_target_infos_from_csv(base_dir):
     df['donor_sequence'] = [donors.get(v, v) for v in df['donor_sequence']]
     df['sgRNA_sequence'] = [sgRNA_sequences.get(v, v) for v in df['sgRNA_sequence']]
     df['amplicon_primers'] = [amplicon_primers.get(v, v) for v in df['amplicon_primers']]
-    df['nonhomologous_donor_sequence'] = [donors.get(v, v) for v in df['nonhomologous_donor_sequence']]
+    if 'nonhomologous_donor_sequence' in df:
+        df['nonhomologous_donor_sequence'] = [donors.get(v, v) for v in df['nonhomologous_donor_sequence']]
 
     for _, row in df.iterrows():
         name = row['name']
