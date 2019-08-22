@@ -1316,11 +1316,17 @@ class IlluminaExperiment(Experiment):
     def get_read_alignments(self, read_id, fn_key='bam_by_name', outcome=None, read_type=None):
         return super().get_read_alignments(read_id, fn_key=fn_key, outcome=outcome, read_type=read_type)
 
+    def get_no_overlap_read_alignments(self, read_id, outcome=None):
+        als = {}
+
+        for which in ['R1', 'R2']:
+            als[which] = self.get_read_alignments(read_id, fn_key='bam_by_name', outcome=outcome, read_type=f'{which}_no_overlap')
+
+        return als
+
     def get_read_diagram(self, qname, outcome=None, relevant=True, **kwargs):
         if qname in self.no_overlap_qnames:
-            als = {which: self.get_read_alignments(qname, fn_key='bam_by_name', outcome=outcome, read_type=f'{which}_no_overlap')
-                   for which in ['R1', 'R2']
-                  }
+            als = self.get_no_overlap_read_alignments(qname, outcome=outcome)
 
             if relevant:
                 layout = self.layout_module.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
