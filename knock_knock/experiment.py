@@ -82,6 +82,7 @@ class Experiment(object):
         self.donor = self.description.get('donor')
         self.nonhomologous_donor = self.description.get('nonhomologous_donor')
         self.primer_names = self.description.get('primer_names', ['forward_primer', 'reverse_primer'])
+        self.infer_homology_arms = self.description.get('infer_homology_arms', False)
 
         # When checking if an Experiment meets filtering conditions, want to be
         # able to just test description.
@@ -142,6 +143,7 @@ class Experiment(object):
                                       sgRNA=self.sgRNA,
                                       primer_names=self.primer_names,
                                       supplemental_headers=self.supplemental_headers,
+                                      infer_homology_arms=self.infer_homology_arms,
                                      )
 
     @memoized_property
