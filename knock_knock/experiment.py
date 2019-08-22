@@ -1129,7 +1129,8 @@ class PacbioExperiment(Experiment):
         super().__init__(*args, **kwargs)
 
         self.paired_end_read_length = None
-        self.max_relevant_length = self.description.get('max_relevant_length', 3000)
+        auto_length = int((self.target_info.amplicon_length * 2.5 // 1000 + 1)) * 1000
+        self.max_relevant_length = self.description.get('max_relevant_length', auto_length)
         self.length_to_store_unknown = None
 
         self.x_tick_multiple = 500
