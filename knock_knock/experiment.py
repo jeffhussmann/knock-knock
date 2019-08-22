@@ -1159,11 +1159,11 @@ class PacbioExperiment(Experiment):
             # Note: this doesn't support multiple intput fastqs.
             fastq_fn = self.fns_by_read_type['fastq'][read_type][0]
             index = self.supplemental_indices[index_name]['minimap2']
-            bam_fn = self.fns_by_read_type['supplemental_bam_temp'][read_type, index_name]
+            temp_bam_fn = self.fns_by_read_type['supplemental_bam_temp'][read_type, index_name]
 
-            mapping_tools.map_minimap2(fastq_fn, index, bam_fn)
+            mapping_tools.map_minimap2(fastq_fn, index, temp_bam_fn)
 
-            all_mappings = pysam.AlignmentFile(bam_fn)
+            all_mappings = pysam.AlignmentFile(temp_bam_fn)
             header = all_mappings.header
             new_references = ['{}_{}'.format(index_name, ref) for ref in header.references]
             new_header = pysam.AlignmentHeader.from_references(new_references, header.lengths)
@@ -1196,10 +1196,8 @@ class PacbioExperiment(Experiment):
 
                         by_name_sorter.write(al)
 
-            sam.sort_bam(by_name_fn,
-                         self.fns_by_read_type['supplemental_bam'][read_type, index_name],
-                        )
-    
+            temp_bam_fn.unlink()
+
     def generate_length_range_figures(self, outcome=None, num_examples=1):
         by_length_range = defaultdict(lambda: utilities.ReservoirSampler(num_examples))
         length_ranges = [interval.Interval(row['start'], row['end']) for _, row in self.length_ranges(outcome).iterrows()]
