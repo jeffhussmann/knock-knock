@@ -109,17 +109,27 @@ def make_tables(args):
 
     results_dir = args.project_directory / 'results'
 
+    print('Generating html table...')
     html_fn = (results_dir / args.file_name_prefix).with_suffix('.html')
     table.generate_html(args.project_directory, html_fn, args.conditions, show_subcategories=False)
     fns_to_zip.append(html_fn)
 
+    print('Generating html table with subcategories...')
     html_fn = (results_dir / f'{args.file_name_prefix}_with_subcategories').with_suffix('.html')
     table.generate_html(args.project_directory, html_fn, args.conditions, show_subcategories=True)
     fns_to_zip.append(html_fn)
 
+    print('Generating csv table...')
     csv_fn = (results_dir / args.file_name_prefix).with_suffix('.csv')
     df = table.load_counts(args.project_directory, args.conditions)
     df.to_csv(csv_fn)
+    fns_to_zip.append(csv_fn)
+    
+    print('Generating performance metrics...')
+    pms_fn = (results_dir / f'{args.file_name_prefix}_performance_metrics').with_suffix('.csv')
+    pms = table.calculate_performance_metrics(args.project_directory, args.conditions)
+    pms.to_csv(pms_fn)
+    fns_to_zip.append(pms_fn)
 
     exps = experiment.get_all_experiments(args.project_directory, args.conditions)
 
@@ -130,22 +140,19 @@ def make_tables(args):
             if not fn.exists():
                 exps_missing_files.add((exp.group, exp.name))
             else:
-                fns_to_zip.append(fn)
+                if fn.is_dir():
+                    for child_fn in fn.iterdir():
+                        fns_to_zip.append(child_fn)
+                else:
+                    fns_to_zip.append(fn)
         
-        def add_dir(dn):
-            if not dn.exists():
-                exps_missing_files.add((exp.group, exp.name))
-            else:
-                for fn in dn.iterdir():
-                    add_fn(fn)
-
         add_fn(exp.fns['outcome_browser'])
 
         for outcome in exp.outcomes:
             outcome_fns = exp.outcome_fns(outcome)
             add_fn(outcome_fns['diagrams_html'])
             add_fn(outcome_fns['first_example'])
-            add_dir(outcome_fns['length_ranges_dir'])
+            add_fn(outcome_fns['length_ranges_dir'])
 
         categories = set(c for c, s in exp.outcomes)
         for category in categories:
@@ -160,13 +167,11 @@ def make_tables(args):
 
     zip_fn = (results_dir / args.file_name_prefix).with_suffix('.zip')
     description = 'Zipping table files'
+    archive_base = Path(args.file_name_prefix)
     with zipfile.ZipFile(zip_fn, mode='w', compression=zipfile.ZIP_DEFLATED) as zip_fh:
         for fn in tqdm.tqdm(fns_to_zip, desc=description):
-            zip_fh.write(fn, arcname=fn.relative_to(results_dir))
-
-    pms_fn = (results_dir / f'{args.file_name_prefix}_performance_metrics').with_suffix('.csv')
-    pms = table.calculate_performance_metrics(args.project_directory, args.conditions)
-    pms.to_csv(pms_fn)
+            arcname = archive_base / fn.relative_to(results_dir)
+            zip_fh.write(fn, arcname=arcname)
 
 def build_targets(args):
     from knock_knock import target_info
