@@ -266,10 +266,10 @@ class Layout(object):
                 subcategory = 'HDR'
                 self.relevant_alignments = self.parsimonious_and_gap_alignments
             else:
-                if junctions == set(['truncated']) or junctions == set(['truncated', 'HDR']):
-                    category = 'truncated misintegration'
-                elif junctions == set(['blunt']) or junctions == set(['blunt', 'HDR']):
+                if 'blunt' in junctions:
                     category = 'blunt misintegration'
+                elif junctions == set(['imperfect']) or junctions == set(['imperfect', 'HDR']):
+                    category = 'incomplete HDR'
                 else:
                     category = 'complex misintegration'
 
@@ -947,6 +947,17 @@ class Layout(object):
         return to_cut
 
     @memoized_property
+    def donor_integration_is_blunt(self):
+        donor_length = len(self.target_info.donor_sequence)
+
+        is_blunt = {
+            5: self.edge_r[5] is not None and self.edge_r[5] <= 1,
+            3: self.edge_r[3] is not None and self.edge_r[3] >= donor_length - 2,
+        }
+
+        return is_blunt
+
+    @memoized_property
     def donor_integration_contains_full_HA(self):
         HAs = self.target_info.homology_arms
         if 'donor' not in HAs[5] or 'donor' not in HAs[3]:
@@ -1058,10 +1069,10 @@ class Layout(object):
         for side in [5, 3]:
             if self.clean_handoff[side]:
                 per_side[side] = 'HDR'
-            elif self.donor_integration_contains_full_HA[side]:
+            elif self.donor_integration_is_blunt[side]:
                 per_side[side] = 'blunt'
             else:
-                per_side[side] = 'truncated'
+                per_side[side] = 'imperfect'
 
         return per_side
                 
@@ -1667,9 +1678,9 @@ class NonoverlappingPairLayout():
                 subcategory = "5' blunt, 3' blunt"
                 details = self.bridging_strand[kind]
 
-            elif self.junctions['R1'] == 'truncated' and self.junctions['R2'] == 'truncated':
-                category = 'truncated misintegration'
-                subcategory = "5' truncated, 3' truncated"
+            elif self.junctions['R1'] == 'imperfect' and self.junctions['R2'] == 'imperfect':
+                category = 'incomplete HDR'
+                subcategory = "5' imperfect, 3' imperfect"
                 details = self.bridging_strand[kind]
 
             else:
@@ -1794,18 +1805,18 @@ category_order = [
         ("5' HDR, 3' blunt",
          "5' blunt, 3' HDR",
          "5' blunt, 3' blunt",
+         "5' blunt, 3' imperfect",
+         "5' imperfect, 3' blunt",
         ),
     ),
-    ('truncated misintegration',
-        ("5' HDR, 3' truncated",
-         "5' truncated, 3' HDR",
-         "5' truncated, 3' truncated",
+    ('incomplete HDR',
+        ("5' HDR, 3' imperfect",
+         "5' imperfect, 3' HDR",
+         "5' imperfect, 3' imperfect",
         ),
     ),
     ('complex misintegration',
-        ("5' blunt, 3' truncated",
-         "5' truncated, 3' blunt",
-         'other',
+        ('other',
         ),
     ),
     ('concatenated misintegration',
