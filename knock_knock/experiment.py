@@ -114,7 +114,11 @@ class Experiment(object):
         self.max_qual = 93
         
         #self.supplemental_index_names = sorted(target_info.locate_supplemental_indices(self.base_dir))
-        self.supplemental_index_names = self.description.get('supplemental_indices', '').split(';')
+        index_names = self.description.get('supplemental_indices')
+        if index_names is None:
+            self.supplemental_index_names = []
+        else:
+            self.supplemental_index_names = index_names.split(';')
         
     @memoized_property
     def dir(self):
@@ -157,7 +161,7 @@ class Experiment(object):
             fns['primary_bam'][read_type] = self.dir / f'{read_type}_alignments.bam'
             fns['primary_bam_by_name'][read_type] = self.dir / f'{read_type}_alignments.by_name.bam'
 
-            for index_name in self.supplemental_indices:
+            for index_name in self.supplemental_index_names:
                 fns['supplemental_STAR_prefix'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments_STAR.'
                 fns['supplemental_bam'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments.bam'
                 fns['supplemental_bam_by_name'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments.by_name.bam'
