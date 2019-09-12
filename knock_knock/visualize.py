@@ -21,60 +21,6 @@ from . import experiment as experiment_module
 from . import target_info as target_info_module
 from . import layout as layout_module
 
-def get_mismatch_info(alignment, target_info):
-    mismatches = []
-
-    triples = []
-    if target_info.reference_sequences.get(alignment.reference_name) is None:
-        for read_p, ref_p, ref_b in alignment.get_aligned_pairs(with_seq=True):
-            if read_p != None and ref_p != None:
-                read_b = alignment.query_sequence[read_p]
-                triples.append((read_p, read_b, ref_b))
-
-    else:
-        reference = target_info.reference_sequences[alignment.reference_name]
-        for read_p, ref_p in alignment.get_aligned_pairs():
-            if read_p != None and ref_p != None:
-                read_b = alignment.query_sequence[read_p]
-                ref_b = reference[ref_p]
-                
-                triples.append((read_p, read_b, ref_b))
-
-    for read_p, read_b, ref_b in triples:
-        if read_b != ref_b:
-            true_read_p = sam.true_query_position(read_p, alignment)
-            q = alignment.query_qualities[read_p]
-
-            if alignment.is_reverse:
-                read_b = utilities.reverse_complement(read_b)
-                ref_b = utilities.reverse_complement(ref_b)
-
-            mismatches.append((true_read_p, read_b, ref_p, ref_b, q))
-
-    return mismatches
-
-def get_indel_info(alignment):
-    indels = []
-    for i, (kind, length) in enumerate(alignment.cigar):
-        if kind == sam.BAM_CDEL or kind == sam.BAM_CREF_SKIP:
-            if kind == sam.BAM_CDEL:
-                name = 'deletion'
-            else:
-                name = 'splicing'
-
-            nucs_before = sam.total_read_nucs(alignment.cigar[:i])
-            centered_at = np.mean([sam.true_query_position(p, alignment) for p in [nucs_before - 1, nucs_before]])
-
-            indels.append((name, (centered_at, length)))
-
-        elif kind == sam.BAM_CINS:
-            first_edge = sam.total_read_nucs(alignment.cigar[:i])
-            second_edge = first_edge + length
-            starts_at, ends_at = sorted(sam.true_query_position(p, alignment) for p in [first_edge, second_edge])
-            indels.append(('insertion', (starts_at, ends_at)))
-
-    return indels
-
 class ReadDiagram():
     def __init__(self, 
                  alignments,
@@ -488,7 +434,7 @@ class ReadDiagram():
                                     **kwargs)
 
                 if self.draw_mismatches:
-                    mismatches = get_mismatch_info(alignment, self.target_info)
+                    mismatches = layout_module.get_mismatch_info(alignment, self.target_info)
                     for read_p, read_b, ref_p, ref_b, q in mismatches:
                         if q < self.max_qual * 0.75:
                             alpha = 0.25
@@ -506,7 +452,7 @@ class ReadDiagram():
                 # Draw the alignment, with downward dimples at insertions and upward loops at deletions.
                 xs = [left_offset(start)]
                 ys = [y]
-                indels = sorted(get_indel_info(alignment), key=lambda t: t[1][0])
+                indels = sorted(layout_module.get_indel_info(alignment), key=lambda t: t[1][0])
                 for kind, info in indels:
                     if kind == 'deletion' or kind == 'splicing':
                         centered_at, length = info
