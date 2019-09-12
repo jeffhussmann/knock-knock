@@ -210,6 +210,8 @@ class TargetInfo():
             (self.donor, 'GFP11'),
             (self.donor, 'PPX'),
             (self.donor, 'donor_specific'),
+            (self.donor, 'PCR_adapter_1'),
+            (self.donor, 'PCR_adapter_2'),
         }
 
         for side in [5, 3]:
@@ -1349,14 +1351,112 @@ def design_amplicon_primers(base_dir, info, genome):
 
     return best_candidate
 
+def identify_homology_arms(donor_seq, target_seq, cut_after):
+    required_match_length = 15
+    
+    header = pysam.AlignmentHeader.from_references(['donor', 'target'], [len(donor_seq), len(target_seq)])
+    mapper = sw.SeedAndExtender(donor_seq.encode(), 8, header, 'donor')
+    
+    target_bytes = target_seq.encode()
+    
+    alignments = {
+        'before_cut': [],
+        'after_cut': [],
+    }
+
+    query_to_ref = {}
+
+    seed_starts = {
+        'before_cut': range(cut_after - required_match_length, 0, -1),
+        'after_cut': range(cut_after, len(target_seq) - required_match_length),
+    }
+
+    for side in ['before_cut', 'after_cut']:
+        for seed_start in seed_starts[side]:  
+            alignments[side] = mapper.seed_and_extend(target_bytes, seed_start, seed_start + required_match_length, 'target')
+            if alignments[side]:
+                break
+
+        if not alignments[side]:
+            results = {'failed': f'cannot locate homology arm {side}'}
+            return results
+        
+    possible_HA_boundaries = []
+    
+    for before_al in alignments['before_cut']:
+        for after_al in alignments['after_cut']:
+            if sam.get_strand(before_al) == sam.get_strand(after_al):
+                strand = sam.get_strand(before_al)
+                if strand == '+':
+                    if before_al.reference_end < after_al.reference_start:
+                        possible_HA_boundaries.append((donor_seq, before_al.reference_start, after_al.reference_end))
+                elif strand == '-':
+                    if before_al.reference_start > after_al.reference_end:
+                        flipped = utilities.reverse_complement(donor_seq)
+                        start = len(donor_seq) - 1 - (before_al.reference_end - 1)
+                        end = len(donor_seq) - 1 - after_al.reference_start + 1
+                        possible_HA_boundaries.append((flipped, start, end))
+         
+    possible_HAs = []
+    for possibly_flipped_donor_seq, HA_start, HA_end in possible_HA_boundaries:
+        donor_window = possibly_flipped_donor_seq[HA_start:HA_end]
+
+        donor_prefix = donor_window[:required_match_length]
+
+        if donor_prefix not in target_seq:
+            raise ValueError
+
+        donor_suffix = donor_window[-required_match_length:]
+
+        if donor_suffix not in target_seq:
+            raise ValueError
+
+        target_HA_start = target_seq.index(donor_prefix)
+        target_HA_end = target_seq.index(donor_suffix) + len(donor_suffix)
+
+        relevant_target_seq = target_seq[target_HA_start:target_HA_end]
+
+        total_HA_length = target_HA_end - target_HA_start
+
+        mismatches_before_deletion = np.cumsum([t != d for t, d in zip(relevant_target_seq, donor_window)])
+
+        flipped_target = relevant_target_seq[::-1]
+        flipped_donor = donor_window[::-1]
+        mismatches_after_deletion = np.cumsum([0] + [t != d for t, d in zip(flipped_target, flipped_donor)][:-1])[::-1]
+
+        total_mismatches = mismatches_before_deletion + mismatches_after_deletion
+
+        last_index_in_HA_1 = int(np.argmin(total_mismatches))
+        min_mismatches = total_mismatches[last_index_in_HA_1]
+
+        lengths = {}
+        lengths['HA_1'] = last_index_in_HA_1 + 1
+        lengths['HA_2'] = total_HA_length - lengths['HA_1']
+        lengths['donor_specific'] = len(donor_seq) - total_HA_length
+        
+        info = {
+            'possibly_flipped_donor_seq': possibly_flipped_donor_seq,
+            'donor_HA_start': HA_start,
+            'donor_HA_end': HA_end,
+            'target_HA_start': target_HA_start,
+            'target_HA_end': target_HA_end,
+            'lengths': lengths,
+        }
+        possible_HAs.append((min_mismatches, info))
+        
+    if not possible_HAs:
+        results = {'failed': 'cannot locate homology arms'}
+    else:
+        results = min(possible_HAs)[1]
+
+    return results
+
 def build_target_info(base_dir, info, all_index_locations):
     ''' info should have keys:
-            name
             sgRNA_sequence
             amplicon_primers
         optional keys:
             donor_sequence
-            donor_primers
             nonhomologous_donor_sequence
     '''
     genome = info['genome']
@@ -1368,7 +1468,7 @@ def build_target_info(base_dir, info, all_index_locations):
 
     base_dir = Path(base_dir)
 
-    name = info['name']
+    name = info.name
     donor_name = f'{name}_donor'
     nh_donor_name = info.get('nonhomologous_donor_name', f'{name}_NH_donor')
 
@@ -1514,6 +1614,8 @@ def build_target_info(base_dir, info, all_index_locations):
             'reverse_primer': '#9eafd2',
             'sgRNA': '#c6c9d1',
             'donor_specific': '#b1ff67',
+            'PCR_adapter_1': '#F8D3A9',
+            'PCR_adapter_2': '#D59687',
         }
         
         target_features = [
@@ -1533,6 +1635,7 @@ def build_target_info(base_dir, info, all_index_locations):
                       ),
         ]
 
+        sgRNA_features = []
         for sgRNA_i, (ps_seq, ps_start, ps_strand) in enumerate(protospacer_locations):
             sgRNA_feature = SeqFeature(location=FeatureLocation(ps_start - offset, ps_start - offset + len(protospacer), strand=ps_strand),
                                        id=f'sgRNA_{sgRNA_i}',
@@ -1542,133 +1645,75 @@ def build_target_info(base_dir, info, all_index_locations):
                                                    },
                                        )
             target_features.append(sgRNA_feature)
+            sgRNA_features.append(sgRNA_feature)
 
         results['gb_Records'] = {}
 
         if has_donor:
             # Identify the homology arms.
 
-            required_match_length = 15
-            donor_prefix = donor_seq[:required_match_length]
-            
-            if donor_prefix in target_seq:
-                possibly_flipped_donor_seq = donor_seq
-            elif utilities.reverse_complement(donor_prefix) in target_seq:
-                possibly_flipped_donor_seq = utilities.reverse_complement(donor_seq)
-                donor_prefix = possibly_flipped_donor_seq[:required_match_length]
+            if len(sgRNA_features) > 1:
+                results['failed'] = 'multiple sgRNAs and a donor are not supported'
             else:
-                results['failed'] = f'beginning of donor sequence ({donor_prefix}) not present near protospacer'
-                return results
-
-            donor_suffix = possibly_flipped_donor_seq[-required_match_length:]
-
-            try:
-                donor_start = target_seq.index(donor_prefix)
-                donor_end = target_seq.index(donor_suffix) + len(donor_suffix)
-            except ValueError:
-                results['failed'] = f'end of donor sequence ({donor_suffix}) not present near protospacer'
-                return results
-
-            relevant_target_seq = target_seq[donor_start:donor_end]
-
-            total_HA_length = donor_end - donor_start
-
-            mismatches_before_deletion = np.cumsum([t != d for t, d in zip(relevant_target_seq, possibly_flipped_donor_seq)])
-
-            flipped_target = relevant_target_seq[::-1]
-            flipped_donor = possibly_flipped_donor_seq[::-1]
-            mismatches_after_deletion = np.cumsum([0] + [t != d for t, d in zip(flipped_target, flipped_donor)][:-1])[::-1]
-
-            total_mismatches = mismatches_before_deletion + mismatches_after_deletion
-
-            last_index_in_HA_1 = int(np.argmin(total_mismatches))
-
-            lengths = {}
-            lengths['HA_1'] = last_index_in_HA_1 + 1
-            lengths['HA_2'] = total_HA_length - lengths['HA_1']
-            lengths['donor_specific'] = len(donor_seq) - total_HA_length
-            
-            # Support for donors that have fixed sequences outside of their homology arms added by PCR.
-            if info.get('donor_primers') is not None:
-                donor_primers = info['donor_primers'].upper().split(';')
-                
-                suffix_nts = 15
-
-                forward_suffix = donor_primers[0][-suffix_nts:]
-                
-                if forward_suffix in possibly_flipped_donor_seq:
-                    donor_fwd = donor_primers[0]
-                    donor_rev = utilities.reverse_complement(donor_primers[1])
-
+                sgRNA_feature = sgRNA_features[0]
+                if sgRNA_feature.strand == 1:
+                    # sgRNA_feature.end is the first nt of the PAM
+                    cut_after = sgRNA_feature.location.end + effectors['SpCas9'].cut_after_offset
                 else:
-                    forward_suffix = donor_primers[1][-suffix_nts:]
+                    # sgRNA_feature.start - 1 is the first nt of the PAM
+                    cut_after = sgRNA_feature.location.start - 1 - effectors['SpCas9'].cut_after_offset - 1
 
-                    if forward_suffix in possibly_flipped_donor_seq:
-                        donor_fwd = donor_primers[1]
-                        donor_rev = utilities.reverse_complement(donor_primers[0])
+            HA_info = identify_homology_arms(donor_seq, target_seq, cut_after)
+            if 'failed' in HA_info:
+                results['failed'] = HA_info['failed']
+                return results
 
-                    else:
-                        results['failed'] = f'at least one donor primer doesn\'t end in at least {suffix_nts} nts that are present in the donor'
-                        return results
+            lengths = HA_info['lengths']
 
-                forward_suffix_start = possibly_flipped_donor_seq.index(forward_suffix)
-                extra_nts_at_start = len(donor_fwd[:-suffix_nts]) - forward_suffix_start
-
-                reverse_suffix = donor_rev[:suffix_nts]
-
-                try:
-                    reverse_suffix_start = possibly_flipped_donor_seq.index(reverse_suffix)
-                except ValueError:
-                    results['failed'] = f'at least one donor primer doesn\'t end in at least {suffix_nts} nts that are present in the donor'
-                    return results
-
-                possibly_flipped_donor_seq = donor_fwd[:-suffix_nts] + possibly_flipped_donor_seq[forward_suffix_start:reverse_suffix_start] + donor_rev
-            else:
-                extra_nts_at_start = 0
-            
             starts = {
-                'HA_1': extra_nts_at_start + 0,
-                'donor_specific': extra_nts_at_start + lengths['HA_1'],
-                'HA_2': extra_nts_at_start + len(donor_seq) - lengths['HA_2'], # note: donor_seq is still original
+                'HA_1': HA_info['donor_HA_start'],
+                'donor_specific': HA_info['donor_HA_start'] + lengths['HA_1'],
+                'HA_2': HA_info['donor_HA_end'] - lengths['HA_2'],
             }
+            ends = {
+                'HA_1': starts['HA_1'] + lengths['HA_1'],
+                'donor_specific': starts['HA_2'],
+                'HA_2': starts['HA_2'] + lengths['HA_2'],
+            }
+
+            if info['donor_type'] == 'PCR':
+                if starts['HA_1'] != 0:
+                    starts['PCR_adapter_1'] = 0
+                    ends['PCR_adapter_1'] = starts['HA_1']
+
+                if ends['HA_2'] != len(donor_seq):
+                    starts['PCR_adapter_2'] = ends['HA_2']
+                    ends['PCR_adapter_2'] = len(donor_seq)
         
             donor_features = [
-                SeqFeature(location=FeatureLocation(starts['HA_1'], starts['HA_1'] + lengths['HA_1'], strand=1),
-                        id='HA_1',
-                        type='misc_feature',
-                        qualifiers={'label': 'HA_1',
-                                    'ApEinfo_fwdcolor': colors['HA_1'],
-                                    },
-                        ),
-                SeqFeature(location=FeatureLocation(starts['donor_specific'], starts['donor_specific'] + lengths['donor_specific'], strand=1),
-                        id='donor_specific',
-                        type='misc_feature',
-                        qualifiers={'label': 'donor_specific',
-                                    'ApEinfo_fwdcolor': colors['donor_specific'],
-                                    },
-                        ),
-                SeqFeature(location=FeatureLocation(starts['HA_2'], starts['HA_2'] + lengths['HA_2'], strand=1),
-                        id='HA_2',
-                        type='misc_feature',
-                        qualifiers={'label': 'HA_2',
-                                    'ApEinfo_fwdcolor': colors['HA_2'],
-                                    },
-                        ),
+                SeqFeature(location=FeatureLocation(starts[key], ends[key], strand=1),
+                           id=key,
+                           type='misc_feature',
+                           qualifiers={'label': key,
+                                       'ApEinfo_fwdcolor': colors[key],
+                                      },
+                        )
+                for key in starts
             ]
 
-            donor_Seq = Seq(possibly_flipped_donor_seq, generic_dna)
+            donor_Seq = Seq(HA_info['possibly_flipped_donor_seq'], generic_dna)
             donor_Record = SeqRecord(donor_Seq, name=donor_name, features=donor_features)
             results['gb_Records']['donor'] = donor_Record
 
             target_features.extend([
-                SeqFeature(location=FeatureLocation(donor_start, donor_start + lengths['HA_1'], strand=1),
+                SeqFeature(location=FeatureLocation(HA_info['target_HA_start'], HA_info['target_HA_start'] + lengths['HA_1'], strand=1),
                         id='HA_1',
                         type='misc_feature',
                         qualifiers={'label': 'HA_1',
                                     'ApEinfo_fwdcolor': colors['HA_1'],
                                     },
                         ),
-                SeqFeature(location=FeatureLocation(donor_end - lengths['HA_2'], donor_end, strand=1),
+                SeqFeature(location=FeatureLocation(HA_info['target_HA_end'] - lengths['HA_2'], HA_info['target_HA_end'], strand=1),
                         id='HA_2',
                         type='misc_feature',
                         qualifiers={'label': 'HA_2',
@@ -1720,6 +1765,7 @@ def build_target_info(base_dir, info, all_index_locations):
     else:
         best_candidate = good_candidates[0]
 
+    truncated_name_i = 0
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', category=BiopythonWarning)
 
@@ -1728,7 +1774,15 @@ def build_target_info(base_dir, info, all_index_locations):
                 Bio.SeqIO.write(Record, gb_fns[which_seq], 'genbank')
             except ValueError:
                 # locus line too long, can't write genbank file with BioPython
-                pass
+                old_name = Record.name
+
+                truncated_name = f'{Record.name[:11]}_{truncated_name_i}'
+                Record.name = truncated_name
+                Bio.SeqIO.write(Record, gb_fns[which_seq], 'genbank')
+
+                Record.name = old_name
+
+                truncated_name_i += 1
 
     manifest_fn = target_dir / 'manifest.yaml'
     manifest = {
@@ -1754,39 +1808,71 @@ def build_target_infos_from_csv(base_dir):
 
     indices = locate_supplemental_indices(base_dir)
 
-    df = pd.read_csv(csv_fn, comment='#').replace({np.nan: None})
+    df = pd.read_csv(csv_fn, comment='#', index_col='name').replace({np.nan: None})
 
     # Fill in values for sequences that are specified by name.
+
+    registry = {}
 
     sgRNA_fn = base_dir / 'targets' / 'sgRNAs.csv'
 
     if sgRNA_fn.exists():
-        sgRNA_sequences = pd.read_csv(sgRNA_fn, index_col='sgRNA_name', squeeze=True)
+        registry['sgRNA_sequence'] = pd.read_csv(sgRNA_fn, index_col='sgRNA_name', squeeze=True)
     else:
-        sgRNA_sequences = {}
+        registry['sgRNA_sequence'] = {}
 
     amplicon_primers_fn = base_dir / 'targets' / 'amplicon_primers.csv'
 
     if amplicon_primers_fn.exists():
-        amplicon_primers = pd.read_csv(amplicon_primers_fn, index_col='amplicon_primers_name', squeeze=True)
+        registry['amplicon_primers'] = pd.read_csv(amplicon_primers_fn, index_col='amplicon_primers_name', squeeze=True)
     else:
-        amplicon_primers = {}
+        registry['amplicon_primers'] = {}
 
     donors_fn = base_dir / 'targets' / 'donor_sequences.csv'
 
-    if amplicon_primers_fn.exists():
-        donors = pd.read_csv(donors_fn, index_col='donor_name', squeeze=True)
+    if donors_fn.exists():
+        donors = pd.read_csv(donors_fn, index_col='donor_name')
+        registry['donor_sequence'] = donors['donor_sequence']
+        registry['donor_type'] = donors['donor_type']
     else:
-        donors = {}
+        registry['donor_sequence'] = {}
+        registry['donor_type'] = {}
 
-    df['donor_sequence'] = [donors.get(v, v) for v in df['donor_sequence']]
-    df['sgRNA_sequence'] = [sgRNA_sequences.get(v, v) for v in df['sgRNA_sequence']]
-    df['amplicon_primers'] = [amplicon_primers.get(v, v) for v in df['amplicon_primers']]
-    if 'nonhomologous_donor_sequence' in df:
-        df['nonhomologous_donor_sequence'] = [donors.get(v, v) for v in df['nonhomologous_donor_sequence']]
+    def lookup(column_to_lookup, registry_column, validate_sequence):
+        values_to_lookup = df[column_to_lookup]
+        registered_values = registry[registry_column]
+        valid_chars = set('TCAGNtcagn;')
+        looked_up = []
+        for target_name, value in values_to_lookup.items():
+            if value in registered_values:
+                seq = registered_values[value]
+                error_message = f'invalid char in {target_name} {column_to_lookup} registry entry {value}\n{seq}'
+            else:
+                seq = value
+                error_message = f'invalid char in {target_name}: {seq} \n Registered names: {registered_values}'
 
-    for _, row in df.iterrows():
-        name = row['name']
+            if seq is not None and validate_sequence:
+                invalid_chars = set(seq) - valid_chars
+                if invalid_chars:
+                    print(error_message)
+                    print(invalid_chars)
+            
+            looked_up.append(seq)
+
+        return looked_up
+
+    looked_up = {
+        'donor_sequence': lookup('donor_sequence', 'donor_sequence', True),
+        'sgRNA_sequence': lookup('sgRNA_sequence', 'sgRNA_sequence', True),
+        'amplicon_primers': lookup('amplicon_primers', 'amplicon_primers', True),
+        'nonhomologous_donor_sequence': lookup('nonhomologous_donor_sequence', 'donor_sequence', True),
+        'donor_type': lookup('donor_sequence', 'donor_type', False),
+        'genome': df['genome'],
+    }
+
+    looked_up = pd.DataFrame(looked_up)
+
+    for name, row in looked_up.iterrows():
         print(f'Building {name}...')
         build_target_info(base_dir, row, indices)
 
