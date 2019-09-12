@@ -78,10 +78,10 @@ def process(args):
     sample_sheet = experiment.load_sample_sheet(args.project_directory, args.group)
 
     if sample_sheet is None:
-        print(f'Error: {args.group} not found in {arg.project_directory}')
+        print(f'Error: {args.group} not found in {args.project_directory}')
         sys.exit(1)
     elif args.sample not in sample_sheet:
-        print(f'Error: {args.sample} not found in {arg.group} sample sheet')
+        print(f'Error: {args.sample} not found in {args.group} sample sheet')
         sys.exit(1)
     else:
         description = sample_sheet[args.sample]
