@@ -94,10 +94,10 @@ class ReadDiagram():
 
             return als
 
+        self.target_info = target_info
+
         self.alignments = clean_up_alignments(alignments)
         self.R2_alignments = clean_up_alignments(R2_alignments)
-
-        self.target_info = target_info
 
         if only_target_and_donor:
             self.alignments = [al for al in self.alignments if al.reference_name in [self.target_info.target, self.target_info.donor]]
