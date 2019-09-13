@@ -1112,7 +1112,7 @@ p {
             self.generate_outcome_example_figures(outcome=outcome, num_examples=num_examples)
             
     def explore(self, by_outcome=True, **kwargs):
-        return explore(self.base_dir, by_outcome=by_outcome, target=self.target_name, experiment=(self.group, self.name), **kwargs)
+        return explore(self.base_dir, by_outcome=by_outcome, target=self.target_name, experiment=self, **kwargs)
 
     def get_read_layout(self, read_id, qname_to_als=None, fn_key='bam_by_name', outcome=None, read_type=None):
         # qname_to_als is to allow caching of many sets of als (e.g. for all
@@ -1567,17 +1567,18 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
         #'zoom_in': ipywidgets.FloatRangeSlider(value=[-0.02, 1.02], min=-0.02, max=1.02, step=0.001, continuous_update=False, layout=ipywidgets.Layout(width='1200px')),
     }
     toggles = [
-        'parsimonious',
-        'relevant',
-        'ref_centric',
-        'draw_sequence',
-        'draw_qualities',
-        'draw_mismatches',
-        'draw_read_pair',
-        'force_left_aligned',
+        ('parsimonious', False),
+        ('relevant', True),
+        ('ref_centric', True),
+        ('draw_sequence', False),
+        ('draw_qualities', False),
+        ('draw_mismatches', True),
+        ('draw_read_pair', False),
+        ('force_left_aligned', False),
+        ('split_at_indels', False),
     ]
-    for toggle in toggles:
-        widgets[toggle] = ipywidgets.ToggleButton(value=kwargs.pop(toggle, False))
+    for key, default_value in toggles:
+        widgets[key] = ipywidgets.ToggleButton(value=kwargs.pop(key, default_value))
 
     # For some reason, the target widget doesn't get a label without this.
     for k, v in widgets.items():
@@ -1585,11 +1586,9 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
 
     if experiment is None:
         conditions = {}
+        exps = get_all_experiments(base_dir)
     else:
-        group_name, exp_name = experiment
-        conditions = {'group': group_name, 'name': exp_name}
-
-    exps = get_all_experiments(base_dir, conditions)
+        exps = [experiment]
 
     output = ipywidgets.Output()
 
@@ -1722,7 +1721,7 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
 
     layout = ipywidgets.VBox(
         [make_row(top_row_keys),
-         make_row(toggles),
+         make_row([k for k, d in toggles]),
          interactive.children[-1],
          output,
         ],
