@@ -174,12 +174,12 @@ def make_tables(args):
             zip_fh.write(fn, arcname=arcname)
 
 def build_targets(args):
-    from knock_knock import target_info
-    target_info.build_target_infos_from_csv(args.project_directory)
+    from knock_knock import build_targets
+    build_targets.build_target_infos_from_csv(args.project_directory)
 
 def design_primers(args):
-    from knock_knock import target_info
-    target_info.design_amplicon_primers_from_csv(args.project_directory, args.genome)
+    from knock_knock import build_targets
+    build_targets.design_amplicon_primers_from_csv(args.project_directory, args.genome)
 
 def build_indices(args):
     from knock_knock import target_info
