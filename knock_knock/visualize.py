@@ -765,7 +765,7 @@ class ReadDiagram():
                     ax.annotate(b,
                                 xy=(x, 0),
                                 family='monospace',
-                                size=4,
+                                size=3.5 * self.size_multiple,
                                 xytext=(0, -2),
                                 textcoords='offset points',
                                 ha='center',
