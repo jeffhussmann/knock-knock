@@ -606,6 +606,9 @@ class TargetInfo():
         ''' register which positions in target and donor sequences correspond
         to the same offset in each homology arm
         '''
+        if self.homology_arms is None:
+            return None
+
         ref_p_to_offset = {}
 
         for PAM_side in self.homology_arms:
@@ -728,7 +731,7 @@ class TargetInfo():
         num_mismatches, offset, is_reverse_complement = min(candidates) 
 
         if num_mismatches > 8:
-            return SNVs, []
+            return SNVs, {}
         
         donor_substring = donor_bytes[is_reverse_complement].decode()
         target_substring = target_bytes[offset:offset + len(donor_bytes[is_reverse_complement])].decode()
@@ -824,6 +827,9 @@ class TargetInfo():
     @memoized_property
     def simple_donor_SNVs(self):
         ''' {ref_name, position: base identity in donor if on forward strand}}'''
+        if self.donor_SNVs is None:
+            return None
+
         SNVs = {}
 
         for SNV_name, donor_SNV_details in self.donor_SNVs['donor'].items():
