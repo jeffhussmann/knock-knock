@@ -1856,6 +1856,7 @@ def build_target_infos_from_csv(base_dir):
                 if invalid_chars:
                     print(error_message)
                     print(invalid_chars)
+                    sys.exit(0)
             
             looked_up.append(seq)
 
