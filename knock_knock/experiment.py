@@ -1153,6 +1153,9 @@ class PacbioExperiment(Experiment):
     def alignment_groups(self, fn_key='bam_by_name', outcome=None, read_type='CCS'):
         groups = super().alignment_groups(fn_key=fn_key, outcome=outcome, read_type=read_type)
         return groups
+    
+    def get_read_alignments(self, read_id, fn_key='bam_by_name', outcome=None, read_type='CCS'):
+        return super().get_read_alignments(read_id, fn_key=fn_key, outcome=outcome, read_type=read_type)
 
     def generate_supplemental_alignments(self, read_type=None):
         ''' Use minimap2 to produce local alignments.
@@ -1314,7 +1317,15 @@ class IlluminaExperiment(Experiment):
         return int(self.max_relevant_length * 1.05)
 
     def get_read_alignments(self, read_id, fn_key='bam_by_name', outcome=None, read_type=None):
-        return super().get_read_alignments(read_id, fn_key=fn_key, outcome=outcome, read_type=read_type)
+        if read_type is None:
+            if read_id in self.no_overlap_qnames:
+                als = self.get_no_overlap_read_alignments(read_id, outcome=outcome)
+            else:
+                als = super().get_read_alignments(read_id, fn_key=fn_key, outcome=outcome, read_type='stitched')
+        else:
+            als = super().get_read_alignments(read_id, fn_key=fn_key, outcome=outcome, read_type=read_type)
+            
+        return als
 
     def get_no_overlap_read_alignments(self, read_id, outcome=None):
         als = {}
