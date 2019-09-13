@@ -1743,6 +1743,7 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
 def load_sample_sheet_from_csv(csv_fn):
     csv_fn = Path(csv_fn)
 
+    # Note: can't include comment='#' because of '#' in hex color specifications.
     df = pd.read_csv(csv_fn, index_col='sample').replace({np.nan: None})
     if not df.index.is_unique:
         print(f'Error parsing sample sheet {csv_fn}')
