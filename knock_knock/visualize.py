@@ -570,17 +570,23 @@ class ReadDiagram():
 
                     features_to_show.extend([(ref_name, f_name) for f_name in self.target_info.sgRNA_features])
 
-                q_to_r = {sam.true_query_position(q, alignment): r
-                          for q, r in alignment.aligned_pairs
-                          if r is not None and q is not None
-                         }
+                q_to_r = {
+                    sam.true_query_position(q, alignment): r
+                    for q, r in alignment.aligned_pairs
+                    if r is not None and q is not None
+                }
 
                 if self.highlight_SNPs:
-                    SNP_names = [(s_n, f_n) for s_n, f_n in features if s_n == ref_name and f_n.startswith('SNP')]
-                    for feature_reference, feature_name in SNP_names:
-                        feature = features[feature_reference, feature_name]
-                        
-                        qs = [q for q, r in q_to_r.items() if feature.start <= r <= feature.end]
+                    if ref_name == self.target_info.donor:
+                        SNVs = self.target_info.donor_SNVs['donor']
+                    elif ref_name == self.target_info.target:
+                        SNVs = self.target_info.donor_SNVs['target']
+                    else:
+                        SNVs = {}
+
+                    for SNV_name, SNV_info in SNVs.items():
+                        SNV_r = SNV_info['position']
+                        qs = [q for q, r in q_to_r.items() if r == SNV_r]
                         if len(qs) != 1:
                             continue
 
