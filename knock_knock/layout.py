@@ -242,6 +242,29 @@ class Layout(object):
                 subcategory = 'WT'
                 self.relevant_alignments = self.parsimonious_target_alignments
 
+        elif self.integration_summary == 'donor':
+            junctions = set(self.junction_summary_per_side.values())
+            if junctions == set(['HDR']):
+                category = 'HDR'
+                subcategory = 'HDR'
+                self.relevant_alignments = self.parsimonious_and_gap_alignments
+            else:
+                subcategory = f'5\' {self.junction_summary_per_side[5]}, 3\' {self.junction_summary_per_side[3]}'
+                if 'blunt' in junctions:
+                    category = 'blunt misintegration'
+                elif junctions == set(['imperfect', 'HDR']):
+                    category = 'incomplete HDR'
+                    details = str(self.donor_microhomology)
+                else:
+                    if self.gap_covered_by_target_alignment:
+                        category = 'complex indel'
+                        subcategory = 'templated insertion'
+                        details = 'n/a'
+                    else:
+                        category = 'complex misintegration'
+
+                self.relevant_alignments = self.parsimonious_and_gap_alignments
+        
         # TODO: check here for HA extensions into donor specific
         elif self.gap_covered_by_target_alignment:
             category = 'complex indel'
@@ -259,22 +282,6 @@ class Layout(object):
             details = 'n/a'
             self.relevant_alignments = self.parsimonious_and_gap_alignments
 
-        elif self.integration_summary == 'donor':
-            junctions = set(self.junction_summary_per_side.values())
-            if junctions == set(['HDR']):
-                category = 'HDR'
-                subcategory = 'HDR'
-                self.relevant_alignments = self.parsimonious_and_gap_alignments
-            else:
-                if 'blunt' in junctions:
-                    category = 'blunt misintegration'
-                elif junctions == set(['imperfect']) or junctions == set(['imperfect', 'HDR']):
-                    category = 'incomplete HDR'
-                else:
-                    category = 'complex misintegration'
-
-                subcategory = '5\' {}, 3\' {}'.format(self.junction_summary_per_side[5], self.junction_summary_per_side[3])
-                self.relevant_alignments = self.parsimonious_and_gap_alignments
 
         elif self.integration_summary == 'concatamer':
             category = 'concatenated misintegration'
@@ -801,14 +808,34 @@ class Layout(object):
         # false positives at the expense of short, error-free true positives. Need to incorporate
         # check for mismatches.
         donor_contains_arm_internal = {
-            5: closest_donor[5].reference_end - 1 - HAs[5]['donor'].end >= 20,
-            3: HAs[3]['donor'].start - closest_donor[3].reference_start >= 20,
+            5: closest_donor[5].reference_end - 1 - HAs[5]['donor'].end >= 0,
+            3: HAs[3]['donor'].start - closest_donor[3].reference_start >= 0,
+        }
+
+        donor_past_HA = {
+            5: sam.crop_al_to_ref_int(closest_donor[5], HAs[5]['donor'].end + 1, np.inf),
+            3: sam.crop_al_to_ref_int(closest_donor[3], 0, HAs[3]['donor'].start - 1),
+        }
+        
+        donor_past_HA_length = {
+            side: donor_past_HA[side].query_alignment_length if donor_past_HA[side] is not None else 0
+            for side in [5, 3]
+        }
+        
+        donor_past_HA_edit_distance = {
+            side: sam.total_edit_distance(donor_past_HA[side], self.target_info.donor_sequence)
+            for side in [5, 3]
         }
 
         donor_contains_full_arm = {
-            side: donor_contains_arm_external[side] and donor_contains_arm_internal[side]
+            side: donor_contains_arm_external[side] and \
+                  donor_contains_arm_internal[side] and \
+                  donor_past_HA_length[side] >= 5 and \
+                  donor_past_HA_edit_distance[side] / donor_past_HA_length[side] < 0.1
             for side in [5, 3]
         }
+        #for side in [5, 3]:
+        #    print(side, donor_contains_arm_external[side], donor_contains_arm_internal[side])
             
         target_external_edge_query = {
             5: (sam.closest_query_position(HAs[5]['target'].start, from_primer[5])
@@ -840,6 +867,12 @@ class Layout(object):
 
         clean_handoff = {}
         for side in [5, 3]:
+            #print(side, (
+            #    target_contains_full_arm[side],
+            #    donor_contains_full_arm[side],
+            #    arm_overlaps[side],
+            #    max_indel_near_junction[side],
+            #))
             clean_handoff[side] = (
                 target_contains_full_arm[side] and
                 donor_contains_full_arm[side] and
@@ -881,7 +914,6 @@ class Layout(object):
             all_edge_rs[5].append(start)
             all_edge_rs[3].append(end)
 
-        
         edge_r = {}
 
         if all_edge_rs[5]:
@@ -1495,6 +1527,94 @@ class Layout(object):
 
         return final
 
+    @memoized_property
+    def donor_microhomology(self):
+        if self.junction_summary_per_side == {5: 'HDR', 3: 'imperfect'}:
+            target_al = self.primer_alignments[3]
+        elif self.junction_summary_per_side == {5: 'imperfect', 3: 'HDR'}:
+            target_al = self.primer_alignments[5]
+        else:
+            target_al = None
+            
+        if len(self.parsimonious_donor_alignments) == 1:
+            donor_al = self.parsimonious_donor_alignments[0]
+        else:
+            donor_al = None
+            
+        if target_al is None or donor_al is None:
+            MH_nts = None
+        else:
+            als = {
+                'target': target_al,
+                'donor': donor_al,
+            }
+
+            covered = {k: interval.get_covered(v) for k, v in als.items()}
+            sides = {
+                'left': min(covered, key=covered.get),
+                'right': max(covered, key=covered.get),
+            }
+            
+            initial_overlap = covered[sides['left']] & covered[sides['right']]
+                
+            if initial_overlap:
+                # Trim back mismatches or indels in or near the overlap.
+                mismatch_buffer_length = 5
+                
+                bad_read_ps = {
+                    'left': set(),
+                    'right': set(),
+                }
+
+                for side in ['left', 'right']:
+                    al = als[sides[side]]
+                    for read_p, *rest in get_mismatch_info(al, self.target_info):
+                        bad_read_ps[side].add(read_p)
+
+                    for kind, info in get_indel_info(al):
+                        if kind == 'deletion':
+                            read_p, length = info
+                            bad_read_ps[side].add(read_p)
+                        elif kind == 'insertion':
+                            starts_at, ends_at = info
+                            bad_read_ps[side].update([starts_at, ends_at])
+
+                covered_trimmed = {}
+
+                left_buffer_start = initial_overlap.start - mismatch_buffer_length
+
+                left_illegal_ps = [p for p in bad_read_ps['left'] if p >= left_buffer_start]
+
+                if left_illegal_ps:
+                    old_start = covered[sides['left']].start
+                    new_end = int(np.floor(min(left_illegal_ps))) - 1
+                    covered_trimmed['left'] = interval.Interval(old_start, new_end)
+                else:
+                    covered_trimmed['left'] = covered[sides['left']]
+
+                right_buffer_end = initial_overlap.end + mismatch_buffer_length
+
+                right_illegal_ps = [p for p in bad_read_ps['right'] if p <= right_buffer_end]
+
+                if right_illegal_ps:
+                    new_start = int(np.ceil(max(right_illegal_ps))) + 1
+                    old_end = covered[sides['right']].end
+                    covered_trimmed['right'] = interval.Interval(new_start, old_end)
+                else:
+                    covered_trimmed['right'] = covered[sides['right']]
+            else:
+                covered_trimmed = {side: covered[sides[side]] for side in ['left', 'right']}
+
+            if interval.are_disjoint(covered_trimmed['left'], covered_trimmed['right']):
+                gap = covered_trimmed['right'].start - covered_trimmed['left'].end - 1
+                MH_nts = -gap
+            else:   
+                overlap = covered_trimmed['left'] & covered_trimmed['right']
+
+                MH_nts = overlap.total_length
+
+        return MH_nts
+
 class NonoverlappingPairLayout():
     def __init__(self, R1_als, R2_als, target_info):
         self.target_info = target_info
@@ -1506,7 +1626,6 @@ class NonoverlappingPairLayout():
             raise ValueError
         
         self.name = self.layouts['R1'].name
-        
         
     @memoized_property
     def bridging_alignments(self):
@@ -1525,7 +1644,33 @@ class NonoverlappingPairLayout():
         bridging_als.update(self.best_genomic_al_pairs)
         
         return bridging_als
-    
+
+    @memoized_property
+    def target_sides(self):
+        target_sides = {}
+
+        for which in ['R1', 'R2']:
+            primer_als = self.layouts[which].primer_alignments
+            sides = set(s for s, al in primer_als.items() if al is not None)
+            if len(sides) == 1:
+                side = sides.pop()
+            else:
+                side = None
+
+            target_sides[which] = side
+
+        return target_sides
+
+    @memoized_property
+    def strand(self):
+        if self.target_sides['R1'] == 5 and self.target_sides['R2'] == 3:
+            strand = '+'
+        elif self.target_sides['R2'] == 5 and self.target_sides['R1'] == 3:
+            strand = '-'
+        else:
+            strand = None
+        return strand
+
     @memoized_property
     def best_genomic_al_pairs(self):
         best_pairs = {}
@@ -1590,10 +1735,21 @@ class NonoverlappingPairLayout():
 
     @memoized_property
     def junctions(self):
-        return {
-            'R1': self.layouts['R1'].junction_summary_per_side[5],
-            'R2': self.layouts['R2'].junction_summary_per_side[3],
+        junctions = {
+            'R1': 'uncategorized',
+            'R2': 'uncategorized',
+            5: 'uncategorized',
+            3: 'uncategorized',
         }
+
+        for side in ['R1', 'R2']:
+            target_side = self.target_sides.get(side)
+            if target_side is not None:
+                junction = self.layouts[side].junction_summary_per_side[target_side]
+                junctions[side] = junction
+                junctions[target_side] = junction
+
+        return junctions
 
     @property
     def inferred_length(self):
@@ -1673,14 +1829,19 @@ class NonoverlappingPairLayout():
                 'R2': self.layouts['R2'].parsimonious_target_alignments + self.layouts['R2'].parsimonious_donor_alignments,
             }
 
-            if self.junctions['R1'] == 'blunt' and self.junctions['R2'] == 'blunt':
-                category = 'blunt misintegration'
-                subcategory = "5' blunt, 3' blunt"
-                details = self.bridging_strand[kind]
+            junctions = set(self.junctions.values())
 
-            elif self.junctions['R1'] == 'imperfect' and self.junctions['R2'] == 'imperfect':
+            if 'blunt' in junctions and 'uncategorized' not in junctions:
+                category = 'blunt misintegration'
+                subcategory = f'5\' {self.junctions[5]}, 3\' {self.junctions[3]}'
+                details = self.bridging_strand[kind]
+            elif junctions == set(['imperfect', 'HDR']):
                 category = 'incomplete HDR'
-                subcategory = "5' imperfect, 3' imperfect"
+                subcategory = f'5\' {self.junctions[5]}, 3\' {self.junctions[3]}'
+                details = self.bridging_strand[kind]
+            elif junctions == set(['imperfect']):
+                category = 'complex misintegration'
+                subcategory = f'5\' {self.junctions[5]}, 3\' {self.junctions[3]}'
                 details = self.bridging_strand[kind]
 
             else:
@@ -1754,6 +1915,12 @@ class NonoverlappingPairLayout():
             details = 'n/a'
 
             self.relevant_alignments = self.uncategorized_relevant_alignments
+        
+        if self.strand == '-':
+            self.relevant_alignments = {
+                'R1': self.relevant_alignments['R2'],
+                'R2': self.relevant_alignments['R1'],
+            }
             
         return category, subcategory, details
     
@@ -1866,11 +2033,12 @@ category_order = [
     ('incomplete HDR',
         ("5' HDR, 3' imperfect",
          "5' imperfect, 3' HDR",
-         "5' imperfect, 3' imperfect",
+         "5' imperfect, 3' imperfect", # placeholder
         ),
     ),
     ('complex misintegration',
-        ('other',
+        ("5' imperfect, 3' imperfect",
+         'other',
         ),
     ),
     ('concatenated misintegration',
