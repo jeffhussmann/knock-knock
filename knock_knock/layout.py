@@ -414,62 +414,91 @@ class Layout(object):
         else:
             return fastq.Read(self.name, self.seq, fastq.encode_sanger(self.qual))
     
-    def realign_edges_to_primers(self, side):
-        # TODO: doesn't support pacbio arbitrary orientation
+    def realign_edges_to_primers(self, read_side):
         if self.seq is None:
             return []
 
         buffer_length = 5
 
-        primer = self.target_info.primers_by_side_of_target[side]
+        target_seq = self.target_info.target_sequence
 
-        if side == 5:
-            amplicon_slice = idx[primer.start:primer.end + 1 + buffer_length]
-            read_slice = idx[:len(primer) + buffer_length]
-            alignment_type = 'fixed_start'
-        else:
-            amplicon_slice = idx[primer.start - buffer_length:primer.end + 1]
-            read_slice = idx[-(len(primer) + buffer_length):]
-            alignment_type = 'fixed_end'
+        edge_als = []
 
-        amplicon_side_seq = self.target_info.target_sequence[amplicon_slice]
+        for amplicon_side in [5, 3]:
+            primer = self.target_info.primers_by_side_of_target[amplicon_side]
 
-        read = self.read[read_slice]
-        soft_clip_length = len(self.seq) - len(read)
-
-        temp_header = pysam.AlignmentHeader.from_references(['amplicon_side'], [len(amplicon_side_seq)])
-
-        targets = [('amplicon_side', amplicon_side_seq)]
-        als = sw.align_read(read, targets, 5, temp_header,
-                            alignment_type=alignment_type,
-                            max_alignments_per_target=1,
-                            both_directions=False,
-                            min_score_ratio=0,
-                           )
-
-        edge_al = None
-
-        if len(als) > 0:
-            al = als[0]
-            if side == 5:
-                offset = primer.start
-                new_cigar = al.cigar + [(sam.BAM_CSOFT_CLIP, soft_clip_length)]
-                primer_query_interval = interval.Interval(0, len(primer) - 1)
+            if amplicon_side == 5:
+                amplicon_slice = idx[primer.start:primer.end + 1 + buffer_length]
             else:
-                offset = primer.start - buffer_length
-                new_cigar = [(sam.BAM_CSOFT_CLIP, soft_clip_length)] + al.cigar
-                # can't just use buffer_length as start in case read is shorter than primer + buffer_length
-                primer_query_interval = interval.Interval(len(read) - len(primer), np.inf)
-            
-            edits_in_primer = sam.edit_distance_in_query_interval(al, primer_query_interval, ref_seq=amplicon_side_seq)
-            if edits_in_primer <= 5:
-                al.reference_start = al.reference_start + offset
-                al.cigar = sam.collapse_soft_clip_blocks(new_cigar)
-                al.query_sequence = self.seq
-                al.query_qualities = self.qual
-                al_dict = al.to_dict()
-                al_dict['ref_name'] = self.target_info.target
-                edge_al = pysam.AlignedSegment.from_dict(al_dict, self.target_info.header)
+                amplicon_slice = idx[primer.start - buffer_length:primer.end + 1]
+
+            amplicon_side_seq = target_seq[amplicon_slice]
+
+            if read_side == 5:
+                read_slice = idx[:len(primer) + buffer_length]
+            else:
+                read_slice = idx[-(len(primer) + buffer_length):]
+
+            if amplicon_side == 5:
+                alignment_type = 'fixed_start'
+            else:
+                alignment_type = 'fixed_end'
+
+            read = self.read[read_slice]
+            if amplicon_side != read_side:
+                read = read.reverse_complement()
+
+            soft_clip_length = len(self.seq) - len(read)
+
+            targets = [('amplicon_side', amplicon_side_seq)]
+            temp_header = pysam.AlignmentHeader.from_references([n for n, s in targets], [len(s) for n, s in targets])
+
+            als = sw.align_read(read, targets, 5, temp_header,
+                                alignment_type=alignment_type,
+                                max_alignments_per_target=1,
+                                both_directions=False,
+                                min_score_ratio=0,
+                            )
+
+            if len(als) > 0:
+                al = als[0]
+                if amplicon_side == 5:
+                    ref_start_offset = primer.start
+                    new_cigar = al.cigar + [(sam.BAM_CSOFT_CLIP, soft_clip_length)]
+                else:
+                    ref_start_offset = primer.start - buffer_length
+                    new_cigar = [(sam.BAM_CSOFT_CLIP, soft_clip_length)] + al.cigar
+
+                if read_side == 5:
+                    primer_query_interval = interval.Interval(0, len(primer) - 1)
+                elif read_side == 3:
+                    # can't just use buffer_length as start in case read is shorter than primer + buffer_length
+                    primer_query_interval = interval.Interval(len(read) - len(primer), np.inf)
+
+                if amplicon_side != read_side:
+                    al = sam.flip_alignment(al)
+
+                edits_in_primer = sam.edit_distance_in_query_interval(al, primer_query_interval, ref_seq=amplicon_side_seq)
+                if edits_in_primer <= 5:
+                    al.reference_start = al.reference_start + ref_start_offset
+                    al.cigar = sam.collapse_soft_clip_blocks(new_cigar)
+                    if al.is_reverse:
+                        seq = utilities.reverse_complement(self.seq)
+                        qual = self.qual[::-1]
+                    else:
+                        seq = self.seq
+                        qual = self.qual
+                    al.query_sequence = seq
+                    al.query_qualities = qual
+                    al_dict = al.to_dict()
+                    al_dict['ref_name'] = self.target_info.target
+                    edge_al = pysam.AlignedSegment.from_dict(al_dict, self.target_info.header)
+                    edge_als.append(edge_al)
+
+        if len(edge_als) != 1:
+            edge_al = None
+        else:
+            edge_al = edge_als[0]
             
         return edge_al
 
