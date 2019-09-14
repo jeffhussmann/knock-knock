@@ -594,8 +594,8 @@ class ReadDiagram():
 
                         left_x = q - 0.5
                         right_x = q + 0.5
-                        bottom_y = y - (self.cross_y * 2)
-                        top_y = y + (self.cross_y * 2)
+                        bottom_y = y - (self.cross_y * 3)
+                        top_y = y + (self.cross_y * 3)
                         path_xs = [left_x, right_x, right_x, left_x]
                         path_ys = [bottom_y, bottom_y, top_y, top_y]
                         path = np.array([path_xs, path_ys]).T
