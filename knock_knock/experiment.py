@@ -1065,24 +1065,25 @@ class Experiment(object):
 
         fn = outcome_fns['diagrams_html']
         with fn.open('w') as fh:
-            fh.write('''\
+            fh.write(f'''\
 <html>
 <head>
+<title>{description}</title>
 <style>
-h2 {
+h2 {{
   text-align: center;
-}
+}}
 
-p {
+p {{
   text-align: center;
   font-family: monospace;
-}
+}}
 
-.center {
+.center {{
   display: block;
   margin-left: auto;
   margin-right: auto;
-}
+}}
 
 </style>
 </head>
