@@ -1018,7 +1018,7 @@ class ReadDiagram():
 
         self.fig.set_size_inches((fig_width, fig_height))
 
-def make_stacked_Image(diagrams, titles=None, pairs=False, **kwargs):
+def make_stacked_Image(diagrams, titles=None, **kwargs):
     if titles is None or titles == '':
         titles = itertools.repeat(titles)
 

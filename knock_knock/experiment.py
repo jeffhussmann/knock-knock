@@ -1693,14 +1693,6 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
         if als is None:
             return None
 
-        if widgets['draw_read_pair'].value:
-            paired_end_read_length = exp.paired_end_read_length
-        else:
-            paired_end_read_length = None
-        
-        print(als[0].query_name)
-        print(als[0].get_forward_sequence())
-
         l = exp.layout_module.Layout(als, exp.target_info, mode=exp.layout_mode)
         info = l.categorize()
         
@@ -1709,8 +1701,6 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
 
         diagram = visualize.ReadDiagram(als, exp.target_info,
                                         max_qual=exp.max_qual,
-                                        paired_end_read_length=paired_end_read_length,
-                                        read_label='amplicon',
                                         **plot_kwargs)
         fig = diagram.fig
 
