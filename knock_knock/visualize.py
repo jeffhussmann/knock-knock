@@ -820,8 +820,13 @@ class ReadDiagram():
             params.append((ti.target, min(ti.cut_afters.values()), target_y, self.flip_target))
 
         if len(self.alignment_coordinates[ti.donor]) > 0:
-            donor_specific_feature = ti.features[ti.donor, ti.donor_specific]
-            params.append((ti.donor, np.mean([donor_specific_feature.start, donor_specific_feature.end]), donor_y, self.flip_donor))
+            if (ti.donor, ti.donor_specific) in ti.features:
+                donor_specific_feature = ti.features[ti.donor, ti.donor_specific]
+                middle = np.mean([donor_specific_feature.start, donor_specific_feature.end])
+            else:
+                middle = len(ti.donor_sequence) / 2
+
+            params.append((ti.donor, middle, donor_y, self.flip_donor))
 
         for ref_name, center_p, ref_y, flip in params:
             color = self.ref_name_to_color[ref_name]
@@ -835,7 +840,7 @@ class ReadDiagram():
             else:
                 anchor_ref = center_p
                 anchor_read = self.query_length // 2
-
+            
             # With these anchors picked, define the mapping and its inverse.
             if flip:
                 ref_p_to_x = lambda p: anchor_read - (p - anchor_ref)
@@ -879,10 +884,10 @@ class ReadDiagram():
             self.max_y = max(self.max_y, ref_y)
 
             if ref_al_min <= ref_start:
-                ref_start = max(0, ref_al_min - 10, ref_start - 250)
+                ref_start = max(0, ref_al_min - 10)
 
             if ref_al_max >= ref_end:
-                ref_end = min(ref_edge, ref_al_max + 10, ref_end + 250)
+                ref_end = min(ref_edge, ref_al_max + 10)
 
             new_left = ref_p_to_x(ref_start)
             new_right = ref_p_to_x(ref_end)
