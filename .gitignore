@@ -1,5 +1,6 @@
 __pycache__/
 build/
+dist/
 .ipynb_checkpoints/
 *.swp
 *.pyc
