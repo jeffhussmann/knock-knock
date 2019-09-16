@@ -208,8 +208,6 @@ def identify_homology_arms(donor_seq, target_seq, cut_after):
         'after_cut': [],
     }
 
-    query_to_ref = {}
-
     seed_starts = {
         'before_cut': range(cut_after - required_match_length, 0, -1),
         'after_cut': range(cut_after, len(target_seq) - required_match_length),
@@ -222,7 +220,7 @@ def identify_homology_arms(donor_seq, target_seq, cut_after):
                 break
 
         else:
-            results = {'failed': f'cannot locate homology arm {side}'}
+            results = {'failed': f'cannot locate homology arm on {side}'}
             return results
         
     possible_HA_boundaries = []
@@ -240,6 +238,7 @@ def identify_homology_arms(donor_seq, target_seq, cut_after):
                         start = len(donor_seq) - 1 - (before_al.reference_end - 1)
                         end = len(donor_seq) - 1 - after_al.reference_start + 1
                         possible_HA_boundaries.append((flipped, start, end))
+
          
     possible_HAs = []
     for possibly_flipped_donor_seq, HA_start, HA_end in possible_HA_boundaries:
@@ -302,6 +301,7 @@ def build_target_info(base_dir, info, all_index_locations):
         optional keys:
             donor_sequence
             nonhomologous_donor_sequence
+            extra_sequences
     '''
     genome = info['genome']
     if info['genome'] not in all_index_locations:
@@ -312,30 +312,42 @@ def build_target_info(base_dir, info, all_index_locations):
 
     base_dir = Path(base_dir)
 
-    name = info.name
-    donor_name = f'{name}_donor'
-    nh_donor_name = info.get('nonhomologous_donor_name', f'{name}_NH_donor')
+    name = info['name']
 
-    target_dir = base_dir / 'targets' / name
-    target_dir.mkdir(parents=True, exist_ok=True)
-    
-    protospacer, *other_protospacers = info['sgRNA_sequence'].upper().split(';')
-    amplicon_primers = info['amplicon_primers'].upper().split(';')
+    donor_info = info.get('donor_sequence')
+    if donor_info is None:
+        donor_name = None
+        donor_seq = None
+    else:
+        donor_name, donor_seq = donor_info
+        if donor_name is None:
+            donor_name = f'{name}_donor'
 
-    donor_seq = info['donor_sequence']
     if donor_seq is None:
         has_donor = False
     else:
         has_donor = True
-        donor_seq = donor_seq.upper()
 
-    nh_donor_seq = info.get('nonhomologous_donor_sequence')
+    nh_donor_info = info.get('nonhomologous_donor_sequence')
+    if nh_donor_info is None:
+        nh_donor_name = None
+        nh_donor_seq = None
+    else:
+        nh_donor_name, nh_donor_seq = nh_donor_info
+        if nh_donor_name is None:
+            nh_donor_name = f'{name}_NH_donor'
+
     if nh_donor_seq is None:
         has_nh_donor = False
     else:
         has_nh_donor = True
-        nh_donor_seq = nh_donor_seq.upper()
+
+    target_dir = base_dir / 'targets' / name
+    target_dir.mkdir(parents=True, exist_ok=True)
     
+    protospacer, *other_protospacers = info['sgRNA_sequence']
+    amplicon_primers = info['amplicon_primers'][1].split(';')
+
     protospacer_dir = target_dir / 'protospacer_alignment'
     protospacer_dir.mkdir(exist_ok=True)
     fastq_fn = protospacer_dir / 'protospacer.fastq'
@@ -351,10 +363,11 @@ def build_target_info(base_dir, info, all_index_locations):
     }
 
     # Make a fastq file with a single read containing the protospacer sequence.
+    protospacer_name, protospacer_seq = protospacer
     
     with fastq_fn.open('w') as fh:
-        quals = fastq.encode_sanger([40]*len(protospacer))
-        read = fastq.Read('protospacer', protospacer, quals)
+        quals = fastq.encode_sanger([40]*len(protospacer_seq))
+        read = fastq.Read('protospacer', protospacer_seq, quals)
         fh.write(str(read))
         
     # Align the protospacer to the reference genome.
@@ -375,24 +388,24 @@ def build_target_info(base_dir, info, all_index_locations):
         full_around = region_fetcher(al.reference_name, al.reference_start - full_window_around, al.reference_end + full_window_around).upper()
 
         if sam.get_strand(al) == '+':
-            ps_seq = protospacer
+            ps_seq = protospacer_seq
             ps_strand = 1
         else:
-            ps_seq = utilities.reverse_complement(protospacer)
+            ps_seq = utilities.reverse_complement(protospacer_seq)
             ps_strand  = -1
-        
+
         ps_start = full_around.index(ps_seq)
 
         protospacer_locations = [(ps_seq, ps_start, ps_strand)]
 
-        for other_protospacer in other_protospacers:
-            if other_protospacer in full_around:
-                ps_seq = other_protospacer
+        for other_protospacer_name, other_protospacer_seq in other_protospacers:
+            if other_protospacer_seq in full_around:
+                ps_seq = other_protospacer_seq
                 ps_strand = 1
             else:
-                ps_seq =  utilities.reverse_complement(other_protospacer)
+                ps_seq =  utilities.reverse_complement(other_protospacer_seq)
                 if ps_seq not in full_around:
-                    results['failed'] = f'protospacer {other_protospacer} not present near protospacer {protospacer}'
+                    results['failed'] = f'protospacer {other_protospacer_seq} not present near protospacer {protospacer_seq}'
                     return results
                 ps_strand = -1
 
@@ -400,16 +413,18 @@ def build_target_info(base_dir, info, all_index_locations):
             protospacer_locations.append((ps_seq, ps_start, ps_strand))
 
         for ps_seq, ps_start, ps_strand in protospacer_locations:
+            PAM_pattern = 'NGG'
+
             if ps_strand == 1:
-                PAM_offset = len(protospacer)
+                PAM_offset = len(ps_seq)
                 PAM_transform = utilities.identity
             else:
-                PAM_offset = -3
+                PAM_offset = -len(PAM_pattern)
                 PAM_transform = utilities.reverse_complement
 
             PAM_start = ps_start + PAM_offset
-            PAM = PAM_transform(full_around[PAM_start:PAM_start + 3])
-            pattern, *matches = Bio.SeqUtils.nt_search(PAM, 'NGG')
+            PAM = PAM_transform(full_around[PAM_start:PAM_start + len(PAM_pattern)])
+            pattern, *matches = Bio.SeqUtils.nt_search(PAM, PAM_pattern)
 
             if 0 not in matches:
                 # Note: this could incorrectly fail if there are multiple exact matches for an other_protospacer
@@ -481,7 +496,7 @@ def build_target_info(base_dir, info, all_index_locations):
 
         sgRNA_features = []
         for sgRNA_i, (ps_seq, ps_start, ps_strand) in enumerate(protospacer_locations):
-            sgRNA_feature = SeqFeature(location=FeatureLocation(ps_start - offset, ps_start - offset + len(protospacer), strand=ps_strand),
+            sgRNA_feature = SeqFeature(location=FeatureLocation(ps_start - offset, ps_start - offset + len(ps_seq), strand=ps_strand),
                                        id=f'sgRNA_{sgRNA_i}',
                                        type='sgRNA_SpCas9',
                                        qualifiers={'label': f'sgRNA_{sgRNA_i}',
@@ -629,8 +644,20 @@ def build_target_info(base_dir, info, all_index_locations):
                 truncated_name_i += 1
 
     manifest_fn = target_dir / 'manifest.yaml'
+
+    sources = [name]
+    if has_donor:
+        sources.append(donor_name)
+
+    extra_Records = []
+    if info.get('extra_sequences') is not None:
+        for extra_seq_name, extra_seq in info['extra_sequences']:
+            sources.append(extra_seq_name)
+
+            extra_Records.append(SeqRecord(extra_seq, name=extra_seq_name))
+        
     manifest = {
-        'sources': [name, donor_name] if has_donor else [name],
+        'sources': sources,
         'target': name,
     }
     if has_donor:
@@ -642,7 +669,8 @@ def build_target_info(base_dir, info, all_index_locations):
 
     manifest_fn.write_text(yaml.dump(manifest, default_flow_style=False))
         
-    ti = target_info.TargetInfo(base_dir, name, gb_records=list(best_candidate['gb_Records'].values()))
+    gb_records = list(best_candidate['gb_Records'].values()) + extra_Records
+    ti = target_info.TargetInfo(base_dir, name, gb_records=gb_records)
     ti.make_references()
     ti.identify_degenerate_indels()
 
@@ -652,7 +680,7 @@ def build_target_infos_from_csv(base_dir):
 
     indices = target_info.locate_supplemental_indices(base_dir)
 
-    df = pd.read_csv(csv_fn, comment='#', index_col='name').replace({np.nan: None})
+    targets_df = pd.read_csv(csv_fn, comment='#', index_col='name').replace({np.nan: None})
 
     # Fill in values for sequences that are specified by name.
 
@@ -672,6 +700,12 @@ def build_target_infos_from_csv(base_dir):
     else:
         registry['amplicon_primers'] = {}
 
+    extra_sequences_fn = base_dir / 'targets' / 'extra_sequences.csv'
+    if extra_sequences_fn.exists():
+        registry['extra_sequence'] = pd.read_csv(extra_sequences_fn, index_col='name', squeeze=True)
+    else:
+        registry['extra_sequence'] = {}
+
     donors_fn = base_dir / 'targets' / 'donor_sequences.csv'
 
     if donors_fn.exists():
@@ -682,44 +716,59 @@ def build_target_infos_from_csv(base_dir):
         registry['donor_sequence'] = {}
         registry['donor_type'] = {}
 
-    def lookup(column_to_lookup, registry_column, validate_sequence):
-        values_to_lookup = df[column_to_lookup]
+    def lookup(row, column_to_lookup, registry_column, validate_sequence=True, multiple_lookups=False):
+        value_to_lookup = row.get(column_to_lookup)
+        if value_to_lookup is None:
+            return None
+
+        if multiple_lookups:
+            values_to_lookup = value_to_lookup.split(';')
+        else:
+            values_to_lookup = [value_to_lookup]
+
         registered_values = registry[registry_column]
-        valid_chars = set('TCAGNtcagn;')
+        valid_chars = set('TCAGN;')
+
         looked_up = []
-        for target_name, value in values_to_lookup.items():
-            if value in registered_values:
-                seq = registered_values[value]
-                error_message = f'invalid char in {target_name} {column_to_lookup} registry entry {value}\n{seq}'
+        for value_to_lookup in values_to_lookup:
+            if value_to_lookup in registered_values:
+                value_name = value_to_lookup
+                seq = registered_values[value_to_lookup]
+                possible_error_message = f'invalid char in {row.name} {column_to_lookup} registry entry {value_to_lookup}\n{seq}'
             else:
-                seq = value
-                error_message = f'invalid char in {target_name}: {seq} \n Registered names: {registered_values}'
+                value_name = None
+                seq = value_to_lookup
+                possible_error_message = f'invalid char in {row.name}: {seq} \n Registered names: {registered_values}'
 
             if seq is not None and validate_sequence:
+                seq = seq.upper()
                 invalid_chars = set(seq) - valid_chars
                 if invalid_chars:
-                    print(error_message)
+                    print(possible_error_message)
                     print(invalid_chars)
                     sys.exit(0)
-            
-            looked_up.append(seq)
 
+            looked_up.append((value_name, seq))
+
+        if not multiple_lookups:
+            looked_up = looked_up[0]
+            
         return looked_up
 
-    looked_up = {
-        'donor_sequence': lookup('donor_sequence', 'donor_sequence', True),
-        'sgRNA_sequence': lookup('sgRNA_sequence', 'sgRNA_sequence', True),
-        'amplicon_primers': lookup('amplicon_primers', 'amplicon_primers', True),
-        'nonhomologous_donor_sequence': lookup('nonhomologous_donor_sequence', 'donor_sequence', True),
-        'donor_type': lookup('donor_sequence', 'donor_type', False),
-        'genome': df['genome'],
-    }
+    for target_name, row in targets_df.iterrows():
+        info = {
+            'name': target_name,
+            'donor_sequence': lookup(row, 'donor_sequence', 'donor_sequence'),
+            'sgRNA_sequence': lookup(row, 'sgRNA_sequence', 'sgRNA_sequence', multiple_lookups=True),
+            'extra_sequences': lookup(row, 'extra_sequences', 'extra_sequence', multiple_lookups=True),
+            'amplicon_primers': lookup(row, 'amplicon_primers', 'amplicon_primers'),
+            'nonhomologous_donor_sequence': lookup(row, 'nonhomologous_donor_sequence', 'donor_sequence'),
+            'donor_type': lookup(row, 'donor_sequence', 'donor_type', validate_sequence=False),
+            'genome': row['genome'],
+        }
 
-    looked_up = pd.DataFrame(looked_up)
-
-    for name, row in looked_up.iterrows():
-        print(f'Building {name}...')
-        build_target_info(base_dir, row, indices)
+        print(f'Building {target_name}...')
+        build_target_info(base_dir, info, indices)
 
 def build_indices(base_dir, name, num_threads=1):
     base_dir = Path(base_dir)

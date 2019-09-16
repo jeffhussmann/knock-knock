@@ -164,6 +164,13 @@ class Layout(object):
             split_als.extend(sam.split_at_large_insertions(al, 10))
         return split_als
 
+    @memoized_property
+    def extra_alignments(self):
+        ti = self.target_info
+        extra_ref_names = {n for n in ti.reference_sequences if n not in [ti.target, ti.donor]}
+        als = [al for al in self.original_alignments if al.reference_name in extra_ref_names]
+        return als
+
     @property
     def whole_read(self):
         return interval.Interval(0, len(self.seq) - 1)
@@ -263,7 +270,7 @@ class Layout(object):
                     else:
                         category = 'complex misintegration'
 
-                self.relevant_alignments = self.parsimonious_and_gap_alignments
+                self.relevant_alignments = self.uncategorized_relevant_alignments
         
         # TODO: check here for HA extensions into donor specific
         elif self.gap_covered_by_target_alignment:
