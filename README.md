@@ -18,7 +18,8 @@ To provide this, make a csv called `/PROJECT_DIR/data/EXAMPLE_RUN/sample_sheet.c
 where:
 - sample is the sample name
 - platform is 'illumina' or 'pacbio'
-- if platform is 'illumina', R1 and R2 are a pair of R1 and R2 fastq files in the group's directory (not the full path, just the part after the last slash)
+- if platform is 'illumina', R1 and R2 are a pair of R1 and R2 fastq file names in the group's directory (not the full path, just the part after the last slash)
+- if platform is 'pacbio', CCS_fastq_fns are circular consensus sequence fastq file names (not the full path, just the part after the last slash)
 - target_info is the name of an editing target that exists in this project's target directory
 - donor is 
 - color (optional) is a number you can provide such that all samples with the same number will be given the same color in the html tables
