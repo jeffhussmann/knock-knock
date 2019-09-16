@@ -26,7 +26,7 @@ where:
 
 
 Example directory structure:
-
+```
 base_dir
 ├── data
 │   ├── group1
@@ -43,7 +43,7 @@ base_dir
         ├── refs.fasta
         ├── refs.fasta.fai
         └── refs.gff
-
+```
 Input fastqs and sample sheets describing the experiments that produced them are kept in base_dir/data in 'group' directories.
 
 Each sample_sheet.yaml should contain {experiment names: {description dictionary}} pairs.
