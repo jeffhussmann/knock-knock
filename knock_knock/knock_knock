@@ -111,17 +111,17 @@ def make_tables(args):
 
     print('Generating html table...')
     html_fn = (results_dir / args.file_name_prefix).with_suffix('.html')
-    table.generate_html(args.project_directory, html_fn, args.conditions, show_subcategories=False)
+    table.generate_html(args.project_directory, html_fn, args.conditions, show_details=False)
     fns_to_zip.append(html_fn)
 
     print('Generating html table with subcategories...')
-    html_fn = (results_dir / f'{args.file_name_prefix}_with_subcategories').with_suffix('.html')
-    table.generate_html(args.project_directory, html_fn, args.conditions, show_subcategories=True)
+    html_fn = (results_dir / f'{args.file_name_prefix}_with_details').with_suffix('.html')
+    table.generate_html(args.project_directory, html_fn, args.conditions, show_details=True)
     fns_to_zip.append(html_fn)
 
     print('Generating csv table...')
     csv_fn = (results_dir / args.file_name_prefix).with_suffix('.csv')
-    df = table.load_counts(args.project_directory, args.conditions)
+    df = table.load_counts(args.project_directory, args.conditions, exclude_empty=False).T
     df.to_csv(csv_fn)
     fns_to_zip.append(csv_fn)
     

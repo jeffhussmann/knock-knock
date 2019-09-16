@@ -289,21 +289,20 @@ class Layout(object):
             details = 'n/a'
             self.relevant_alignments = self.parsimonious_and_gap_alignments
 
-
         elif self.integration_summary == 'concatamer':
             category = 'concatenated misintegration'
             subcategory = self.junction_summary
-            self.relevant_alignments = self.parsimonious_target_alignments + self.parsimonious_donor_alignments
+            self.relevant_alignments = self.uncategorized_relevant_alignments
 
         elif self.nonhomologous_donor_integration is not None:
             category = 'non-homologous donor'
-            subcategory = 'non-homologous donor'
+            subcategory = 'simple'
             details = 'n/a'
             
             self.relevant_alignments = self.parsimonious_target_alignments + self.nonhomologous_donor_alignments
 
         elif self.nonspecific_amplification is not None:
-            category = 'nonspecific amplification'
+            category = 'malformed layout'
             subcategory = 'nonspecific amplification'
             details = 'n/a'
             
@@ -315,12 +314,19 @@ class Layout(object):
             details = 'n/a'
 
             self.relevant_alignments = self.parsimonious_target_alignments + self.min_edit_distance_genomic_insertions
+
+        elif self.partial_nonhomologous_donor_integration is not None:
+            category = 'non-homologous donor'
+            subcategory = 'complex'
+            details = 'n/a'
+            
+            self.relevant_alignments = self.parsimonious_target_alignments + self.nonhomologous_donor_alignments + self.nonredundant_supplemental_alignments
         
         elif self.any_donor_specific_present:
             category = 'complex misintegration'
             subcategory = 'other'
             details = 'n/a'
-            self.relevant_alignments = self.parsimonious_and_gap_alignments
+            self.relevant_alignments = self.uncategorized_relevant_alignments
 
         elif self.integration_summary in ['donor with indel', 'other', 'unexpected length', 'unexpected source']:
             category = 'uncategorized'
@@ -378,14 +384,16 @@ class Layout(object):
                         subcategory = 'insertion'
 
                 # Split at every indel
-                split_at_both = []
+                if self.mode == 'illumina':
+                    split_at_both = []
 
-                for al in self.parsimonious_target_alignments:
-                    split_at_dels = sam.split_at_deletions(al, 1)
-                    for split_al in split_at_dels:
-                        split_at_both.extend(sam.split_at_large_insertions(split_al, 1))
-
-                self.relevant_alignments = split_at_both
+                    for al in self.parsimonious_target_alignments:
+                        split_at_dels = sam.split_at_deletions(al, 1)
+                        for split_al in split_at_dels:
+                            split_at_both.extend(sam.split_at_large_insertions(split_al, 1))
+                    self.relevant_alignments = split_at_both
+                else:
+                    self.relevant_alignments = self.parsimonious_target_alignments
 
                 details = ' '.join(map(str, self.all_indels_near_cuts))
             else:
@@ -1424,7 +1432,7 @@ class Layout(object):
         return all_covering_als
     
     @memoized_property
-    def nonhomologous_donor_integration(self):
+    def nonhomologous_donor_integration_alignments(self):
         min_gap_length = 10
         gap = self.gap_between_primer_alignments
         
@@ -1432,21 +1440,41 @@ class Layout(object):
         unexplained_gap = gap - covered_by_normal
 
         if unexplained_gap.total_length < min_gap_length:
-            return None
+            return [], []
         elif self.gap_alignments:
             # gap aligns to the target in the amplicon region
-            return None
+            return [], []
         else:
-            covering_als = []
+            full_covering_als = []
+            partial_covering_als = []
+
             for al in self.nonhomologous_donor_alignments:
                 covered = interval.get_covered(al)
                 if (gap - covered).total_length <= 2:
-                    covering_als.append(al)
+                    full_covering_als.append(al)
+                
+                if (covered & unexplained_gap).total_length >= 2:
+                    partial_covering_als.append(al)
                     
-            if len(covering_als) == 0:
-                covering_als = None
+            return full_covering_als, partial_covering_als
 
-            return covering_als
+    @memoized_property
+    def nonhomologous_donor_integration(self):
+        full_covering_als, partial_covering_als = self.nonhomologous_donor_integration_alignments
+        if len(full_covering_als) > 0:
+            return full_covering_als
+        else:
+            return None
+
+    @memoized_property
+    def partial_nonhomologous_donor_integration(self):
+        full_covering_als, partial_covering_als = self.nonhomologous_donor_integration_alignments
+        if self.nonhomologous_donor_integration is not None:
+            return None
+        elif len(partial_covering_als) == 0:
+            return None
+        else:
+            return partial_covering_als
 
     @memoized_property
     def min_edit_distance_genomic_insertions(self):
@@ -1546,7 +1574,7 @@ class Layout(object):
         sources = [
             self.parsimonious_and_gap_alignments,
             self.nonhomologous_donor_alignments,
-            self.nonredundant_halfbell_alignments,
+            self.extra_alignments,
         ]
         flattened = [al for source in sources for al in source]
         parsimonious = interval.make_parsimonious(flattened)
@@ -1554,10 +1582,13 @@ class Layout(object):
         covered = interval.get_disjoint_covered(parsimonious)
         supp_als = []
 
-        for supp_al in self.nonredundant_supplemental_alignments[:10]:
+        for supp_al in self.nonredundant_supplemental_alignments:
             novel_length = (interval.get_covered(supp_al) - covered).total_length
             if novel_length > 0:
                 supp_als.append(supp_al)
+
+            if len(supp_als) >= 10:
+                break
 
         final = parsimonious + supp_als
 
@@ -1846,12 +1877,7 @@ class NonoverlappingPairLayout():
 
     @memoized_property
     def uncategorized_relevant_alignments(self):
-        als = {}
-        for which in ['R1', 'R2']:
-            l = self.layouts[which]
-            supp_als = l.nonredundant_supplemental_alignments
-            longest_supp_als = sorted(supp_als, key=lambda al: al.query_alignment_length, reverse=True)[:10]
-            als[which] = l.parsimonious_and_gap_alignments + l.nonhomologous_donor_alignments + longest_supp_als
+        als = {which: l.uncategorized_relevant_alignments for which, l in self.layouts.items()}
 
         return als
         
@@ -1882,7 +1908,7 @@ class NonoverlappingPairLayout():
 
             else:
                 self.length = -1
-                category = 'uncategorized'
+                category = 'malformed layout'
                 subcategory = 'non-overlapping'
                 details = 'n/a'
                 self.relevant_alignments = self.uncategorized_relevant_alignments
@@ -1891,7 +1917,7 @@ class NonoverlappingPairLayout():
             self.length = self.inferred_length
 
             category = 'non-homologous donor'
-            subcategory = 'non-homologous donor'
+            subcategory = 'simple'
             details = 'n/a'
             self.relevant_alignments = {
                 'R1': self.layouts['R1'].parsimonious_target_alignments + self.layouts['R1'].nonhomologous_donor_alignments,
@@ -1905,7 +1931,7 @@ class NonoverlappingPairLayout():
             if R1_primer is not None and R2_primer is not None:
                 self.length = self.inferred_length
 
-                category = 'nonspecific amplification'
+                category = 'malformed layout'
                 subcategory = 'nonspecific amplification'
                 details = 'n/a'
                 bridging_als = self.bridging_alignments['nonspecific_amplification']
@@ -1916,7 +1942,7 @@ class NonoverlappingPairLayout():
 
             else:
                 self.length = -1
-                category = 'uncategorized'
+                category = 'malformed layout'
                 subcategory = 'non-overlapping'
                 details = 'n/a'
                 self.relevant_alignments = self.uncategorized_relevant_alignments
@@ -1938,7 +1964,7 @@ class NonoverlappingPairLayout():
                 }
             else:
                 self.length = -1
-                category = 'uncategorized'
+                category = 'malformed layout'
                 subcategory = 'non-overlapping'
                 details = 'n/a'
                 self.relevant_alignments = self.uncategorized_relevant_alignments
@@ -1946,7 +1972,7 @@ class NonoverlappingPairLayout():
         else:
             self.length = -1
 
-            category = 'uncategorized'
+            category = 'malformed layout'
             subcategory = 'non-overlapping'
             details = 'n/a'
 
@@ -2086,11 +2112,8 @@ category_order = [
         ),
     ),
     ('non-homologous donor',
-        ('non-homologous donor',
-        ),
-    ),
-    ('nonspecific amplification',
-        ('nonspecific amplification',
+        ('simple',
+         'complex',
         ),
     ),
     ('genomic insertion',
@@ -2099,7 +2122,6 @@ category_order = [
     ),
     ('uncategorized',
         ('uncategorized',
-         'non-overlapping',
          'donor with indel',
          'mismatch(es) near cut',
          'multiple indels near cut',
@@ -2114,7 +2136,9 @@ category_order = [
         ),
     ),
     ('malformed layout',
-        ('extra copy of primer',
+        ('nonspecific amplification',
+         'non-overlapping',
+         'extra copy of primer',
          'missing a primer',
          'too short',
          'primer far from read edge',
@@ -2123,6 +2147,13 @@ category_order = [
         ),
     ),
 ]
+
+full_index = []
+for cat, subcats in category_order:
+    for subcat in subcats:
+        full_index.append((cat, subcat))
+        
+full_index = pd.MultiIndex.from_tuples(full_index) 
 
 categories = [c for c, scs in category_order]
 subcategories = dict(category_order)

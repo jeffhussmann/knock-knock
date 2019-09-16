@@ -12,10 +12,11 @@ import PIL
 from . import experiment
 from . import svg
 
-totals_row_label = (' ', 'Total reads')
-totals_row_label_collapsed = 'Total reads'
+totals_all_row_label = (' ', 'Total reads')
 
-def load_counts(base_dir, conditions=None):
+totals_relevant_row_label = (' ', 'Total relevant reads')
+
+def load_counts(base_dir, conditions=None, exclude_malformed=False, exclude_empty=True):
     exps = experiment.get_all_experiments(base_dir, conditions)
 
     counts = {}
@@ -34,10 +35,7 @@ def load_counts(base_dir, conditions=None):
 
     df = pd.DataFrame(counts).fillna(0)
 
-    totals = df.sum(axis=0)
-    totals_row = pd.DataFrame.from_dict({totals_row_label: totals}, orient='index')
-    
-    # Sort order for outcome is defined in the relevant layout module.
+    # Sort order for outcomes is defined in the relevant layout module.
     layout_modules = {exp.layout_module for exp in exps}
     
     if len(layout_modules) > 1:
@@ -45,8 +43,20 @@ def load_counts(base_dir, conditions=None):
     
     layout_module = layout_modules.pop()
     
-    df['_sort_order'] = df.index.map(layout_module.order)
-    df = df.sort_values('_sort_order').drop('_sort_order', axis=1, level=0)
+    df = df.reindex(layout_module.full_index, fill_value=0)
+
+    if exclude_malformed:
+        df = df.drop('malformed layout', axis='index', level=0, errors='ignore')
+        totals_row_label = totals_relevant_row_label
+    else:
+        totals_row_label = totals_all_row_label
+
+    if exclude_empty:
+        empty_rows = df.index[df.sum(axis=1) == 0].values
+        df = df.drop(empty_rows, axis='index', errors='ignore')
+    
+    totals = df.sum(axis=0)
+    totals_row = pd.DataFrame.from_dict({totals_row_label: totals}, orient='index')
     
     df = pd.concat([totals_row, df]).astype(int)
     df.index.names = (None, None)
@@ -57,10 +67,11 @@ def load_counts(base_dir, conditions=None):
     return df
 
 def calculate_performance_metrics(base_dir, conditions=None):
-    counts = load_counts(base_dir, conditions=conditions).drop(totals_row_label).sum(level=0)
+    full_counts = load_counts(base_dir, conditions=conditions)
+    counts = full_counts.drop([totals_all_row_label, totals_relevant_row_label], axis='index', errors='ignore').sum(level=0)
+
     not_real_cell_categories = [
         'malformed layout',
-        'nonspecific amplification',
     ]
 
     real_cells = counts.drop(not_real_cell_categories)
@@ -199,95 +210,18 @@ class ModalMaker(object):
         
         return modal_div, modal_id
         
-def make_table(base_dir, conditions=None, include_images=False):
-    df = load_counts(base_dir, conditions)
-    totals = df.loc[totals_row_label]
+def make_table(base_dir,
+               conditions=None,
+               inline_images=False,
+               show_details=True,
+              ):
+    df = load_counts(base_dir, conditions=conditions, exclude_malformed=(not show_details))
+    if show_details:
+        totals_row_label = totals_all_row_label
+    else:
+        totals_row_label = totals_relevant_row_label
+    totals_row_label_collapsed = totals_row_label[1]
 
-    modal_maker = ModalMaker()
-
-    def link_maker(val, col, row):
-        if val == 0:
-            html = ''
-        else:
-            outcome = row
-            exp_group, exp_name = col
-
-            exp = experiment.Experiment(base_dir, exp_group, exp_name)
-            outcome_fns = exp.outcome_fns(outcome)
-            
-            fraction = val / float(totals[col])
-            
-            if row == totals_row_label:
-                text = '{:,}'.format(val)
-                if include_images:
-                    #modal_div, modal_id = modal_maker.make_length(exp)
-
-                    hover_image_fn = str(exp.fns['lengths_figure'])
-                    hover_URI, width, height = fn_to_URI(hover_image_fn)
-
-                    link = link_without_modal_template.format(text=text,
-                                                            URI=hover_URI,
-                                                            width=width,
-                                                            height=height,
-                                            )
-                    
-                    html = link# + modal_div
-                else:
-                    html = text
-            else:
-                text = '{:.2%}'.format(fraction)
-                if include_images:
-                    modal_div, modal_id = modal_maker.make_outcome(exp, outcome)
-                    
-                    hover_image_fn = str(outcome_fns['first_example'])
-                    hover_URI, width, height = fn_to_URI(hover_image_fn)
-
-                    link = link_template.format(text=text,
-                                                modal_id=modal_id,
-                                                URI=hover_URI,
-                                                width=width,
-                                                height=height,
-                                            )
-                    
-                    html = link + modal_div
-                else:
-                    html = text
-
-        return html
-    
-    def bind_link_maker(row):
-        return {col: functools.partial(link_maker, col=col, row=row) for col in df}
-
-    styled = df.style
-    
-    styles = [
-        dict(selector="th", props=[("border", "1px solid black")]),
-        dict(selector="tr:hover", props=[("background-color", "#cccccc")]),
-    ]
-    
-    for row in df.index:
-        sl = pd.IndexSlice[[row], :]
-        styled = styled.format(bind_link_maker(row), subset=sl)
-        
-    styled = styled.set_properties(**{'border': '1px solid black'})
-    for col in df:
-        exp_group, exp_name = col
-        exp = experiment.Experiment(base_dir, exp_group, exp_name)
-        # Note: as of pandas 0.22, col needs to be in brackets here so that
-        # apply is ultimately called on a df, not a series, to prevent
-        # TypeError: _bar_left() got an unexpected keyword argument 'axis'
-        styled = styled.bar(subset=pd.IndexSlice[:, [col]], color=exp.color)
-        
-    styled.set_table_styles(styles)
-
-    return styled
-
-def make_table_transpose(base_dir,
-                         conditions=None,
-                         inline_images=False,
-                         show_subcategories=True,
-                        ):
-    df = load_counts(base_dir, conditions)
     totals = df.loc[totals_row_label]
 
     df = df.T
@@ -295,9 +229,9 @@ def make_table_transpose(base_dir,
     # Hack to give the html the information it needs to build links to diagram htmls
     df.index = pd.MultiIndex.from_tuples([(g, f'{g}/{n}') for g, n in df.index.values])
     
-    if not show_subcategories:
+    if not show_details:
         level_0 = list(df.columns.levels[0])
-        level_0[0] = 'Total reads'
+        level_0[0] = totals_row_label[1]
         df.columns = df.columns.set_levels(level_0, level=0)
 
         df = df.sum(axis=1, level=0)
@@ -397,19 +331,19 @@ def make_table_transpose(base_dir,
     
     return styled
 
-def generate_html(base_dir, fn, conditions=None, show_subcategories=True):
+def generate_html(base_dir, fn, conditions=None, show_details=True):
     nb = nbf.new_notebook()
 
     cell_contents = f'''\
 import knock_knock.table
 
 conditions = {conditions}
-knock_knock.table.make_table_transpose('{base_dir}', conditions, show_subcategories={show_subcategories})
+knock_knock.table.make_table('{base_dir}', conditions, show_details={show_details})
 '''
     
     nb['cells'] = [nbf.new_code_cell(cell_contents)]
 
-    nb['metadata'] = {'title': str(fn)}
+    nb['metadata'] = {'title': str(fn.name)}
 
     exporter = nbconvert.HTMLExporter(exclude_input=True, exclude_output_prompt=True)
     template_path = Path(os.path.realpath(__file__)).parent / 'modal_template.tpl'
