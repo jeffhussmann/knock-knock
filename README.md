@@ -1,3 +1,8 @@
+# knock_knock
+
+![](table_demo.gif)
+
+
 knock_knock organizes all references sequences, sequencing data, and analysis output for a given project inside of a project directory (e.g. `/PROJECT_DIR`).
 Every time knock_knock is run, this directory is given as the first command line argument to tell knock_knock which project to analyze.
 Inside a project directory, a directory called `targets` holds information about each locus that was targeted for editing.
