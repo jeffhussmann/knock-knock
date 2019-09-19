@@ -1,8 +1,8 @@
 # knock_knock
 
-![](table_demo.gif)
+`knock_knock` is a tool for exploring, categorizing, and quantifying the sequence outcomes produced by CRISPR knock-in experiments.
 
-![](lengths_demo.gif)
+![](table_demo.gif)
 
 knock_knock organizes all references sequences, sequencing data, and analysis output for a given project inside of a project directory (e.g. `/PROJECT_DIR`).
 Every time knock_knock is run, this directory is given as the first command line argument to tell knock_knock which project to analyze.
