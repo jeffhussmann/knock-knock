@@ -114,13 +114,12 @@ class Experiment(object):
         self.color = extract_color(self.description)
         self.max_qual = 93
         
-        #self.supplemental_index_names = sorted(target_info.locate_supplemental_indices(self.base_dir))
         index_names = self.description.get('supplemental_indices')
         if index_names is None:
             self.supplemental_index_names = []
         else:
             self.supplemental_index_names = index_names.split(';')
-        
+
     @memoized_property
     def dir(self):
         return self.base_dir / 'results' / self.group / self.name
@@ -1573,13 +1572,20 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
     else:
         target_names = [target]
 
+    default_filename = Path.cwd() / 'figure.png'
+
     widgets = {
         'target': ipywidgets.Select(options=target_names, value=target_names[0], layout=ipywidgets.Layout(height='200px')),
         'experiment': ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='450px')),
         'read_id': ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='600px')),
         'outcome': ipywidgets.Select(options=[], continuous_update=False, layout=ipywidgets.Layout(height='200px', width='450px')),
-        #'zoom_in': ipywidgets.FloatRangeSlider(value=[-0.02, 1.02], min=-0.02, max=1.02, step=0.001, continuous_update=False, layout=ipywidgets.Layout(width='1200px')),
     }
+
+    non_widgets = {
+        'file_name': ipywidgets.Text(value=str(default_filename)),
+        'save': ipywidgets.Button(description='Save snapshot'),
+    }
+
     toggles = [
         ('parsimonious', False),
         ('relevant', True),
@@ -1634,7 +1640,7 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
 
         outcomes = exp.outcomes
         widgets['outcome'].options = [('_'.join(outcome), outcome) for outcome in outcomes]
-        if outcomes:
+        if len(outcomes) > 0:
             if previous_value in outcomes:
                 widgets['outcome'].value = previous_value
                 populate_read_ids(None)
@@ -1719,16 +1725,25 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
     interactive.update()
 
     def make_row(keys):
-        return ipywidgets.HBox([widgets[k] for k in keys])
+        return ipywidgets.HBox([widgets[k] if k in widgets else non_widgets[k] for k in keys])
 
     if by_outcome:
         top_row_keys = ['target', 'experiment', 'outcome', 'read_id']
     else:
         top_row_keys = ['target', 'experiment', 'read_id']
 
+    @output.capture(clear_output=False)
+    def save(_):
+        fig = interactive.result
+        fn = non_widgets['file_name'].value
+        fig.savefig(fn, bbox_inches='tight')
+
+    non_widgets['save'].on_click(save)
+
     layout = ipywidgets.VBox(
         [make_row(top_row_keys),
          make_row([k for k, d in toggles]),
+         make_row(['file_name', 'save']),
          interactive.children[-1],
          output,
         ],
