@@ -1,6 +1,7 @@
 import subprocess
 import sys
 import warnings
+from urllib.parse import urlparse
 from pathlib import Path
 
 import pandas as pd
@@ -800,22 +801,35 @@ def build_indices(base_dir, name, num_threads=1):
     minimap2_index_fn = minimap2_dir / f'{name}.mmi'
     mapping_tools.build_minimap2_index(fasta_fn, minimap2_index_fn)
 
-def download_and_build_hg38(base_dir, num_threads=8):
-    base_dir = Path(base_dir)
-    hg38_dir = base_dir / 'indices' / 'hg38'
-    fasta_dir = hg38_dir / 'fasta'
+def download_genome_and_build_indices(base_dir, genome_name, num_threads=8):
+    urls = {
+        'hg38': 'http://hgdownload.cse.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz',
+        'e_coli': 'ftp://ftp.ensemblgenomes.org/pub/bacteria/release-44/fasta/bacteria_0_collection/escherichia_coli_str_k_12_substr_mg1655/dna/Escherichia_coli_str_k_12_substr_mg1655.ASM584v2.dna.chromosome.Chromosome.fa.gz',
+    }
 
-    print('Downloading hg38 from ucsc...')
+    if genome_name not in urls:
+        print(f'No URL known for {genome_name}. Options are:')
+        for gn in sorted(urls):
+            print(f'\t- {gn}')
+        sys.exit(0)
+
+    base_dir = Path(base_dir)
+    genome_dir = base_dir / 'indices' / genome_name
+    fasta_dir = genome_dir / 'fasta'
+
+    print(f'Downloading {genome_name}...')
     wget_command = [
-        'wget', 'http://hgdownload.cse.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz',
+        'wget', urls[genome_name],
         '-P', str(fasta_dir),
     ]
     subprocess.run(wget_command, check=True)
 
     print('Uncompressing...')
+    file_name = Path(urlparse(urls[genome_name]).path).name
+
     gunzip_command = [
-        'gunzip',  str(fasta_dir / 'hg38.fa.gz'),
+        'gunzip',  str(fasta_dir / file_name),
     ]
     subprocess.run(gunzip_command, check=True)
 
-    build_indices(base_dir, 'hg38', num_threads=num_threads)
+    build_indices(base_dir, genome_name, num_threads=num_threads)
