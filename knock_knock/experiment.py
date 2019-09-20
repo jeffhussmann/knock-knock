@@ -1788,9 +1788,12 @@ def load_sample_sheet(base_dir, group):
 
     return sample_sheet
 
-def get_all_experiments(base_dir, conditions=None, as_dictionary=False, progress=None):
+def get_all_groups(base_dir):
     data_dir = Path(base_dir) / 'data'
+    groups = sorted(p.name for p in data_dir.iterdir() if p.is_dir())
+    return groups
 
+def get_all_experiments(base_dir, conditions=None, as_dictionary=False, progress=None):
     if conditions is None:
         conditions = {}
 
@@ -1805,7 +1808,7 @@ def get_all_experiments(base_dir, conditions=None, as_dictionary=False, progress
         return True
 
     exps = []
-    groups = (p.name for p in data_dir.iterdir() if p.is_dir())
+    groups = get_all_groups(base_dir)
 
     if 'group' in conditions:
         groups = (n for n in groups if n in conditions['group'])
