@@ -1695,6 +1695,9 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
         if als is None:
             return None
 
+        print(als[0].query_name)
+        print(als[0].get_forward_sequence())
+
         l = exp.layout_module.Layout(als, exp.target_info, mode=exp.layout_mode)
         info = l.categorize()
         
