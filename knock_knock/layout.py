@@ -125,7 +125,7 @@ class Layout(object):
 
     @memoized_property
     def nonredundant_supplemental_alignments(self):
-        primary_als = self.alignments + self.nonhomologous_donor_alignments
+        primary_als = self.alignments + self.nonhomologous_donor_alignments + self.extra_alignments
         covered = interval.get_disjoint_covered(primary_als)
 
         supp_als_to_keep = []
@@ -159,9 +159,18 @@ class Layout(object):
     @memoized_property
     def supplemental_alignments(self):
         als = [al for al in self.original_alignments if al.reference_name not in self.target_info.reference_sequences]
+
+        # For performance reasons, cap the number of alignments considered, prioritizing
+        # alignments that explain more matched bases.
+        def priority(al):
+            return al.query_alignment_length - al.get_tag('NM')
+
+        best_als = sorted(als, key=priority, reverse=True)[:100]
+
         split_als = []
-        for al in als:
+        for al in best_als:
             split_als.extend(sam.split_at_large_insertions(al, 10))
+
         return split_als
 
     @memoized_property
@@ -345,26 +354,32 @@ class Layout(object):
         if len(self.seq) <= 50:
             category = 'malformed layout'
             subcategory = 'too short'
+            self.relevant_alignments = self.uncategorized_relevant_alignments
 
         elif all(al.is_unmapped for al in self.alignments):
             category = 'malformed layout'
             subcategory = 'no alignments detected'
+            self.relevant_alignments = self.uncategorized_relevant_alignments
 
         elif self.extra_copy_of_primer:
             category = 'malformed layout'
             subcategory = 'extra copy of primer'
+            self.relevant_alignments = self.uncategorized_relevant_alignments
 
         elif self.missing_a_primer:
             category = 'malformed layout'
             subcategory = 'missing a primer'
+            self.relevant_alignments = self.uncategorized_relevant_alignments
 
         elif self.primer_strands[5] != self.primer_strands[3]:
             category = 'malformed layout'
             subcategory = 'primers not in same orientation'
+            self.relevant_alignments = self.uncategorized_relevant_alignments
         
         elif not self.primer_alignments_reach_edges:
             category = 'malformed layout'
             subcategory = 'primer far from read edge'
+            self.relevant_alignments = self.uncategorized_relevant_alignments
 
         elif self.single_merged_primer_alignment is not None:
             num_indels = len(self.all_indels_near_cuts)
@@ -878,8 +893,6 @@ class Layout(object):
                   donor_past_HA_edit_distance[side] / donor_past_HA_length[side] < 0.1
             for side in [5, 3]
         }
-        #for side in [5, 3]:
-        #    print(side, donor_contains_arm_external[side], donor_contains_arm_internal[side])
             
         target_external_edge_query = {
             5: (sam.closest_query_position(HAs[5]['target'].start, from_primer[5])
@@ -911,12 +924,6 @@ class Layout(object):
 
         clean_handoff = {}
         for side in [5, 3]:
-            #print(side, (
-            #    target_contains_full_arm[side],
-            #    donor_contains_full_arm[side],
-            #    arm_overlaps[side],
-            #    max_indel_near_junction[side],
-            #))
             clean_handoff[side] = (
                 target_contains_full_arm[side] and
                 donor_contains_full_arm[side] and
@@ -1582,13 +1589,11 @@ class Layout(object):
         covered = interval.get_disjoint_covered(parsimonious)
         supp_als = []
 
-        for supp_al in self.nonredundant_supplemental_alignments:
-            novel_length = (interval.get_covered(supp_al) - covered).total_length
-            if novel_length > 0:
-                supp_als.append(supp_al)
+        def novel_length(supp_al):
+            return (interval.get_covered(supp_al) - covered).total_length
 
-            if len(supp_als) >= 10:
-                break
+        supp_als = interval.make_parsimonious(self.nonredundant_supplemental_alignments)
+        supp_als = sorted(supp_als, key=novel_length, reverse=True)[:10]
 
         final = parsimonious + supp_als
 
