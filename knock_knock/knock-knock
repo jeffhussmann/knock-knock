@@ -58,7 +58,7 @@ def parallel(args):
         '-n', '4', 
         '--bar',
         '--max-procs', str(args.max_procs),
-        'knock_knock',
+        'knock-knock',
         'process',
         str(args.project_directory),
         ':::',
