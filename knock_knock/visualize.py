@@ -533,7 +533,12 @@ class ReadDiagram():
                 self.max_y = max(self.max_y, max(ys))
                 self.min_y = min(self.min_y, min(ys))
                 
-                kwargs = {'color': color, 'linewidth': 1.5, 'alpha': 1 * alpha_multiplier}
+                kwargs = {
+                    'color': color,
+                    'linewidth': 1.5,
+                    'alpha': 1 * alpha_multiplier,
+                }
+
                 ax.plot(xs, ys, **kwargs)
 
                 length = end - start
@@ -873,8 +878,9 @@ class ReadDiagram():
                 xs = adjust_edges(xs)
                 ref_xs = adjust_edges(ref_xs)
 
+                parallelogram_alpha = 0.05
                 # Shade parallelograms between alignments and reference.
-                self.ax.fill_betweenx([y, ref_y], [xs[0], ref_xs[0]], [xs[1], ref_xs[1]], color=color, alpha=0.05)
+                self.ax.fill_betweenx([y, ref_y], [xs[0], ref_xs[0]], [xs[1], ref_xs[1]], color=color, alpha=parallelogram_alpha)
 
                 # Draw lines connecting alignment edges to reference.
                 for x, ref_x in zip(xs, ref_xs):
@@ -901,7 +907,8 @@ class ReadDiagram():
 
             # Draw the actual reference.
             ref_xs = adjust_edges([ref_p_to_x(ref_start), ref_p_to_x(ref_end)])
-            self.ax.plot(ref_xs, [ref_y, ref_y], color=color, linewidth=3, solid_capstyle='butt')
+            ref_line_width = 3
+            self.ax.plot(ref_xs, [ref_y, ref_y], color=color, linewidth=ref_line_width, solid_capstyle='butt')
 
             if self.features_to_show is not None:
                 features_to_show = [(r_name, f_name) for r_name, f_name in self.features_to_show
@@ -934,7 +941,7 @@ class ReadDiagram():
                 xs = adjust_edges([ref_p_to_x(p) for p in [feature.start, feature.end]])
                     
                 start = ref_y
-                end = ref_y + np.sign(ref_y) * gap * 0.2
+                end = ref_y + np.sign(ref_y) * 0.006
 
                 bottom = min(start, end)
                 top = max(start, end)
@@ -994,10 +1001,11 @@ class ReadDiagram():
                              size=size,
                             )
 
+            # Draw the cut site(s).
             if ref_name == ti.target:
                 for cut_after in ti.cut_afters.values():
                     cut_after_x = ref_p_to_x(cut_after)
-                    self.ax.plot([cut_after_x, cut_after_x], [ref_y - gap * 0.18, ref_y + gap * 0.18], '--', color='black')
+                    self.ax.plot([cut_after_x, cut_after_x], [ref_y - 0.03 * 0.18, ref_y + 0.03 * 0.18], '--', color='black')
             
         self.ax.set_ylim(self.min_y - 0.1 * self.height, self.max_y + 0.1 * self.height)
 
