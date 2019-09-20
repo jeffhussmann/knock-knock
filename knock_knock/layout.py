@@ -2016,12 +2016,12 @@ def max_indel_nearby(alignment, ref_pos, window):
 def get_mismatch_info(alignment, target_info):
     mismatches = []
 
-    triples = []
+    tuples = []
     if target_info.reference_sequences.get(alignment.reference_name) is None:
         for read_p, ref_p, ref_b in alignment.get_aligned_pairs(with_seq=True):
             if read_p != None and ref_p != None:
                 read_b = alignment.query_sequence[read_p]
-                triples.append((read_p, read_b, ref_b))
+                tuples.append((read_p, read_b, ref_p, ref_b))
 
     else:
         reference = target_info.reference_sequences[alignment.reference_name]
@@ -2030,9 +2030,12 @@ def get_mismatch_info(alignment, target_info):
                 read_b = alignment.query_sequence[read_p]
                 ref_b = reference[ref_p]
                 
-                triples.append((read_p, read_b, ref_b))
+                tuples.append((read_p, read_b, ref_p, ref_b))
 
-    for read_p, read_b, ref_b in triples:
+    for read_p, read_b, ref_p, ref_b in tuples:
+        read_b = read_b.upper()
+        ref_b = ref_b.upper()
+
         if read_b != ref_b:
             true_read_p = sam.true_query_position(read_p, alignment)
             q = alignment.query_qualities[read_p]
