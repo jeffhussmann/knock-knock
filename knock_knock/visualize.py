@@ -527,6 +527,7 @@ class ReadDiagram():
                     (middle_offset(start), middle_offset(end)),
                     ref_ps,
                     y,
+                    sam.get_strand(alignment),
                 ]
                 self.alignment_coordinates[ref_name].append(coordinates)
                 
@@ -838,10 +839,15 @@ class ReadDiagram():
 
             # To establish a mapping between reference position and x coordinate,
             # pick anchor points on the ref and read that will line up with each other. 
-            if self.force_left_aligned or (len(self.alignment_coordinates[ref_name]) == 1 and ref_name == ti.target):
-                xs, ps, y = self.alignment_coordinates[ref_name][0]
+            if self.force_left_aligned or (len(self.alignment_coordinates[ref_name]) == 1):
+                print(ref_name, 'single al')
+                xs, ps, y, strand = self.alignment_coordinates[ref_name][0]
+
                 anchor_ref = ps[0]
-                anchor_read = xs[0]
+                if (strand == '+' and not flip) or (strand == '-' and flip):
+                    anchor_read = xs[0]
+                else:
+                    anchor_read = xs[1]
             else:
                 anchor_ref = center_p
                 anchor_read = self.query_length // 2
@@ -870,7 +876,7 @@ class ReadDiagram():
             ref_al_min = ref_start
             ref_al_max = ref_end
 
-            for xs, ps, y in self.alignment_coordinates[ref_name]:
+            for xs, ps, y, strand in self.alignment_coordinates[ref_name]:
                 ref_xs = [ref_p_to_x(p) for p in ps]
                 ref_al_min = min(ref_al_min, min(ps))
                 ref_al_max = max(ref_al_max, max(ps))
