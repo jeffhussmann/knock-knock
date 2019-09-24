@@ -414,7 +414,7 @@ class Experiment(object):
 
     @memoized_property
     def outcomes(self):
-        counts = self.load_outcome_counts()
+        counts = self.load_outcome_counts().sort_values(ascending=False)
         if counts is None:
             return []
         else:
