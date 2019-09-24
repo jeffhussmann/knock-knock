@@ -745,7 +745,9 @@ class Experiment(object):
         highest_points = {}
 
         for outcome, lengths in self.outcome_stratified_lengths.items():
-            highest_points[outcome] = max(lengths / self.total_reads * 100)
+            window = self.length_plot_smooth_window * 2 + 1
+            smoothed_lengths = pd.Series(lengths).rolling(window=window, center=True, min_periods=1).sum()
+            highest_points[outcome] = max(smoothed_lengths / self.total_reads * 100)
 
         return highest_points
 
@@ -820,7 +822,10 @@ class Experiment(object):
         for panel_i, (ax, (y_max, group)) in enumerate(zip(axs, panel_groups)):
             for outcome in listed_order:
                 lengths = outcome_lengths[outcome]
-                ys = lengths / self.total_reads
+                total_fraction = lengths.sum() / self.total_reads
+                window = self.length_plot_smooth_window * 2 + 1
+                smoothed_lengths = pd.Series(lengths).rolling(window=window, center=True, min_periods=1).sum()
+                ys = smoothed_lengths / self.total_reads
 
                 sanitized_string = layout.outcome_to_sanitized_string(outcome)
 
@@ -843,10 +848,9 @@ class Experiment(object):
 
                 category, subcategory = outcome
 
-                total = ys.sum() * 100
-                if total > min_total_to_label:
+                if total_fraction * 100 > min_total_to_label:
                     high_enough_to_show.append(outcome)
-                    label = f'{ys.sum():6.2%} {category}: {subcategory}'
+                    label = f'{total_fraction:6.2%} {category}: {subcategory}'
                 else:
                     label = None
 
@@ -1154,6 +1158,8 @@ class PacbioExperiment(Experiment):
 
         self.outcome_fn_keys = ['outcome_list']
 
+        self.length_plot_smooth_window = 7
+
     def alignment_groups(self, fn_key='bam_by_name', outcome=None, read_type='CCS'):
         groups = super().alignment_groups(fn_key=fn_key, outcome=outcome, read_type=read_type)
         return groups
@@ -1302,6 +1308,8 @@ class IlluminaExperiment(Experiment):
             'R1_no_overlap',
             'R2_no_overlap',
         ]
+
+        self.length_plot_smooth_window = 0
 
     @memoized_property
     def R1_read_length(self):
