@@ -840,7 +840,6 @@ class ReadDiagram():
             # To establish a mapping between reference position and x coordinate,
             # pick anchor points on the ref and read that will line up with each other. 
             if self.force_left_aligned or (len(self.alignment_coordinates[ref_name]) == 1):
-                print(ref_name, 'single al')
                 xs, ps, y, strand = self.alignment_coordinates[ref_name][0]
 
                 anchor_ref = ps[0]
@@ -863,7 +862,7 @@ class ReadDiagram():
             ref_edge = len(ti.reference_sequences[ref_name]) - 1
 
             # ref_start and ref_end are the smallest and largest ref positions
-            # that get plottted. Initially set these to the inverse image of
+            # that get plottted. Initially, set these to the inverse image of
             # the edges of the current x lims.
             if flip:
                 left, right = self.max_x, self.min_x
@@ -873,8 +872,8 @@ class ReadDiagram():
             ref_start = max(0, x_to_ref_p(left))
             ref_end = min(ref_edge, x_to_ref_p(right))
 
-            ref_al_min = ref_start
-            ref_al_max = ref_end
+            ref_al_min = np.inf
+            ref_al_max = -np.inf
 
             for xs, ps, y, strand in self.alignment_coordinates[ref_name]:
                 ref_xs = [ref_p_to_x(p) for p in ps]
@@ -901,20 +900,59 @@ class ReadDiagram():
             if ref_al_max >= ref_end:
                 ref_end = min(ref_edge, ref_al_max + 10)
 
+            if ref_name == ti.target:
+                fade_left = True
+                fade_right = True
+            else:
+                fade_left = (ref_start > 0)
+                fade_right = (ref_end < ref_edge)
+
             new_left = ref_p_to_x(ref_start)
             new_right = ref_p_to_x(ref_end)
+
+            leftmost_aligned_x = ref_p_to_x(ref_al_min)
+            rightmost_aligned_x = ref_p_to_x(ref_al_max)
+
             if flip:
                 new_left, new_right = new_right, new_left
+                fade_left, fade_right = fade_right, fade_left
+                leftmost_aligned_x, rightmost_aligned_x = rightmost_aligned_x, leftmost_aligned_x
 
             self.min_x = min(self.min_x, new_left)
             self.max_x = max(self.max_x, new_right)
 
+            # If an alignment goes right up to the edge, don't fade.
+            if leftmost_aligned_x <= self.min_x + 0.1 * (self.max_x - self.min_x):
+                fade_left = False
+
+            if rightmost_aligned_x >= self.min_x + 0.9 * (self.max_x - self.min_x):
+                fade_right = False
+
             self.ax.set_xlim(self.min_x, self.max_x)
 
             # Draw the actual reference.
-            ref_xs = adjust_edges([ref_p_to_x(ref_start), ref_p_to_x(ref_end)])
-            ref_line_width = 3
-            self.ax.plot(ref_xs, [ref_y, ref_y], color=color, linewidth=ref_line_width, solid_capstyle='butt')
+            if ref_name == ti.target:
+                # Always extend the target all the way to the edges.
+                ref_xs = [self.min_x, self.max_x]
+            else:
+                ref_xs = adjust_edges([ref_p_to_x(ref_start), ref_p_to_x(ref_end)])
+
+            rgba = matplotlib.colors.to_rgba(color)
+            image = np.expand_dims(np.array([rgba]*1000), 0)
+
+            if fade_left:
+                left_alpha = 0
+            else:
+                left_alpha = 1
+
+            if fade_right:
+                right_alpha = 0
+            else:
+                right_alpha = 1
+
+            image[:, :, 3] = np.concatenate([np.linspace(left_alpha, 1, 150), [1] * 700, np.linspace(1, right_alpha, 150)])
+            ref_line_width = 0.001
+            self.ax.imshow(image, extent=(ref_xs[0], ref_xs[1], ref_y - ref_line_width, ref_y + ref_line_width), aspect='auto')
 
             if self.features_to_show is not None:
                 features_to_show = [(r_name, f_name) for r_name, f_name in self.features_to_show
@@ -946,7 +984,7 @@ class ReadDiagram():
                 
                 xs = adjust_edges([ref_p_to_x(p) for p in [feature.start, feature.end]])
                     
-                start = ref_y
+                start = ref_y + np.sign(ref_y) * ref_line_width
                 end = ref_y + np.sign(ref_y) * 0.006
 
                 bottom = min(start, end)
