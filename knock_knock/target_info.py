@@ -52,6 +52,8 @@ class TargetInfo():
         else:
             self.donor = donor
 
+        self.donor_type = manifest.get('donor_type')
+
         if nonhomologous_donor is None:
             self.nonhomologous_donor = manifest.get('nonhomologous_donor')
         else:

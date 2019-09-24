@@ -299,8 +299,18 @@ class Layout(object):
             self.relevant_alignments = self.parsimonious_and_gap_alignments
 
         elif self.integration_summary == 'concatamer':
-            category = 'concatenated misintegration'
-            subcategory = self.junction_summary
+            if self.target_info.donor_type == 'plasmid':
+                category = 'incomplete HDR'
+                # blunt isn't a meaningful concept for plasmid donors
+                HDR_or_imperfect = {
+                    side: 'HDR' if junction == 'HDR' else 'imperfect'
+                    for side, junction in self.junction_summary_per_side.items()
+                }
+                subcategory = f"5' {HDR_or_imperfect[5]}, 3' {HDR_or_imperfect[3]}"
+            else:
+                category = 'concatenated misintegration'
+                subcategory = self.junction_summary
+
             self.relevant_alignments = self.uncategorized_relevant_alignments
 
         elif self.nonhomologous_donor_integration is not None:
@@ -1270,7 +1280,9 @@ class Layout(object):
     
     @memoized_property
     def cleanly_concatanated_donors(self):
-        HAs = self.target_info.homology_arms
+        ti = self.target_info
+
+        HAs = ti.homology_arms
         p_donor_als = self.parsimonious_donor_alignments
 
         if len(p_donor_als) <= 1:
@@ -1295,13 +1307,13 @@ class Layout(object):
             before_int = interval.get_covered(before)
             after_int = interval.get_covered(after)
 
-            overlap_slightly = len(before_int & after_int) <= 2
             adjacent = interval.are_adjacent(before_int, after_int)
+            overlap_slightly = len(before_int & after_int) <= 2
 
-            missing_before = HAs[3]['donor'].end - (before.reference_end - 1)
-            missing_after = after.reference_start - HAs[5]['donor'].start
+            missing_before = len(ti.donor_sequence) - before.reference_end
+            missing_after = after.reference_start 
 
-            clean = (adjacent or overlap_slightly) and (missing_before <= 0) and (missing_after <= 0)
+            clean = (adjacent or overlap_slightly) and (missing_before <= 1) and (missing_after <= 1)
 
             junctions_clean.append(clean)
 
@@ -2103,7 +2115,8 @@ category_order = [
     ('incomplete HDR',
         ("5' HDR, 3' imperfect",
          "5' imperfect, 3' HDR",
-         "5' imperfect, 3' imperfect", # placeholder
+         "5' imperfect, 3' imperfect",
+         "5' HDR, 3' HDR",
         ),
     ),
     ('complex misintegration',

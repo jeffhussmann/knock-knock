@@ -330,6 +330,11 @@ def build_target_info(base_dir, info, all_index_locations):
     else:
         has_donor = True
 
+    if info['donor_type'] is None:
+        donor_type = None
+    else:
+        _, donor_type = info['donor_type']
+
     nh_donor_info = info.get('nonhomologous_donor_sequence')
     if nh_donor_info is None:
         nh_donor_name = None
@@ -348,7 +353,13 @@ def build_target_info(base_dir, info, all_index_locations):
     target_dir.mkdir(parents=True, exist_ok=True)
     
     protospacer, *other_protospacers = info['sgRNA_sequence']
-    amplicon_primers = info['amplicon_primers'][1].split(';')
+    primers_name, primers = info['amplicon_primers']
+    primers = primers.split(';')
+
+    if primers_name is None:
+        target_name = name
+    else:
+        target_name = primers_name
 
     protospacer_dir = target_dir / 'protospacer_alignment'
     protospacer_dir.mkdir(exist_ok=True)
@@ -359,7 +370,7 @@ def build_target_info(base_dir, info, all_index_locations):
     STAR_index = index_locations['STAR']
 
     gb_fns = {
-        'target': target_dir / f'{name}.gb',
+        'target': target_dir / f'{target_name}.gb',
         'donor': target_dir / f'{donor_name}.gb',
         'nh_donor': target_dir / f'{nh_donor_name}.gb',
     }
@@ -434,22 +445,22 @@ def build_target_info(base_dir, info, all_index_locations):
                 results['failed'] = f'bad PAM: {PAM} next to {ps_seq} (strand {ps_strand})'
                 return results
 
-        if amplicon_primers[0] in full_around:
-            final_fwd_primer = amplicon_primers[0]
-            final_rev_primer = utilities.reverse_complement(amplicon_primers[1])
+        if primers[0] in full_around:
+            final_fwd_primer = primers[0]
+            final_rev_primer = utilities.reverse_complement(primers[1])
             if final_rev_primer not in full_around:
-                results['failed'] = f'primer {amplicon_primers[1]} not present near protospacer'
+                results['failed'] = f'primer {primers[1]} not present near protospacer'
                 return results
         else:
-            final_fwd_primer = amplicon_primers[1]
-            final_rev_primer = utilities.reverse_complement(amplicon_primers[0])
+            final_fwd_primer = primers[1]
+            final_rev_primer = utilities.reverse_complement(primers[0])
 
             if final_fwd_primer not in full_around:
-                results['failed'] = f'primer {amplicon_primers[1]} not present near protospacer'
+                results['failed'] = f'primer {primers[1]} not present near protospacer'
                 return results
 
             if final_rev_primer not in full_around:
-                results['failed'] = f'primer {amplicon_primers[0]} not present near protospacer'
+                results['failed'] = f'primer {primers[0]} not present near protospacer'
                 return results
 
         fwd_start = full_around.index(final_fwd_primer)
@@ -542,7 +553,7 @@ def build_target_info(base_dir, info, all_index_locations):
                 'HA_2': starts['HA_2'] + lengths['HA_2'],
             }
 
-            if info['donor_type'] == 'PCR':
+            if donor_type == 'PCR':
                 if starts['HA_1'] != 0:
                     starts['PCR_adapter_1'] = 0
                     ends['PCR_adapter_1'] = starts['HA_1']
@@ -584,7 +595,7 @@ def build_target_info(base_dir, info, all_index_locations):
             ])
 
         target_Seq = Seq(target_seq, generic_dna)
-        target_Record = SeqRecord(target_Seq, name=name, features=target_features)
+        target_Record = SeqRecord(target_Seq, name=target_name, features=target_features)
         results['gb_Records']['target'] = target_Record
         
         if has_nh_donor:
@@ -647,7 +658,7 @@ def build_target_info(base_dir, info, all_index_locations):
 
     manifest_fn = target_dir / 'manifest.yaml'
 
-    sources = [name]
+    sources = [target_name]
     if has_donor:
         sources.append(donor_name)
 
@@ -660,11 +671,13 @@ def build_target_info(base_dir, info, all_index_locations):
         
     manifest = {
         'sources': sources,
-        'target': name,
+        'target': target_name,
     }
     if has_donor:
         manifest['donor'] = donor_name
         manifest['donor_specific'] = 'donor_specific'
+        if donor_type is not None:
+            manifest['donor_type'] = donor_type
 
     if has_nh_donor:
         manifest['nonhomologous_donor'] = nh_donor_name
@@ -691,14 +704,14 @@ def build_target_infos_from_csv(base_dir):
     sgRNA_fn = base_dir / 'targets' / 'sgRNAs.csv'
 
     if sgRNA_fn.exists():
-        registry['sgRNA_sequence'] = pd.read_csv(sgRNA_fn, index_col='sgRNA_name', squeeze=True)
+        registry['sgRNA_sequence'] = pd.read_csv(sgRNA_fn, index_col='name', squeeze=True)
     else:
         registry['sgRNA_sequence'] = {}
 
     amplicon_primers_fn = base_dir / 'targets' / 'amplicon_primers.csv'
 
     if amplicon_primers_fn.exists():
-        registry['amplicon_primers'] = pd.read_csv(amplicon_primers_fn, index_col='amplicon_primers_name', squeeze=True)
+        registry['amplicon_primers'] = pd.read_csv(amplicon_primers_fn, index_col='name', squeeze=True)
     else:
         registry['amplicon_primers'] = {}
 
@@ -711,7 +724,7 @@ def build_target_infos_from_csv(base_dir):
     donors_fn = base_dir / 'targets' / 'donor_sequences.csv'
 
     if donors_fn.exists():
-        donors = pd.read_csv(donors_fn, index_col='donor_name')
+        donors = pd.read_csv(donors_fn, index_col='name')
         registry['donor_sequence'] = donors['donor_sequence']
         registry['donor_type'] = donors['donor_type']
     else:
