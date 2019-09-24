@@ -863,10 +863,13 @@ class Experiment(object):
                                    zorder=100,
                                   )
 
+            legend_cols = int(np.ceil(len(listed_order) / 18))
+
             legend = ax.legend(bbox_to_anchor=(1.05, 1),
                                loc='upper left',
                                prop=dict(family='monospace', size=9),
                                framealpha=0.3,
+                               ncol=legend_cols,
                               )
 
             for outcome, line in zip(high_enough_to_show, legend.get_lines()):
