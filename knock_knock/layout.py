@@ -147,21 +147,6 @@ class Layout(object):
         return supp_als_to_keep
 
     @memoized_property
-    def nonredundant_halfbell_alignments(self):
-        primary_als = self.alignments + self.nonhomologous_donor_alignments
-        covered = interval.get_disjoint_covered(primary_als)
-
-        halfbell_als = [al for al in self.original_alignments if al.reference_name.startswith('halfbell_v2')]
-        
-        als_to_keep = []
-
-        for al in halfbell_als:
-            if interval.get_covered(al) - covered:
-                als_to_keep.append(al)
-
-        return als_to_keep
-
-    @memoized_property
     def alignments(self):
         return self.target_alignments + self.donor_alignments
     
