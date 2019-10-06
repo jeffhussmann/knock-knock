@@ -292,7 +292,12 @@ class Experiment(object):
 
     def generate_alignments(self, read_type=None):
         reads = self.reads_by_type(read_type)
-        reads = self.progress(reads, desc='Generating alignments')
+        if read_type is None:
+            description = 'Generating alignments'
+        else:
+            description = f'Generating {read_type} alignments'
+
+        reads = self.progress(reads, desc=description)
 
         bam_fns = []
         bam_by_name_fns = []
