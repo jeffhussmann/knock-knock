@@ -49,7 +49,7 @@ class Layout(object):
         for al in original_als:
             # Ignore alignments to the target that fall entirely outside the amplicon interval.
             # These should typically be considered genomic insertions and caught by supplementary alignments;
-            # counting on target alignments to get them makes behavior dependant on the amount of flanking
+            # counting on target alignments to get them would make behavior dependent on the amount of flanking
             # sequence included around the amplicon.
             if not (self.target_info.amplicon_interval & sam.reference_interval(al)):
                 continue
@@ -63,19 +63,14 @@ class Layout(object):
             if extend_before or extend_after:
                 al = sw.extend_repeatedly(al, target_seq_bytes, extend_before=extend_before, extend_after=extend_after)
 
-            # Easier to reason about alignments if any that contain long insertions or deletions are split into multiple
-            # alignments.
-            split_at_dels = sam.split_at_deletions(al, self.indel_size_to_split_at)
-            split_at_both = []
-            for split_al in split_at_dels:
-                split_at_both.extend(sam.split_at_large_insertions(split_al, self.indel_size_to_split_at))
+            split_als = self.comprehensively_split_alignment(al)
 
-            extended = [sw.extend_alignment(split_al, target_seq_bytes) for split_al in split_at_both]
+            extended = [sw.extend_alignment(split_al, target_seq_bytes) for split_al in split_als]
 
             processed_als.extend(extended)
 
         # If processed alignments don't cover either edge, this typically means non-specific amplification.
-        # Try to realign each uncovered edge to the relevant primer.
+        # Try to realign each uncovered edge to the relevant primer to check for this.
         existing_covered = interval.get_disjoint_covered(processed_als)
 
         possible_edge_als = []
@@ -101,15 +96,29 @@ class Layout(object):
             return []
 
         original_als = [al for al in self.original_alignments if al.reference_name == self.target_info.donor]
-        split_at_both = []
+        processed_als = []
 
         for al in original_als:
-            split_at_dels = sam.split_at_deletions(al, self.indel_size_to_split_at)
-            for split_al in split_at_dels:
-                split_at_both.extend(sam.split_at_large_insertions(split_al, self.indel_size_to_split_at))
+            split_als = self.comprehensively_split_alignment(al)
+            processed_als.extend(split_als)
 
-        return split_at_both
+        return processed_als
     
+    def comprehensively_split_alignment(self, al):
+        # It is easier to reason about alignments if any that contain long insertions, long deletions, or clusters
+        # of many edits are split into multiple alignments.
+        split_at_dels = sam.split_at_deletions(al, self.indel_size_to_split_at)
+
+        split_at_indels = []
+        for split_al in split_at_dels:
+            split_at_indels.extend(sam.split_at_large_insertions(split_al, self.indel_size_to_split_at))
+
+        split_at_clusters = []
+        for split_al in split_at_indels:
+            split_at_clusters.extend(split_at_edit_clusters(split_al, self.target_info))
+        
+        return split_at_clusters
+
     @memoized_property
     def nonhomologous_donor_alignments(self):
         if self.target_info.nonhomologous_donor is None:
@@ -2081,6 +2090,66 @@ def get_indel_info(alignment):
             indels.append(('insertion', (starts_at, ends_at)))
 
     return indels
+
+def split_at_edit_clusters(al, target_info):
+    ''' Identify read locations at which there are more than 5 edits in a 11 nt window. 
+    Excise outwards from any such location until reaching a stretch of 5 exact matches.
+    Remove the excised region, producing new cropped alignments.
+    '''
+    split_als = []
+    
+    bad_read_ps = np.zeros(al.query_length)
+    
+    for read_p, *reset in get_mismatch_info(al, target_info):
+        bad_read_ps[read_p] += 1
+        
+    for indel_type, indel_info in get_indel_info(al):
+        if indel_type == 'deletion':
+            centered_at, length = indel_info
+            for offset in [-0.5, 0.5]:
+                bad_read_ps[int(centered_at + offset)] += 1
+        elif indel_type == 'insertion':
+            starts_at, ends_at = indel_info
+            # TODO: double-check possible off by one in ends_at
+            for read_p in range(starts_at, ends_at + 1):
+                bad_read_ps[read_p] += 1
+               
+    rolling_sums = pd.Series(bad_read_ps).rolling(window=2 * 5 + 1, center=True, min_periods=1).sum()
+    
+    argmax = rolling_sums.idxmax()
+
+    if rolling_sums[argmax] < 5:
+        split_als.append(al)
+    else:
+        last_read_p_in_before = None
+    
+        window_edge = argmax
+        for window_edge in range(argmax, -1, -1):
+            errors_in_window_before = sum(bad_read_ps[window_edge + 1 - 5:window_edge + 1])
+            if errors_in_window_before == 0:
+                last_read_p_in_before = window_edge
+                break
+            
+        if last_read_p_in_before is not None:
+            cropped_before = sam.crop_al_to_query_int(al, 0, last_read_p_in_before)
+            if cropped_before is not None:
+                split_als.append(cropped_before)
+
+        first_read_p_in_after = None
+            
+        window_edge = argmax
+        for window_edge in range(argmax, al.query_length):
+            errors_in_window_after = sum(bad_read_ps[window_edge:window_edge + 5])
+            if errors_in_window_after == 0:
+                first_read_p_in_after = window_edge
+                break
+
+        if first_read_p_in_after is not None:
+            cropped_after = sam.crop_al_to_query_int(al, first_read_p_in_after, np.inf)
+            if cropped_after is not None:
+                split_als.append(cropped_after)
+
+    return split_als
 
 category_order = [
     ('WT',
