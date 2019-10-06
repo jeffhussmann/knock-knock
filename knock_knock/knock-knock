@@ -9,6 +9,8 @@ from pathlib import Path
 import yaml
 import tqdm
 
+import knock_knock
+
 def check_blastn():
     no_blastn = False
 
@@ -198,7 +200,9 @@ def build_indices(args):
     build_targets.download_genome_and_build_indices(args.project_directory, args.genome_name, args.num_threads)
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(prog='knock-knock')
+
+    parser.add_argument('--version', action='version', version=knock_knock.__version__)
 
     subparsers = parser.add_subparsers(dest='subcommand', title='subcommands')
     subparsers.required = True
