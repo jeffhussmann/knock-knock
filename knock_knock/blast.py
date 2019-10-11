@@ -53,7 +53,20 @@ def blast(ref_fn, reads, bam_fn, bam_by_name_fn, max_insertion_length=None):
             '-query', str(ref_fn), # ... and refs are query
             '-out', str(sam_fn),
         ]
-        subprocess.run(blast_command, check=True)
+
+        try:
+            subprocess.run(blast_command,
+                           check=True,
+                           stderr=subprocess.PIPE,
+                           stdout=subprocess.PIPE,
+                          )
+        except subprocess.CalledProcessError as e:
+            print('blastn command returned code {0}'.format(e.returncode))
+            print('full command was:\n\n{0}\n'.format(' '.join(blast_command)))
+            print('stdout from blastn was:\n\n{0}\n'.format(e.stdout.decode()))
+            print('stderr from blastn was:\n\n{0}\n'.format(e.stderr.decode()))
+            raise
+            
 
         def undo_hard_clipping(al):
             strand = sam.get_strand(al)
