@@ -111,13 +111,20 @@ class Layout(object):
 
         split_at_indels = []
         for split_al in split_at_dels:
-            split_at_indels.extend(sam.split_at_large_insertions(split_al, self.indel_size_to_split_at))
+            split_at_ins = sam.split_at_large_insertions(split_al, self.indel_size_to_split_at)
+            split_at_indels.extend(split_at_ins)
 
-        split_at_clusters = []
-        for split_al in split_at_indels:
-            split_at_clusters.extend(split_at_edit_clusters(split_al, self.target_info))
-        
-        return split_at_clusters
+        if self.mode == 'illumina':
+            final_split = []
+            for split_al in split_at_indels:
+                split_at_clusters = split_at_edit_clusters(split_al, self.target_info)
+                final_split.extend(split_at_clusters)
+        else:
+            # Empirically, for Pacbio data, it is hard to find a threshold for number of edits within a window that
+            # doesn't produce a lot of false positive splits.
+            final_split = split_at_indels
+
+        return final_split
 
     @memoized_property
     def nonhomologous_donor_alignments(self):
