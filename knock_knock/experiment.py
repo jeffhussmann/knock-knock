@@ -990,16 +990,19 @@ class Experiment(object):
             ref_centric=True,
             label_layout=label_layout,
             read_label='amplicon',
-            force_left_aligned=True,
+            force_left_aligned=False,
             title='',
             features_to_show=self.target_info.features_to_show,
         )
         
         for als in subsample:
             if isinstance(als, dict):
-                d = visualize.ReadDiagram(als['R1'], self.target_info, R2_alignments=als['R2'], **kwargs)
+                # Draw qualities for non-overlapping pairs.
+                draw_qualities = True
             else:
-                d = visualize.ReadDiagram(als, self.target_info, **kwargs)
+                draw_qualities = False
+
+            d = visualize.ReadDiagram(als, self.target_info, draw_qualities=draw_qualities, **kwargs)
                 
             yield d
             
@@ -1334,7 +1337,7 @@ class IlluminaExperiment(Experiment):
             else:
                 to_plot = als
 
-            diagram = visualize.ReadDiagram(to_plot['R1'], self.target_info, R2_alignments=to_plot['R2'],
+            diagram = visualize.ReadDiagram(to_plot, self.target_info,
                                             features_to_show=self.target_info.features_to_show,
                                             **kwargs)
 
