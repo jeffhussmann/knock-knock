@@ -26,6 +26,7 @@ class Layout(object):
         self.target_info = target_info
 
         self.original_alignments = [al for al in alignments if not al.is_unmapped]
+        self.unmapped_alignemnts = [al for al in alignments if al.is_unmapped]
 
         alignment = alignments[0]
         self.name = alignment.query_name
