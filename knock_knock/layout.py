@@ -428,7 +428,7 @@ class Layout(object):
                 self.relevant_alignments = self.parsimonious_target_alignments
         
         elif self.nonspecific_amplification is not None:
-            category = 'nonspecific amplification'
+            category = 'malformed layout'
             subcategory = 'nonspecific amplification'
             details = 'n/a'
             
