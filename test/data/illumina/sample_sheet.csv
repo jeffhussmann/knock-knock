@@ -1,0 +1,3 @@
+sample,R1,R2,color,platform,target_info,supplemental_indices
+B_ULT,BCAP31_ultramer_R1.fastq.gz,BCAP31_ultramer_R2.fastq.gz,#74c476,illumina,BCAP31_GFP11_U_ILL,hg38
+C_PCR,CLTA_PCR_R1.fastq.gz,CLTA_PCR_R2.fastq.gz,#9e9ac8,illumina,CLTA_GFP11_PCR_ILL,hg38

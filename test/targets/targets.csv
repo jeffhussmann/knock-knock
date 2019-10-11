@@ -1,0 +1,5 @@
+﻿name,genome,sgRNA_sequence,donor_sequence,amplicon_primers,nonhomologous_donor_sequence,extra_sequences
+BCAP31_GFP11_U_ILL,hg38,BCAP31,BCAP31_GFP11_U,BCAP31_ILL,,
+CLTA_GFP11_PCR_ILL,hg38,CLTA,CLTA_GFP11_PCR,CLTA_ILL,,
+RAB11A_150nt_plasmid,hg38,RAB11A,pML217_RAB11A-150HA,RAB11A_PAC,,
+RAB11A_150nt_PCR,hg38,RAB11A,RAB11A-150HA_PCR_donor,RAB11A_PAC,,

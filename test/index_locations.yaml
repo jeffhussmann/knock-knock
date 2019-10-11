@@ -1,0 +1,22 @@
+e_coli:
+  STAR: /nvme/indices/e_coli_K12_MG1655
+  minimap2: /nvme/indices/minimap2/e_coli_K12_MG1655.mmi
+
+hg19:
+  STAR: /nvme/indices/refdata-cellranger-hg19-1.2.0/star
+  fasta: /nvme/indices/refdata-cellranger-hg19-1.2.0/fasta
+  minimap2: /nvme/indices/minimap2/hg19_HPC.mmi
+
+hg38:
+  STAR: /nvme/indices/refdata-cellranger-GRCh38-1.2.0/star
+  fasta: /nvme/indices/refdata-cellranger-GRCh38-1.2.0/fasta
+  minimap2: /nvme/indices/minimap2/GRCh38_HPC.mmi
+
+phiX:
+  STAR: /nvme/indices/phiX
+  minimap2: /nvme/indices/minimap2/phiX.mmi
+
+mm10:
+  STAR: /nvme/indices/refdata-cellranger-mm10-1.2.0/star
+  fasta: /nvme/indices/refdata-cellranger-mm10-1.2.0/fasta
+  minimap2: /nvme/indices/minimap2/mm10.mmi

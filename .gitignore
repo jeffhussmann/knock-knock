@@ -1,6 +1,10 @@
 __pycache__/
+knock_knock.egg-info/
 build/
 dist/
+test/results
+test/targets/**
+!test/targets/*.csv
 .ipynb_checkpoints/
 *.swp
 *.pyc
