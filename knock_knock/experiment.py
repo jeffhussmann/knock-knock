@@ -498,47 +498,6 @@ class Experiment(object):
         for outcome, fh in bam_fhs.items():
             fh.close()
 
-    def make_length_plot(self, outcome=None):
-        def plot_nonzero(ax, xs, ys, color, highlight):
-            nonzero = ys.nonzero()
-            if highlight:
-                alpha = 0.95
-                markersize = 2
-            else:
-                alpha = 0.7
-                markersize = 0
-
-            ax.plot(xs[nonzero], ys[nonzero], 'o', color=color, markersize=markersize, alpha=alpha)
-            ax.plot(xs, ys, '-', color=color, alpha=0.3 * alpha)
-
-        fig, ax = plt.subplots(figsize=(14, 5))
-
-        ys = self.read_lengths
-        xs = np.arange(len(ys))
-
-        if outcome is None:
-            all_color = self.color
-            highlight = True
-        else:
-            all_color = 'black'
-            highlight = False
-
-        plot_nonzero(ax, xs, ys, all_color, highlight=highlight)
-        ax.set_ylim(0, max(ys) * 1.05)
-
-        if outcome is not None:
-            ys = self.outcome_stratified_lengths[outcome]
-            xs = np.arange(len(ys))
-            outcome_color = color
-            plot_nonzero(ax, xs, ys, outcome_color, highlight=True)
-
-        ax.set_xlabel('Length of read')
-        ax.set_ylabel('Number of reads')
-        ax.set_xlim(0, len(self.read_lengths) * 1.05)
-        ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
-
-        return fig
-                
     def get_read_alignments(self, read_id, fn_key='bam_by_name', outcome=None, read_type=None):
         # iter() necessary because tqdm objects aren't iterators
         read_groups = iter(self.alignment_groups(fn_key, outcome, read_type))
@@ -595,13 +554,18 @@ class Experiment(object):
     def length_distribution_figure(self, outcome=None, show_ranges=False, show_title=False):
         all_ys = self.read_lengths / self.total_reads
 
+        def convert_to_smoothed_percentages(ys):
+            window = self.length_plot_smooth_window * 2 + 1
+            smoothed = pd.Series(ys).rolling(window=window, center=True, min_periods=1).sum()
+            return smoothed * 100
+
         fig, ax = plt.subplots(figsize=(12, 6))
+
 
         if outcome is None:
             ys_list = [
                 (all_ys, self.color, 0.9, 'all reads'),
             ]
-            max_y = max(all_ys)
 
             ys_to_check = all_ys
         else:
@@ -619,8 +583,6 @@ class Experiment(object):
             other_lengths = self.read_lengths - outcome_lengths
             other_ys = other_lengths / self.total_reads
 
-            max_y = max(outcome_ys)
-
             ys_list = [
                 (other_ys, 'black', 0.2, 'all other reads'),
                 (outcome_ys, color, 0.9, label),
@@ -628,13 +590,24 @@ class Experiment(object):
 
             ys_to_check = outcome_ys
 
+        max_y = 0
+
         for ys, color, alpha, label in ys_list:
-            ax.plot(ys, color=color, alpha=alpha, label=label)
+            ys = convert_to_smoothed_percentages(ys)
+            max_y = max(max_y, max(ys))
+
+            if self.length_plot_smooth_window == 0:
+                line_width = 1
+            else:
+                line_width = 2
+
+            ax.plot(ys, color=color, alpha=alpha, linewidth=line_width, label=label)
             
             nonzero_xs = ys.nonzero()[0]
             nonzero_ys = ys[nonzero_xs]
             
-            if label != 'all other reads':
+            # Don't mark nonzero points if any smoothing was done.
+            if self.length_plot_smooth_window == 0 and label != 'all other reads':
                 ax.scatter(nonzero_xs, nonzero_ys, s=2, c=color, alpha=alpha)
                            
         if show_ranges:
@@ -648,9 +621,6 @@ class Experiment(object):
                                zorder=100,
                               )
             
-        ax.set_ylabel('Fraction of reads')
-        ax.set_xlabel('Amplicon length')
-        
         y_lims = (0, max_y * 1.05)
         ax.set_ylim(*y_lims)
 
@@ -700,7 +670,7 @@ class Experiment(object):
         minor = [x for x in np.arange(0, x_max, self.x_tick_multiple // 2) if x % self.x_tick_multiple != 0]
         ax.set_xticks(minor, minor=True)
 
-        ax.set_ylabel('Fraction of reads', size=12)
+        ax.set_ylabel('Percentage of reads', size=12)
         ax.set_xlabel('amplicon length', size=12)
 
         return fig

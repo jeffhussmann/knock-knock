@@ -136,7 +136,7 @@ link_template = '''\
     data-html="true"
     data-placement="auto"
     data-content="<img width={width} height={height} src={URI}>"
-    onclick="$('#{modal_id}').appendTo('body').modal()"
+    onclick="$('#{modal_id} .modal-body').html('<iframe width=&quot;100%&quot; height=&quot;100%&quot; frameborder=&quot;0&quot; scrolling=&quot;no&quot; allowtransparency=&quot;true&quot; src=&quot;{iframe_URL}&quot;></iframe>'); $('#{modal_id}').appendTo('body').modal();"
     style="text-decoration:none; color:black"
 >
     {text}
@@ -151,24 +151,15 @@ link_without_modal_template = '''\
     data-placement="auto"
     data-content="<img width={width} height={height} src={URI}>"
     style="text-decoration:none; color:black"
-    href="{URL}"
-    target="_blank"
 >
     {text}
 </a>
 '''
-
 modal_template = '''\
 <div class="modal" tabindex="-1" id="{modal_id}" role="dialog">
     <div class="modal-dialog" style="width:90%; margin:auto">
         <div class="modal-content">
-            <div class="modal-header">
-                <h2 class="modal-title">{title}</h2>
-            </div>
             <div class="modal-body" style="height:5000px">
-                <div class="text-center">
-                    {contents}
-                </div>
             </div>
         </div>
     </div>
@@ -192,21 +183,9 @@ class ModalMaker(object):
         
         return modal_div, modal_id
 
-    def make_outcome(self, exp, outcome):
+    def make_outcome(self):
         modal_id = self.get_next_id()
-        outcome_fns = exp.outcome_fns(outcome)
-
-        outcome_string = '_'.join(outcome)
-        title = '{0}: {1}'.format(exp.name, outcome_string)
-        
-        URI, width, height = fn_to_URI(outcome_fns['lengths_figure'])
-        lengths_img = '<img src={0} width={1}, height={2}>'.format(URI, width, height)
-        
-        URI, width, height = fn_to_URI(outcome_fns['combined_figure'])
-        reads_img = '<img src={0} width={1}, height={2}>'.format(URI, width, height)
-        
-        contents = '<div> {0} </div> <div> {1} </div>'.format(lengths_img, reads_img)
-        modal_div = modal_template.format(modal_id=modal_id, contents=contents, title=title)
+        modal_div = modal_template.format(modal_id=modal_id)
         
         return modal_div, modal_id
         
@@ -250,26 +229,30 @@ def make_table(base_dir,
 
             if outcome == totals_row_label or outcome == totals_row_label_collapsed:
                 text = '{:,}'.format(val)
-                if False:
-                    #modal_div, modal_id = modal_maker.make_length(exp)
 
-                    hover_image_fn = str(exp.fns['lengths_figure'])
-                    hover_URI, width, height = fn_to_URI(hover_image_fn)
-                
-                    link = link_without_modal_template.format(text=text,
-                                                              URI=hover_URI,
-                                                              width=width,
-                                                              height=height,
-                                                             )
+                hover_image_fn = exp.fns['lengths_figure']
 
-                    html = link# + modal_div
+                relative_path = hover_image_fn.relative_to(exp.base_dir / 'results')
+
+                hover_URI = str(relative_path)
+                if hover_image_fn.exists():
+                    with PIL.Image.open(hover_image_fn) as im:
+                        width, height = im.size
+                        width = width * 0.75
+                        height = height * 0.75
                 else:
-                    html = text
+                    width, height = 100, 100
+
+                link = link_without_modal_template.format(text=text,
+                                                            URI=hover_URI,
+                                                            width=width,
+                                                            height=height,
+                                                            )
+
+                html = link
 
             else:
                 text = '{:.2%}'.format(fraction)
-                
-                #modal_div, modal_id = modal_maker.make_outcome(exp, outcome)
 
                 hover_image_fn = exp.outcome_fns(outcome)['first_example']
                 click_html_fn = exp.outcome_fns(outcome)['diagrams_html']
@@ -288,14 +271,18 @@ def make_table(base_dir,
                         width, height = 100, 100
 
                 relative_path = click_html_fn.relative_to(exp.base_dir / 'results')
-                link = link_without_modal_template.format(text=text,
-                                                          #modal_id=modal_id,
-                                                          URI=hover_URI,
-                                                          width=width,
-                                                          height=height,
-                                                          URL=str(relative_path),
-                                                         )
-                html = link# + modal_div
+
+                modal_div, modal_id = modal_maker.make_outcome()
+
+                link = link_template.format(text=text,
+                                            modal_id=modal_id,
+                                            iframe_URL=relative_path,
+                                            URI=hover_URI,
+                                            width=width,
+                                            height=height,
+                                            URL=str(relative_path),
+                                           )
+                html = link + modal_div
 
         return html
     
