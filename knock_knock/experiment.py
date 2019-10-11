@@ -384,6 +384,18 @@ class Experiment(object):
 
                         by_name_sorter.write(al)
 
+            suffixes_to_clean_up = [
+                'Log.final.out',
+                'Log.out',
+                'Log.progress.out',
+                'SJ.out.tab',
+            ]
+
+            for suffix in suffixes_to_clean_up:
+                full_fn = Path(str(STAR_prefix) + suffix)
+                if full_fn.exists():
+                    full_fn.unlink()
+
             Path(bam_fn).unlink()
 
             #sam.sort_bam(by_name_fn,
