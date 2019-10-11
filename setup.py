@@ -1,13 +1,14 @@
 from setuptools import setup
 from pathlib import Path
 
-example_data_fns = []
-#base_dir = Path('knock_knock/example_data/data')
-#for fn in base_dir.glob('**/*'):
-#    example_data_fns.append(str(fn.relative_to('knock_knock')))
-#
-#target_csv_fn = Path('knock_knock/example_data/targets/targets.csv')
-#example_data_fns.append(str(target_csv_fn.relative_to('knock_knock')))
+test_fns = []
+data_dir = Path('knock_knock/example_data/data')
+for fn in data_dir.glob('**/*'):
+    test_fns.append(str(fn.relative_to('knock_knock')))
+
+targets_dir = Path('knock_knock/example_data/targets')
+for fn in targets_dir.glob('*.csv'):
+    test_fns.append(str(fn.relative_to('knock_knock')))
 
 setup(
     name='knock_knock',
@@ -24,7 +25,7 @@ setup(
     package_data={
         'knock_knock': [
             'modal_template.tpl',
-        ] + example_data_fns,
+        ] + test_fns,
     },
 
     scripts=[
