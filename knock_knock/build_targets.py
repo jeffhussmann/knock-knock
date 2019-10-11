@@ -721,7 +721,7 @@ def build_target_infos_from_csv(base_dir):
     else:
         registry['extra_sequence'] = {}
 
-    donors_fn = base_dir / 'targets' / 'donor_sequences.csv'
+    donors_fn = base_dir / 'targets' / 'donors.csv'
 
     if donors_fn.exists():
         donors = pd.read_csv(donors_fn, index_col='name')
