@@ -51,9 +51,12 @@ class Experiment(object):
         self.name = name
 
         if progress is None:
+            self.silent = True
             def ignore_kwargs(x, **kwargs):
                 return x
             progress = ignore_kwargs
+        else:
+            self.silent = False
 
         def pass_along_kwargs(iterable, **kwargs):
             return progress(iterable, **kwargs)
@@ -342,6 +345,9 @@ class Experiment(object):
         ''' Use STAR to produce local alignments, post-filtering spurious alignmnents.
         '''
         for index_name in self.supplemental_indices:
+            if not self.silent:
+                print(f'Generating {read_type} supplemental alignments to {index_name}...')
+
             fastq_fn = self.fns_by_read_type['fastq'][read_type]
             STAR_prefix = self.fns_by_read_type['supplemental_STAR_prefix'][read_type, index_name]
             index = self.supplemental_indices[index_name]['STAR']
@@ -1019,7 +1025,8 @@ class Experiment(object):
 
     def generate_all_outcome_length_range_figures(self):
         outcomes = sorted(self.outcome_stratified_lengths)
-        for outcome in self.progress(outcomes, desc='Generating outcome-specific length range diagrams'):
+        description = 'Generating outcome-specific length range diagrams'
+        for outcome in self.progress(outcomes, desc=description):
             self.generate_length_range_figures(outcome=outcome)
 
     def generate_figures(self):
@@ -1220,7 +1227,7 @@ class PacbioExperiment(Experiment):
         else:
             description = 'Generating length-specific diagrams'
 
-        items = self.progress(by_length_range.items(), desc=description)
+        items = self.progress(by_length_range.items(), desc=description, total=len(by_length_range))
 
         for (start, end), sampler in items:
             diagrams = self.alignment_groups_to_diagrams(sampler.sample, num_examples=num_examples)
@@ -1526,7 +1533,7 @@ class IlluminaExperiment(Experiment):
         else:
             description = 'Generating length-specific diagrams'
 
-        items = self.progress(by_length.items(), desc=description)
+        items = self.progress(by_length.items(), desc=description, total=len(by_length))
 
         for length, sampler in items:
             diagrams = self.alignment_groups_to_diagrams(sampler.sample, num_examples=num_examples)
