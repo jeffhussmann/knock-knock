@@ -2094,7 +2094,7 @@ def split_at_edit_clusters(al, target_info):
     
     bad_read_ps = np.zeros(al.query_length)
     
-    for read_p, *reset in get_mismatch_info(al, target_info):
+    for read_p, *rest in get_mismatch_info(al, target_info):
         bad_read_ps[read_p] += 1
         
     for indel_type, indel_info in get_indel_info(al):
@@ -2109,10 +2109,10 @@ def split_at_edit_clusters(al, target_info):
                 bad_read_ps[read_p] += 1
                
     rolling_sums = pd.Series(bad_read_ps).rolling(window=2 * 5 + 1, center=True, min_periods=1).sum()
-    
+
     argmax = rolling_sums.idxmax()
 
-    if rolling_sums[argmax] < 5:
+    if rolling_sums[argmax] <= 5:
         split_als.append(al)
     else:
         last_read_p_in_before = None
