@@ -123,12 +123,12 @@ def make_tables(args):
 
         fns_to_zip = []
 
-        print('Generating html table...')
+        print('Generating high-level html table...')
         html_fn = (results_dir / group).with_suffix('.html')
         table.generate_html(args.project_directory, html_fn, conditions, show_details=False)
         fns_to_zip.append(html_fn)
 
-        print('Generating html table with subcategories...')
+        print('Generating detailed html table...')
         html_fn = (results_dir / f'{group}_with_details').with_suffix('.html')
         table.generate_html(args.project_directory, html_fn, conditions, show_details=True)
         fns_to_zip.append(html_fn)
