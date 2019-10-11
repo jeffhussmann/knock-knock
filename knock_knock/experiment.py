@@ -1067,8 +1067,8 @@ class Experiment(object):
             self.generate_length_range_figures(outcome=outcome)
 
     def generate_figures(self):
-        lengths_fig = exp.length_distribution_figure()
-        lengths_fig.savefig(exp.fns['lengths_figure'], bbox_inches='tight')
+        lengths_fig = self.length_distribution_figure()
+        lengths_fig.savefig(self.fns['lengths_figure'], bbox_inches='tight')
 
         self.generate_all_outcome_length_range_figures()
         self.generate_all_outcome_example_figures()
