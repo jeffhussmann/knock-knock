@@ -80,10 +80,10 @@ def calculate_performance_metrics(base_dir, conditions=None):
 
     all_integration_categories = [
         'HDR',
-        'truncated misintegration',
         'blunt misintegration',
         'complex misintegration',
         'concatenated misintegration',
+        'incomplete HDR',
     ]
 
     # reindex to handle possibly missing keys
