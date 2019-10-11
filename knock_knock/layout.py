@@ -867,9 +867,6 @@ class Layout(object):
             3: HAs[3]['donor'].end - (closest_donor[3].reference_end - 1) <= 10,
         }
 
-        # Dilemma here: insisting on 20 nts past the edge of the HA filter out mismatch-containing
-        # false positives at the expense of short, error-free true positives. Need to incorporate
-        # check for mismatches.
         donor_contains_arm_internal = {
             5: closest_donor[5].reference_end - 1 - HAs[5]['donor'].end >= 0,
             3: HAs[3]['donor'].start - closest_donor[3].reference_start >= 0,
