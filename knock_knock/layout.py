@@ -308,6 +308,7 @@ class Layout(object):
                     for side, junction in self.junction_summary_per_side.items()
                 }
                 subcategory = f"5' {HDR_or_imperfect[5]}, 3' {HDR_or_imperfect[3]}"
+                details = str(self.donor_microhomology)
             else:
                 category = 'concatenated misintegration'
                 subcategory = self.junction_summary
@@ -1631,18 +1632,22 @@ class Layout(object):
         if target_al is None or donor_al is None:
             MH_nts = None
         else:
-            als = {
+            als_by_source = {
                 'target': target_al,
                 'donor': donor_al,
             }
 
-            covered = {k: interval.get_covered(v) for k, v in als.items()}
-            sides = {
-                'left': min(covered, key=covered.get),
-                'right': max(covered, key=covered.get),
+            covered_by_source = {source: interval.get_covered(al) for source, al in als_by_source.items()}
+
+            side_to_source = {
+                'left': min(covered_by_source, key=covered_by_source.get),
+                'right': max(covered_by_source, key=covered_by_source.get),
             }
-            
-            initial_overlap = covered[sides['left']] & covered[sides['right']]
+
+            covered_by_side = {side: covered_by_source[side_to_source[side]] for side in ['left', 'right']}
+            als_by_side = {side: als_by_source[side_to_source[side]] for side in ['left', 'right']}
+
+            initial_overlap = covered_by_side['left'] & covered_by_side['right']
                 
             if initial_overlap:
                 # Trim back mismatches or indels in or near the overlap.
@@ -1654,7 +1659,8 @@ class Layout(object):
                 }
 
                 for side in ['left', 'right']:
-                    al = als[sides[side]]
+                    al = als_by_side[side]
+
                     for read_p, *rest in get_mismatch_info(al, self.target_info):
                         bad_read_ps[side].add(read_p)
 
@@ -1666,18 +1672,18 @@ class Layout(object):
                             starts_at, ends_at = info
                             bad_read_ps[side].update([starts_at, ends_at])
 
-                covered_trimmed = {}
+                covered_by_side_trimmed = {}
 
                 left_buffer_start = initial_overlap.start - mismatch_buffer_length
 
                 left_illegal_ps = [p for p in bad_read_ps['left'] if p >= left_buffer_start]
 
                 if left_illegal_ps:
-                    old_start = covered[sides['left']].start
+                    old_start = covered_by_side['left'].start
                     new_end = int(np.floor(min(left_illegal_ps))) - 1
-                    covered_trimmed['left'] = interval.Interval(old_start, new_end)
+                    covered_by_side_trimmed['left'] = interval.Interval(old_start, new_end)
                 else:
-                    covered_trimmed['left'] = covered[sides['left']]
+                    covered_by_side_trimmed['left'] = covered_by_side['left']
 
                 right_buffer_end = initial_overlap.end + mismatch_buffer_length
 
@@ -1685,18 +1691,18 @@ class Layout(object):
 
                 if right_illegal_ps:
                     new_start = int(np.ceil(max(right_illegal_ps))) + 1
-                    old_end = covered[sides['right']].end
-                    covered_trimmed['right'] = interval.Interval(new_start, old_end)
+                    old_end = covered_by_side['right'].end
+                    covered_by_side_trimmed['right'] = interval.Interval(new_start, old_end)
                 else:
-                    covered_trimmed['right'] = covered[sides['right']]
+                    covered_by_side_trimmed['right'] = covered_by_side['right']
             else:
-                covered_trimmed = {side: covered[sides[side]] for side in ['left', 'right']}
+                covered_by_side_trimmed = {side: covered_by_side[side] for side in ['left', 'right']}
 
-            if interval.are_disjoint(covered_trimmed['left'], covered_trimmed['right']):
-                gap = covered_trimmed['right'].start - covered_trimmed['left'].end - 1
+            if interval.are_disjoint(covered_by_side_trimmed['left'], covered_by_side_trimmed['right']):
+                gap = covered_by_side_trimmed['right'].start - covered_by_side_trimmed['left'].end - 1
                 MH_nts = -gap
             else:   
-                overlap = covered_trimmed['left'] & covered_trimmed['right']
+                overlap = covered_by_side_trimmed['left'] & covered_by_side_trimmed['right']
 
                 MH_nts = overlap.total_length
 
