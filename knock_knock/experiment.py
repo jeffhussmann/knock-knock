@@ -1293,9 +1293,18 @@ class PacbioExperiment(Experiment):
         al_groups = self.alignment_groups(outcome=outcome, fn_key=fn_key)
         for name, group in al_groups:
             length = group[0].query_length
-            for length_range in length_ranges:
-                if length in length_range:
+
+            # Need to make sure that the last interval catches anything longer than
+            # self.max_relevant_length.
+
+            if length >= self.max_relevant_length:
+                last_range = length_ranges[-1]
+                if last_range.start == self.max_relevant_length:
                     by_length_range[length_range.start, length_range.end].add((name, group))
+            else:
+                for length_range in length_ranges:
+                    if length in length_range:
+                        by_length_range[length_range.start, length_range.end].add((name, group))
 
         if outcome is None:
             fns = self.fns
