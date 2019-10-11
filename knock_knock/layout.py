@@ -815,7 +815,7 @@ class Layout(object):
     def closest_donor_alignment_to_edge(self):
         ''' Identify the alignments to the donor closest to edge of the read
         that has the PAM-proximal and PAM-distal amplicon primer. '''
-        donor_als = self.donor_alignments
+        donor_als = self.parsimonious_donor_alignments
 
         if self.strand is None or len(donor_als) == 0:
             closest = {5: None, 3: None}
