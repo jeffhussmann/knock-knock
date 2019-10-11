@@ -1603,6 +1603,11 @@ class Layout(object):
 
         final = parsimonious + supp_als
 
+        if len(final) == 0:
+            # If there aren't any real alignments, pass along unmapped alignments in
+            # case visualization needs to get seq or qual from them.
+            final = self.unmapped_alignemnts
+
         return final
 
     @memoized_property
