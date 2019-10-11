@@ -11,7 +11,8 @@ example_data_fns = []
 
 setup(
     name='knock_knock',
-    version='0.1.6',
+    version='0.1.7',
+    url='https://pypi.org/projects/knock-knock',
 
     author='Jeff Hussmann',
     author_email='jeff.hussmann@gmail.com',
@@ -47,4 +48,11 @@ setup(
     ],
 
     python_requires='>=3.6',
+
+    classifiers=[
+        'Programming Language :: Python',
+        'Programming Language :: Python :: 3',
+        'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7',
+    ],
 )
