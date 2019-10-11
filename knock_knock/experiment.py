@@ -95,6 +95,7 @@ class Experiment(object):
         self.fns = {
             'dir': self.dir,
             'outcomes_dir': self.dir / 'outcomes',
+            'sanitized_category_names': self.dir / 'outcomes' / 'sanitized_category_names.txt',
             'outcome_counts': self.dir / 'outcome_counts.csv',
             'outcome_list': self.dir / 'outcome_list.txt',
 
@@ -103,6 +104,8 @@ class Experiment(object):
             'outcome_stratified_lengths_figure': self.dir / 'outcome_stratified_lengths.svg',
             'length_ranges': self.dir / 'length_ranges.csv',
             'manual_length_ranges': self.dir / 'manual_length_ranges.csv',
+
+            'donor_microhomology_lengths': self.dir / 'donor_microhomology_lengths.txt', 
 
             'length_ranges_dir': self.dir / 'length_ranges',
             'lengths_svg': self.dir / (self.name + '_by_length.html'),
@@ -425,21 +428,35 @@ class Experiment(object):
 
     @memoized_property
     def outcomes(self):
-        counts = self.load_outcome_counts().sort_values(ascending=False)
+        counts = self.load_outcome_counts()
         if counts is None:
             return []
         else:
-            return list(counts.index)
+            return list(counts.sort_values(ascending=False).index)
 
     def outcome_query_names(self, outcome):
         fns = self.outcome_fns(outcome)
         qnames = [l.strip() for l in open(str(fns['query_names']))]
         return qnames
     
+    def record_sanitized_category_names(self):
+        sanitized_to_original = {}
+        for outcome in self.outcomes:
+            sanitized_string = layout.outcome_to_sanitized_string(outcome)
+            sanitized_to_original[sanitized_string] = ', '.join(outcome)
+        
+        for category in sorted(set(c for c, s in self.outcomes)):
+            sanitized_string = layout.outcome_to_sanitized_string(category)
+            sanitized_to_original[sanitized_string] = category
+
+        with open(self.fns['sanitized_category_names'], 'w') as fh:
+            for k, v in sorted(sanitized_to_original.items()):
+                fh.write(f'{k}\t{v}\n')
+
     def categorize_outcomes(self, fn_key='bam_by_name', read_type=None):
         if self.fns['outcomes_dir'].is_dir():
             shutil.rmtree(str(self.fns['outcomes_dir']))
-
+            
         self.fns['outcomes_dir'].mkdir()
 
         outcomes = defaultdict(list)
@@ -488,7 +505,14 @@ class Experiment(object):
         
             for outcome, qnames in outcomes.items():
                 outcome_fns = self.outcome_fns(outcome)
+
+                # This shouldn't be necessary due to rmtree of parent directory above
+                # but empirically sometimes is.
+                if outcome_fns['dir'].is_dir():
+                    shutil.rmtree(str(outcome_fns['dir']))
+
                 outcome_fns['dir'].mkdir()
+
                 bam_fn = outcome_fns['bam_by_name'][read_type]
                 bam_fhs[outcome] = pysam.AlignmentFile(bam_fn, 'wb', template=full_bam_fh)
                 
@@ -986,6 +1010,7 @@ class Experiment(object):
                     l = self.layout_module.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
                 else:
                     l = self.layout_module.Layout(als, self.target_info, mode=self.layout_mode)
+
                 l.categorize()
                 
                 only_relevant.append(l.relevant_alignments)
@@ -1030,6 +1055,9 @@ class Experiment(object):
             self.generate_length_range_figures(outcome=outcome)
 
     def generate_figures(self):
+        lengths_fig = exp.length_distribution_figure()
+        lengths_fig.savefig(exp.fns['lengths_figure'], bbox_inches='tight')
+
         self.generate_all_outcome_length_range_figures()
         self.generate_all_outcome_example_figures()
         svg.decorate_outcome_browser(self)
@@ -1118,6 +1146,46 @@ p {{
 
         return layout
 
+    def extract_donor_microhomology_lengths(self):
+        MH_lengths = {5: np.zeros(100, int), 3: np.zeros(100, int)}
+
+        for line in self.fns['outcome_list'].open():
+            outcome = read_outcome.Outcome.from_line(line)
+            if outcome.category == 'incomplete HDR':
+                if outcome.subcategory == "5' HDR, 3' imperfect":
+                    side = 3
+                elif outcome.subcategory == "5' imperfect, 3' HDR":
+                    side = 5
+                else:
+                    continue
+                
+                if outcome.details != 'None':
+                    try:
+                        MH_length = int(outcome.details)
+                    except:
+                        print(self.group, self.name, outcome)
+                        raise
+                    if MH_length >= 0:
+                        MH_lengths[side][MH_length] += 1
+
+        with self.fns['donor_microhomology_lengths'].open('w') as fh:
+            for side in [5, 3]:
+                fh.write(f'{side}\n')
+                counts_string = '\t'.join(map(str, MH_lengths[side]))
+                fh.write(f'{counts_string}\n')
+
+    @memoized_property
+    def donor_microhomology_lengths(self):
+        mh_lengths = {}
+        lines = open(self.fns['donor_microhomology_lengths'])
+        line_pairs = zip(*[lines]*2)
+        for side_line, counts_line in line_pairs:
+            side = int(side_line.strip())
+            counts = np.array([int(v) for v in counts_line.strip().split()])
+            mh_lengths[side] = counts
+
+        return mh_lengths
+
 class PacbioExperiment(Experiment):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -1151,11 +1219,17 @@ class PacbioExperiment(Experiment):
     
     def get_read_alignments(self, read_id, fn_key='bam_by_name', outcome=None, read_type='CCS'):
         return super().get_read_alignments(read_id, fn_key=fn_key, outcome=outcome, read_type=read_type)
+    
+    def get_read_layout(self, read_id, qname_to_als=None, fn_key='bam_by_name', outcome=None, read_type='CCS'):
+        return super().get_read_layout(read_id, qname_to_als=qname_to_als, fn_key=fn_key, outcome=outcome, read_type=read_type)
 
     def generate_supplemental_alignments(self, read_type=None):
         ''' Use minimap2 to produce local alignments.
         '''
         for index_name in self.supplemental_indices:
+            if not self.silent:
+                print(f'Generating {read_type} supplemental alignments to {index_name}...')
+
             # Note: this doesn't support multiple intput fastqs.
             fastq_fn = self.fns_by_read_type['fastq'][read_type][0]
             index = self.supplemental_indices[index_name]['minimap2']
@@ -1255,7 +1329,9 @@ class PacbioExperiment(Experiment):
 
         elif stage == 'categorize':
             self.categorize_outcomes(read_type='CCS')
+            self.record_sanitized_category_names()
             self.count_read_lengths()
+            self.extract_donor_microhomology_lengths()
 
         elif stage == 'visualize':
             self.generate_figures()
@@ -1557,7 +1633,9 @@ class IlluminaExperiment(Experiment):
             self.categorize_outcomes(read_type='stitched')
             self.categorize_no_overlap_outcomes()
 
+            self.record_sanitized_category_names()
             self.count_read_lengths()
+            self.extract_donor_microhomology_lengths()
         
         elif stage == 'visualize':
             self.generate_figures()
