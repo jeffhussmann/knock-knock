@@ -2084,8 +2084,9 @@ def get_indel_info(alignment):
             indels.append((name, (centered_at, length)))
 
         elif kind == sam.BAM_CINS:
+            # Note: edges are both inclusive.
             first_edge = sam.total_read_nucs(alignment.cigar[:i])
-            second_edge = first_edge + length
+            second_edge = first_edge + length - 1
             starts_at, ends_at = sorted(sam.true_query_position(p, alignment) for p in [first_edge, second_edge])
             indels.append(('insertion', (starts_at, ends_at)))
 
