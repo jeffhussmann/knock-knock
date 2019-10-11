@@ -1,15 +1,6 @@
-# knock-knock
+# knock-knock ![](https://img.shields.io/pypi/pyversions/knock-knock.svg) [![](https://badge.fury.io/py/knock-knock.svg)](https://badge.fury.io/py/knock-knock) ![](https://img.shields.io/conda/vn/bioconda/knock-knock)
 `knock-knock` is a tool for exploring, categorizing, and quantifying the sequence outcomes produced by CRISPR knock-in experiments.
 ![](docs/example.png)
-
-`knock-knock` tries to identify the different ways that genome editing experiments can produce unintended shufflings and rearrangments of the intended editing outcome.
-In order to do this, the strategy for aligning sequencing reads makes as few assumptions as possible about how the reads should look.
-Instead, it takes each amplicon sequencing read and attempts to produce a comprehensive set of local alignments between portions of the read and all relevant component sequences: the genomic locus targeted for editing, the HDR donor provided, and the rest of the host genome.
-Each read is then categorized by identifying a parsimonious subset of local alignments that cover the whole read and analyzing the architecture of this set of covering alignments. 
-
-`knock-knock` provides a few ways to interactively explore the different types of alignment architectures seen in each experiment. 
-
-![](docs/table_demo.gif)
 
 ## Installation
 ### conda
@@ -21,12 +12,33 @@ conda install knock-knock
 pip install knock-knock
 ```
 
+If installing with `pip`, non-Python dependencies need to be installed separately:
+- `blastn` (2.7.1)
+- `minimap2` (2.16)
+- `samtools` (1.9)
+- `STAR` (2.7.1)
+
+
+## About
+
+`knock-knock` tries to identify the different ways that genome editing experiments can produce unintended shufflings and rearrangments of the intended editing outcome.
+In order to do this, the strategy used to align sequencing reads makes as few assumptions as possible about how the reads should look.
+Instead, it takes each amplicon sequencing read and attempts to produce a comprehensive set of local alignments between portions of the read and all relevant component sequences: the genomic locus targeted for editing, the HDR donor provided, and the rest of the host genome.
+Each read is then categorized by identifying a parsimonious subset of local alignments that cover the whole read and analyzing the architecture of this set of covering alignments. 
+
+`knock-knock` is designed to work with Pacbio CCS data for longer (\~thousands of nts) amplicons and with paired-end Illumina data for shorter (\~hundreds of nts) amplicons.
+
+`knock-knock` provides a few ways to interactively explore the different types of alignment architectures seen in each experiment. 
+
+![](docs/table_demo.gif)
+
 ## Usage
 
-knock-knock organizes all references sequences, sequencing data, and analysis output for a given project inside of a project directory.
+knock-knock organizes all input sequencing data, references sequences/annotations, and analysis output for a given project inside of a project directory.
 Every time knock-knock is run, this directory is given as a command line argument to tell knock-knock which project to analyze.
 
-Inside a project directory, a directory called `targets` holds information about each locus that was targeted for editing.
+### Specifying targets
+Inside a project directory, a directory called `targets` should be populated with information about each locus that was targeted for editing.
 To build these targets, create a csv `PROJECT_DIR/targets/targets.csv` with a header row of `name,sgRNA_sequence,amplicon_primers,donor_sequence,nonhomologous_donor_sequence` and a row providing the corresponding information for each target locus. 
  Details for each field:
 - `sgRNA_sequence` is the protospacer sequence that was cut (IMPORTANT: 5' to 3' and not including the PAM). If there are multiple guides, include all sgRNAs sequence joined by semi colons.
