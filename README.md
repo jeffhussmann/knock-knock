@@ -41,7 +41,7 @@ Each read is then categorized by identifying a parsimonious subset of local alig
 ### Outcome-stratified amplicon length distributions
 ![](docs/lengths_demo.gif)
 
-## Usage
+## Getting started
 
 The first step in using knock-knock is to create a project directory that will hold all input data, references sequences, and analysis output for a given project.
 
@@ -49,10 +49,38 @@ Every time knock-knock is run, this directory is given as a command line argumen
 
 Throughout this documentation, `PROJECT_DIR` will be used as a stand-in for the path to an actual project directory.
 
+knock-knock is packaged with with some small example data sets for testing purposes. To install this example data to a user-specified project directory, run 
+
+```
+knock-knock install_example_data PROJECT_DIR
+```
+
+After running this command, PROJECT_DIR will contain 
+
+```
+PROJECT_DIR
+├── data
+│   ├── illumina
+│   │   ├── BCAP31_ultramer_R1.fastq.gz
+│   │   ├── BCAP31_ultramer_R2.fastq.gz
+│   │   ├── CLTA_PCR_R1.fastq.gz
+│   │   ├── CLTA_PCR_R2.fastq.gz
+│   │   └── sample_sheet.csv
+│   └── pacbio
+│       ├── RAB11A_PCR.fastq.gz
+│       ├── RAB11A_plasmid.fastq.gz
+│       └── sample_sheet.csv
+└── targets
+    ├── amplicon_primers.csv
+    ├── donors.csv
+    ├── sgRNAs.csv
+    └── targets.csv
+```
+
 ### Obtaining reference sequences and building indices
 
-Once you have created a project directory, `knock-knock` needs to be provided with the reference genome of a targeted organism in fasta format, and to build indices from this reference.
-These files are stored in direcotry called `indices` inside a project directory.
+Once you have created a project directory, `knock-knock` needs to be provided with the reference genome of a targeted organism in fasta format in order to build indices from this reference.
+These files are stored in directory called `indices` inside a project directory.
 
 knock-knock provides a built-in way to download references and build indices for human (hg38), mouse (mm10), or e. coli genomes. To do this, run
 
@@ -60,6 +88,26 @@ knock-knock provides a built-in way to download references and build indices for
 
 where ORGANISM is one of hg38, mm10, or e_coli, and NUM_THREADS is an optional argument that can be provided to use multiple threads for index building.
 (This can take up to several hours for mammalian-scale genomes.)
+
+Running this command for hg38 will populate `PROJECT_DIR/indices/hg38` with the following files: 
+
+```
+PROJECT_DIR/indices/hg38/
+├── STAR
+│   ├── Genome
+│   ├── SA
+│   ├── SAindex
+│   ├── chrLength.txt
+│   ├── chrName.txt
+│   ├── chrNameLength.txt
+│   ├── chrStart.txt
+│   └── genomeParameters.txt
+├── fasta
+│   ├── hg38.fa
+│   └── hg38.fa.fai
+└── minimap2
+    └── hg38.mmi
+```
 
 ### Specifying targets
 
@@ -125,7 +173,7 @@ pML217_RAB11A-150HA,plasmid,agatttatcagcaataaaccagccagcc...
 RAB11A-150HA_PCR_donor,PCR,GCCGGAAATGGCGCAGCGGCAGGGAGGGG...
 ```
 
-with the actual donor sequences truncated for display purposes.
+where the actual donor sequences have been truncated for display purposes.
 
 
 After filling out all target-specification csvs, run 
@@ -136,117 +184,63 @@ to convert the information you have provided into the form needed for subsequent
 
 ### Sample sheets
 
-Input sequencing data fastqs should be put in a directory called `data` inside the project directory, with each group of experiments (typically from one sequencing run) stored in a further subdirectory (e.g. `PROJECT_DIR/data/EXAMPLE_RUN`).
+Input sequencing data fastq files should be stored in a directory called `data` inside the project directory, with each group of experiments (typically from one sequencing run) stored in a further subdirectory (e.g. `PROJECT_DIR/data/EXAMPLE_GROUP`).
+
 Each group subdirectory needs a sample sheet to tell knock-knock which target to align each experiment to.
 Samples are defined by rows in `sample_sheet.csv`.
-The columns of a sample sheet are slightly different for Illumina and Pacbio sequencing runs.
-The common columns are:
+Every sample sheet should contain the columns:
 - `sample`: a short, descriptive name of the sample
 - `platform`: `illumina` or `pacbio`
 - `target`: the name of the target (which must have been built as described [above](#specifying-targets))
-- `supplemental_indices`: the name(s) of full genomes to which reads should be aligned, joined by semicolons. This should typically be the name of the targeted organism, plus e_coli if a plasmid donor produced in e. coli was used. Genome names referenced must exist in `PROJECT_DIR/indices` as described [above](#obtaining-reference-sequences-and-building-indices))
-- `color`: an optional 
-To provide this, make `sample_sheet.csv` in the group subdirectory with header row `sample,platform,R1,R2,CCS_fastq_fns,target_info,donor`
+- `supplemental_indices`: the name(s) of full genomes to which reads should be aligned, joined by semicolons. This should typically be the name of the targeted organism, plus e_coli if a plasmid donor produced in e. coli was used. Genome names referenced must exist in `PROJECT_DIR/indices` as described [above](#obtaining-reference-sequences-and-building-indices).
+- `color`: an optional color to associate with this sample in visualizations. Can be an integer or any string format that matplotlib recognizes (see [here](https://matplotlib.org/3.1.0/tutorials/colors/colors.html)).
 
-where:
-- sample is the sample name
-- platform is 'illumina' or 'pacbio'
-- if platform is 'illumina', R1 and R2 are a pair of R1 and R2 fastq file names in the group's directory (not the full path, just the part after the last slash)
-- if platform is 'pacbio', CCS_fastq_fns are circular consensus sequence fastq file names (not the full path, just the part after the last slash)
-- target_info is the name of an editing target that exists in this project's target directory
-- donor is 
-- color (optional) is a number you can provide such that all samples with the same number will be given the same color in the html tables
+The columns used to specify which fastq files belong to each sample are different for Illumina and Pacbio sequencing runs.
+In both cases, all fastq files must be located in `PROJECT_DIR/data/EXAMPLE_GROUP/` and should be given with these leading directory components removed (i.e. as would be returned by `basename`). Fastq files can be gzipped. 
+ 
+Illumina sample sheets should contain columns `R1` and `R2`, which should specify R1 and R2 file names for each sample. 
 
+Pacbio sample sheets should contain column `CCS_fastq_fn`, which should specify a circular consensus sequence fastq file name for each sample. 
 
-Example directory structure:
+As examples, the contents of `data/illumina/sample_sheet.csv` in knock-knock's example data are:
 ```
-base_dir
-├── data
-│   ├── group1
-│   │   ├── sample_sheet.yaml
-│   │   ├── data1.fastq
-│   │   └── data2.fastq
-│   └── group1
-│       ├── sample_sheet.yaml
-│       ├── data1.fastq
-│       └── data2.fastq
-└── targets
-    └── locus_name
-        ├── manifest.yaml
-        ├── refs.fasta
-        ├── refs.fasta.fai
-        └── refs.gff
-```
-Input fastqs and sample sheets describing the experiments that produced them are kept in base_dir/data in 'group' directories.
-
-Each sample_sheet.yaml should contain {experiment names: {description dictionary}} pairs.
-Each experiment's description dictionary must always contain the key-value pair:
-
-    target_info: name of the target (see below)
-
-For a PacBio experiment, it should also contain
-
-    fastq_fn: name of the fastq file (relative to the group's directory, i.e. just the basename)
-
-For an illumina experiment, it should contain:
-    R1_fn: name of the R1 fastq file (relative to the group's directory, i.e. just the basename)
-    R2_fn: name of the R2 fastq file (relative to the group's directory, i.e. just the basename)
-    
-It can also contain other optional keys describing properties of the experiment, e.g.:
-    cell_line: string
-    donor_type: string
-    replicate: integer
-    sorted: boolean
-
-target_info should be the name of a directory in base_dir/targets (e.g. locus_name above) containing descriptions of the sequences used in the experiment.
-Nomenclature: 'target' is the genomic locus being targeted, and 'donor' is the exogenous sequence being added.
-
-The required files are:
-
-- a fasta file `refs.fasta` containing the target sequence, donor sequence, and any suspected contaminants
-
-- an index `refs.fasta.fai` of this fasta file
-
-- a gff file `refs.gff` marking various features on these sequences.
-
-    Required features are -
-    target: [sgRNA, 5' HA, 3' HA, forward primer, reverse primer]
-    donor: [5' HA, 3' HA] (TODO: this is incomplete)
-
-- `manifest.yaml`, with contents
-
-    target: seqname in refs.fasta of target
-    donor: seqname in refs.fasta of donor
-    sources: list of genbank files from which to generate refs.\*
-
-The fasta, fai, and gff  files can be generated by annotating the target and donor sequences with the required features in benchling, downloading the benchling files in genbank format into the locus_name directory, listing these files in the 'sources' entry in 'manifest.yaml', then running TargetInfo.make_references (TODO: explain).
-
-Once an experiment_name directory containing data and a manifest pointing to a valid target_info directory exists, process the experiment with 
-```
-knock-knock process BASE_DIR GROUP_NAME EXPERIMENT_NAME
+sample,platform,R1,R2,target_info,supplemental_indices,color
+B_ULT,illumina,BCAP31_ultramer_R1.fastq.gz,BCAP31_ultramer_R2.fastq.gz,BCAP31_GFP11_U_ILL,hg38,1
+C_PCR,illumina,CLTA_PCR_R1.fastq.gz,CLTA_PCR_R2.fastq.gz,CLTA_GFP11_PCR_ILL,hg38,2
 ```
 
-If GNU parallel is installed, you can run
+and the contents of `data/pacbio/sample_sheet.csv` are:
 ```
-knock-knock parallel BASE_DIR MAX_PROCS
+sample,platform,CCS_fastq_fn,target_info,supplemental_indices,max_relevant_length,color
+R_plasmid,pacbio,RAB11A_plasmid.fastq.gz,RAB11A_150nt_plasmid,hg38;e_coli,6000,1
+R_PCR,pacbio,RAB11A_PCR.fastq.gz,RAB11A_150nt_PCR,hg38;e_coli,6000,2
 ```
-to process all experiments that exist in BASE_DIR in parallel up to MAX_PROCS at a time.
 
-To select only a subset of experiments to process, 
-```
-knock-knock parallel BASE_DIR MAX_PROCS --condition "yaml here"
-```
-where the yaml gives conditions that the optional properties of an experiment need to satisify. (TODO: explain)
+### Processing samples
 
-After experiments have been processed, to generate csv and html tables of outcome counts:
-   
+Once all relevant targets have been built and sample sheets filled out, process sequencing data from a single sample by running 
+
+```
+knock-knock process PROJECT_DIR EXAMPLE_GROUP EXAMPLE_SAMPLE
+```
+
+To process multiple samples in parallel, run
+
+```
+knock-knock parallel PROJECT_DIR MAX_PROCS
+```
+
+which will process all samples in all groups in PROJECT_DIR up to MAX_PROCS at a time. To process only samples from a single group,
+run 
+
+```
+knock-knock parallel PROJECT_DIR MAX_PROCS --group EXAMPLE_GROUP
+```
+
+After experiments have been processed, generate tables summarizing the frequencies of different read architectures in each sample by running
+
 ```
 knock-knock table BASE_DIR
 ```
 
-To explore outcomes in more depth than the html table, run
-```
-import knock_knock.visualize
-knock_knock.visualize.explore(your_base_dir, by_outcome=True)
-```
-in a Jupyter notebook.
+which will create `PROJECT_DIR/results/EXAMPLE_GROUP.html`

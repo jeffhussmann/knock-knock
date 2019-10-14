@@ -199,6 +199,25 @@ def build_indices(args):
     from knock_knock import build_targets
     build_targets.download_genome_and_build_indices(args.project_directory, args.genome_name, args.num_threads)
 
+def install_example_data(args):
+    import os
+    import shutil
+    import knock_knock
+
+    package_dir = Path(os.path.realpath(knock_knock.__file__)).parent / 'example_data'
+    subdirs_to_copy = ['data', 'targets']
+    for subdir in subdirs_to_copy:
+        src = package_dir / subdir
+        dest = args.project_directory / subdir
+
+        if dest.exists():
+            print(f'Can\'t install to {str(args.project_directory)}, {str(dest)} already exists')
+            sys.exit(0)
+
+        shutil.copytree(str(src), str(dest))
+
+    print(f'Example data installed in {str(args.project_directory)}')
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='knock-knock')
 
@@ -241,6 +260,10 @@ if __name__ == '__main__':
     parser_indices.add_argument('genome_name', help='name of genome to download')
     parser_indices.add_argument('--num_threads', type=int, default=8, help='number of threads to use for index building')
     parser_indices.set_defaults(func=build_indices)
+
+    parser_install_data = subparsers.add_parser('install_example_data', help='install example data into user-specified project directory')
+    parser_install_data.add_argument('project_directory', type=Path, help='directory to install example data')
+    parser_install_data.set_defaults(func=install_example_data)
 
     args = parser.parse_args()
     args.func(args)

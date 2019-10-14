@@ -645,7 +645,7 @@ class Experiment(object):
 
             ax.plot(ys, color=color, alpha=alpha, linewidth=line_width, label=label)
             
-            nonzero_xs = ys.nonzero()[0]
+            nonzero_xs = ys.to_numpy().nonzero()[0]
             nonzero_ys = ys[nonzero_xs]
             
             # Don't mark nonzero points if any smoothing was done.
@@ -1211,7 +1211,7 @@ class PacbioExperiment(Experiment):
 
         self.layout_mode = 'pacbio'
 
-        ccs_fastq_fns = ensure_list(self.description['CCS_fastq_fns'])
+        ccs_fastq_fns = ensure_list(self.description['CCS_fastq_fn'])
         self.fns['CCS_fastqs'] = [self.data_dir / name for name in ccs_fastq_fns]
 
         for fn in self.fns['CCS_fastqs']:
