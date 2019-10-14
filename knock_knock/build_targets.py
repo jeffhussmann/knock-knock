@@ -800,23 +800,23 @@ def build_indices(base_dir, name, num_threads=1):
     print('Indexing fastas...')
     genomes.make_fais(fasta_dir)
 
-    minimap2_dir = base_dir / 'indices' / name / 'minimap2'
-    minimap2_dir.mkdir(exist_ok=True)
-
     fasta_fn = fasta_fns[0]
 
     print('Building STAR index...')
     STAR_dir = base_dir / 'indices' / name / 'STAR'
     STAR_dir.mkdir(exist_ok=True)
-    mapping_tools.build_STAR_index([fasta_fn], STAR_dir, num_threads=num_threads)
+    mapping_tools.build_STAR_index([fasta_fn], STAR_dir, num_threads=num_threads, RAM_limit=int(4e10))
 
     print('Building minimap2 index...')
+    minimap2_dir = base_dir / 'indices' / name / 'minimap2'
+    minimap2_dir.mkdir(exist_ok=True)
     minimap2_index_fn = minimap2_dir / f'{name}.mmi'
     mapping_tools.build_minimap2_index(fasta_fn, minimap2_index_fn)
 
 def download_genome_and_build_indices(base_dir, genome_name, num_threads=8):
     urls = {
         'hg38': 'http://hgdownload.cse.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz',
+        'mm10': 'ftp://ftp.ensembl.org/pub/release-98/fasta/mus_musculus/dna/Mus_musculus.GRCm38.dna.toplevel.fa.gz',
         'e_coli': 'ftp://ftp.ensemblgenomes.org/pub/bacteria/release-44/fasta/bacteria_0_collection/escherichia_coli_str_k_12_substr_mg1655/dna/Escherichia_coli_str_k_12_substr_mg1655.ASM584v2.dna.chromosome.Chromosome.fa.gz',
     }
 
@@ -831,13 +831,17 @@ def download_genome_and_build_indices(base_dir, genome_name, num_threads=8):
     fasta_dir = genome_dir / 'fasta'
 
     print(f'Downloading {genome_name}...')
+
     wget_command = [
-        'wget', urls[genome_name],
+        'wget',
+        '--quiet',
+        urls[genome_name],
         '-P', str(fasta_dir),
     ]
     subprocess.run(wget_command, check=True)
 
     print('Uncompressing...')
+
     file_name = Path(urlparse(urls[genome_name]).path).name
 
     gunzip_command = [
