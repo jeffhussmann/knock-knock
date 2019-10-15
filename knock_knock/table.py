@@ -159,7 +159,7 @@ modal_template = '''\
 <div class="modal" tabindex="-1" id="{modal_id}" role="dialog">
     <div class="modal-dialog" style="width:90%; margin:auto">
         <div class="modal-content">
-            <div class="modal-body" style="height:5000px">
+            <div class="modal-body" style="height:10000px">
             </div>
         </div>
     </div>
