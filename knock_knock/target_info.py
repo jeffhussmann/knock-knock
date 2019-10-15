@@ -942,6 +942,154 @@ class TargetInfo():
     def expand_degenerate_indel(self, indel):
         return self.degenerate_indels.get(indel, indel)
 
+
+    def calculate_microhomology_lengths(self, donor_to_use='homologous', donor_strand='+'):
+        def num_matches_at_edge(first, second, relevant_edge):
+            ''' Count the number of identical characters at the beginning
+            or end of strings first and second.
+            '''
+            if relevant_edge == 'beginning':
+                pass
+            elif relevant_edge == 'end':
+                first = first[::-1]
+                second = second[::-1]
+            else:
+                raise ValueError(relevant_edge)
+                
+            num_matches = 0
+            
+            for f, s in zip(first, second):
+                if f == s:
+                    num_matches += 1
+                else:
+                    break
+            
+            return num_matches
+
+        def count_total_MH_nts(first_seq, second_seq, first_seq_edge, second_seq_edge, include_before=True, include_after=True):
+            ''' Count the number of consecutive exact matches that span a junction between truncations of
+            first_seq and second_seq such that the first_seq up to and including first_seq_edge is joined
+            to second_seq from second_seq_edge onward.
+            '''
+            first_before, first_after = first_seq[:first_seq_edge + 1], first_seq[first_seq_edge + 1:]
+            second_before, second_after = second_seq[:second_seq_edge], second_seq[second_seq_edge:]
+            
+            total = 0
+            
+            if include_before:
+                total += num_matches_at_edge(first_before, second_before, 'end')
+            
+            if include_after:
+                total += num_matches_at_edge(first_after, second_after, 'beginning')
+            
+            return total
+
+        expected_MH_lengths = {
+            5: {
+                'fixed': np.zeros(1000),
+                'variable': np.zeros(1000),
+            },
+            3 : {
+                'fixed': np.zeros(1000),
+                'variable': np.zeros(1000),
+            } 
+        }
+
+        offsets_that_use_HAs = set()
+
+        if donor_to_use == 'homologous':
+            donor_seq = self.donor_sequence
+
+            # Exclude offsets that actually use the full HAs, since junctions that involve
+            # pairing of the actual HAs don't get counted as donor MH.
+
+            if self.homology_arms is not None:
+                for side in [5, 3]:
+                    donor_feature = self.homology_arms[side]['donor']
+                    target_feature = self.homology_arms[side]['target']
+                    
+                    if donor_feature.strand != target_feature.strand:
+                        raise ValueError
+                        
+                    HA_offset = donor_feature.start - target_feature.start
+                    
+                    offsets_that_use_HAs.add(HA_offset)
+        else:
+            donor_seq = self.reference_sequences[self.nonhomologous_donor]
+
+        if donor_strand == '-':
+            donor_seq = utilities.reverse_complement(donor_seq)
+
+        # Compare junctions between 3' truncations of donor (i.e. donor sequence missing some amount from the 3' end)
+        # and the target after the cut. This overestimates the true number of nts capable of annealing because
+        # it credits nts on the target on the other side of the cut.
+
+        target_seq = self.target_sequence
+
+        donor_start = 0
+        donor_end = len(donor_seq)
+
+        target_edge = self.cut_after + 1
+        for donor_edge in range(donor_start, donor_end):
+            offset = donor_edge - (target_edge - 1)
+            if offset in offsets_that_use_HAs:
+                continue
+
+            total_MH_nts = count_total_MH_nts(donor_seq, target_seq, donor_edge, target_edge)
+            expected_MH_lengths[3]['fixed'][total_MH_nts] += 1
+
+        # Compare junctions between 3' truncations of donor (i.e. donor sequence missing some amount from the 3' end)
+        # and resections of the target after the cut.    
+
+        target_start = self.cut_after + 1
+        target_end = target_start + 100
+
+        for target_edge in range(target_start, target_end):
+            for donor_edge in range(donor_start, donor_end):
+                offset = donor_edge - (target_edge - 1)
+                if offset in offsets_that_use_HAs:
+                    continue
+
+                MH = count_total_MH_nts(donor_seq, target_seq, donor_edge, target_edge)
+                expected_MH_lengths[3]['variable'][MH] += 1
+
+        # Compare junctions between 5' truncations of donor (i.e. donor sequence missing some amount from the 5' end)
+        # and the target before the cut. This overestimates the true number of nts capable of annealing because
+        # it credits nts on the target on the other side of the cut.
+
+        donor_start = 0
+        donor_end = len(donor_seq)
+
+        target_edge = self.cut_after
+        for donor_edge in range(donor_start, donor_end):
+            offset = (donor_edge - 1) - target_edge
+            if offset in offsets_that_use_HAs:
+                continue
+
+            MH = count_total_MH_nts(target_seq, donor_seq, target_edge, donor_edge)
+            expected_MH_lengths[5]['fixed'][MH] += 1
+
+        # Compare junctions between 5' truncations of donor (i.e. donor sequence missing some amount from the 5' end)
+        # and resections of the target after the cut.         
+
+        target_start = self.cut_after - 100
+        target_end = self.cut_after
+
+        for target_edge in range(target_start, target_end):
+            for donor_edge in range(donor_start, donor_end):
+                offset = (donor_edge - 1) - target_edge
+                if offset in offsets_that_use_HAs:
+                    continue
+
+                MH = count_total_MH_nts(target_seq, donor_seq, target_edge, donor_edge)
+                expected_MH_lengths[5]['variable'][MH] += 1
+                
+        for side in [5, 3]:
+            for edge in ['fixed', 'variable']:
+                expected_MH_lengths[side][edge] = expected_MH_lengths[side][edge] / sum(expected_MH_lengths[side][edge])
+        
+        return expected_MH_lengths
+
 def degenerate_indel_from_string(details_string):
     kind, rest = details_string.split(':')
 

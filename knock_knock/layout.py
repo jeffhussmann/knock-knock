@@ -319,7 +319,11 @@ class Layout(object):
         elif self.nonhomologous_donor_integration is not None:
             category = 'non-homologous donor'
             subcategory = 'simple'
-            details = 'n/a'
+
+            NH_al = self.nonhomologous_donor_alignments[0]
+            NH_strand = sam.get_strand(NH_al)
+            MH_nts = self.NH_donor_microhomology
+            details = f'{NH_strand},{MH_nts[5]},{MH_nts[3]}'
             
             self.relevant_alignments = self.parsimonious_target_alignments + self.nonhomologous_donor_alignments
 
@@ -1616,6 +1620,84 @@ class Layout(object):
 
         return final
 
+    def junction_microhomology(self, first_al, second_al):
+        als_by_order = {
+            'first': first_al,
+            'second': second_al,
+        }
+        
+        covered_by_order = {order: interval.get_covered(al) for order, al in als_by_order.items()}
+        
+        side_to_order = {
+            'left': min(covered_by_order, key=covered_by_order.get),
+            'right': max(covered_by_order, key=covered_by_order.get),
+        }
+
+        covered_by_side = {side: covered_by_order[order] for side, order in side_to_order.items()}
+        als_by_side = {side: als_by_order[order] for side, order in side_to_order.items()}
+        
+
+        initial_overlap = covered_by_side['left'] & covered_by_side['right']
+
+        if initial_overlap:
+            # Trim back mismatches or indels in or near the overlap.
+            mismatch_buffer_length = 5
+
+            bad_read_ps = {
+                'left': set(),
+                'right': set(),
+            }
+
+            for side in ['left', 'right']:
+                al = als_by_side[side]
+
+                for read_p, *rest in get_mismatch_info(al, self.target_info):
+                    bad_read_ps[side].add(read_p)
+
+                for kind, info in get_indel_info(al):
+                    if kind == 'deletion':
+                        read_p, length = info
+                        bad_read_ps[side].add(read_p)
+                    elif kind == 'insertion':
+                        starts_at, ends_at = info
+                        bad_read_ps[side].update([starts_at, ends_at])
+
+            covered_by_side_trimmed = {}
+
+            left_buffer_start = initial_overlap.start - mismatch_buffer_length
+
+            left_illegal_ps = [p for p in bad_read_ps['left'] if p >= left_buffer_start]
+
+            if left_illegal_ps:
+                old_start = covered_by_side['left'].start
+                new_end = int(np.floor(min(left_illegal_ps))) - 1
+                covered_by_side_trimmed['left'] = interval.Interval(old_start, new_end)
+            else:
+                covered_by_side_trimmed['left'] = covered_by_side['left']
+
+            right_buffer_end = initial_overlap.end + mismatch_buffer_length
+
+            right_illegal_ps = [p for p in bad_read_ps['right'] if p <= right_buffer_end]
+
+            if right_illegal_ps:
+                new_start = int(np.ceil(max(right_illegal_ps))) + 1
+                old_end = covered_by_side['right'].end
+                covered_by_side_trimmed['right'] = interval.Interval(new_start, old_end)
+            else:
+                covered_by_side_trimmed['right'] = covered_by_side['right']
+        else:
+            covered_by_side_trimmed = {side: covered_by_side[side] for side in ['left', 'right']}
+
+        if interval.are_disjoint(covered_by_side_trimmed['left'], covered_by_side_trimmed['right']):
+            gap = covered_by_side_trimmed['right'].start - covered_by_side_trimmed['left'].end - 1
+            MH_nts = -gap
+        else:   
+            overlap = covered_by_side_trimmed['left'] & covered_by_side_trimmed['right']
+
+            MH_nts = overlap.total_length
+
+        return MH_nts
+
     @memoized_property
     def donor_microhomology(self):
         if self.junction_summary_per_side == {5: 'HDR', 3: 'imperfect'}:
@@ -1633,81 +1715,20 @@ class Layout(object):
         if target_al is None or donor_al is None:
             MH_nts = None
         else:
-            als_by_source = {
-                'target': target_al,
-                'donor': donor_al,
-            }
-
-            covered_by_source = {source: interval.get_covered(al) for source, al in als_by_source.items()}
-
-            side_to_source = {
-                'left': min(covered_by_source, key=covered_by_source.get),
-                'right': max(covered_by_source, key=covered_by_source.get),
-            }
-
-            covered_by_side = {side: covered_by_source[side_to_source[side]] for side in ['left', 'right']}
-            als_by_side = {side: als_by_source[side_to_source[side]] for side in ['left', 'right']}
-
-            initial_overlap = covered_by_side['left'] & covered_by_side['right']
-                
-            if initial_overlap:
-                # Trim back mismatches or indels in or near the overlap.
-                mismatch_buffer_length = 5
-                
-                bad_read_ps = {
-                    'left': set(),
-                    'right': set(),
-                }
-
-                for side in ['left', 'right']:
-                    al = als_by_side[side]
-
-                    for read_p, *rest in get_mismatch_info(al, self.target_info):
-                        bad_read_ps[side].add(read_p)
-
-                    for kind, info in get_indel_info(al):
-                        if kind == 'deletion':
-                            read_p, length = info
-                            bad_read_ps[side].add(read_p)
-                        elif kind == 'insertion':
-                            starts_at, ends_at = info
-                            bad_read_ps[side].update([starts_at, ends_at])
-
-                covered_by_side_trimmed = {}
-
-                left_buffer_start = initial_overlap.start - mismatch_buffer_length
-
-                left_illegal_ps = [p for p in bad_read_ps['left'] if p >= left_buffer_start]
-
-                if left_illegal_ps:
-                    old_start = covered_by_side['left'].start
-                    new_end = int(np.floor(min(left_illegal_ps))) - 1
-                    covered_by_side_trimmed['left'] = interval.Interval(old_start, new_end)
-                else:
-                    covered_by_side_trimmed['left'] = covered_by_side['left']
-
-                right_buffer_end = initial_overlap.end + mismatch_buffer_length
-
-                right_illegal_ps = [p for p in bad_read_ps['right'] if p <= right_buffer_end]
-
-                if right_illegal_ps:
-                    new_start = int(np.ceil(max(right_illegal_ps))) + 1
-                    old_end = covered_by_side['right'].end
-                    covered_by_side_trimmed['right'] = interval.Interval(new_start, old_end)
-                else:
-                    covered_by_side_trimmed['right'] = covered_by_side['right']
-            else:
-                covered_by_side_trimmed = {side: covered_by_side[side] for side in ['left', 'right']}
-
-            if interval.are_disjoint(covered_by_side_trimmed['left'], covered_by_side_trimmed['right']):
-                gap = covered_by_side_trimmed['right'].start - covered_by_side_trimmed['left'].end - 1
-                MH_nts = -gap
-            else:   
-                overlap = covered_by_side_trimmed['left'] & covered_by_side_trimmed['right']
-
-                MH_nts = overlap.total_length
+            MH_nts = self.junction_microhomology(target_al, donor_al)
 
         return MH_nts
+
+    @memoized_property
+    def NH_donor_microhomology(self):
+        if self.nonhomologous_donor_integration:
+            nh_al = self.nonhomologous_donor_alignments[0]
+            MH_nts = {side: self.junction_microhomology(self.primer_alignments[side], nh_al) for side in [5, 3]}
+        else:
+            MH_nts = None
+        return MH_nts
+
+
 
 class NonoverlappingPairLayout():
     def __init__(self, R1_als, R2_als, target_info):

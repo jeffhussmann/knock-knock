@@ -1159,15 +1159,15 @@ p {{
         return layout
 
     def extract_donor_microhomology_lengths(self):
-        MH_lengths = {5: np.zeros(100, int), 3: np.zeros(100, int)}
+        MH_lengths = defaultdict(lambda: np.zeros(100, int))
 
         for line in self.fns['outcome_list'].open():
             outcome = read_outcome.Outcome.from_line(line)
             if outcome.category == 'incomplete HDR':
                 if outcome.subcategory == "5' HDR, 3' imperfect":
-                    side = 3
+                    MH_category = 'incomplete HDR, 3\' junction'
                 elif outcome.subcategory == "5' imperfect, 3' HDR":
-                    side = 5
+                    MH_category = 'incomplete HDR, 5\' junction'
                 else:
                     continue
                 
@@ -1177,13 +1177,27 @@ p {{
                     except:
                         print(self.group, self.name, outcome)
                         raise
+
                     if MH_length >= 0:
-                        MH_lengths[side][MH_length] += 1
+                        MH_lengths[MH_category][MH_length] += 1
+
+            elif outcome.category == 'non-homologous donor' and outcome.subcategory == 'simple':
+                strand, NH_5, NH_3 = outcome.details.split(',')
+
+                NH_junctions = {
+                    5: int(NH_5),
+                    3: int(NH_3),
+                }
+
+                for junction in [5, 3]:
+                    MH_category = f'non-homologous donor, {strand}, {junction}\' junction'
+                    if NH_junctions[junction] >= 0:
+                        MH_lengths[MH_category][NH_junctions[junction]] += 1
 
         with self.fns['donor_microhomology_lengths'].open('w') as fh:
-            for side in [5, 3]:
-                fh.write(f'{side}\n')
-                counts_string = '\t'.join(map(str, MH_lengths[side]))
+            for MH_category, lengths in MH_lengths.items():
+                fh.write(f'{MH_category}\n')
+                counts_string = '\t'.join(map(str, lengths))
                 fh.write(f'{counts_string}\n')
 
     @memoized_property
@@ -1191,10 +1205,10 @@ p {{
         mh_lengths = {}
         lines = open(self.fns['donor_microhomology_lengths'])
         line_pairs = zip(*[lines]*2)
-        for side_line, counts_line in line_pairs:
-            side = int(side_line.strip())
-            counts = np.array([int(v) for v in counts_line.strip().split()])
-            mh_lengths[side] = counts
+        for MH_category_line, lengths_line in line_pairs:
+            MH_category = MH_category_line.strip()
+            lengths = np.array([int(v) for v in lengths_line.strip().split()])
+            mh_lengths[MH_category] = lengths
 
         return mh_lengths
 
@@ -1641,7 +1655,7 @@ class IlluminaExperiment(Experiment):
     def preprocess(self):
         self.stitch_read_pairs()
 
-    def process(self, stage=0):
+    def process(self, stage):
         if stage == 'align':
             self.preprocess()
             
