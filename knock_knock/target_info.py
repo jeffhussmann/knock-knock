@@ -703,12 +703,7 @@ class TargetInfo():
         return SNVs
 
     @memoized_property
-    def inferred_donor_SNVs_and_HAs(self):
-        SNVs = {
-            'target': {},
-            'donor': {},
-        }
-        
+    def best_donor_target_alignment(self):
         donor_bytes = {
             False: self.donor_sequence_bytes,
         }
@@ -722,6 +717,24 @@ class TargetInfo():
             candidates.extend([(m, i, is_reverse_complement) for i, m in enumerate(mismatches)])
             
         num_mismatches, offset, is_reverse_complement = min(candidates) 
+
+        return num_mismatches, offset, is_reverse_complement
+
+    @memoized_property
+    def inferred_donor_SNVs_and_HAs(self):
+        SNVs = {
+            'target': {},
+            'donor': {},
+        }
+        
+        donor_bytes = {
+            False: self.donor_sequence_bytes,
+        }
+        donor_bytes[True] = utilities.reverse_complement(donor_bytes[False])
+        
+        target_bytes = self.target_sequence_bytes
+            
+        num_mismatches, offset, is_reverse_complement = self.best_donor_target_alignment
 
         if num_mismatches > 8:
             return SNVs, {}
