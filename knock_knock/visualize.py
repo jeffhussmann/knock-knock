@@ -779,6 +779,7 @@ class ReadDiagram():
 
         ti = self.target_info
         gap = 0.03
+        ref_line_width = 0.001
         
         if self.target_on_top:
             target_y = self.max_y + gap
@@ -857,11 +858,16 @@ class ReadDiagram():
 
                 parallelogram_alpha = 0.05
                 # Shade parallelograms between alignments and reference.
-                self.ax.fill_betweenx([y, ref_y], [xs[0], ref_xs[0]], [xs[1], ref_xs[1]], color=color, alpha=parallelogram_alpha)
+                if ref_y < 0:
+                    ref_border_y = ref_y + ref_line_width
+                else:
+                    ref_border_y = ref_y - ref_line_width
+
+                self.ax.fill_betweenx([y, ref_border_y], [xs[0], ref_xs[0]], [xs[1], ref_xs[1]], color=color, alpha=parallelogram_alpha)
 
                 # Draw lines connecting alignment edges to reference.
                 for x, ref_x in zip(xs, ref_xs):
-                    self.ax.plot([x, ref_x], [y, ref_y], color=color, alpha=0.3)
+                    self.ax.plot([x, ref_x], [y, ref_border_y], color=color, alpha=0.3)
 
             self.min_y = min(self.min_y, ref_y)
             self.max_y = max(self.max_y, ref_y)
@@ -928,7 +934,6 @@ class ReadDiagram():
                 right_alpha = 1
 
             image[:, :, 3] = np.concatenate([np.linspace(left_alpha, 1, 150), [1] * 700, np.linspace(1, right_alpha, 150)])
-            ref_line_width = 0.001
             self.ax.imshow(image, extent=(ref_xs[0], ref_xs[1], ref_y - ref_line_width, ref_y + ref_line_width), aspect='auto')
 
             if self.features_to_show is not None:
