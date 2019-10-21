@@ -1,9 +1,9 @@
-# knock-knock ![](https://img.shields.io/pypi/pyversions/knock-knock.svg) [![](https://badge.fury.io/py/knock-knock.svg)](https://badge.fury.io/py/knock-knock) ![](https://img.shields.io/conda/vn/bioconda/knock-knock)
+# knock-knock 
 
 `knock-knock` is a tool for exploring, categorizing, and quantifying the sequence outcomes produced by CRISPR knock-in experiments.
 ![](docs/example.png)
 
-## Installation
+## Installation ![](https://img.shields.io/pypi/pyversions/knock-knock.svg) [![](https://badge.fury.io/py/knock-knock.svg)](https://badge.fury.io/py/knock-knock) ![](https://img.shields.io/conda/vn/bioconda/knock-knock)
 ### conda
 Note: conda installation doesn't work yet
 ```
@@ -49,7 +49,7 @@ Every time knock-knock is run, this directory is given as a command line argumen
 
 Throughout this documentation, `PROJECT_DIR` will be used as a stand-in for the path to an actual project directory.
 
-knock-knock is packaged with with some small example data sets for testing purposes. To install this example data to a user-specified project directory, run 
+knock-knock is packaged with some small example data sets for testing purposes. To install this example data to a user-specified project directory, run 
 
 ```
 knock-knock install_example_data PROJECT_DIR
