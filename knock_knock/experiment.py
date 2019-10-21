@@ -1314,7 +1314,7 @@ class PacbioExperiment(Experiment):
             if length >= self.max_relevant_length:
                 last_range = length_ranges[-1]
                 if last_range.start == self.max_relevant_length:
-                    by_length_range[length_range.start, length_range.end].add((name, group))
+                    by_length_range[last_range.start, last_range.end].add((name, group))
             else:
                 for length_range in length_ranges:
                     if length in length_range:
