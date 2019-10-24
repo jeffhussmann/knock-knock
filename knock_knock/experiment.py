@@ -580,6 +580,7 @@ class Experiment(object):
 
         diagram = visualize.ReadDiagram(to_plot, self.target_info,
                                         features_to_show=self.target_info.features_to_show,
+                                        max_qual=self.max_qual,
                                         **kwargs)
 
         return diagram
@@ -1457,6 +1458,7 @@ class IlluminaExperiment(Experiment):
 
             diagram = visualize.ReadDiagram(to_plot, self.target_info,
                                             features_to_show=self.target_info.features_to_show,
+                                            max_qual=self.max_qual,
                                             **kwargs)
 
         else:
