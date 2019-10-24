@@ -38,6 +38,7 @@ class TargetInfo():
                  infer_homology_arms=False,
                 ):
         self.name = name
+        self.base_dir = base_dir
         self.dir = Path(base_dir) / 'targets' / name
 
         manifest_fn = self.dir / 'manifest.yaml'
@@ -941,7 +942,6 @@ class TargetInfo():
 
     def expand_degenerate_indel(self, indel):
         return self.degenerate_indels.get(indel, indel)
-
 
     def calculate_microhomology_lengths(self, donor_to_use='homologous', donor_strand='+'):
         def num_matches_at_edge(first, second, relevant_edge):
