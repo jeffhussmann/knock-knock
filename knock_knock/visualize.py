@@ -11,8 +11,6 @@ matplotlib.use('Agg', warn=False)
 import PIL
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.ticker
-import ipywidgets
 import pandas as pd
 
 from hits import utilities, interval, sam, sw
@@ -61,6 +59,8 @@ class ReadDiagram():
                  only_target_and_donor=False,
                  force_left_aligned=False,
                  gap_between_read_pair=5,
+                 width_per_unit=None,
+                 arrow_width=None,
                  **kwargs):
 
         self.parsimonious = parsimonious
@@ -139,15 +139,63 @@ class ReadDiagram():
                 'ref_label': 10,
                 'feature_label': 10,
                 'number': 6,
+                'sequence': 3.5 * self.size_multiple,
+                'title': 16,
             }
+
+            self.target_and_donor_y_gap = 0.03
+            self.initial_alignment_y_offset = 5
+            self.feature_line_width = 0.005
+            self.gap_between_als = 0.003
+            self.label_cut = False
+
+            if self.label_left:
+                self.label_x_offset = -30
+            else:
+                self.label_x_offset = 20
+
         elif self.mode == 'paper':
             self.font_sizes = {
                 'read_label': 18,
-                'ref_label': 14,
+                'ref_label': 18,
                 'feature_label': 14,
                 'number': 8,
+                'sequence': 3.5 * self.size_multiple,
+                'title': 16,
             }
 
+            self.target_and_donor_y_gap = 0.02
+            self.initial_alignment_y_offset = 5
+            self.feature_line_width = 0.005
+            self.gap_between_als = 0.003
+            self.label_cut = True
+
+            if self.label_left:
+                self.label_x_offset = -30
+            else:
+                self.label_x_offset = 20
+
+        elif self.mode == 'compact':
+            self.font_sizes = {
+                'read_label': 10,
+                'ref_label': 16,
+                'feature_label': 12,
+                'number': 8,
+                'sequence': 3.5 * self.size_multiple,
+                'title': 22,
+            }
+
+            self.target_and_donor_y_gap = 0.015
+            self.initial_alignment_y_offset = 3
+            self.feature_line_width = 0.004
+            self.gap_between_als = 0.003
+            self.label_cut = False
+
+            if self.label_left:
+                self.label_x_offset = -5
+            else:
+                self.label_x_offset = 5
+        
         if color_overrides is None:
             color_overrides = {}
         self.color_overrides = color_overrides
@@ -173,24 +221,26 @@ class ReadDiagram():
         else:
             self.R2_query_length = None
 
-        if self.query_length < 750:
-            self.width_per_unit = 0.04
-        elif 750 <= self.query_length < 2000:
-            self.width_per_unit = 0.01
-        else:
-            self.width_per_unit = 0.005
+        if width_per_unit is None:
+            if self.query_length < 750:
+                width_per_unit = 0.04
+            elif 750 <= self.query_length < 2000:
+                width_per_unit = 0.01
+            else:
+                width_per_unit = 0.005
+
+        self.width_per_unit = width_per_unit
 
         self.height_per_unit = 40
 
         if self.ref_centric:
-            self.gap_between_als = 0.003
-
             self.arrow_linewidth = 3
         else:
-            self.gap_between_als = 0.005
             self.arrow_linewidth = 2
 
-        self.arrow_width = self.query_length * 0.01
+        if arrow_width is None:
+            arrow_width = self.query_length * 0.007
+        self.arrow_width = arrow_width
         self.arrow_height_over_width = self.width_per_unit / self.height_per_unit
 
         self.gap_between_read_pair = gap_between_read_pair
@@ -208,11 +258,9 @@ class ReadDiagram():
         if self.label_left:
             self.label_x = 0
             self.label_ha = 'right'
-            self.label_x_offset = -30
         else:
             self.label_x = 1
             self.label_ha = 'left'
-            self.label_x_offset = 20
         
         if self.reverse_complement is None:
             if self.detect_orientation and not all(al.is_unmapped for al in self.alignments):
@@ -321,7 +369,9 @@ class ReadDiagram():
                 rnames_below = [self.target_info.donor]
             else:
                 rnames_below = [self.target_info.target]
-            initial_offset = 5
+
+            initial_offset = self.initial_alignment_y_offset
+
         else:
             rnames_below = []
             initial_offset = 1
@@ -399,9 +449,7 @@ class ReadDiagram():
                     else:
                         kwargs = {'ha': 'left', 'xytext': (2, 0)}
 
-                    draw_numbers = self.draw_edge_numbers or (self.presentation_mode and ('hg19' in ref_name or 'bosTau7' in ref_name))
-
-                    if draw_numbers:
+                    if self.draw_edge_numbers or ref_name not in (self.target_info.target, self.target_info.donor):
                         ax.annotate('{0:,}'.format(r),
                                     xy=(final_x, y),
                                     xycoords='data',
@@ -685,7 +733,7 @@ class ReadDiagram():
         else:
             title = self.title
 
-        ax.set_title(title, y=1.02)
+        ax.set_title(title, y=1.02, size=self.font_sizes['title'])
             
         ax.set_ylim(1.1 * self.min_y, 1.1 * self.max_y)
         ax.set_xlim(self.min_x, self.max_x)
@@ -696,7 +744,10 @@ class ReadDiagram():
         for edge in 'left', 'top', 'right':
             ax.spines[edge].set_color('none')
             
-        if not self.ref_centric:
+        # Set how far tick labels should be from axes
+        if self.draw_sequence:
+            ax.tick_params(length=0, pad=self.font_sizes['sequence'] * 1.5)
+        elif not self.ref_centric:
             ax.tick_params(pad=14)
 
         if self.draw_qualities:
@@ -739,7 +790,7 @@ class ReadDiagram():
         if self.draw_sequence:
             seq = self.alignments[0].get_forward_sequence()
             seq_kwargs = dict(family='monospace',
-                              size=3.5 * self.size_multiple,
+                              size=self.font_sizes['sequence'],
                               ha='center',
                               textcoords='offset points',
                               va='top',
@@ -778,15 +829,14 @@ class ReadDiagram():
             return xs
 
         ti = self.target_info
-        gap = 0.03
         ref_line_width = 0.001
         
         if self.target_on_top:
-            target_y = self.max_y + gap
-            donor_y = self.min_y - gap
+            target_y = self.max_y + self.target_and_donor_y_gap
+            donor_y = self.min_y - self.target_and_donor_y_gap
         else:
-            target_y = self.min_y - gap
-            donor_y = self.max_y + gap
+            target_y = self.min_y - self.target_and_donor_y_gap
+            donor_y = self.max_y + self.target_and_donor_y_gap
 
         params = []
 
@@ -878,6 +928,9 @@ class ReadDiagram():
             if ref_al_max >= ref_end:
                 ref_end = min(ref_edge, ref_al_max + 10)
 
+            if ref_name == ti.donor and ref_edge < 3000:
+                ref_end = ref_edge
+
             if ref_name == ti.target:
                 fade_left = True
                 fade_right = True
@@ -907,9 +960,9 @@ class ReadDiagram():
                 fade_right = False
 
             # If a plasmid donor is being drawn, fade.
-            if ref_name == ti.donor and ti.donor_type == 'plasmid':
-                fade_left = True
-                fade_right = True
+            #if ref_name == ti.donor and ti.donor_type == 'plasmid':
+            #    fade_left = True
+            #    fade_right = True
 
             self.ax.set_xlim(self.min_x, self.max_x)
 
@@ -966,16 +1019,16 @@ class ReadDiagram():
                 
                 xs = adjust_edges([ref_p_to_x(p) for p in [feature.start, feature.end]])
                     
-                feature_line_width = 0.005
                 start = ref_y + np.sign(ref_y) * ref_line_width
-                end = start + np.sign(ref_y) * feature_line_width
+                end = start + np.sign(ref_y) * self.feature_line_width
 
                 bottom = min(start, end)
                 top = max(start, end)
                 self.min_y = min(bottom, self.min_y)
                 self.max_y = max(top, self.max_y)
 
-                if min(xs) >= self.min_x and max(xs) <= self.max_x:
+                # + 0.5 in this check to account for adjust_edges
+                if min(xs) >= self.min_x and max(xs) <= self.max_x + 0.5:
                     self.ax.fill_between(xs, [start] * 2, [end] * 2, color=feature_color, alpha=0.7, linewidth=0)
 
                     name = feature.attribute['ID']
@@ -984,7 +1037,7 @@ class ReadDiagram():
                     self.ax.annotate(label,
                                      xy=(np.mean(xs), end),
                                      xycoords='data',
-                                     xytext=(0, 2 * np.sign(ref_y)),
+                                     xytext=(0, 5 * np.sign(ref_y)),
                                      textcoords='offset points',
                                      va='top' if ref_y < 0 else 'bottom',
                                      ha='center',
@@ -1011,7 +1064,21 @@ class ReadDiagram():
             if ref_name == ti.target:
                 for cut_after in ti.cut_afters.values():
                     cut_after_x = ref_p_to_x(cut_after)
-                    self.ax.plot([cut_after_x, cut_after_x], [ref_y - 0.03 * 0.18, ref_y + 0.03 * 0.18], '--', color='black')
+                    cut_y_bottom = ref_y + np.sign(ref_y) * self.feature_line_width * 1.5
+                    cut_y_top = ref_y - np.sign(ref_y) * self.feature_line_width
+                    self.ax.plot([cut_after_x, cut_after_x], [cut_y_bottom, cut_y_top], '--', color='black')
+
+                    if self.label_cut:
+                        self.ax.annotate('cut site',
+                                        xy=(cut_after_x, cut_y_bottom),
+                                        xycoords='data',
+                                        xytext=(0, 5 * np.sign(ref_y)),
+                                        textcoords='offset points',
+                                        color='black',
+                                        ha='center',
+                                        va='top' if ref_y < 0 else 'bottom',
+                                        size=self.font_sizes['ref_label'],
+                                        )
             
         self.ax.set_ylim(self.min_y - 0.1 * self.height, self.max_y + 0.1 * self.height)
 
