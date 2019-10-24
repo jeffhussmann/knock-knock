@@ -170,6 +170,7 @@ def make_tables(args):
                         fns_to_zip.append(fn)
             
             add_fn(exp.fns['outcome_browser'])
+            add_fn(exp.fns['lengths_figure'])
 
             for outcome in exp.outcomes:
                 outcome_fns = exp.outcome_fns(outcome)
