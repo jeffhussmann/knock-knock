@@ -11,6 +11,15 @@ import tqdm
 
 import knock_knock
 
+
+citation = '''
+Hera Canaj, Jeffrey A. Hussmann, Han Li, Kyle A. Beckman, Leeanne Goodrich,
+Nathan H. Cho1, Yucheng J. Li, Daniel Santos, Aaron McGeever, Veronica Pessino,
+Cindy Huang, Li Gan, Barbara Panning, Bo Huang, Jonathan S. Weissman and
+Manuel D. Leonetti. Deep profiling reveals the complexity of integration
+outcomes in CRISPR knock-in experiments. biorxiv (2019).
+'''
+
 def check_blastn():
     no_blastn = False
 
@@ -218,6 +227,9 @@ def install_example_data(args):
 
     print(f'Example data installed in {str(args.project_directory)}')
 
+def print_citation(args):
+    print(citation)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='knock-knock')
 
@@ -264,6 +276,9 @@ if __name__ == '__main__':
     parser_install_data = subparsers.add_parser('install_example_data', help='install example data into user-specified project directory')
     parser_install_data.add_argument('project_directory', type=Path, help='directory to install example data')
     parser_install_data.set_defaults(func=install_example_data)
+
+    parser_citation = subparsers.add_parser('whos_there', help='print citation information')
+    parser_citation.set_defaults(func=print_citation)
 
     args = parser.parse_args()
     args.func(args)
