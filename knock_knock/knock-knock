@@ -260,25 +260,25 @@ if __name__ == '__main__':
     parser_table.add_argument('--group', help='if specified, the single group name to generate tables for; if not specified, all groups will be generated')
     parser_table.set_defaults(func=make_tables)
 
-    parser_targets = subparsers.add_parser('build_targets', help='build annotations of target locii')
+    parser_targets = subparsers.add_parser('build-targets', help='build annotations of target locii')
     parser_targets.add_argument('project_directory', type=Path, help='the base directory to store input data, reference annotations, and analysis output for a project')
     parser_targets.set_defaults(func=build_targets)
 
-    parser_primers = subparsers.add_parser('design_primers', help='design amplicon primers for sgRNAs')
+    parser_primers = subparsers.add_parser('design-primers', help='design amplicon primers for sgRNAs')
     parser_primers.add_argument('project_directory', type=Path, help='the base directory to store input data, reference annotations, and analysis output for a project')
     parser_primers.set_defaults(func=design_primers)
 
-    parser_indices = subparsers.add_parser('build_indices', help='download a reference genome and build alignment indices')
+    parser_indices = subparsers.add_parser('build-indices', help='download a reference genome and build alignment indices')
     parser_indices.add_argument('project_directory', type=Path, help='the base directory to store input data, reference annotations, and analysis output for a project')
     parser_indices.add_argument('genome_name', help='name of genome to download')
-    parser_indices.add_argument('--num_threads', type=int, default=8, help='number of threads to use for index building')
+    parser_indices.add_argument('--num-threads', type=int, default=8, help='number of threads to use for index building')
     parser_indices.set_defaults(func=build_indices)
 
-    parser_install_data = subparsers.add_parser('install_example_data', help='install example data into user-specified project directory')
+    parser_install_data = subparsers.add_parser('install-example-data', help='install example data into user-specified project directory')
     parser_install_data.add_argument('project_directory', type=Path, help='directory to install example data')
     parser_install_data.set_defaults(func=install_example_data)
 
-    parser_citation = subparsers.add_parser('whos_there', help='print citation information')
+    parser_citation = subparsers.add_parser('whos-there', help='print citation information')
     parser_citation.set_defaults(func=print_citation)
 
     args = parser.parse_args()
