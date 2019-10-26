@@ -5,7 +5,6 @@
 
 ## Installation ![](https://img.shields.io/pypi/pyversions/knock-knock.svg) [![](https://badge.fury.io/py/knock-knock.svg)](https://badge.fury.io/py/knock-knock) ![](https://img.shields.io/conda/vn/bioconda/knock-knock)
 ### conda
-Note: conda installation doesn't work yet
 ```
 conda config --add channels bioconda
 conda config --add channels conda-forge
@@ -169,7 +168,7 @@ As an example, the contents of the `donors.csv` file included with knock-knock's
 name,donor_type,donor_sequence
 BCAP31_GFP11_U,ssDNA,CTACTGCTGTGGGATTTCTGTCCCTTTCCAGGCTG...
 CLTA_GFP11_PCR,PCR,GGGAACCTCTTCTGTAACTCCTTAGCGTCGGTTGGTT...
-pML217_RAB11A-150HA,plasmid,agatttatcagcaataaaccagccagcc...
+pML217_RAB11A-150HA,plasmid,agcccgaccgctgcgccttatccggtaa...
 RAB11A-150HA_PCR_donor,PCR,GCCGGAAATGGCGCAGCGGCAGGGAGGGG...
 ```
 
