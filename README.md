@@ -3,7 +3,8 @@
 `knock-knock` is a tool for exploring, categorizing, and quantifying the sequence outcomes produced by CRISPR knock-in experiments.
 ![](docs/example.png)
 
-## Installation ![](https://img.shields.io/pypi/pyversions/knock-knock.svg) [![](https://badge.fury.io/py/knock-knock.svg)](https://badge.fury.io/py/knock-knock) ![](https://img.shields.io/conda/vn/bioconda/knock-knock)
+## Installation ![](https://img.shields.io/pypi/pyversions/knock-knock.svg) [![](https://badge.fury.io/py/knock-knock.svg)](https://badge.fury.io/py/knock-knock) [![install with bioconda](https://img.shields.io/conda/vn/bioconda/knock-knock)](http://bioconda.github.io/recipes/knock-knock/README.html)
+
 ### conda
 ```
 conda config --add channels bioconda
@@ -32,7 +33,7 @@ Each read is then categorized by identifying a parsimonious subset of local alig
 `knock-knock` supports Pacbio CCS data for longer (\~thousands of nts) amplicons and paired-end Illumina data for shorter (\~hundreds of nts) amplicons.
 
 ## Visualization
-`knock-knock` provides a few ways to interactively explore the different types of alignment architectures produced by each experiment. 
+`knock-knock` provides a few ways to interactively explore the different types of alignment architectures produced by each experiment. [visualization](docs/visualization.md)
 
 ### Summary table
 ![](docs/table_demo.gif)
