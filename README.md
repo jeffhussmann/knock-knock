@@ -43,6 +43,13 @@ Each read is then categorized by identifying a parsimonious subset of local alig
 
 ## Getting started
 
+This tutorial will walk you through the process of using knock-knock to analyze amplicon sequencing data of an editing experiment, broken down into five steps:
+1. [Obtain reference genomes and build alignment indices from them](#Obtaining-reference-sequences-and-building-indices)
+2. [Provide information about the genomic locii targeted for editing and HDR donor sequences](#Specifying-targets)
+3. [Fill out sample sheets associating each sample with sequencing data files and an editing strategy](#Sample-sheets)
+4. [Process data to generate alignments and classify outcomes](#Processing-samples)
+5. [Generate summary tables and visualizations](#Generating-tables)
+
 The first step in using knock-knock is to create a project directory that will hold all input data, references sequences, and analysis output for a given project.
 
 Every time knock-knock is run, this directory is given as a command line argument to tell knock-knock which project to analyze.
@@ -236,6 +243,8 @@ run
 ```
 knock-knock parallel PROJECT_DIR MAX_PROCS --group EXAMPLE_GROUP
 ```
+
+### Generating tables
 
 After experiments have been processed, generate tables summarizing the frequencies of different read architectures in each sample by running
 
