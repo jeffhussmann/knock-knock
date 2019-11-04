@@ -3,14 +3,12 @@
 import argparse
 import subprocess
 import sys
-import zipfile
 from pathlib import Path
 
 import yaml
 import tqdm
 
 import knock_knock
-
 
 citation = '''
 Hera Canaj, Jeffrey A. Hussmann, Han Li, Kyle A. Beckman, Leeanne Goodrich,
@@ -130,72 +128,7 @@ def make_tables(args):
 
         conditions = {'group': group}
 
-        fns_to_zip = []
-
-        print('Generating high-level html table...')
-        html_fn = (results_dir / group).with_suffix('.html')
-        table.generate_html(args.project_directory, html_fn, conditions, show_details=False)
-        fns_to_zip.append(html_fn)
-
-        print('Generating detailed html table...')
-        html_fn = (results_dir / f'{group}_with_details').with_suffix('.html')
-        table.generate_html(args.project_directory, html_fn, conditions, show_details=True)
-        fns_to_zip.append(html_fn)
-
-        print('Generating csv table...')
-        csv_fn = (results_dir / group).with_suffix('.csv')
-        df = table.load_counts(args.project_directory, conditions, exclude_empty=False).T
-        df.to_csv(csv_fn)
-        fns_to_zip.append(csv_fn)
-        
-        print('Generating performance metrics...')
-        pms_fn = (results_dir / f'{group}_performance_metrics').with_suffix('.csv')
-        pms = table.calculate_performance_metrics(args.project_directory, conditions)
-        pms.to_csv(pms_fn)
-        fns_to_zip.append(pms_fn)
-
-        exps = experiment.get_all_experiments(args.project_directory, conditions)
-
-        exps_missing_files = set()
-
-        for exp in exps:
-            def add_fn(fn):
-                if not fn.exists():
-                    exps_missing_files.add((exp.group, exp.name))
-                else:
-                    if fn.is_dir():
-                        for child_fn in fn.iterdir():
-                            fns_to_zip.append(child_fn)
-                    else:
-                        fns_to_zip.append(fn)
-            
-            add_fn(exp.fns['outcome_browser'])
-            add_fn(exp.fns['lengths_figure'])
-
-            for outcome in exp.outcomes:
-                outcome_fns = exp.outcome_fns(outcome)
-                add_fn(outcome_fns['diagrams_html'])
-                add_fn(outcome_fns['first_example'])
-                add_fn(outcome_fns['length_ranges_dir'])
-
-            categories = set(c for c, s in exp.outcomes)
-            for category in categories:
-                outcome_fns = exp.outcome_fns(category)
-                add_fn(outcome_fns['diagrams_html'])
-                add_fn(outcome_fns['first_example'])
-
-        if exps_missing_files:
-            print(f'Warning: {len(exps_missing_files)} experiment(s) are missing output files:')
-            for group, exp_name in sorted(exps_missing_files):
-                print(f'\t{group} {exp_name}')
-
-        zip_fn = (results_dir / group).with_suffix('.zip')
-        archive_base = Path(group)
-        with zipfile.ZipFile(zip_fn, mode='w', compression=zipfile.ZIP_DEFLATED) as zip_fh:
-            description = 'Zipping table files'
-            for fn in tqdm.tqdm(fns_to_zip, desc=description):
-                arcname = archive_base / fn.relative_to(results_dir)
-                zip_fh.write(fn, arcname=arcname)
+        table.make_self_contained_zip(args.project_directory, conditions, group)
 
 def build_targets(args):
     from knock_knock import build_targets

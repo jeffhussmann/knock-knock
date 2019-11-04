@@ -13,7 +13,7 @@
 
 {%- if "widgets" in nb.metadata -%}
 <script src="https://unpkg.com/jupyter-js-widgets@2.0.*/dist/embed.js"></script>
-{%- endif-%}
+{%- endif -%}
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.1.10/require.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
@@ -117,9 +117,12 @@ div#notebook-container{
         // Make links to outcome browser htmls.
         $(".row_heading.level1").html(function() {
             contents = $( this ).text();
-            console.log(contents);
             new_name = contents.split("/")[1];
+            {% if nb.metadata['include_images'] %}
             return "<a href='" + contents + "/outcome_browser.html' target='_blank'>" + new_name + "</a>";
+            {% else %}
+            return new_name;
+            {% endif %}
         });
     });
 </script>

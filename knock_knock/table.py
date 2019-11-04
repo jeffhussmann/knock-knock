@@ -1,13 +1,16 @@
+import base64
 import functools
 import io
-import base64
 import os
+import zipfile
+
 from pathlib import Path
 
 import pandas as pd
 import nbconvert
 import nbformat.v4 as nbf
 import PIL
+import tqdm
 
 from . import experiment
 from . import svg
@@ -155,6 +158,15 @@ link_without_modal_template = '''\
     {text}
 </a>
 '''
+
+bare_link_template = '''\
+<a 
+    style="text-decoration:none; color:black"
+>
+    {text}
+</a>
+'''
+
 modal_template = '''\
 <div class="modal" tabindex="-1" id="{modal_id}" role="dialog">
     <div class="modal-dialog" style="width:90%; margin:auto">
@@ -191,6 +203,7 @@ class ModalMaker(object):
         
 def make_table(base_dir,
                conditions=None,
+               include_images=True,
                inline_images=False,
                show_details=True,
               ):
@@ -230,37 +243,11 @@ def make_table(base_dir,
             if outcome == totals_row_label or outcome == totals_row_label_collapsed:
                 text = '{:,}'.format(val)
 
-                hover_image_fn = exp.fns['lengths_figure']
+                if include_images:
+                    hover_image_fn = exp.fns['lengths_figure']
 
-                relative_path = hover_image_fn.relative_to(exp.base_dir / 'results')
-
-                hover_URI = str(relative_path)
-                if hover_image_fn.exists():
-                    with PIL.Image.open(hover_image_fn) as im:
-                        width, height = im.size
-                        width = width * 0.75
-                        height = height * 0.75
-                else:
-                    width, height = 100, 100
-
-                link = link_without_modal_template.format(text=text,
-                                                            URI=hover_URI,
-                                                            width=width,
-                                                            height=height,
-                                                            )
-
-                html = link
-
-            else:
-                text = '{:.2%}'.format(fraction)
-
-                hover_image_fn = exp.outcome_fns(outcome)['first_example']
-                click_html_fn = exp.outcome_fns(outcome)['diagrams_html']
-                
-                if inline_images:
-                    hover_URI, width, height = fn_to_URI(hover_image_fn)
-                else:
                     relative_path = hover_image_fn.relative_to(exp.base_dir / 'results')
+
                     hover_URI = str(relative_path)
                     if hover_image_fn.exists():
                         with PIL.Image.open(hover_image_fn) as im:
@@ -270,18 +257,53 @@ def make_table(base_dir,
                     else:
                         width, height = 100, 100
 
-                relative_path = click_html_fn.relative_to(exp.base_dir / 'results')
+                    link = link_without_modal_template.format(text=text,
+                                                             URI=hover_URI,
+                                                             width=width,
+                                                             height=height,
+                                                            )
+                else:
+                    link = bare_link_template.format(text=text)
 
-                modal_div, modal_id = modal_maker.make_outcome()
 
-                link = link_template.format(text=text,
-                                            modal_id=modal_id,
-                                            iframe_URL=relative_path,
-                                            URI=hover_URI,
-                                            width=width,
-                                            height=height,
-                                            URL=str(relative_path),
-                                           )
+                html = link
+
+            else:
+                text = '{:.2%}'.format(fraction)
+
+                if include_images:
+                    hover_image_fn = exp.outcome_fns(outcome)['first_example']
+                    click_html_fn = exp.outcome_fns(outcome)['diagrams_html']
+                    
+                    if inline_images:
+                        hover_URI, width, height = fn_to_URI(hover_image_fn)
+                    else:
+                        relative_path = hover_image_fn.relative_to(exp.base_dir / 'results')
+                        hover_URI = str(relative_path)
+                        if hover_image_fn.exists():
+                            with PIL.Image.open(hover_image_fn) as im:
+                                width, height = im.size
+                                width = width * 0.75
+                                height = height * 0.75
+                        else:
+                            width, height = 100, 100
+
+                    relative_path = click_html_fn.relative_to(exp.base_dir / 'results')
+
+                    modal_div, modal_id = modal_maker.make_outcome()
+
+                    link = link_template.format(text=text,
+                                                modal_id=modal_id,
+                                                iframe_URL=relative_path,
+                                                URI=hover_URI,
+                                                width=width,
+                                                height=height,
+                                                URL=str(relative_path),
+                                               )
+                else:
+                    link = bare_link_template.format(text=text)
+                    modal_div = ''
+
                 html = link + modal_div
 
         return html
@@ -318,19 +340,22 @@ def make_table(base_dir,
     
     return styled
 
-def generate_html(base_dir, fn, conditions=None, show_details=True):
+def generate_html(base_dir, fn, conditions=None, show_details=True, include_images=True):
     nb = nbf.new_notebook()
 
     cell_contents = f'''\
 import knock_knock.table
 
 conditions = {conditions}
-knock_knock.table.make_table('{base_dir}', conditions, show_details={show_details})
+knock_knock.table.make_table('{base_dir}', conditions, show_details={show_details}, include_images={include_images})
 '''
     
     nb['cells'] = [nbf.new_code_cell(cell_contents)]
 
-    nb['metadata'] = {'title': str(fn.name)}
+    nb['metadata'] = {
+        'title': str(fn.name),
+        'include_images': include_images,
+    }
 
     exporter = nbconvert.HTMLExporter(exclude_input=True, exclude_output_prompt=True)
     template_path = Path(os.path.realpath(__file__)).parent / 'modal_template.tpl'
@@ -342,3 +367,75 @@ knock_knock.table.make_table('{base_dir}', conditions, show_details={show_detail
     body, resources = exporter.from_notebook_node(nb)
     with open(fn, 'w') as fh:
         fh.write(body)
+
+def make_self_contained_zip(base_dir, conditions, table_name, include_images=True):
+    base_dir = Path(base_dir)
+    results_dir = base_dir / 'results'
+    fn_prefix = results_dir / table_name
+    fns_to_zip = []
+
+    print('Generating high-level html table...')
+    html_fn = fn_prefix.with_suffix('.html')
+    generate_html(base_dir, html_fn, conditions, show_details=False, include_images=include_images)
+    fns_to_zip.append(html_fn)
+
+    print('Generating detailed html table...')
+    html_fn = fn_prefix.parent / (f'{fn_prefix.name}_with_details.html')
+    generate_html(base_dir, html_fn, conditions, show_details=True, include_images=include_images)
+    fns_to_zip.append(html_fn)
+
+    print('Generating csv table...')
+    csv_fn = fn_prefix.with_suffix('.csv')
+    df = load_counts(base_dir, conditions, exclude_empty=False).T
+    df.to_csv(csv_fn)
+    fns_to_zip.append(csv_fn)
+    
+    print('Generating performance metrics...')
+    pms_fn = fn_prefix.parent / (f'{fn_prefix.name}_performance_metics.csv')
+    pms = calculate_performance_metrics(base_dir, conditions)
+    pms.to_csv(pms_fn)
+    fns_to_zip.append(pms_fn)
+
+    exps = experiment.get_all_experiments(base_dir, conditions)
+
+    exps_missing_files = set()
+
+    if include_images:
+        for exp in exps:
+            def add_fn(fn):
+                if not fn.exists():
+                    exps_missing_files.add((exp.group, exp.name))
+                else:
+                    if fn.is_dir():
+                        for child_fn in fn.iterdir():
+                            fns_to_zip.append(child_fn)
+                    else:
+                        fns_to_zip.append(fn)
+            
+            add_fn(exp.fns['outcome_browser'])
+            add_fn(exp.fns['lengths_figure'])
+
+            for outcome in exp.outcomes:
+                outcome_fns = exp.outcome_fns(outcome)
+                add_fn(outcome_fns['diagrams_html'])
+                add_fn(outcome_fns['first_example'])
+                add_fn(outcome_fns['length_ranges_dir'])
+
+            categories = set(c for c, s in exp.outcomes)
+            for category in categories:
+                outcome_fns = exp.outcome_fns(category)
+                add_fn(outcome_fns['diagrams_html'])
+                add_fn(outcome_fns['first_example'])
+
+    if exps_missing_files:
+        print(f'Warning: {len(exps_missing_files)} experiment(s) are missing output files:')
+        for group, exp_name in sorted(exps_missing_files):
+            print(f'\t{group} {exp_name}')
+
+    zip_fn = fn_prefix.with_suffix('.zip')
+    archive_base = Path(fn_prefix.name)
+    with zipfile.ZipFile(zip_fn, mode='w', compression=zipfile.ZIP_DEFLATED) as zip_fh:
+        description = 'Zipping table files'
+        for fn in tqdm.tqdm(fns_to_zip, desc=description):
+            arcname = archive_base / fn.relative_to(results_dir)
+            zip_fh.write(fn, arcname=arcname)
