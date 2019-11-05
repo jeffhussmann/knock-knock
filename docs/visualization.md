@@ -1,9 +1,9 @@
 # Alignment diagrams
 
-knock-knock's output is centered around diagrams representing the architecture of local alignments that make up each amplicon sequencing read, like this:
+knock-knock's output is centered around diagrams representing the architecture of local alignments that make up each amplicon sequencing read.
+Here is an example diagram showing a Pacbio sequencing read of an editing outcome in which the genomic locus has been modified by knock-in of two concatenated copies of the intended PCR-product HDR donor, with a clean handoff from genomic sequence to donor sequence at homology arms on each side of the cut:
 ![](legend_v2_unannotated.png)
 
-This particular diagram shows a Pacbio sequencing read of an editing outcome in which the genomic locus has been modified by knock-in of two concatenated copies of the intended PCR-product HDR donor, with a clean handoff from genomic sequence to donor sequence at homology arms on each side of the cut.
 To understand how this diagram represents this information, here is the same diagram again with some overlaid explanations:
 
 ![](legend_v2_annotated.png)
@@ -21,7 +21,7 @@ Crosses at low-quality read positions are faded.
 1. Numbers next to alignment ends indicate position in relevant reference sequence.
 1. The cut site is marked by a vertical dashed line.
     
-Here is a different diagram, this time of an Illumina sequencing read of an editing outcome in which a portion of an ssDNA HDR donor has been inserted at the cut site in the opposite orientation of the intended outcome:
+To demonstrate additional features not present in the above example, here is a different diagram, this time of an Illumina sequencing read of an editing outcome in which a portion of an ssDNA HDR donor has been inserted at the cut site in the opposite orientation of the intended outcome:
 
 ![](legend_v2_reverse.png)
 
@@ -57,21 +57,24 @@ Click outside the window or press Esc to return to the main table.
 
 Click the name of a sample to open an [outcome browser](#Browser) for that sample in a new tab.
 
-## Browser
+## Length distribution browser
 
-Click a bracket to open a new panel zooming in on that frequency range. Clicking an already-open bracket closes it (and all panels below it).
+To further explore the diversity of sequence archictures present within each category, knock-knock produces interactive plots showing the distribution of amplicon lengths for each category, with the ability to pop up an example diagram for each observed length.
+These plots initially have a single panel that is maximally zoomed out on the y-axis.
+To see what is happening at lower frequency ranges, click on the bracket in the lower right corner to pop up a panel that zooms in on the bracketed range of the y-axis. 
+(Repeat in the newly-created panel to zoom even further in.)
+Clicking an already-open bracket closes it (and all panels below it).
 
 ![](browser_zoom_demo.gif)
 
-Click the colored line next to an outcome category in the legend to focus on the category.
-This will highlight that outcome in the plot and make it so that hovering over lengths at which that outcome is observed pops up a diagram with an example of that outcome at that length.
+To explore the outcomes that make up a particular outcome cateogry, click the colored line next to the outcome category in the legend of the appropriately-zoomed panel.
+This will highlight that category in the plot, and dim all other categories.
+Once highlighted, hovering over lengths at which that category is observed pops up a diagram with an example of that outcome at that length.
 
 ![](browser_popovers_demo.gif)
 
-
 Although knock-knock was designed to analyze knock-in experiments, it can also be useful for exploring editing outcomes in other settings.
 As an example, here is data from an experiment in which a gene was cut with three guides within a few hundred nts of each other (vertical dashed lines in the single example outcome below) to drive efficient disruption of gene function by producing excision of the sequence between the cuts.
-The 
 
 ![](no_donor_example.png)
 
