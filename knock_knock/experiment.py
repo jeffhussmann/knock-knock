@@ -833,11 +833,12 @@ class Experiment(object):
         y_maxes = []
 
         listed_order = sorted(outcome_lengths, key=self.layout_module.order)
-        high_enough_to_show = []
 
         non_highlight_color = 'grey'
 
         for panel_i, (ax, (y_max, group)) in enumerate(zip(axs, panel_groups)):
+            high_enough_to_show = []
+
             for outcome in listed_order:
                 lengths = outcome_lengths[outcome]
                 total_fraction = lengths.sum() / self.total_reads
@@ -885,7 +886,7 @@ class Experiment(object):
                                    zorder=100,
                                   )
 
-            legend_cols = int(np.ceil(len(listed_order) / 18))
+            legend_cols = int(np.ceil(len(high_enough_to_show) / 18))
 
             legend = ax.legend(bbox_to_anchor=(1.05, 1),
                                loc='upper left',
