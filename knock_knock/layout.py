@@ -108,24 +108,23 @@ class Layout(object):
     def comprehensively_split_alignment(self, al):
         # It is easier to reason about alignments if any that contain long insertions, long deletions, or clusters
         # of many edits are split into multiple alignments.
-        split_at_dels = sam.split_at_deletions(al, self.indel_size_to_split_at)
+        if self.mode == 'illumina':
+            split_at_clusters = split_at_edit_clusters(al, self.target_info)
+        else:
+            # Empirically, for Pacbio data, it is hard to find a threshold for number of edits within a window that
+            # doesn't produce a lot of false positive splits.
+            split_at_clusters = [al]
+
+        split_at_dels = []
+        for split_al in split_at_clusters:
+            split_at_dels.extend(sam.split_at_deletions(split_al, self.indel_size_to_split_at))
 
         split_at_indels = []
         for split_al in split_at_dels:
             split_at_ins = sam.split_at_large_insertions(split_al, self.indel_size_to_split_at)
             split_at_indels.extend(split_at_ins)
 
-        if self.mode == 'illumina':
-            final_split = []
-            for split_al in split_at_indels:
-                split_at_clusters = split_at_edit_clusters(split_al, self.target_info)
-                final_split.extend(split_at_clusters)
-        else:
-            # Empirically, for Pacbio data, it is hard to find a threshold for number of edits within a window that
-            # doesn't produce a lot of false positive splits.
-            final_split = split_at_indels
-
-        return final_split
+        return split_at_indels
 
     @memoized_property
     def nonhomologous_donor_alignments(self):
@@ -266,6 +265,11 @@ class Layout(object):
                 category = 'HDR'
                 subcategory = 'HDR'
                 self.relevant_alignments = self.parsimonious_and_gap_alignments
+            elif self.gap_covered_by_target_alignment:
+                category = 'complex indel'
+                subcategory = 'templated insertion'
+                details = 'n/a'
+                self.relevant_alignments = self.templated_insertion_relevant_alignments
             else:
                 subcategory = f'5\' {self.junction_summary_per_side[5]}, 3\' {self.junction_summary_per_side[3]}'
                 if 'blunt' in junctions:
@@ -274,12 +278,7 @@ class Layout(object):
                     category = 'incomplete HDR'
                     details = str(self.donor_microhomology)
                 else:
-                    if self.gap_covered_by_target_alignment:
-                        category = 'complex indel'
-                        subcategory = 'templated insertion'
-                        details = 'n/a'
-                    else:
-                        category = 'complex misintegration'
+                    category = 'complex misintegration'
 
                 self.relevant_alignments = self.uncategorized_relevant_alignments
         
@@ -288,7 +287,7 @@ class Layout(object):
             category = 'complex indel'
             subcategory = 'templated insertion'
             details = 'n/a'
-            self.relevant_alignments = self.parsimonious_and_gap_alignments
+            self.relevant_alignments = self.templated_insertion_relevant_alignments
 
         elif self.integration_interval.total_length <= 5:
             if self.target_to_at_least_cut[5] and self.target_to_at_least_cut[3]:
@@ -590,9 +589,13 @@ class Layout(object):
         return gap_als
 
     @memoized_property
-    def gap_covered_by_target_alignment(self):
+    def all_target_gap_alignments(self):
         all_gap_als = self.gap_alignments + self.possibly_imperfect_gap_alignments
-        return any(al.reference_name == self.target_info.target for al in all_gap_als)
+        return [al for al in all_gap_als if al.reference_name == self.target_info.target]
+
+    @memoized_property
+    def gap_covered_by_target_alignment(self):
+        return len(self.all_target_gap_alignments) > 0
 
     @memoized_property
     def extra_copy_of_primer(self):
@@ -1619,6 +1622,10 @@ class Layout(object):
             final = self.unmapped_alignemnts
 
         return final
+
+    @memoized_property
+    def templated_insertion_relevant_alignments(self):
+        return sam.make_nonredundant(interval.make_parsimonious(self.parsimonious_target_alignments + self.all_target_gap_alignments))
 
     def junction_microhomology(self, first_al, second_al):
         als_by_order = {
