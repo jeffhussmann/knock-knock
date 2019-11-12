@@ -1875,7 +1875,7 @@ def load_sample_sheet_from_csv(csv_fn):
     csv_fn = Path(csv_fn)
 
     # Note: can't include comment='#' because of '#' in hex color specifications.
-    df = pd.read_csv(csv_fn, index_col='sample').replace({np.nan: None})
+    df = pd.read_csv(csv_fn, index_col='sample', dtype={'figures': str}).replace({np.nan: None})
     if not df.index.is_unique:
         print(f'Error parsing sample sheet {csv_fn}')
         print(f'Sample names are not unique:')
@@ -1919,12 +1919,23 @@ def get_all_experiments(base_dir, conditions=None, as_dictionary=False, progress
 
     def check_conditions(exp):
         for k, v in conditions.items():
-            if isinstance(v, (list, tuple, set)):
-                if exp.description.get(k) not in v:
-                    return False
+            if not isinstance(v, (list, tuple, set)):
+                vs = [v]
             else:
-                if exp.description.get(k) != v:
-                    return False
+                vs = v
+
+            exp_value = exp.description.get(k)
+            if exp_value is None:
+                exp_values = []
+            else:
+                if isinstance(exp_value, str):
+                    exp_values = exp_value.split(';')
+                else:
+                    exp_values = [exp_value]
+
+            if not any(exp_value in v for exp_value in exp_values):
+                return False
+
         return True
 
     exps = []
