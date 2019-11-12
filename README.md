@@ -33,22 +33,25 @@ Each read is then categorized by identifying a parsimonious subset of local alig
 `knock-knock` supports Pacbio CCS data for longer (\~thousands of nts) amplicons and paired-end Illumina data for shorter (\~hundreds of nts) amplicons.
 
 ## Visualization
-`knock-knock` provides a few ways to interactively explore the different types of alignment architectures produced by each experiment. [visualization](docs/visualization.md)
+`knock-knock` provides a few ways to interactively explore the different types of alignment architectures produced by each experiment. Click [here](docs/visualization.md) for a guided tour, or [here](https://jeffhussmann.github.io/knock-knock_demo/illumina.html) for a small live demo.
 
 ### Summary table
-![](docs/table_demo.gif)
+![](docs/table_diagrams_demo.gif)
 
 ### Outcome-stratified amplicon length distributions
 ![](docs/lengths_demo.gif)
 
 ## Getting started
 
-This tutorial will walk you through the process of using knock-knock to analyze amplicon sequencing data of an editing experiment, broken down into five steps:
+This tutorial will walk you through the process of using knock-knock to analyze amplicon sequencing data of an editing experiment, broken down into six steps:
+1. [Setting up a project directory](#Setting-up-a-project-directory)
 1. [Obtain reference genomes and build alignment indices from them](#Obtaining-reference-sequences-and-building-indices)
-2. [Provide information about the genomic locii targeted for editing and HDR donor sequences](#Specifying-targets)
-3. [Fill out sample sheets associating each sample with sequencing data files and an editing strategy](#Sample-sheets)
-4. [Process data to generate alignments and classify outcomes](#Processing-samples)
-5. [Generate summary tables and visualizations](#Generating-tables)
+1. [Provide information about the genomic locii targeted for editing and HDR donor sequences](#Specifying-targets)
+1. [Fill out sample sheets associating each sample with sequencing data files and an editing strategy](#Sample-sheets)
+1. [Process data to generate alignments and classify outcomes](#Processing-samples)
+1. [Generate summary tables and visualizations](#Generating-tables)
+
+### Setting up a project directory
 
 The first step in using knock-knock is to create a project directory that will hold all input data, references sequences, and analysis output for a given project.
 
