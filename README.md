@@ -36,7 +36,7 @@ Each read is then categorized by identifying a parsimonious subset of local alig
 `knock-knock` provides a few ways to interactively explore the different types of alignment architectures produced by each experiment. Click [here](docs/visualization.md) for a guided tour, or [here](https://jeffhussmann.github.io/knock-knock_demo/illumina.html) for a small live demo.
 
 ### Summary table
-![](docs/table_diagrams_demo.gif)
+![](docs/table_demo.gif)
 
 ### Outcome-stratified amplicon length distributions
 ![](docs/lengths_demo.gif)
