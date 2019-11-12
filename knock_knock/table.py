@@ -343,14 +343,23 @@ def make_table(base_dir,
 def generate_html(base_dir, fn, conditions=None, show_details=True, include_images=True):
     nb = nbf.new_notebook()
 
-    cell_contents = f'''\
+    documentation_cell_contents = f'''\
+<a href="https://github.com/jeffhussmann/knock-knock/blob/master/docs/visualization.md#interactive-exploration-of-outcomes" target="_blank">How to use this table</a>
+
+<a href="https://github.com/jeffhussmann/knock-knock/blob/master/docs/visualization.md" target="_blank">How to interpret read diagrams</a>
+'''
+
+    table_cell_contents = f'''\
 import knock_knock.table
 
 conditions = {conditions}
 knock_knock.table.make_table('{base_dir}', conditions, show_details={show_details}, include_images={include_images})
 '''
     
-    nb['cells'] = [nbf.new_code_cell(cell_contents)]
+    nb['cells'] = [
+        nbf.new_markdown_cell(documentation_cell_contents),
+        nbf.new_code_cell(table_cell_contents),
+    ]
 
     nb['metadata'] = {
         'title': str(fn.name),
