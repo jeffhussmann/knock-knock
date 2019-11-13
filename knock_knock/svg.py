@@ -290,9 +290,8 @@ def decorate_outcome_browser(exp):
     def decorate_with_help_toggle(group):
         path = group.find(f'{{{default_namespace}}}path', namespaces)
         if path is None:
+            # The question mark is deeper in the element tree.
             path = group.find(f'{{{default_namespace}}}g', namespaces)
-            #group = group.find(f'{{{default_namespace}}}g', namespaces).find(f'{{{default_namespace}}}use', namespaces)
-            #path = group.find(f'{{{default_namespace}}}path', namespaces)
         
         attrib = {
             f'{{{xlink_namespace}}}href': toggle_help,

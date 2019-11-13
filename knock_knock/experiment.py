@@ -984,7 +984,8 @@ class Experiment(object):
                         clip_on=False,
                         color='black',
                         linewidth=3,
-                        )
+                        gid=f'zoom_toggle_{which}_{panel_i}',
+                       )
 
                 ax.fill([start, end, end, start],
                         [y, y, 0, 0],
@@ -996,9 +997,9 @@ class Experiment(object):
 
                 if which == 'top' and panel_i in [0, 1]:
                     if panel_i == 0:
-                        bracket_message = 'Click inside these brackets to explore lower-frequency outcomes\nby zooming in on the bracketed range. Click again to close.'
+                        bracket_message = 'Click this bracket to explore lower-frequency outcomes\nby zooming in on the bracketed range. Click again to close.'
                     else:
-                        bracket_message = 'Click inside these brackets to zoom in further.'
+                        bracket_message = 'Click this bracket to zoom in further.'
 
                     ax.annotate(bracket_message,
                                 xy=(end, y / 2),
