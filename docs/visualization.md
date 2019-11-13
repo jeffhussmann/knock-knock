@@ -40,7 +40,7 @@ In another Pacbio read, a stretch of human genomic DNA not originating from the 
 ## Tables
 
 knock-knock generates interactive tables of outcomes frequencies showing how often each different outcome category (column) was observed in each experimental sample (row).
-Hover over the percentage in a cell pops up a diagram to see an example of that outcome category in that sample.
+Hoverving over the percentage in a cell pops up a diagram to see an example of that outcome category in that sample.
 
 ![](table_diagrams_demo.gif)
 
