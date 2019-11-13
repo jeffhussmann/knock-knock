@@ -40,15 +40,15 @@ In another Pacbio read, a stretch of human genomic DNA not originating from the 
 ## Tables
 
 knock-knock generates interactive tables of outcomes frequencies showing how often each different outcome category (column) was observed in each experimental sample (row).
-Hoverving over the percentage in a cell pops up a diagram to see an example of that outcome category in that sample.
+Hovering over the percentage in a cell pops up an example diagram of that outcome category from that sample.
 
 ![](table_diagrams_demo.gif)
 
-Hover over numbers in the 'Total relevant reads' column to see the distribution of amplicon read lengths in each sample.
+Hovering over numbers in the 'Total relevant reads' column pops up a plot of the distribution of amplicon read lengths in that sample.
 
 ![](table_lengths_demo.gif)
 
-Clicking on the percentage in a cell to brings up a window with more information about occurences of that outcome in that sample.
+Clicking on the percentage in a cell brings up a window with more information about occurences of that outcome in that sample.
 At the top of the window, a plot shows how the distribution of amplicon lengths for that outcome compare to all other reads in the sample.
 Scroll down to see diagrams of more example reads.
 Click outside the window or press Esc to return to the main table.
@@ -79,6 +79,6 @@ As an example, here is data from an experiment in which a gene was cut with thre
 ![](no_donor_example.png)
 
 Exploring the distribution of amplicon lengths produced by this strategy reveals three major peaks consisting of exicsion between the first and second, second and third, or first and third cut sites.
-Tails of slightly shorter outcomes off of each peak consist of outcomes in which an excisions between two cuts is accompanied by a deletion at the remaining cut.
+Tails of slightly shorter outcomes beneath each peak consist of outcomes in which an excisions between two cuts is accompanied by a deletion at the remaining cut.
 
 ![](browser_no_donor_demo.gif)

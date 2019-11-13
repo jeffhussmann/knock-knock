@@ -33,7 +33,7 @@ Each read is then categorized by identifying a parsimonious subset of local alig
 `knock-knock` supports Pacbio CCS data for longer (\~thousands of nts) amplicons and paired-end Illumina data for shorter (\~hundreds of nts) amplicons.
 
 ## Visualization
-`knock-knock` provides a few ways to interactively explore the different types of alignment architectures produced by each experiment. Click [here](docs/visualization.md) for a guided tour, or [here](https://jeffhussmann.github.io/knock-knock_demo/illumina.html) for a small live demo.
+`knock-knock` provides a few ways to interactively explore the different types of alignment architectures produced by each experiment. Click [here](docs/visualization.md) for a guided tour, or [here](https://jeffhussmann.github.io/knock-knock_demo/) for a small live demo.
 
 ### Summary table
 ![](docs/table_demo.gif)
@@ -255,4 +255,4 @@ After experiments have been processed, generate tables summarizing the frequenci
 knock-knock table BASE_DIR
 ```
 
-which will create `PROJECT_DIR/results/EXAMPLE_GROUP.html`
+which will create `PROJECT_DIR/results/EXAMPLE_GROUP.html`. See [here](docs/visualization.md#Tables) for an explanation of these tables.
