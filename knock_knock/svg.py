@@ -103,22 +103,57 @@ javascript:(function(){{
 
     $next_ax = $('#axes_' + ({panel_i} + 1 + 1));
     $next_lines = $('[id^=zoom_dotted_line_' + {panel_i} + ']');
+    $next_text = $('#help_message_bracket_' + ({panel_i} + 1 + 1));
 
     if ($next_ax.css('visibility') == 'hidden') {{
         $next_ax.css('visibility', 'visible');
         $next_lines.css('visibility', 'visible');
+        if ($('#help_message_bracket_1').css('visibility') == 'visible') {{
+            $next_text.css('visibility', 'visible');
+        }}
     }} else {{
         $next_ax.css('visibility', 'hidden');
         $next_lines.css('visibility', 'hidden');
+        $next_text.css('visibility', 'hidden');
     }};
 
     for (i = {panel_i} + 1 + 1; i < {num_panels}; i++) {{
         $ax = $('#axes_' + (i + 1));
         $lines = $('[id^=zoom_dotted_line_' + (i - 1) + ']');
+        $text = $('#help_message_bracket_' + (i + 1));
         $ax.css('visibility', 'hidden');
         $lines.css('visibility', 'hidden');
+        $text.css('visibility', 'hidden');
     }};
 }} )();'''.format
+
+toggle_help = '''\
+javascript:(function(){
+    $button = $('#help_toggle path');
+    if ($button.css('opacity') ==  0.2) {
+        $button.css('opacity', 0.5);
+    } else {
+        $button.css('opacity', 0.2);
+    }
+
+    $('[id^=help_message_bracket]').each(function() {
+        if ($(this).css('visibility') == 'hidden') {
+            $ax = $('#axes_' + $(this).attr('id').substr(-1));
+            if ($ax.css('visibility') == 'visible') {
+                $(this).css('visibility', 'visible');
+            }
+        } else {
+            $(this).css('visibility', 'hidden');
+        }
+    });
+    $('[id^=help_message_legend]').each(function() {
+        if ($(this).css('visibility') == 'hidden') {
+            $(this).css('visibility', 'visible');
+        } else {
+            $(this).css('visibility', 'hidden');
+        }
+    });
+} )();'''
 
 def decorate_outcome_browser(exp):
     fig = exp.plot_outcome_stratified_lengths()
@@ -153,6 +188,7 @@ def decorate_outcome_browser(exp):
         'length_range': [],
         'outcome': [],
         'zoom_toggle_top': [],
+        'help_toggle': [],
     }
 
     for element in d.iter(f'{{{default_namespace}}}g'):
@@ -163,10 +199,11 @@ def decorate_outcome_browser(exp):
                 if panel_i > 0:
                     element.attrib['style'] = 'visibility: hidden'
             
-            match = re.match('zoom_dotted_line', element.attrib['id'])
-            if match:
-                element.attrib['style'] = 'visibility: hidden'
-
+            for pattern in ['zoom_dotted_line', 'help_message']:
+                match = re.match(pattern, element.attrib['id'])
+                if match:
+                    element.attrib['style'] = 'visibility: hidden'
+            
             for prefix in elements_to_decorate:
                 if element.attrib['id'].startswith(prefix):
                     elements_to_decorate[prefix].append(element)
@@ -249,6 +286,22 @@ def decorate_outcome_browser(exp):
         decorator.append(path)
         group.remove(path)
         group.append(decorator)
+    
+    def decorate_with_help_toggle(group):
+        path = group.find(f'{{{default_namespace}}}path', namespaces)
+        if path is None:
+            path = group.find(f'{{{default_namespace}}}g', namespaces)
+            #group = group.find(f'{{{default_namespace}}}g', namespaces).find(f'{{{default_namespace}}}use', namespaces)
+            #path = group.find(f'{{{default_namespace}}}path', namespaces)
+        
+        attrib = {
+            f'{{{xlink_namespace}}}href': toggle_help,
+        }
+        
+        decorator = ET.Element(f'{{{default_namespace}}}a', attrib=attrib)
+        decorator.append(path)
+        group.remove(path)
+        group.append(decorator)
 
     for group in elements_to_decorate['length_range']:
         decorate_with_popover(group)
@@ -258,6 +311,9 @@ def decorate_outcome_browser(exp):
     
     for group in elements_to_decorate['zoom_toggle_top']:
         decorate_with_zoom_toggle(group)
+    
+    for group in elements_to_decorate['help_toggle']:
+        decorate_with_help_toggle(group)
 
     with exp.fns['outcome_browser'].open('w') as fh:
         fh.write(before_svg_template(title=exp.name))

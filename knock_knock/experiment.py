@@ -994,6 +994,23 @@ class Experiment(object):
                         gid=f'zoom_toggle_{which}_{panel_i}',
                        )
 
+                if which == 'top' and panel_i in [0, 1]:
+                    if panel_i == 0:
+                        bracket_message = 'Click inside these brackets to explore lower-frequency outcomes\nby zooming in on the bracketed range. Click again to close.'
+                    else:
+                        bracket_message = 'Click inside these brackets to zoom in further.'
+
+                    ax.annotate(bracket_message,
+                                xy=(end, y / 2),
+                                xycoords=transform,
+                                xytext=(10, 0),
+                                textcoords='offset points',
+                                ha='left',
+                                va='center',
+                                size=12,
+                                gid=f'help_message_bracket_{panel_i + 1}',
+                            )
+
             inverted_fig_tranform = fig.transFigure.inverted().transform    
 
             for which, top_coords, bottom_coords in (('top', params_dict['top']['top_corner'], params_dict['bottom']['top_corner']),
@@ -1016,6 +1033,50 @@ class Experiment(object):
 
         for panel_i, (y_max, top_ax, bottom_ax) in enumerate(zip(y_maxes[1:], axs, axs[1:])):
             draw_inset_guide(fig, top_ax, bottom_ax, y_max, panel_i)
+
+        top_ax = axs[0]
+
+        help_box_width = 0.04
+        help_box_height = 0.1
+        help_box_y = 1.05
+
+        top_ax.annotate('?',
+                        xy=(1 - 0.5 * help_box_width, help_box_y + 0.5 * help_box_height),
+                        xycoords='axes fraction',
+                        ha='center',
+                        va='center',
+                        size=22,
+                        weight='bold',
+                        gid='help_toggle_question_mark',
+                       )
+
+        help_box = matplotlib.patches.Rectangle((1 - help_box_width, help_box_y), help_box_width, help_box_height,
+                                 transform=top_ax.transAxes,
+                                 clip_on=False,
+                                 color='black',
+                                 alpha=0.2,
+                                 gid='help_toggle',
+                                )
+        top_ax.add_patch(help_box)
+
+        legend_message = '''\
+Click the colored line next to an outcome category
+in the legend to activate that category. Once
+activated, hovering the cursor over the plot will
+show an example diagram of the activated category
+of the length that the cursor is over. Press
+Esc when done to deactivate the category.'''
+
+        top_ax.annotate(legend_message,
+                        xy=(1, 0.95),
+                        xycoords='axes fraction',
+                        xytext=(-10, 0),
+                        textcoords='offset points',
+                        ha='right',
+                        va='top',
+                        size=12,
+                        gid='help_message_legend',
+                       )
 
         for ax in axs:
             ax.tick_params(axis='y', which='both', left=True, right=True)
@@ -1042,7 +1103,6 @@ class Experiment(object):
         kwargs = dict(
             ref_centric=True,
             label_layout=label_layout,
-            read_label='amplicon',
             force_left_aligned=False,
             title='',
             features_to_show=self.target_info.features_to_show,
@@ -1051,7 +1111,8 @@ class Experiment(object):
         for als in subsample:
             if isinstance(als, dict):
                 # Draw qualities for non-overlapping pairs.
-                draw_qualities = True
+                draw_qualities = False
+                kwargs['read_label'] = 'sequencing read pair'
             else:
                 draw_qualities = False
 
