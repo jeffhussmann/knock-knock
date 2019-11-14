@@ -615,7 +615,7 @@ class Experiment(object):
 
         if outcome is None:
             ys_list = [
-                (all_ys, self.color, 0.9, 'all reads'),
+                (all_ys, self.color, 0.9, 'all reads', True),
             ]
 
             ys_to_check = all_ys
@@ -626,7 +626,7 @@ class Experiment(object):
                 label = ': '.join(outcome)
             else:
                 outcome_lengths = sum([v for (c, s), v in self.outcome_stratified_lengths.items() if c == outcome])
-                color = 'C0' # placeholder
+                color = 'black'
                 label = outcome
 
             outcome_ys = outcome_lengths / self.total_reads
@@ -635,17 +635,19 @@ class Experiment(object):
             other_ys = other_lengths / self.total_reads
 
             ys_list = [
-                (other_ys, 'black', 0.2, 'all other reads'),
-                (outcome_ys, color, 0.9, label),
+                (other_ys, 'black', 0.2, 'all other reads', False),
+                (outcome_ys, color, 0.9, label, True),
             ]
 
             ys_to_check = outcome_ys
 
         max_y = 0
 
-        for ys, color, alpha, label in ys_list:
+        for ys, color, alpha, label, check_for_max in ys_list:
             ys = convert_to_smoothed_percentages(ys)
-            max_y = max(max_y, max(ys))
+
+            if check_for_max:
+                max_y = max(max_y, max(ys))
 
             if self.length_plot_smooth_window == 0:
                 line_width = 1
