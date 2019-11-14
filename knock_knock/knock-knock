@@ -12,10 +12,11 @@ import knock_knock
 
 citation = '''
 Hera Canaj, Jeffrey A. Hussmann, Han Li, Kyle A. Beckman, Leeanne Goodrich,
-Nathan H. Cho1, Yucheng J. Li, Daniel Santos, Aaron McGeever, Veronica Pessino,
-Cindy Huang, Li Gan, Barbara Panning, Bo Huang, Jonathan S. Weissman and
-Manuel D. Leonetti. Deep profiling reveals the complexity of integration
-outcomes in CRISPR knock-in experiments. biorxiv (2019).
+Nathan H. Cho, Yucheng J. Li, Daniel A Santos, Aaron McGeever, Edna M Stewart,
+Veronica Pessino, Mohammad A Mandegar, Cindy Huang, Li Gan, Barbara Panning,
+Bo Huang, Jonathan S. Weissman and Manuel D. Leonetti.  "Deep profiling reveals
+the complexity of integration outcomes in CRISPR knock-in experiments."
+https://www.biorxiv.org/content/10.1101/841098v1 (2019).
 '''
 
 def check_blastn():
