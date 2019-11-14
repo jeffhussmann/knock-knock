@@ -1160,7 +1160,7 @@ Esc when done to deactivate the category.'''
         def fig_to_img_tag(fig):
             URI, width, height = table.fig_to_png_URI(fig)
             plt.close(fig)
-            tag = f"<img src={URI} height='{height}' width='{width}' class='center'>"
+            tag = f"<img src={URI} class='center'>"
             return tag
         
         outcome_fns = self.outcome_fns(outcome)
@@ -1188,6 +1188,10 @@ p {{
   display: block;
   margin-left: auto;
   margin-right: auto;
+  max-height: 100%;
+  max-width: 100%;
+  height: auto;
+  width: auto;
 }}
 
 </style>
