@@ -127,22 +127,31 @@ Information about targets is stored in a directory called `targets` inside a pro
 
 Genomic location is specified by providing the name of genome targeted (which must exist in PROJECT_DIR/indices), the protospacer of the (SpCas9) sgRNA that was used for cutting, and the amplicon primers flanking the genomic location of this protospacer that were used to amplify the genomic DNA. 
 
-Targets are defined in a set of csv files inside the `targets` directory. A group of "parts-list" files 'sgRNAs.csv, 'amplicon_primers.csv', 'donors.csv', and 'extra_sequences.csv' are used to register named sequences of each csv's corresponding type, and a master csv file `PROJECT_DIR/targets/targets.csv` defines each target using references to these named sequnences.
+Targets are defined in a set of csv files inside the `targets` directory. A group of "parts-list" files `sgRNAs.csv`, `amplicon_primers.csv`, `donors.csv`, and `extra_sequences.csv` are used to register named sequences of each csv's corresponding type, and a master csv file `PROJECT_DIR/targets/targets.csv` defines each target using references to these named sequences.
 
 A target is defined by filling out a row in `PROJECT_DIR/targets/targets.csv`, which must have the following columns:
 
 - `name`: a short, descriptive name for the target
 - `genome`: the name of the genome targeted (which must exist in `PROJECT_DIR/indices`)
-- `sgRNA`: name of the protospacer sequence that was cut. knock-knock can analyze data produces by cutting with multiple nearby guides in no-donor mode. If there are multiple guides, include all sgRNA names joined by semicolons.
+- `sgRNA_sequence`: name of the protospacer sequence that was cut. knock-knock can analyze data produces by cutting with multiple nearby guides in no-donor mode. If there are multiple guides, include all sgRNA names joined by semicolons.
 - `amplicon_primers`: name of the primer pair used to generate the amplicon for sequencing
-- `donor`: name of the homology-arm-containing donor, if any
-- `nonhomologous_donor`: name of the non-homology-arm containing donor, if any
+- `donor_sequence`: name of the homology-arm-containing donor, if any
+- `nonhomologous_donor_sequence`: name of the non-homology-arm containing donor, if any
 - `extra_sequences`: name(s) of any extra sequences that may be present, joined by semicolons.
+
+As an example, the contents of the `targets.csv` file included with knock-knock's example data are:
+```
+name,genome,sgRNA_sequence,donor_sequence,amplicon_primers,nonhomologous_donor_sequence,extra_sequences
+BCAP31_GFP11_U_ILL,hg38,BCAP31,BCAP31_GFP11_U,BCAP31_ILL,,
+CLTA_GFP11_PCR_ILL,hg38,CLTA,CLTA_GFP11_PCR,CLTA_ILL,,
+RAB11A_150nt_plasmid,hg38,RAB11A,pML217_RAB11A-150HA,RAB11A_PAC,,
+RAB11A_150nt_PCR,hg38,RAB11A,RAB11A-150HA_PCR_donor,RAB11A_PAC,,
+```
 
 Further details:
 
-The `sgRNA` column of `targets.csv` should reference entries in `sgRNAs.csv`.
-Rows of `sgRNAs.csv` define named sgRNA sequences, with columns `name` and `sgRNA_sequence`.
+The `sgRNA_sequence` column of `targets.csv` should reference entries in `sgRNAs.csv`.
+Each row of `sgRNAs.csv` defines a single named sgRNA sequences, with columns `name` and `sgRNA_sequence`.
 sgRNA sequences should be given as 5' to 3' sequence and not include the PAM.
 They must exactly match a sequence in the targeted genome.
 
@@ -155,7 +164,7 @@ RAB11A,GGTAGTCGTACTCGTCGTCG
 ```
 
 The `amplicon_primers` column of `targets.csv` should reference entries in `amplicon_primers.csv`.
-Rows of `amplicon_primers.csv` define named amplicon primer pairs, with columns `name` and `primer_sequences`.
+Each row of `amplicon_primers.csv` defines a named amplicon primer pair, with columns `name` and `primer_sequences`.
 Primer sequences should be given as the 5' to 3' sequences of the primer pair (i.e. the two sequences should be on opposite strands) joined by a semicolon.
 If a primer pair is used together with an sgRNA, there must exist exact matches to the two primer sequences on opposite sides of the sgRNA sequence somewhere in the targeted genome.
 
@@ -168,7 +177,7 @@ CLTA_ILL,ACCGGATACACGGGTAGGG;AGCCGGGTCTTCTTCGC
 RAB11A_PAC,GCAGTGAAGAAGCTCATTAAGACAAC;GAAGGTAGAGAGAGTTGCCAAATGG
 ```
 
-The `donor` and `nonhomologous_donor` columns of `targets.csv` should reference entries in `donors.csv`.
+The `donor_sequence` and `nonhomologous_donor_sequence` columns of `targets.csv` should reference entries in `donors.csv`.
 Rows of `donors.csv` define named donors, with columns `name`, `donor_type`, and `donor_sequence`.
 If a donor is used in the `donor` column of a target definition, its sequence must contain two homology arms that flank the cut site of target's sgRNA. 
 Setting `donor_type` to `plasmid` causes knock-knock to be aware that the sequence has a circular topology when processing alignments to it.
