@@ -210,7 +210,7 @@ Samples are defined by rows in `sample_sheet.csv`.
 Every sample sheet should contain the columns:
 - `sample`: a short, descriptive name of the sample
 - `platform`: `illumina` or `pacbio`
-- `target`: the name of the target (which must have been built as described [above](#specifying-targets))
+- `target_info`: the name of the target (which must have been built as described [above](#specifying-targets))
 - `supplemental_indices`: the name(s) of full genomes to which reads should be aligned, joined by semicolons. This should typically be the name of the targeted organism, plus e_coli if a plasmid donor produced in e. coli was used. Genome names referenced must exist in `PROJECT_DIR/indices` as described [above](#obtaining-reference-sequences-and-building-indices).
 - `color`: an optional color to associate with this sample in visualizations. Can be an integer or any string format that matplotlib recognizes (see [here](https://matplotlib.org/3.1.0/tutorials/colors/colors.html)).
 
