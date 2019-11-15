@@ -151,7 +151,7 @@ RAB11A_150nt_PCR,hg38,RAB11A,RAB11A-150HA_PCR_donor,RAB11A_PAC,,
 Further details:
 
 The `sgRNA_sequence` column of `targets.csv` should reference entries in `sgRNAs.csv`.
-Each row of `sgRNAs.csv` defines a single named sgRNA sequences, with columns `name` and `sgRNA_sequence`.
+Each row of `sgRNAs.csv` defines a single named sgRNA sequence, with columns `name` and `sgRNA_sequence`.
 sgRNA sequences should be given as 5' to 3' sequence and not include the PAM.
 They must exactly match a sequence in the targeted genome.
 
