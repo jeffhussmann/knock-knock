@@ -1632,6 +1632,14 @@ class IlluminaExperiment(Experiment):
 
             description = 'Stitching read pairs'
             for R1, R2 in self.progress(self.read_pairs, desc=description):
+                if R1.name != R2.name:
+                    print(f'Error: read pairs are out of sync in {self.group} {self.name}.')
+                    R1_fns = ','.join(str(fn) for fn in self.fns['R1'])
+                    R2_fns = ','.join(str(fn) for fn in self.fns['R2'])
+                    print(f'R1 file name: {R1_fns}')
+                    print(f'R2 file name: {R2_fns}')
+                    print(f'R1 read {R1.name} paired with R2 read {R2.name}.')
+                    sys.exit(1)
                 stitched = sw.stitch_read_pair(R1, R2, before_R1, before_R2, indel_penalty=-1000)
                 if len(stitched) == self.R1_read_length + self.R2_read_length:
                     R1_fh.write(str(R1))
