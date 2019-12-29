@@ -47,6 +47,8 @@ class TargetInfo():
         self.sources = manifest['sources']
         self.gb_records = gb_records
 
+        self.manual_features_to_show = manifest.get('features_to_show')
+
         self.sgRNA = sgRNA
         if donor is None:
             self.donor = manifest.get('donor')
@@ -199,28 +201,34 @@ class TargetInfo():
 
     @memoized_property
     def features_to_show(self):
-        whitelist = {
-            (self.donor, 'GFP'),
-            (self.donor, 'GFP11'),
-            (self.donor, 'PPX'),
-            (self.donor, 'donor_specific'),
-            (self.donor, 'PCR_adapter_1'),
-            (self.donor, 'PCR_adapter_2'),
-        }
+        if self.manual_features_to_show is not None:
+            return {tuple(f) for f in self.manual_features_to_show}
+        else:
+            whitelist = {
+                (self.donor, 'GFP'),
+                (self.donor, 'GFP11'),
+                (self.donor, 'PPX'),
+                (self.donor, 'donor_specific'),
+                (self.donor, 'PCR_adapter_1'),
+                (self.donor, 'PCR_adapter_2'),
+            }
 
-        for side in [5, 3]:
-            primer = (self.target, self.primers_by_side_of_target[side].attribute['ID'])
-            whitelist.add(primer)
+            for side in [5, 3]:
+                try:
+                    primer = (self.target, self.primers_by_side_of_target[side].attribute['ID'])
+                    whitelist.add(primer)
+                except KeyError:
+                    pass
 
-            if self.homology_arms is not None:
-                target_HA = (self.target, self.homology_arms[side]['target'].attribute['ID'])
-                whitelist.add(target_HA)
+                if self.homology_arms is not None:
+                    target_HA = (self.target, self.homology_arms[side]['target'].attribute['ID'])
+                    whitelist.add(target_HA)
 
-                if self.has_shared_homology_arms:
-                    donor_HA = (self.donor, self.homology_arms[side]['donor'].attribute['ID'])
-                    whitelist.add(donor_HA)
+                    if self.has_shared_homology_arms:
+                        donor_HA = (self.donor, self.homology_arms[side]['donor'].attribute['ID'])
+                        whitelist.add(donor_HA)
 
-        return whitelist
+            return whitelist
 
     @memoized_property
     def sequencing_start(self):
