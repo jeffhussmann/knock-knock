@@ -23,15 +23,16 @@ from hits.utilities import memoized_property, group_by
 
 from . import target_info, blast, layout, visualize, read_outcome, svg, table
 
-# Look up color groups.
+def color_groups():
+    starts_20c = np.arange(4) * 4
+    starts_20b = np.array([3, 1, 0, 2, 5]) * 4
 
-starts_20c = np.arange(4) * 4
-starts_20b = np.array([3, 1, 0, 2, 5]) * 4
+    groups_20c = [bokeh.palettes.Category20c_20[start:start + 3] for start in starts_20c]
+    groups_20b = [bokeh.palettes.Category20b_20[start:start + 3] for start in starts_20b]
 
-groups_20c = [bokeh.palettes.Category20c_20[start:start + 3] for start in starts_20c]
-groups_20b = [bokeh.palettes.Category20b_20[start:start + 3] for start in starts_20b]
+    all_groups = (groups_20c + groups_20b) * 10
 
-all_groups = (groups_20c + groups_20b) * 10
+    return all_groups
 
 def extract_color(description):
     color = description.get('color')
@@ -41,7 +42,7 @@ def extract_color(description):
     try:
         num = int(color) - 1
         replicate = description.get('replicate', 1) - 1
-        color = all_groups[num][replicate]
+        color = color_groups()[num][replicate]
     except ValueError:
         pass
 
