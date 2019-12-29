@@ -354,7 +354,7 @@ class Experiment(object):
         for fn in bam_by_name_fns:
             fn.unlink()
     
-    def generate_supplemental_alignments(self, read_type=None):
+    def generate_supplemental_alignments(self, read_type=None, min_length=None):
         ''' Use STAR to produce local alignments, post-filtering spurious alignmnents.
         '''
         for index_name in self.supplemental_indices:
@@ -386,8 +386,8 @@ class Experiment(object):
                         # or that have too many edits (per aligned nt). Keep this in
                         # mind when interpretting short unexplained gaps in reads.
 
-                        #if al.query_alignment_length <= 20:
-                        #    continue
+                        if min_length is not None and al.query_alignment_length <= min_length:
+                            continue
 
                         #if al.get_tag('AS') / al.query_alignment_length <= 0.8:
                         #    continue
