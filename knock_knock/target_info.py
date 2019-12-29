@@ -346,6 +346,10 @@ class TargetInfo():
         return effectors[self.sgRNA_feature.attribute['effector']]
 
     @memoized_property
+    def anchor(self):
+        return self.features[self.target, 'anchor'].start
+
+    @memoized_property
     def cut_afters(self):
         cut_afters = {}
         for name, sgRNA in self.sgRNA_features.items():
