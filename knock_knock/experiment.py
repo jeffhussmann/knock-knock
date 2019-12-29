@@ -111,9 +111,6 @@ class Experiment(object):
 
             'lengths': self.dir / 'lengths.txt',
             'lengths_figure': self.dir / 'all_lengths.png',
-            'outcome_stratified_lengths_figure': self.dir / 'outcome_stratified_lengths.svg',
-            'length_ranges': self.dir / 'length_ranges.csv',
-            'manual_length_ranges': self.dir / 'manual_length_ranges.csv',
 
             'donor_microhomology_lengths': self.dir / 'donor_microhomology_lengths.txt', 
 
@@ -232,26 +229,15 @@ class Experiment(object):
         np.savetxt(self.fns['lengths'], lengths, '%d')
 
     def length_ranges(self, outcome=None):
-        #path = self.fns['length_ranges']
-        #if path.exists():
-        #    ranges = pd.read_csv(path, sep='\t', header=None, names=['start', 'end'])
-        #else:
-        #    ranges = pd.DataFrame(columns=['start', 'end'])
-        #return ranges
-        interval_length = self.max_relevant_length // 50
-        starts = np.arange(0, self.max_relevant_length + interval_length, interval_length)
         if outcome is None:
             lengths = self.read_lengths
         else:
             lengths = self.outcome_stratified_lengths[outcome]
 
-        ranges = []
-        for start in starts:
-            if sum(lengths[start:start + interval_length]) > 0:
-                ranges.append((start, start + interval_length - 1))
-
+        nonzero, = np.nonzero(lengths)
+        ranges = [(i, i) for i in nonzero]
         return pd.DataFrame(ranges, columns=['start', 'end'])
-
+    
     def alignment_groups(self, fn_key='bam_by_name', outcome=None, read_type=None):
         if isinstance(outcome, str):
             # outcome is a single category, so need to chain together all relevant
@@ -273,38 +259,6 @@ class Experiment(object):
                 grouped = []
 
             return grouped
-
-    def call_peaks_in_length_distribution(self):
-        if self.paired_end_read_length is not None:
-            peaks = []
-            already_seen = set()
-
-            for p in pd.Series(self.read_lengths).sort_values(ascending=False).index:
-                if p in already_seen:
-                    continue
-                else:
-                    for i in range(p - 10, p + 10):
-                        already_seen.add(i)
-
-                    peaks.append(p)
-
-                    if len(peaks) == 10:
-                        break
-
-            length_ranges = [(p - 5, p + 5) for p in peaks]
-            
-        else:
-            smoothed = utilities.smooth(self.read_lengths, 25)
-
-            all_peaks, props = scipy.signal.find_peaks(smoothed, prominence=.1, distance=100)
-            above_background = (props['prominences'] / smoothed[all_peaks]) > 0.5
-            peaks = all_peaks[above_background]
-            widths, *_ = scipy.signal.peak_widths(smoothed, peaks, rel_height=0.6)
-
-            length_ranges = [(int(p - w / 2), int(p + w / 2)) for p, w in zip(peaks, widths)]
-            
-        df = pd.DataFrame(length_ranges)                  
-        df.to_csv(self.fns['length_ranges'], index=False, header=None, sep='\t')
 
     def generate_alignments(self, read_type=None):
         reads = self.reads_by_type(read_type)
@@ -1088,7 +1042,7 @@ Esc when done to deactivate the category.'''
 
         return fig
 
-    def alignment_groups_to_diagrams(self, alignment_groups, num_examples, relevant=True, label_layout=False):
+    def alignment_groups_to_diagrams(self, alignment_groups, num_examples, relevant=True, label_layout=False, **diagram_kwargs):
         subsample = utilities.reservoir_sample(alignment_groups, num_examples)
 
         if relevant:
@@ -1112,6 +1066,7 @@ Esc when done to deactivate the category.'''
             title='',
             features_to_show=self.target_info.features_to_show,
         )
+        kwargs.update(diagram_kwargs)
         
         for als in subsample:
             if isinstance(als, dict):
@@ -1150,14 +1105,14 @@ Esc when done to deactivate the category.'''
         self.generate_all_outcome_example_figures()
         svg.decorate_outcome_browser(self)
     
-    def generate_outcome_example_figures(self, outcome, num_examples):
+    def generate_outcome_example_figures(self, outcome, num_examples, **kwargs):
         if isinstance(outcome, tuple):
             description = ': '.join(outcome)
         else:
             description = outcome
 
         al_groups = self.alignment_groups(outcome=outcome)
-        diagrams = self.alignment_groups_to_diagrams(al_groups, num_examples=num_examples)
+        diagrams = self.alignment_groups_to_diagrams(al_groups, num_examples=num_examples, **kwargs)
         
         def fig_to_img_tag(fig):
             URI, width, height = table.fig_to_png_URI(fig)
@@ -1215,13 +1170,13 @@ p {{
                 tag = fig_to_img_tag(diagram.fig)
                 fh.write(f'{tag}\n')
     
-    def generate_all_outcome_example_figures(self, num_examples=25):
+    def generate_all_outcome_example_figures(self, num_examples=10, **kwargs):
         for outcome in self.progress(self.outcomes, desc='Making diagrams for detailed subcategories'):
-            self.generate_outcome_example_figures(outcome=outcome, num_examples=num_examples)
+            self.generate_outcome_example_figures(outcome=outcome, num_examples=num_examples, **kwargs)
         
         categories = sorted(set(c for c, s in self.outcomes))
         for outcome in self.progress(categories, desc='Making diagrams for grouped categories'):
-            self.generate_outcome_example_figures(outcome=outcome, num_examples=num_examples)
+            self.generate_outcome_example_figures(outcome=outcome, num_examples=num_examples, **kwargs)
             
     def explore(self, by_outcome=True, **kwargs):
         return explore(self.base_dir, by_outcome=by_outcome, target=self.target_name, experiment=self, **kwargs)
@@ -1377,6 +1332,22 @@ class PacbioExperiment(Experiment):
                         by_name_sorter.write(al)
 
             temp_bam_fn.unlink()
+
+    def length_ranges(self, outcome=None):
+        interval_length = self.max_relevant_length // 50
+        starts = np.arange(0, self.max_relevant_length + interval_length, interval_length)
+
+        if outcome is None:
+            lengths = self.read_lengths
+        else:
+            lengths = self.outcome_stratified_lengths[outcome]
+
+        ranges = []
+        for start in starts:
+            if sum(lengths[start:start + interval_length]) > 0:
+                ranges.append((start, start + interval_length - 1))
+
+        return pd.DataFrame(ranges, columns=['start', 'end'])
 
     def generate_length_range_figures(self, outcome=None, num_examples=1):
         by_length_range = defaultdict(lambda: utilities.ReservoirSampler(num_examples))
@@ -1555,16 +1526,6 @@ class IlluminaExperiment(Experiment):
         fn = self.fns_by_read_type['fastq']['R1_no_overlap']
         return {r.name for r in fastq.reads(fn, up_to_space=True)}
 
-    def length_ranges(self, outcome=None):
-        if outcome is None:
-            lengths = self.read_lengths
-        else:
-            lengths = self.outcome_stratified_lengths[outcome]
-
-        nonzero, = np.nonzero(lengths)
-        ranges = [(i, i) for i in nonzero]
-        return pd.DataFrame(ranges, columns=['start', 'end'])
-    
     def load_outcome_counts(self):
         stitched = super().load_outcome_counts(key='outcome_counts')
         no_overlap = super().load_outcome_counts(key='no_overlap_outcome_counts')
