@@ -330,7 +330,7 @@ class TargetInfo():
                 PAM_seq = utilities.reverse_complement(PAM_seq)
             pattern, *matches = Bio.SeqUtils.nt_search(PAM_seq, effector.PAM_pattern) 
             if 0 not in matches:
-                raise ValueError('{}: {} doesn\'t match {} PAM'.format(name, PAM_seq, pattern))
+                raise ValueError(f'{name}: {PAM_seq} doesn\'t match {pattern} PAM')
 
         return PAM_slices
     
@@ -359,7 +359,7 @@ class TargetInfo():
                 key_suffixes = ['']
             else:
                 offsets = effector.cut_after_offset
-                key_suffixes = ['_{}'.format(i) for i in range(len(offsets))]
+                key_suffixes = [f'_{i}' for i in range(len(offsets))]
 
             for offset, key_suffix in zip(offsets, key_suffixes):
                 if sgRNA.strand == '+':
@@ -430,7 +430,7 @@ class TargetInfo():
                     primers[side] = primer
 
         if len(primers) != 2:
-            raise ValueError('not a primer on each side of cut: {}'.format(primers))
+            raise ValueError(f'not a primer on each side of cut: {primers}')
 
         return primers
     
@@ -912,7 +912,7 @@ class TargetInfo():
             for degenerate_class in classes:
                 if len(degenerate_class) > 1:
                     collapsed = DegenerateDeletion.collapse(degenerate_class)
-                    fh.write('{0}\n'.format(collapsed))
+                    fh.write(f'{collapsed}\n')
 
         degenerate_inss = defaultdict(list)
 
@@ -932,7 +932,7 @@ class TargetInfo():
             for degenerate_class in classes:
                 if len(degenerate_class) > 1:
                     collapsed = DegenerateInsertion.collapse(degenerate_class)
-                    fh.write('{0}\n'.format(collapsed))
+                    fh.write(f'{collapsed}\n')
 
     @memoized_property
     def degenerate_indels(self):
@@ -1150,7 +1150,7 @@ class DegenerateDeletion():
         if len(self.starts_ats) > 1:
             starts_string = '{' + starts_string + '}'
 
-        full_string = 'D:{0},{1}'.format(starts_string, self.length)
+        full_string = f'D:{starts_string},{self.length}'
 
         return full_string
 
@@ -1201,7 +1201,7 @@ class DegenerateInsertion():
             starts_string = '{' + starts_string + '}'
             seqs_string = '{' + seqs_string + '}'
 
-        full_string = 'I:{0},{1}'.format(starts_string, seqs_string)
+        full_string = f'I:{starts_string},{seqs_string}'
 
         return full_string
 
@@ -1253,7 +1253,7 @@ class SNV():
         else:
             bc = self.basecall
 
-        return '{}{}'.format(self.position, bc)
+        return f'{self.position}{bc}'
 
 class SNVs():
     def __init__(self, snvs):
