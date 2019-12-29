@@ -24,7 +24,7 @@ class Effector():
 effectors = {
     'SpCas9': Effector('SpCas9', 'NGG', 3, -4),
     'SaCas9': Effector('SaCas9', 'NNGRRT', 3, -4),
-    'Cpf1': Effector('Cpf1', 'TTTN', 5, (22, 26)),
+    'Cpf1': Effector('Cpf1', 'TTTN', 5, (22, 27)),
 }
 
 class TargetInfo():
