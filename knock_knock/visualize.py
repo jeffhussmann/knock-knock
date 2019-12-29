@@ -75,29 +75,26 @@ class ReadDiagram():
             if refs_to_hide is not None:
                 als = [al for al in als if al.reference_name not in refs_to_hide]
 
-            if self.parsimonious:
-                als = interval.make_parsimonious(als)
-
             if split_at_indels:
-                split_als = []
+                all_split_als = []
                 for al in als:
                     if al.reference_name in [self.target_info.target, self.target_info.donor]:
-                        split_at_dels = sam.split_at_deletions(al, 2)
-                        split_at_ins = []
-                        for al in split_at_dels:
-                            split_at_ins.extend(sam.split_at_large_insertions(al, 2))
+                        split_als = layout_module.comprehensively_split_alignment(al, self.target_info, 2, 2, 'illumina')
 
                         target_seq_bytes = self.target_info.reference_sequences[al.reference_name].encode()
-                        extended = [sw.extend_alignment(al, target_seq_bytes) for al in split_at_ins]
-                        split_als.extend(extended)
+                        extended = [sw.extend_alignment(al, target_seq_bytes) for al in split_als]
+                        all_split_als.extend(extended)
 
                     else:
-                        split_als.append(al)
+                        all_split_als.append(al)
 
-                als = split_als
+                als = all_split_als
 
             if only_target_and_donor:
                 als = [al for al in als if al.reference_name in [self.target_info.target, self.target_info.donor]]
+
+            if self.parsimonious:
+                als = interval.make_parsimonious(als)
 
             return als
 
