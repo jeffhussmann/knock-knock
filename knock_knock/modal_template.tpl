@@ -15,7 +15,6 @@
 <script src="https://unpkg.com/jupyter-js-widgets@2.0.*/dist/embed.js"></script>
 {%- endif -%}
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.1.10/require.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
 <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
 <link rel = "stylesheet" type = "text/css" href = "https://cdn.jupyter.org/notebook/5.4.0/style/style.min.css" />
