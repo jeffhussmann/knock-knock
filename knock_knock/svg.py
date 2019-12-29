@@ -223,7 +223,7 @@ def decorate_outcome_browser(exp):
         if sanitized_outcome == 'all':
             fns = exp.fns
         else:
-            outcome = layout.sanitized_string_to_outcome(sanitized_outcome)
+            outcome = exp.layout_module.sanitized_string_to_outcome(sanitized_outcome)
             fns = exp.outcome_fns(outcome)
 
         fn = fns['length_range_figure'](start, end)
