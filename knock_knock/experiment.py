@@ -3,6 +3,7 @@ matplotlib.use('Agg', warn=False)
 
 import shutil
 import sys
+import gzip
 from pathlib import Path
 from itertools import islice, chain
 from collections import defaultdict, Counter
@@ -168,10 +169,10 @@ class Experiment(object):
         fns = defaultdict(dict)
 
         for read_type in self.read_types:
-            if read_type is 'CCS':
+            if read_type == 'CCS':
                 fns['fastq'][read_type] = self.fns['CCS_fastqs']
             else:
-                fns['fastq'][read_type] = self.dir / f'{read_type}.fastq'
+                fns['fastq'][read_type] = self.dir / f'{read_type}.fastq.gz'
 
             fns['primary_bam'][read_type] = self.dir / f'{read_type}_alignments.bam'
             fns['primary_bam_by_name'][read_type] = self.dir / f'{read_type}_alignments.by_name.bam'
@@ -1655,9 +1656,9 @@ class IlluminaExperiment(Experiment):
 
         fns = self.fns_by_read_type['fastq']
 
-        with fns['stitched'].open('w') as stitched_fh, \
-             fns['R1_no_overlap'].open('w') as R1_fh, \
-             fns['R2_no_overlap'].open('w') as R2_fh:
+        with gzip.open(fns['stitched'], 'wt', compresslevel=1) as stitched_fh, \
+             gzip.open(fns['R1_no_overlap'], 'wt', compresslevel=1) as R1_fh, \
+             gzip.open(fns['R2_no_overlap'], 'wt', compresslevel=1) as R2_fh:
 
             description = 'Stitching read pairs'
             for R1, R2 in self.progress(self.read_pairs, desc=description):
