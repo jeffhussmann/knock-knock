@@ -1076,7 +1076,11 @@ Esc when done to deactivate the category.'''
             else:
                 draw_qualities = False
 
-            d = visualize.ReadDiagram(als, self.target_info, draw_qualities=draw_qualities, **kwargs)
+            try:
+                d = visualize.ReadDiagram(als, self.target_info, draw_qualities=draw_qualities, **kwargs)
+            except:
+                print(als[0].query_name)
+                raise
                 
             yield d
             
@@ -1405,22 +1409,26 @@ class PacbioExperiment(Experiment):
         pass
     
     def process(self, stage):
-        if stage == 'align':
-            self.preprocess()
+        try:
+            if stage == 'align':
+                self.preprocess()
 
-            for read_type in self.read_types:
-                self.generate_alignments(read_type=read_type)
-                self.generate_supplemental_alignments(read_type=read_type)
-                self.combine_alignments(read_type=read_type)
+                for read_type in self.read_types:
+                    self.generate_alignments(read_type=read_type)
+                    self.generate_supplemental_alignments(read_type=read_type)
+                    self.combine_alignments(read_type=read_type)
 
-        elif stage == 'categorize':
-            self.categorize_outcomes(read_type='CCS')
-            self.record_sanitized_category_names()
-            self.count_read_lengths()
-            self.extract_donor_microhomology_lengths()
+            elif stage == 'categorize':
+                self.categorize_outcomes(read_type='CCS')
+                self.record_sanitized_category_names()
+                self.count_read_lengths()
+                self.extract_donor_microhomology_lengths()
 
-        elif stage == 'visualize':
-            self.generate_figures()
+            elif stage == 'visualize':
+                self.generate_figures()
+        except:
+            print(self.group, self.name)
+            raise
 
 class IlluminaExperiment(Experiment):
     def __init__(self, *args, **kwargs):
@@ -1698,24 +1706,28 @@ class IlluminaExperiment(Experiment):
         self.stitch_read_pairs()
 
     def process(self, stage):
-        if stage == 'align':
-            self.preprocess()
+        try:
+            if stage == 'align':
+                self.preprocess()
+                
+                for read_type in self.read_types:
+                    self.generate_alignments(read_type)
+                    self.generate_supplemental_alignments(read_type)
+                    self.combine_alignments(read_type)
+
+            elif stage == 'categorize':
+                self.categorize_outcomes(read_type='stitched')
+                self.categorize_no_overlap_outcomes()
+
+                self.record_sanitized_category_names()
+                self.count_read_lengths()
+                self.extract_donor_microhomology_lengths()
             
-            for read_type in self.read_types:
-                self.generate_alignments(read_type)
-                self.generate_supplemental_alignments(read_type)
-                self.combine_alignments(read_type)
-
-        elif stage == 'categorize':
-            self.categorize_outcomes(read_type='stitched')
-            self.categorize_no_overlap_outcomes()
-
-            self.record_sanitized_category_names()
-            self.count_read_lengths()
-            self.extract_donor_microhomology_lengths()
-        
-        elif stage == 'visualize':
-            self.generate_figures()
+            elif stage == 'visualize':
+                self.generate_figures()
+        except:
+            print(self.group, self.name)
+            raise
 
 def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
     if target is None:
