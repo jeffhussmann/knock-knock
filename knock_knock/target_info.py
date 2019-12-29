@@ -463,9 +463,9 @@ class TargetInfo():
         PAM_side = self.effector.PAM_side
 
         if (strand == '+' and PAM_side == 3) or (strand == '-' and PAM_side == 5):
-            target_to_PAM = {5: 'PAM-proximal', 3: 'PAM-distal'}
-        elif (strand == '+' and PAM_side == 5) or (strand == '-' and PAM_side == 3):
             target_to_PAM = {3: 'PAM-proximal', 5: 'PAM-distal'}
+        elif (strand == '+' and PAM_side == 5) or (strand == '-' and PAM_side == 3):
+            target_to_PAM = {5: 'PAM-proximal', 3: 'PAM-distal'}
 
         return target_to_PAM
 
