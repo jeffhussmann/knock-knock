@@ -64,7 +64,7 @@ class Layout(object):
             if extend_before or extend_after:
                 al = sw.extend_repeatedly(al, target_seq_bytes, extend_before=extend_before, extend_after=extend_after)
 
-            split_als = self.comprehensively_split_alignment(al)
+            split_als = comprehensively_split_alignment(al, self.target_info, self.indel_size_to_split_at, self.indel_size_to_split_at, self.mode)
 
             extended = [sw.extend_alignment(split_al, target_seq_bytes) for split_al in split_als]
 
@@ -100,32 +100,11 @@ class Layout(object):
         processed_als = []
 
         for al in original_als:
-            split_als = self.comprehensively_split_alignment(al)
+            split_als = comprehensively_split_alignment(al, self.target_info, self.indel_size_to_split_at, self.indel_size_to_split_at, self.mode)
             processed_als.extend(split_als)
 
         return processed_als
     
-    def comprehensively_split_alignment(self, al):
-        # It is easier to reason about alignments if any that contain long insertions, long deletions, or clusters
-        # of many edits are split into multiple alignments.
-        if self.mode == 'illumina':
-            split_at_clusters = split_at_edit_clusters(al, self.target_info)
-        else:
-            # Empirically, for Pacbio data, it is hard to find a threshold for number of edits within a window that
-            # doesn't produce a lot of false positive splits.
-            split_at_clusters = [al]
-
-        split_at_dels = []
-        for split_al in split_at_clusters:
-            split_at_dels.extend(sam.split_at_deletions(split_al, self.indel_size_to_split_at))
-
-        split_at_indels = []
-        for split_al in split_at_dels:
-            split_at_ins = sam.split_at_large_insertions(split_al, self.indel_size_to_split_at)
-            split_at_indels.extend(split_at_ins)
-
-        return split_at_indels
-
     @memoized_property
     def nonhomologous_donor_alignments(self):
         if self.target_info.nonhomologous_donor is None:
@@ -2180,6 +2159,28 @@ def split_at_edit_clusters(al, target_info):
                 split_als.append(cropped_after)
 
     return split_als
+
+def comprehensively_split_alignment(al, target_info, ins_size_to_split_at, del_size_to_split_at, mode):
+    # It is easier to reason about alignments if any that contain long insertions, long deletions, or clusters
+    # of many edits are split into multiple alignments.
+
+    if mode == 'illumina':
+        split_at_clusters = split_at_edit_clusters(al, target_info)
+    else:
+        # Empirically, for Pacbio data, it is hard to find a threshold for number of edits within a window that
+        # doesn't produce a lot of false positive splits.
+        split_at_clusters = [al]
+
+    split_at_dels = []
+    for split_al in split_at_clusters:
+        split_at_dels.extend(sam.split_at_deletions(split_al, del_size_to_split_at))
+
+    split_at_indels = []
+    for split_al in split_at_dels:
+        split_at_ins = sam.split_at_large_insertions(split_al, ins_size_to_split_at)
+        split_at_indels.extend(split_at_ins)
+
+    return split_at_indels
 
 category_order = [
     ('WT',
