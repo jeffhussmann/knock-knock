@@ -78,7 +78,10 @@ def parallel(args):
     for t in sorted(arg_tuples):
         parallel_command.extend(t)
 
-    subprocess.check_call(parallel_command)
+    completed_process = subprocess.run(parallel_command)
+    if completed_process.returncode != 0:
+        print('error in parallel')
+        sys.exit(1)
 
 def process(args):
     from knock_knock import experiment
