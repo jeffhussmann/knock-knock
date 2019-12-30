@@ -515,6 +515,8 @@ class TargetInfo():
                 side of target (5/3),
                 expected side of read (left/right),
         '''
+        if self.donor is None:
+            return None
 
         # Load homology arms from gff features.
         HAs = defaultdict(dict)
