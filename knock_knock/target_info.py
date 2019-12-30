@@ -897,6 +897,17 @@ class TargetInfo():
         return donor_deletions
 
     @memoized_property
+    def donor_insertions(self):
+        donor_insertions = []
+        for (seq_name, name), feature in self.features.items():
+            if seq_name == self.donor and feature.feature == 'donor_insertion':
+                donor_name = name[:-len('_insertion')]
+                if donor_name == self.donor:
+                    donor_insertions.append(feature)
+
+        return donor_insertions
+
+    @memoized_property
     def wild_type_locii(self):
         return ''.join([b for _, b in self.fingerprints[self.target]])
     
