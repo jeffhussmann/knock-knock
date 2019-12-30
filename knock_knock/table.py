@@ -19,7 +19,7 @@ totals_all_row_label = (' ', 'Total reads')
 
 totals_relevant_row_label = (' ', 'Total relevant reads')
 
-def load_counts(base_dir, conditions=None, exclude_malformed=False, exclude_empty=True):
+def load_counts(base_dir, conditions=None, exclude_malformed=False, exclude_empty=True, sort_samples=True):
     exps = experiment.get_all_experiments(base_dir, conditions)
 
     counts = {}
@@ -64,8 +64,9 @@ def load_counts(base_dir, conditions=None, exclude_malformed=False, exclude_empt
     df = pd.concat([totals_row, df]).astype(int)
     df.index.names = (None, None)
 
-    # Sort by group and sample name.
-    df = df.sort_index(axis=1)
+    if sort_samples:
+        # Sort by group and sample name.
+        df = df.sort_index(axis=1)
 
     return df
 
@@ -206,8 +207,9 @@ def make_table(base_dir,
                include_images=True,
                inline_images=False,
                show_details=True,
+               sort_samples=True,
               ):
-    df = load_counts(base_dir, conditions=conditions, exclude_malformed=(not show_details))
+    df = load_counts(base_dir, conditions=conditions, exclude_malformed=(not show_details), sort_samples=sort_samples)
     if show_details:
         totals_row_label = totals_all_row_label
     else:
@@ -353,7 +355,12 @@ def generate_html(base_dir, fn, conditions=None, show_details=True, include_imag
 import knock_knock.table
 
 conditions = {conditions}
-knock_knock.table.make_table('{base_dir}', conditions, show_details={show_details}, include_images={include_images})
+knock_knock.table.make_table('{base_dir}',
+                             conditions,
+                             show_details={show_details},
+                             include_images={include_images},
+                             sort_samples={sort_samples},
+                            )
 '''
     
     nb['cells'] = [
@@ -377,7 +384,11 @@ knock_knock.table.make_table('{base_dir}', conditions, show_details={show_detail
     with open(fn, 'w') as fh:
         fh.write(body)
 
-def make_self_contained_zip(base_dir, conditions, table_name, include_images=True):
+def make_self_contained_zip(base_dir, conditions, table_name,
+                            include_images=True,
+                            include_details=True,
+                            sort_samples=True,
+                           ):
     base_dir = Path(base_dir)
     results_dir = base_dir / 'results'
     fn_prefix = results_dir / table_name
