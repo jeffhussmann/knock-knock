@@ -24,7 +24,7 @@ class ReadDiagram():
                  alignments,
                  target_info,
                  R2_alignments=None,
-                 ref_centric=False,
+                 ref_centric=True,
                  parsimonious=False,
                  zoom_in=None,
                  size_multiple=1,
@@ -140,7 +140,7 @@ class ReadDiagram():
                 'title': 16,
             }
 
-            self.target_and_donor_y_gap = 0.03
+            self.target_and_donor_y_gap = kwargs.get('target_and_donor_y_gap', 0.03)
             self.initial_alignment_y_offset = 5
             self.feature_line_width = 0.005
             self.gap_between_als = 0.003
@@ -161,7 +161,7 @@ class ReadDiagram():
                 'title': 16,
             }
 
-            self.target_and_donor_y_gap = 0.02
+            self.target_and_donor_y_gap = kwargs.get('target_and_donor_y_gap', 0.02)
             self.initial_alignment_y_offset = 5
             self.feature_line_width = 0.005
             self.gap_between_als = 0.003
@@ -182,7 +182,7 @@ class ReadDiagram():
                 'title': 22,
             }
 
-            self.target_and_donor_y_gap = 0.015
+            self.target_and_donor_y_gap = kwargs.get('target_and_donor_y_gap', 0.015)
             self.initial_alignment_y_offset = 3
             self.feature_line_width = 0.004
             self.gap_between_als = 0.003
@@ -223,8 +223,10 @@ class ReadDiagram():
                 width_per_unit = 0.04
             elif 750 <= self.query_length < 2000:
                 width_per_unit = 0.01
-            else:
+            elif 2000 <= self.query_length < 5000:
                 width_per_unit = 0.005
+            else:
+                width_per_unit = 0.003
 
         self.width_per_unit = width_per_unit
 
@@ -710,8 +712,8 @@ class ReadDiagram():
             else:
                 total_query_length = self.query_length + self.R2_query_length + self.gap_between_read_pair
 
-            self.min_x = -0.02 * total_query_length
-            self.max_x = 1.02 * total_query_length
+            self.min_x = -0.05 * total_query_length
+            self.max_x = 1.05 * total_query_length
             
         self.draw_read_arrows()
 
@@ -762,6 +764,19 @@ class ReadDiagram():
                 xs = x_start + np.arange(self.R2_query_length)[::-1]
 
                 ax.plot(xs, qual_ys, color='black', alpha=0.5)
+
+            label_y = quals_to_ys([self.max_qual])[0]
+
+            self.ax.annotate('sequencing quality scores',
+                             xy=(self.label_x, label_y),
+                             xycoords=('axes fraction', 'data'),
+                             xytext=(self.label_x_offset, 0),
+                             textcoords='offset points',
+                             color='black',
+                             ha=self.label_ha,
+                             va='center',
+                             size=int(np.floor(self.font_sizes['ref_label'] * 0.75)),
+                            )
 
         if self.draw_polyA:
             seq = self.alignments[0].get_forward_sequence()
@@ -838,7 +853,7 @@ class ReadDiagram():
         params = []
 
         if len(self.alignment_coordinates[ti.target]) > 0:
-            params.append((ti.target, min(ti.cut_afters.values()), target_y, self.flip_target))
+            params.append((ti.target, np.mean(list(ti.cut_afters.values())), target_y, self.flip_target))
 
         if len(self.alignment_coordinates[ti.donor]) > 0:
             if (ti.donor, ti.donor_specific) in ti.features:
@@ -914,7 +929,7 @@ class ReadDiagram():
 
                 # Draw lines connecting alignment edges to reference.
                 for x, ref_x in zip(xs, ref_xs):
-                    self.ax.plot([x, ref_x], [y, ref_border_y], color=color, alpha=0.3)
+                    self.ax.plot([x, ref_x], [y, ref_border_y], color=color, alpha=0.3, clip_on=False)
 
             self.min_y = min(self.min_y, ref_y)
             self.max_y = max(self.max_y, ref_y)
@@ -943,17 +958,16 @@ class ReadDiagram():
 
             if flip:
                 new_left, new_right = new_right, new_left
-                fade_left, fade_right = fade_right, fade_left
                 leftmost_aligned_x, rightmost_aligned_x = rightmost_aligned_x, leftmost_aligned_x
 
             self.min_x = min(self.min_x, new_left)
             self.max_x = max(self.max_x, new_right)
 
             # If an alignment goes right up to the edge, don't fade.
-            if leftmost_aligned_x <= self.min_x + 0.1 * (self.max_x - self.min_x):
+            if leftmost_aligned_x <= self.min_x + 0.05 * (self.max_x - self.min_x):
                 fade_left = False
 
-            if rightmost_aligned_x >= self.min_x + 0.9 * (self.max_x - self.min_x):
+            if rightmost_aligned_x >= self.min_x + 0.95 * (self.max_x - self.min_x):
                 fade_right = False
 
             # If a plasmid donor is being drawn, fade.
@@ -983,8 +997,15 @@ class ReadDiagram():
             else:
                 right_alpha = 1
 
-            image[:, :, 3] = np.concatenate([np.linspace(left_alpha, 1, 150), [1] * 700, np.linspace(1, right_alpha, 150)])
-            self.ax.imshow(image, extent=(ref_xs[0], ref_xs[1], ref_y - ref_line_width, ref_y + ref_line_width), aspect='auto')
+            image[:, :, 3] = np.concatenate([np.linspace(left_alpha, 1, 100), [1] * 800, np.linspace(1, right_alpha, 100)])
+            self.ax.imshow(image,
+                           extent=(ref_xs[0], ref_xs[1], ref_y - ref_line_width, ref_y + ref_line_width),
+                           aspect='auto',
+                           interpolation='none',
+                           zorder=3,
+                          )
+
+            # Draw features.
 
             if self.features_to_show is not None:
                 features_to_show = [(r_name, f_name) for r_name, f_name in self.features_to_show
@@ -1001,7 +1022,6 @@ class ReadDiagram():
                 for sgRNA in self.target_info.sgRNAs:
                     features_to_show.append((self.target_info.target, sgRNA))
 
-            # Draw features.
             for feature_reference, feature_name in features_to_show:
                 if feature_reference != ref_name:
                     continue
@@ -1013,7 +1033,7 @@ class ReadDiagram():
                 if feature is None:
                     continue
                 feature_color = feature.attribute.get('color', 'grey')
-                
+
                 xs = adjust_edges([ref_p_to_x(p) for p in [feature.start, feature.end]])
                     
                 start = ref_y + np.sign(ref_y) * ref_line_width
