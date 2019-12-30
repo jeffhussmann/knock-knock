@@ -977,6 +977,20 @@ class TargetInfo():
     def expand_degenerate_indel(self, indel):
         return self.degenerate_indels.get(indel, indel)
 
+    def overhang_insertion(self, length):
+        ''' Return DegenerateInsertion from offset RuvC cut producing 5' overhang. '''
+        if self.sgRNA_feature.strand == '-':
+            start_after = self.cut_after
+            seq = self.target_sequence[self.cut_after + 1:self.cut_after + 1 + length]
+        else:
+            start_after = self.cut_after
+            seq = self.target_sequence[self.cut_after - (length - 1):self.cut_after + 1]
+
+        actual_insertion = DegenerateInsertion([start_after], [seq])
+        degenerate_insertion = self.expand_degenerate_indel(actual_insertion)
+
+        return ('insertion', 'insertion', str(degenerate_insertion))
+
     def calculate_microhomology_lengths(self, donor_to_use='homologous', donor_strand='+'):
         def num_matches_at_edge(first, second, relevant_edge):
             ''' Count the number of identical characters at the beginning
