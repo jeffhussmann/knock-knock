@@ -342,10 +342,15 @@ def make_table(base_dir,
     
     return styled
 
-def generate_html(base_dir, fn, conditions=None, show_details=True, include_images=True):
+def generate_html(base_dir, fn, conditions=None, show_details=True, include_images=True, sort_samples=True):
     nb = nbf.new_notebook()
 
     documentation_cell_contents = f'''\
+<a target="_blank" href="https://github.com/jeffhussmann/knock-knock" rel="nofollow"><img src="logo_v2.png" alt="knock-knock" align="left"></a>
+<br clear="all">
+
+knock-knock is a tool for exploring, categorizing, and quantifying the full spectrum of sequence outcomes produced by CRISPR knock-in experiments.
+
 <a href="https://github.com/jeffhussmann/knock-knock/blob/master/docs/visualization.md#interactive-exploration-of-outcomes" target="_blank">How to use this table</a>
 
 <a href="https://github.com/jeffhussmann/knock-knock/blob/master/docs/visualization.md" target="_blank">How to interpret read diagrams</a>
@@ -394,15 +399,20 @@ def make_self_contained_zip(base_dir, conditions, table_name,
     fn_prefix = results_dir / table_name
     fns_to_zip = []
 
+    logo_fn = Path(os.path.realpath(__file__)).parent / 'docs/' / 'logo_v2.png'
+    if logo_fn.exists():
+        fns_to_zip.append(logo_fn)
+
     print('Generating high-level html table...')
     html_fn = fn_prefix.with_suffix('.html')
-    generate_html(base_dir, html_fn, conditions, show_details=False, include_images=include_images)
+    generate_html(base_dir, html_fn, conditions, show_details=False, include_images=include_images, sort_samples=sort_samples)
     fns_to_zip.append(html_fn)
 
-    print('Generating detailed html table...')
-    html_fn = fn_prefix.parent / (f'{fn_prefix.name}_with_details.html')
-    generate_html(base_dir, html_fn, conditions, show_details=True, include_images=include_images)
-    fns_to_zip.append(html_fn)
+    if include_details:
+        print('Generating detailed html table...')
+        html_fn = fn_prefix.parent / (f'{fn_prefix.name}_with_details.html')
+        generate_html(base_dir, html_fn, conditions, show_details=True, include_images=include_images, sort_samples=sort_samples)
+        fns_to_zip.append(html_fn)
 
     print('Generating csv table...')
     csv_fn = fn_prefix.with_suffix('.csv')
@@ -437,8 +447,9 @@ def make_self_contained_zip(base_dir, conditions, table_name,
 
             for outcome in exp.outcomes:
                 outcome_fns = exp.outcome_fns(outcome)
-                add_fn(outcome_fns['diagrams_html'])
-                add_fn(outcome_fns['first_example'])
+                if include_details:
+                    add_fn(outcome_fns['diagrams_html'])
+                    add_fn(outcome_fns['first_example'])
                 add_fn(outcome_fns['length_ranges_dir'])
 
             categories = set(c for c, s in exp.outcomes)
