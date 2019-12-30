@@ -252,10 +252,18 @@ class Layout(object):
             else:
                 subcategory = f'5\' {self.junction_summary_per_side[5]}, 3\' {self.junction_summary_per_side[3]}'
                 if 'blunt' in junctions:
+
                     category = 'blunt misintegration'
+
                 elif junctions == set(['imperfect', 'HDR']):
-                    category = 'incomplete HDR'
-                    details = str(self.donor_microhomology)
+                    if self.donor_microhomology is None or self.donor_microhomology < -10:
+                        # Long negative microhomology means a long gap between the target edge alignment
+                        # and the relevant donor alignment.
+                        category = 'complex misintegration'
+                        subcategory = 'other'
+                    else:
+                        category = 'incomplete HDR'
+                        details = str(self.donor_microhomology)
                 else:
                     category = 'complex misintegration'
 
