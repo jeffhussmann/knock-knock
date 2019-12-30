@@ -816,7 +816,7 @@ class Experiment(object):
                 smoothed_lengths = pd.Series(lengths).rolling(window=window, center=True, min_periods=1).sum()
                 ys = smoothed_lengths / self.total_reads
 
-                sanitized_string = layout.outcome_to_sanitized_string(outcome)
+                sanitized_string = self.layout_module.outcome_to_sanitized_string(outcome)
 
                 if outcome in group:
                     gid = f'line_highlighted_{sanitized_string}_{panel_i}'
@@ -868,7 +868,7 @@ class Experiment(object):
             for outcome, line in zip(high_enough_to_show, legend.get_lines()):
                 if line.get_color() != non_highlight_color:
                     line.set_linewidth(5)
-                    sanitized_string = layout.outcome_to_sanitized_string(outcome)
+                    sanitized_string = self.layout_module.outcome_to_sanitized_string(outcome)
                     line.set_gid(f'outcome_{sanitized_string}')
 
             expected_lengths = {
