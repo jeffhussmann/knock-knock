@@ -693,7 +693,7 @@ class TargetInfo():
         return sorted([name for seq_name, name in self.features if seq_name == self.donor and name.startswith('SNP')])
 
     @memoized_property
-    def donor_SNVs_old(self):
+    def donor_SNVs_manual(self):
         SNVs = {
             'target': {},
             'donor': {},
@@ -845,7 +845,11 @@ class TargetInfo():
     
     @memoized_property
     def donor_SNVs(self):
-        donor_SNVs, HAs = self.inferred_donor_SNVs_and_HAs
+        if self.infer_homology_arms:
+            donor_SNVs, HAs = self.inferred_donor_SNVs_and_HAs
+        else:
+            donor_SNVs = self.donor_SNVs_manual
+
         return donor_SNVs
     
     @memoized_property
