@@ -1949,17 +1949,21 @@ def load_sample_sheet_from_csv(csv_fn):
 
 def load_sample_sheet(base_dir, group):
     data_dir = Path(base_dir) / 'data'
+    data_yaml_fn = data_dir / group / 'sample_sheet.yaml'
 
-    sample_sheet_yaml_fn = data_dir / group / 'sample_sheet.yaml'
+    results_dir = Path(base_dir) / 'results'
+    results_yaml_fn = results_dir / group / 'sample_sheet.yaml'
 
-    if sample_sheet_yaml_fn.exists():
-        sample_sheet = yaml.safe_load(sample_sheet_yaml_fn.read_text())
+    if data_yaml_fn.exists():
+        sample_sheet = yaml.safe_load(data_yaml_fn.read_text())
+    elif results_yaml_fn.exists():
+        sample_sheet = yaml.safe_load(results_yaml_fn.read_text())
     else:
-        sample_sheet_csv_fn = sample_sheet_yaml_fn.with_suffix('.csv')
-        if not sample_sheet_csv_fn.exists():
+        csv_fn = data_yaml_fn.with_suffix('.csv')
+        if not csv_fn.exists():
             sample_sheet = None
         else:
-            sample_sheet = load_sample_sheet_from_csv(sample_sheet_csv_fn)
+            sample_sheet = load_sample_sheet_from_csv(csv_fn)
 
     return sample_sheet
 
