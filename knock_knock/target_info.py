@@ -646,8 +646,13 @@ class TargetInfo():
     @memoized_property
     def clean_HDR_length(self):
         if self.has_shared_homology_arms:
+            def gap_between_HAs(HA_1, HA_2):
+                HA_1, HA_2 = sorted([HA_1, HA_2], key=lambda f: f.start)
+                return HA_2.start - HA_1.end - 1
             HAs = self.homology_arms
-            return self.amplicon_length + HAs[3]['donor'].start - HAs[5]['donor'].end - 1
+            added_by_donor = gap_between_HAs(HAs[5]['donor'], HAs[3]['donor'])
+            removed_by_HAs = gap_between_HAs(HAs[5]['target'], HAs[3]['target'])
+            return self.amplicon_length + added_by_donor - removed_by_HAs
         else:
             return None
 
