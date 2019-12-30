@@ -1044,10 +1044,19 @@ class Layout(object):
     def donor_integration_is_blunt(self):
         donor_length = len(self.target_info.donor_sequence)
 
-        is_blunt = {
+        reaches_end = {
             5: self.edge_r[5] is not None and self.edge_r[5] <= 1,
             3: self.edge_r[3] is not None and self.edge_r[3] >= donor_length - 2,
         }
+
+        short_gap = {}
+        for side in [5, 3]:
+            primer_al = self.primer_alignments[side]
+            donor_al = self.closest_donor_alignment_to_edge[side]
+            overlap = self.junction_microhomology(primer_al, donor_al)
+            short_gap[side] = overlap > -10
+
+        is_blunt = {side: reaches_end[side] and short_gap[side] for side in [5, 3]}
 
         return is_blunt
 
@@ -1637,7 +1646,6 @@ class Layout(object):
         covered_by_side = {side: covered_by_order[order] for side, order in side_to_order.items()}
         als_by_side = {side: als_by_order[order] for side, order in side_to_order.items()}
         
-
         initial_overlap = covered_by_side['left'] & covered_by_side['right']
 
         if initial_overlap:
@@ -1728,8 +1736,6 @@ class Layout(object):
         else:
             MH_nts = None
         return MH_nts
-
-
 
 class NonoverlappingPairLayout():
     def __init__(self, R1_als, R2_als, target_info):
