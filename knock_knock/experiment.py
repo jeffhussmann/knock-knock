@@ -1887,10 +1887,11 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
 
         diagram = visualize.ReadDiagram(als, exp.target_info,
                                         max_qual=exp.max_qual,
+                                        features_to_show=exp.target_info.features_to_show,
                                         **plot_kwargs)
         fig = diagram.fig
 
-        fig.axes[0].set_title(' '.join((l.name,) + info))
+        fig.axes[0].set_title(' '.join((l.name,) + info[:3]))
 
         return diagram.fig
 
