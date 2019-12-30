@@ -491,10 +491,15 @@ class Layout(object):
                                 max_alignments_per_target=1,
                                 both_directions=False,
                                 min_score_ratio=0,
-                            )
+                               )
+
+            # The fixed edge alignment strategy used can produce alignments that start or 
+            # end with a deletion. Remove these.
+            als = [sam.remove_terminal_deletions(al) for al in als]
 
             if len(als) > 0:
                 al = als[0]
+
                 if amplicon_side == 5:
                     ref_start_offset = primer.start
                     new_cigar = al.cigar + [(sam.BAM_CSOFT_CLIP, soft_clip_length)]
@@ -512,6 +517,7 @@ class Layout(object):
                     al = sam.flip_alignment(al)
 
                 edits_in_primer = sam.edit_distance_in_query_interval(al, primer_query_interval, ref_seq=amplicon_side_seq)
+
                 if edits_in_primer <= 5:
                     al.reference_start = al.reference_start + ref_start_offset
                     al.cigar = sam.collapse_soft_clip_blocks(new_cigar)
@@ -526,12 +532,13 @@ class Layout(object):
                     al_dict = al.to_dict()
                     al_dict['ref_name'] = self.target_info.target
                     edge_al = pysam.AlignedSegment.from_dict(al_dict, self.target_info.header)
-                    edge_als.append(edge_al)
+                    edge_als.append((edits_in_primer, edge_al))
 
-        if len(edge_als) != 1:
+        edge_als = sorted(edge_als, key=lambda t: t[0])
+        if len(edge_als) == 0:
             edge_al = None
         else:
-            edge_al = edge_als[0]
+            edge_al = edge_als[0][1]
             
         return edge_al
 
