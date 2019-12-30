@@ -430,6 +430,10 @@ class Experiment(object):
                 fh.write(f'{k}\t{v}\n')
 
     def categorize_outcomes(self, fn_key='bam_by_name', read_type=None):
+        combined_read_length = self.R1_read_length + self.R2_read_length
+        if combined_read_length < self.target_info.amplicon_length:
+            print(f'Warning: {self.group} {self.name} combined read length ({combined_read_length}) less than expected amplicon length ({self.target_info.amplicon_length:,}).')
+
         if self.fns['outcomes_dir'].is_dir():
             shutil.rmtree(str(self.fns['outcomes_dir']))
             
