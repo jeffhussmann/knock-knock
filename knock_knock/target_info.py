@@ -294,6 +294,7 @@ class TargetInfo():
 
     @memoized_property
     def all_sgRNA_features(self):
+        # Note: features are processed upstream of this to separate 'sgRNA' from name of effector
         return {name: feature for name, feature in self.features.items() if feature.feature == 'sgRNA'}
     
     @memoized_property
