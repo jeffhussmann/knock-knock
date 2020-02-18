@@ -3,6 +3,7 @@
 import argparse
 import subprocess
 import sys
+import os
 from pathlib import Path
 
 import yaml
@@ -78,7 +79,10 @@ def parallel(args):
     for t in sorted(arg_tuples):
         parallel_command.extend(t)
 
-    completed_process = subprocess.run(parallel_command)
+    env = os.environ
+    env['OPENBLAS_NUM_THREADS'] = '1'
+
+    completed_process = subprocess.run(parallel_command, env=env)
     if completed_process.returncode != 0:
         print('error in parallel')
         sys.exit(1)
