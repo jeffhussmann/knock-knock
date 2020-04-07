@@ -1,4 +1,5 @@
 import sys
+import copy
 from pathlib import Path
 from collections import defaultdict
 
@@ -9,7 +10,7 @@ import numpy as np
 import Bio.SeqIO
 import Bio.SeqUtils
 
-from hits import fasta, gff, utilities, mapping_tools, interval, sam, sw
+from hits import fasta, gff, utilities, mapping_tools, interval, sam, sw, genomes
 
 memoized_property = utilities.memoized_property
 
@@ -22,10 +23,15 @@ class Effector():
         self.cut_after_offset = cut_after_offset
 
 effectors = {
-    'SpCas9': Effector('SpCas9', 'NGG', 3, -4),
-    'SaCas9': Effector('SaCas9', 'NNGRRT', 3, -4),
+    'SpCas9': Effector('SpCas9', 'NGG', 3, (-4, -4)),
+    'SpCas9H840A': Effector('SpCas9H840A', 'NGG', 3, (-4, None)),
+    'SaCas9': Effector('SaCas9', 'NNGRRT', 3, (-4, -4)),
+    'SaCas9H840A': Effector('SaCas9H840A', 'NNGRRT', 3, (-4, None)),
     'Cpf1': Effector('Cpf1', 'TTTN', 5, (22, 27)),
 }
+
+# Hack because 'sgRNA_SaCas9H840A' is one character too long for genbank format.
+effectors['SaCas9H840'] = effectors['SaCas9H840A']
 
 class TargetInfo():
     def __init__(self, base_dir, name,
@@ -33,7 +39,8 @@ class TargetInfo():
                  nonhomologous_donor=None,
                  sgRNA=None,
                  primer_names=None,
-                 supplemental_headers=None,
+                 sequencing_start_feature_name=None,
+                 supplemental_indices=None,
                  gb_records=None,
                  infer_homology_arms=False,
                 ):
@@ -42,32 +49,31 @@ class TargetInfo():
         self.dir = Path(base_dir) / 'targets' / name
 
         manifest_fn = self.dir / 'manifest.yaml'
-        manifest = yaml.safe_load(manifest_fn.open())
-        self.target = manifest['target']
-        self.sources = manifest['sources']
+        self.manifest = yaml.safe_load(manifest_fn.open())
+        self.target = self.manifest['target']
+        self.sources = self.manifest['sources']
         self.gb_records = gb_records
 
-        self.manual_features_to_show = manifest.get('features_to_show')
+        self.manual_features_to_show = self.manifest.get('features_to_show')
 
-        self.sgRNA = sgRNA
         if donor is None:
-            self.donor = manifest.get('donor')
+            self.donor = self.manifest.get('donor')
         else:
             self.donor = donor
 
-        self.donor_type = manifest.get('donor_type')
+        self.donor_type = self.manifest.get('donor_type')
 
         if nonhomologous_donor is None:
-            self.nonhomologous_donor = manifest.get('nonhomologous_donor')
+            self.nonhomologous_donor = self.manifest.get('nonhomologous_donor')
         else:
             self.nonhomologous_donor = nonhomologous_donor
 
-        self.donor_specific = manifest.get('donor_specific', 'GFP11') 
-        self.supplemental_headers = supplemental_headers
+        self.donor_specific = self.manifest.get('donor_specific', 'GFP11') 
+        self.supplemental_indices = supplemental_indices
 
         self.infer_homology_arms = infer_homology_arms
 
-        self.default_HAs = manifest.get('default_HAs')
+        self.default_HAs = self.manifest.get('default_HAs')
 
         self.fns = {
             'ref_fasta': self.dir / 'refs.fasta',
@@ -86,9 +92,33 @@ class TargetInfo():
         
         self.primer_names = primer_names
 
+        self.sequencing_start_feature_name = sequencing_start_feature_name
+
+        self.sgRNA = sgRNA
+
+        if self.gb_records is not None:
+            self.make_references()
+
+
     @memoized_property
     def header(self):
         return sam.header_from_fasta(self.fns['ref_fasta'])
+
+    @memoized_property
+    def primary_sgRNA(self):
+        primary_sgRNA = self.manifest.get('primary_sgRNA')
+        if primary_sgRNA is None:
+            primary_sgRNA = self.sgRNAs[0]
+        return primary_sgRNA
+
+    @memoized_property
+    def supplemental_headers(self):
+       return {name: sam.header_from_STAR_index(d['STAR']) for name, d in self.supplemental_indices.items()}
+
+    @memoized_property
+    def genomic_region_fetchers(self):
+        fetchers = {name: genomes.build_region_fetcher(fns['fasta']) for name, fns in self.supplemental_indices.items()}
+        return fetchers
 
     @memoized_property
     def sgRNAs(self):
@@ -213,6 +243,9 @@ class TargetInfo():
                 (self.donor, 'PCR_adapter_2'),
             }
 
+            for sgRNA_name in self.sgRNA_features:
+                whitelist.add((self.target, sgRNA_name))
+
             for side in [5, 3]:
                 try:
                     primer = (self.target, self.primers_by_side_of_target[side].attribute['ID'])
@@ -232,7 +265,10 @@ class TargetInfo():
 
     @memoized_property
     def sequencing_start(self):
-        return self.features.get((self.target, 'sequencing_start'))
+        feature_name = self.sequencing_start_feature_name
+        if feature_name is None:
+            feature_name = 'sequencing_start'
+        return self.features.get((self.target, feature_name))
 
     @memoized_property
     def reference_sequences(self):
@@ -287,10 +323,7 @@ class TargetInfo():
     
     @memoized_property
     def sgRNA_feature(self):
-        features = list(self.sgRNA_features.values())
-        if len(features) > 1:
-            raise ValueError(len(features))
-        return features[0]
+        return self.sgRNA_features[self.primary_sgRNA]
 
     @memoized_property
     def all_sgRNA_features(self):
@@ -337,10 +370,7 @@ class TargetInfo():
     
     @memoized_property
     def PAM_slice(self):
-        if len(self.PAM_slices) > 1:
-            raise ValueError(self.PAM_slices)
-        else:
-            return list(self.PAM_slices.values())[0]
+        return self.PAM_slices[self.primary_sgRNA]
 
     @memoized_property
     def effector(self):
@@ -355,14 +385,21 @@ class TargetInfo():
         cut_afters = {}
         for name, sgRNA in self.sgRNA_features.items():
             effector = effectors[sgRNA.attribute['effector']]
-            if isinstance(effector.cut_after_offset, int):
-                offsets = [effector.cut_after_offset]
-                key_suffixes = ['']
-            else:
-                offsets = effector.cut_after_offset
-                key_suffixes = [f'_{i}' for i in range(len(offsets))]
 
-            for offset, key_suffix in zip(offsets, key_suffixes):
+            if sgRNA.strand == '+':
+                offset_strand_order = '+-'
+            else:
+                offset_strand_order = '-+'
+
+            if len(set(effector.cut_after_offset)) == 1:
+                # Blunt DSB
+                offsets = list(set(effector.cut_after_offset))
+                strand_suffixes = ['_both']
+            else:
+                offsets = [offset for offset in effector.cut_after_offset if offset is not None]
+                strand_suffixes = [f'_{strand}' for strand, offset in zip(offset_strand_order, effector.cut_after_offset) if offset is not None]
+
+            for offset, strand_suffix in zip(offsets, strand_suffixes):
                 if sgRNA.strand == '+':
                     PAM_5 = self.PAM_slices[name].start
                     cut_after = PAM_5 + offset
@@ -371,18 +408,29 @@ class TargetInfo():
                     # -1 extra because cut_after is on the other side of the cut
                     cut_after = PAM_5 - offset - 1
                 
-                cut_afters[name + key_suffix] = cut_after
+                cut_afters[name + strand_suffix] = cut_after
 
         return cut_afters
     
     @memoized_property
     def cut_after(self):
         ''' when processing assumes there will be only one cut, use this '''
-        return min(self.cut_afters.values())
+        primary_cut_afters = []
+        for name, cut_after in self.cut_afters.items():
+            sgRNA_name = name.rsplit('_', 1)[0]
+            if sgRNA_name == self.primary_sgRNA:
+                primary_cut_afters.append(cut_after)
+
+        return min(primary_cut_afters)
 
     def around_cuts(self, each_side):
         intervals = [interval.Interval(cut_after - each_side + 1, cut_after + each_side) for cut_after in self.cut_afters.values()]
         return interval.DisjointIntervals(intervals)
+
+    def around_or_between_cuts(self, each_side):
+        left = min(self.cut_afters.values()) - each_side
+        right = max(self.cut_afters.values()) + each_side
+        return interval.Interval(left, right)
 
     @memoized_property
     def overlaps_cut(self):
@@ -520,11 +568,13 @@ class TargetInfo():
             return None
 
         # Load homology arms from gff features.
-        HAs = defaultdict(dict)
 
         if self.infer_homology_arms:
             donor_SNVs, HAs = self.inferred_donor_SNVs_and_HAs
+            HAs = copy.deepcopy(HAs)
         else:
+            HAs = defaultdict(dict)
+
             ref_name_to_source = {
                 self.target: 'target',
                 self.donor: 'donor',
@@ -743,6 +793,9 @@ class TargetInfo():
 
     @memoized_property
     def inferred_donor_SNVs_and_HAs(self):
+        if self.donor is None or not self.infer_homology_arms:
+            return None
+
         SNVs = {
             'target': {},
             'donor': {},
@@ -813,15 +866,17 @@ class TargetInfo():
             left_num = 2
             right_num = 1
             
-            strand = '-'
+            donor_strand = '-'
             
         else:
             left_num = 1
             right_num = 2
             
-            strand = '+'
+            donor_strand = '+'
+
+        target_strand = '+'
             
-        def make_feature(seqname, start, end, name, color):
+        def make_feature(seqname, start, end, name, strand, color):
             return gff.Feature.from_fields(seqname,
                                     '.',
                                     'misc_feature',
@@ -835,16 +890,31 @@ class TargetInfo():
         
         HAs = {
             names[left_num]: {
-                'donor': make_feature(self.donor, bounds[left_num][0], bounds[left_num][1], names[left_num], colors[left_num]),
-                'target': make_feature(self.target, min(target_ps) - lengths[left_num], min(target_ps) - 1, names[left_num], colors[left_num]),
+                'donor': make_feature(self.donor, bounds[left_num][0], bounds[left_num][1], names[left_num], donor_strand, colors[left_num]),
+                'target': make_feature(self.target, min(target_ps) - lengths[left_num], min(target_ps) - 1, names[left_num], target_strand, colors[left_num]),
             },
             names[right_num]: {
-                'donor': make_feature(self.donor, bounds[right_num][0], bounds[right_num][1], names[right_num], colors[right_num]),
-                'target': make_feature(self.target, max(target_ps) + 1, max(target_ps) + lengths[right_num], names[right_num], colors[right_num]),
+                'donor': make_feature(self.donor, bounds[right_num][0], bounds[right_num][1], names[right_num], donor_strand, colors[right_num]),
+                'target': make_feature(self.target, max(target_ps) + 1, max(target_ps) + lengths[right_num], names[right_num], target_strand, colors[right_num]),
             },
         }
                 
         return SNVs, HAs
+
+    @memoized_property
+    def inferred_HA_features(self):
+        if not self.infer_homology_arms:
+            return None
+
+        donor_SNVs, HAs = self.inferred_donor_SNVs_and_HAs
+
+        features = {}
+        
+        for HA_name in HAs:
+            features[self.target, HA_name] = HAs[HA_name]['target']
+            features[self.donor, HA_name] = HAs[HA_name]['donor']
+
+        return features
     
     @memoized_property
     def donor_SNVs(self):
@@ -888,9 +958,9 @@ class TargetInfo():
     def donor_deletions(self):
         donor_deletions = []
         for (seq_name, name), feature in self.features.items():
-            if seq_name == self.target and feature.feature == 'donor_deletion':
-                donor_name = name[:-len('_deletion')]
-                if donor_name == self.donor:
+            if seq_name == self.target and feature.feature.startswith('donor_deletion'):
+                deletion_donor_name = feature.feature[len('donor_deletion_'):]
+                if deletion_donor_name == self.donor:
                     deletion = DegenerateDeletion([feature.start], len(feature))
                     deletion = self.expand_degenerate_indel(deletion)
                     donor_deletions.append(deletion)
@@ -902,9 +972,7 @@ class TargetInfo():
         donor_insertions = []
         for (seq_name, name), feature in self.features.items():
             if seq_name == self.donor and feature.feature == 'donor_insertion':
-                donor_name = name[:-len('_insertion')]
-                if donor_name == self.donor:
-                    donor_insertions.append(feature)
+                donor_insertions.append(feature)
 
         return donor_insertions
 
@@ -990,7 +1058,9 @@ class TargetInfo():
         actual_insertion = DegenerateInsertion([start_after], [seq])
         degenerate_insertion = self.expand_degenerate_indel(actual_insertion)
 
-        return ('insertion', 'insertion', str(degenerate_insertion))
+        shifted = DegenerateInsertion([s - self.anchor for s in degenerate_insertion.starts_afters], degenerate_insertion.seqs)
+
+        return ('insertion', 'insertion', str(shifted))
 
     def calculate_microhomology_lengths(self, donor_to_use='homologous', donor_strand='+'):
         def num_matches_at_edge(first, second, relevant_edge):
@@ -1139,6 +1209,23 @@ class TargetInfo():
         
         return expected_MH_lengths
 
+    @memoized_property
+    def nick_offset(self):
+        nicking_sgRNAs = [n for n in self.sgRNAs if n != self.primary_sgRNA]
+        if len(nicking_sgRNAs) == 1:
+            nicking_sgRNA = nicking_sgRNAs[0]
+
+            primary_cut_after = [v for k, v in self.cut_afters.items() if k.rsplit('_', 1)[0] == self.primary_sgRNA][0]
+
+            nick_cut_after = [v for k, v in self.cut_afters.items() if k.rsplit('_', 1)[0] == nicking_sgRNA][0]
+            
+            sign_multiple = -1 if self.sgRNA_feature.strand == '-' else 1
+            offset = sign_multiple * (nick_cut_after - primary_cut_after)
+        else:
+            offset = None
+
+        return offset
+        
 def degenerate_indel_from_string(details_string):
     kind, rest = details_string.split(':')
 

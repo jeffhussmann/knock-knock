@@ -197,9 +197,7 @@ def design_amplicon_primers(base_dir, info, genome):
 
     return best_candidate
 
-def identify_homology_arms(donor_seq, target_seq, cut_after):
-    required_match_length = 15
-    
+def identify_homology_arms(donor_seq, donor_type, target_seq, cut_after, colors, required_match_length=15):
     header = pysam.AlignmentHeader.from_references(['donor', 'target'], [len(donor_seq), len(target_seq)])
     mapper = sw.SeedAndExtender(donor_seq.encode(), 8, header, 'donor')
     
@@ -294,7 +292,191 @@ def identify_homology_arms(donor_seq, target_seq, cut_after):
     else:
         results = min(possible_HAs)[1]
 
-    return results
+    lengths = results['lengths']
+
+    donor_starts = {
+        'HA_1': results['donor_HA_start'],
+        'donor_specific': results['donor_HA_start'] + lengths['HA_1'],
+        'HA_2': results['donor_HA_end'] - lengths['HA_2'],
+    }
+    donor_ends = {
+        'HA_1': donor_starts['HA_1'] + lengths['HA_1'],
+        'donor_specific': donor_starts['HA_2'],
+        'HA_2': donor_starts['HA_2'] + lengths['HA_2'],
+    }
+
+    if donor_type == 'PCR':
+        if donor_starts['HA_1'] != 0:
+            donor_starts['PCR_adapter_1'] = 0
+            donor_ends['PCR_adapter_1'] = donor_starts['HA_1']
+
+        if donor_ends['HA_2'] != len(donor_seq):
+            donor_starts['PCR_adapter_2'] = donor_ends['HA_2']
+            donor_ends['PCR_adapter_2'] = len(donor_seq)
+
+    target_starts = {
+        'HA_1': results['target_HA_start'],
+        'HA_2': results['target_HA_end'] - lengths['HA_2'],
+    }
+    target_ends = {key: target_starts[key] + lengths[key] for key in target_starts}
+
+    donor_strand = 1
+    target_strand = 1
+
+    donor_features = [
+        SeqFeature(location=FeatureLocation(donor_starts[key], donor_ends[key], strand=donor_strand),
+                    id=key,
+                    type='misc_feature',
+                    qualifiers={'label': key,
+                                'ApEinfo_fwdcolor': colors[key],
+                                },
+                )
+        for key in donor_starts
+    ]
+
+    target_features = ([
+        SeqFeature(location=FeatureLocation(target_starts[key], target_ends[key], strand=target_strand),
+                    id=key,
+                    type='misc_feature',
+                    qualifiers={'label': key,
+                                'ApEinfo_fwdcolor': colors[key],
+                                },
+                    )
+        for key in target_starts
+    ])
+
+    HA_info = {
+        'possibly_flipped_donor_seq': donor_seq,
+        'donor_features': donor_features,
+        'target_features': target_features,
+    }
+
+    return HA_info
+
+def identify_pegRNA_homology_arms(donor_seq, target_seq, cut_after, protospacer_seq, colors):
+    donor_as_read = fastq.Read('donor', donor_seq, fastq.encode_sanger([40]*len(donor_seq)))
+        
+    sw_kwargs = dict(
+        mismatch_penalty=-2,
+        match_bonus=1,
+        indel_penalty=-100,
+        both_directions=False,
+    )
+    
+    targets = [('target', target_seq)]
+    
+    header = pysam.AlignmentHeader.from_references(['donor', 'target'], [len(donor_seq), len(target_seq)])
+    
+    # homology is at the 3' end of the pegRNA, so query_end in forward orientation
+    # and query_start in reverse orientation
+
+    both_orientation_als = []
+
+    for al in sw.align_read(donor_as_read, targets, 7, header, alignment_type='query_end', **sw_kwargs):
+        both_orientation_als.append(al)
+        
+    for al in sw.align_read(donor_as_read.reverse_complement(), targets, 7, header, alignment_type='query_start', **sw_kwargs):
+        both_orientation_als.append(sam.flip_alignment(al))
+        
+    if len(both_orientation_als) == 0:
+        return {'failed': 'no HA alignments found'}
+    else:
+        al = max(both_orientation_als, key=lambda al: al.query_alignment_length)
+    
+    # HA_1 is before cut, HA_2 is after
+    before_cut_al = sam.crop_al_to_ref_int(al, 0, cut_after)
+    after_cut_al = sam.crop_al_to_ref_int(al, cut_after + 1, len(target_seq))
+
+    HA_als = {}
+    HA_als['HA_RT'], HA_als['HA_PBS'] = sorted([before_cut_al, after_cut_al], key=lambda al: sam.query_interval(al))
+    
+    mismatches = []
+    for query_i, query_b, ref_i, ref_b, q in sam.aligned_tuples(al):
+        if query_b != ref_b:
+            mismatches.append((query_i, ref_i))
+
+    donor_starts = {}
+    donor_ends = {}
+    for key in HA_als:
+        donor_starts[key], donor_ends[key] = sorted(sam.query_interval(HA_als[key]))
+        # query interval vs SeqFeature end conventions
+        donor_ends[key] += 1
+
+    # Note on strands: assumption is that pegRNA is given as actual orientation,
+    # so HAs are minus strand on donor and plus on target if alignment is reverse,
+    # minus on target otherwise.
+
+    donor_strand = -1
+    target_strand = 1 if al.is_reverse else -1
+    
+    donor_features = [
+        SeqFeature(location=FeatureLocation(donor_starts[key], donor_ends[key], strand=donor_strand),
+                   id=key,
+                   type='misc_feature',
+                   qualifiers={'label': key,
+                               'ApEinfo_fwdcolor': colors[key],
+                              },
+                  )
+        for key in donor_starts
+    ]
+
+    protospacer_start = donor_seq.index(protospacer_seq)
+    protospacer_end = protospacer_start + len(protospacer_seq)
+
+    donor_features.extend([
+        SeqFeature(location=FeatureLocation(protospacer_start, protospacer_end, strand=1),
+                   id='protospacer',
+                   type='misc_feature',
+                   qualifiers={'label': 'protospacer',
+                               'ApEinfo_fwdcolor': colors['protospacer'],
+                              },
+                  ),
+        SeqFeature(location=FeatureLocation(protospacer_end, donor_starts['HA_RT'], strand=1),
+                   id='scaffold',
+                   type='misc_feature',
+                   qualifiers={'label': 'scaffold',
+                               'ApEinfo_fwdcolor': colors['scaffold'],
+                              },
+                  ),
+    ])
+
+    target_features = [
+        SeqFeature(location=FeatureLocation(HA_als[key].reference_start, HA_als[key].reference_end, strand=target_strand),
+                   id=key,
+                   type='misc_feature',
+                   qualifiers={'label': key,
+                               'ApEinfo_fwdcolor': colors[key],
+                              },
+                  )
+        for key in HA_als
+    ]
+
+    for i, (donor_p, target_p) in enumerate(mismatches, 1):
+        SNP_name = f'SNP{i}'
+        donor_features.append(
+            SeqFeature(location=FeatureLocation(donor_p, donor_p + 1, strand=donor_strand),
+                       id=SNP_name,
+                       type='misc_feature',
+                       qualifiers={'label': SNP_name,
+                                  },
+                      )
+        )
+        target_features.append(
+            SeqFeature(location=FeatureLocation(target_p, target_p + 1, strand=target_strand),
+                       id=SNP_name,
+                       type='misc_feature',
+                       qualifiers={'label': SNP_name,
+                                  },
+                      )
+        )
+
+    HA_info = {
+        'possibly_flipped_donor_seq': donor_seq,
+        'donor_features': donor_features,
+        'target_features': target_features,
+    }
+
+    return HA_info
 
 def build_target_info(base_dir, info, all_index_locations):
     ''' info should have keys:
@@ -388,6 +570,7 @@ def build_target_info(base_dir, info, all_index_locations):
 
     with pysam.AlignmentFile(bam_fn) as bam_fh:
         perfect_als = [al for al in bam_fh if not al.is_unmapped and sam.total_edit_distance(al) == 0]
+        imperfect_als = [al for al in bam_fh if not al.is_unmapped]
     
     region_fetcher = genomes.build_region_fetcher(index_locations['fasta'])
     
@@ -409,7 +592,7 @@ def build_target_info(base_dir, info, all_index_locations):
 
         ps_start = full_around.index(ps_seq)
 
-        protospacer_locations = [(ps_seq, ps_start, ps_strand)]
+        protospacer_locations = [(protospacer_name, ps_seq, ps_start, ps_strand)]
 
         for other_protospacer_name, other_protospacer_seq in other_protospacers:
             if other_protospacer_seq in full_around:
@@ -423,9 +606,9 @@ def build_target_info(base_dir, info, all_index_locations):
                 ps_strand = -1
 
             ps_start = full_around.index(ps_seq)
-            protospacer_locations.append((ps_seq, ps_start, ps_strand))
+            protospacer_locations.append((other_protospacer_name, ps_seq, ps_start, ps_strand))
 
-        for ps_seq, ps_start, ps_strand in protospacer_locations:
+        for ps_name, ps_seq, ps_start, ps_strand in protospacer_locations:
             PAM_pattern = 'NGG'
 
             if ps_strand == 1:
@@ -446,73 +629,117 @@ def build_target_info(base_dir, info, all_index_locations):
                 return results
 
         if primers[0] in full_around:
-            final_fwd_primer = primers[0]
-            final_rev_primer = utilities.reverse_complement(primers[1])
-            if final_rev_primer not in full_around:
+            leftmost_primer = primers[0]
+            rightmost_primer = utilities.reverse_complement(primers[1])
+            if rightmost_primer not in full_around:
                 results['failed'] = f'primer {primers[1]} not present near protospacer'
                 return results
+            
+            leftmost_primer_name = 'forward_primer'
+            rightmost_primer_name = 'reverse_primer'
+
         else:
-            final_fwd_primer = primers[1]
-            final_rev_primer = utilities.reverse_complement(primers[0])
+            leftmost_primer = primers[1]
+            rightmost_primer = utilities.reverse_complement(primers[0])
 
-            if final_fwd_primer not in full_around:
+            if leftmost_primer not in full_around:
                 results['failed'] = f'primer {primers[1]} not present near protospacer'
                 return results
 
-            if final_rev_primer not in full_around:
+            if rightmost_primer not in full_around:
                 results['failed'] = f'primer {primers[0]} not present near protospacer'
                 return results
 
-        fwd_start = full_around.index(final_fwd_primer)
-        rev_start = full_around.index(final_rev_primer)
-        
-        if fwd_start >= rev_start:
+            leftmost_primer_name = 'reverse_primer'
+            rightmost_primer_name = 'forward_primer'
+
+        leftmost_start = full_around.index(leftmost_primer)
+        rightmost_start = full_around.index(rightmost_primer)
+
+        if leftmost_start >= rightmost_start:
             results['failed'] = f'primer don\'t flank protospacer'
             return results
         
+        # Now that primers have been located, redefine the target sequence to include a fixed
+        # window on either side of the primers.
+
         final_window_around = 500    
 
-        offset = fwd_start - final_window_around
+        offset = leftmost_start - final_window_around
 
-        final_start = fwd_start - final_window_around
-        final_end = rev_start + len(final_rev_primer) + final_window_around
+        final_start = leftmost_start - final_window_around
+        final_end = rightmost_start + len(rightmost_primer) + final_window_around
 
         target_seq = full_around[final_start:final_end]
 
+        leftmost_location = FeatureLocation(leftmost_start - offset, leftmost_start - offset + len(leftmost_primer), strand=1)
+        rightmost_location = FeatureLocation(rightmost_start - offset, rightmost_start - offset + len(rightmost_primer), strand=-1)
+
         colors = {
             'HA_1': '#c7b0e3',
+            'HA_RT': '#c7b0e3',
             'HA_2': '#85dae9',
+            'HA_PBS': '#85dae9',
             'forward_primer': '#ff9ccd',
             'reverse_primer': '#9eafd2',
             'sgRNA': '#c6c9d1',
             'donor_specific': '#b1ff67',
             'PCR_adapter_1': '#F8D3A9',
             'PCR_adapter_2': '#D59687',
+            'protospacer': '#ff9ccd',
+            'scaffold': '#b7e6d7',
         }
         
         target_features = [
-            SeqFeature(location=FeatureLocation(fwd_start - offset, fwd_start - offset + len(final_fwd_primer), strand=1),
-                       id='forward_primer',
+            SeqFeature(location=leftmost_location,
+                       id=leftmost_primer_name,
                        type='misc_feature',
-                       qualifiers={'label': 'forward_primer',
-                                   'ApEinfo_fwdcolor': colors['forward_primer'],
+                       qualifiers={'label': leftmost_primer_name,
+                                   'ApEinfo_fwdcolor': colors[leftmost_primer_name],
                                   },
                       ),
-            SeqFeature(location=FeatureLocation(rev_start - offset, rev_start - offset + len(final_rev_primer), strand=-1),
-                       id='reverse_primer',
+            SeqFeature(location=rightmost_location,
+                       id=rightmost_primer_name,
                        type='misc_feature',
-                       qualifiers={'label': 'reverse_primer',
-                                   'ApEinfo_fwdcolor': colors['reverse_primer'],
+                       qualifiers={'label': rightmost_primer_name,
+                                   'ApEinfo_fwdcolor': colors[rightmost_primer_name],
                                   },
                       ),
         ]
 
+        if donor_type == 'pegRNA':
+            if leftmost_primer_name == 'forward_primer':
+                start = leftmost_start - offset
+                start_location = FeatureLocation(start, start + 5, strand=1)
+            else:
+                start = rightmost_start - offset + len(rightmost_primer) - 5
+                start_location = FeatureLocation(start, start + 5, strand=-1)
+
+            target_features.extend([
+                SeqFeature(location=start_location,
+                           id='sequencing_start',
+                           type='misc_feature',
+                           qualifiers={'label': 'sequencing_start',
+                                      },
+                          ),
+                SeqFeature(location=start_location,
+                           id='anchor',
+                           type='misc_feature',
+                           qualifiers={'label': 'anchor',
+                                      },
+                          ),
+            ])
+
+            effector = 'SpCas9H840A'
+        else:
+            effector = 'SpCas9'
+
         sgRNA_features = []
-        for sgRNA_i, (ps_seq, ps_start, ps_strand) in enumerate(protospacer_locations):
+        for sgRNA_i, (ps_name, ps_seq, ps_start, ps_strand) in enumerate(protospacer_locations):
             sgRNA_feature = SeqFeature(location=FeatureLocation(ps_start - offset, ps_start - offset + len(ps_seq), strand=ps_strand),
-                                       id=f'sgRNA_{sgRNA_i}',
-                                       type='sgRNA_SpCas9',
-                                       qualifiers={'label': f'sgRNA_{sgRNA_i}',
+                                       id=f'sgRNA_{ps_name}',
+                                       type=f'sgRNA_{effector}',
+                                       qualifiers={'label': f'sgRNA_{ps_name}',
                                                    'ApEinfo_fwdcolor': colors['sgRNA'],
                                                    },
                                        )
@@ -524,75 +751,32 @@ def build_target_info(base_dir, info, all_index_locations):
         if has_donor:
             # Identify the homology arms.
 
-            if len(sgRNA_features) > 1:
-                results['failed'] = 'multiple sgRNAs and a donor are not supported'
-            else:
-                sgRNA_feature = sgRNA_features[0]
-                if sgRNA_feature.strand == 1:
-                    # sgRNA_feature.end is the first nt of the PAM
-                    cut_after = sgRNA_feature.location.end + target_info.effectors['SpCas9'].cut_after_offset
-                else:
-                    # sgRNA_feature.start - 1 is the first nt of the PAM
-                    cut_after = sgRNA_feature.location.start - 1 - target_info.effectors['SpCas9'].cut_after_offset - 1
+            # If multiple sgRNAs are given, the edited one must be listed first.
+            sgRNA_feature = sgRNA_features[0]
 
-            HA_info = identify_homology_arms(donor_seq, target_seq, cut_after)
+            cut_after_offset = [offset for offset in target_info.effectors[effector].cut_after_offset if offset is not None][0]
+
+            if sgRNA_feature.strand == 1:
+                # sgRNA_feature.end is the first nt of the PAM
+                cut_after = sgRNA_feature.location.end + cut_after_offset
+            else:
+                # sgRNA_feature.start - 1 is the first nt of the PAM
+                cut_after = sgRNA_feature.location.start - 1 - cut_after_offset - 1
+
+            if donor_type == 'pegRNA':
+                HA_info = identify_pegRNA_homology_arms(donor_seq, target_seq, cut_after, protospacer_seq, colors)
+            else:
+                HA_info = identify_homology_arms(donor_seq, donor_type, target_seq, cut_after, colors)
+
             if 'failed' in HA_info:
                 results['failed'] = HA_info['failed']
                 return results
 
-            lengths = HA_info['lengths']
-
-            starts = {
-                'HA_1': HA_info['donor_HA_start'],
-                'donor_specific': HA_info['donor_HA_start'] + lengths['HA_1'],
-                'HA_2': HA_info['donor_HA_end'] - lengths['HA_2'],
-            }
-            ends = {
-                'HA_1': starts['HA_1'] + lengths['HA_1'],
-                'donor_specific': starts['HA_2'],
-                'HA_2': starts['HA_2'] + lengths['HA_2'],
-            }
-
-            if donor_type == 'PCR':
-                if starts['HA_1'] != 0:
-                    starts['PCR_adapter_1'] = 0
-                    ends['PCR_adapter_1'] = starts['HA_1']
-
-                if ends['HA_2'] != len(donor_seq):
-                    starts['PCR_adapter_2'] = ends['HA_2']
-                    ends['PCR_adapter_2'] = len(donor_seq)
-        
-            donor_features = [
-                SeqFeature(location=FeatureLocation(starts[key], ends[key], strand=1),
-                           id=key,
-                           type='misc_feature',
-                           qualifiers={'label': key,
-                                       'ApEinfo_fwdcolor': colors[key],
-                                      },
-                        )
-                for key in starts
-            ]
-
             donor_Seq = Seq(HA_info['possibly_flipped_donor_seq'], generic_dna)
-            donor_Record = SeqRecord(donor_Seq, name=donor_name, features=donor_features)
+            donor_Record = SeqRecord(donor_Seq, name=donor_name, features=HA_info['donor_features'])
             results['gb_Records']['donor'] = donor_Record
 
-            target_features.extend([
-                SeqFeature(location=FeatureLocation(HA_info['target_HA_start'], HA_info['target_HA_start'] + lengths['HA_1'], strand=1),
-                        id='HA_1',
-                        type='misc_feature',
-                        qualifiers={'label': 'HA_1',
-                                    'ApEinfo_fwdcolor': colors['HA_1'],
-                                    },
-                        ),
-                SeqFeature(location=FeatureLocation(HA_info['target_HA_end'] - lengths['HA_2'], HA_info['target_HA_end'], strand=1),
-                        id='HA_2',
-                        type='misc_feature',
-                        qualifiers={'label': 'HA_2',
-                                    'ApEinfo_fwdcolor': colors['HA_2'],
-                                    },
-                        ),
-            ])
+            target_features.extend(HA_info['target_features'])
 
         target_Seq = Seq(target_seq, generic_dna)
         target_Record = SeqRecord(target_Seq, name=target_name, features=target_features)
@@ -618,6 +802,7 @@ def build_target_info(base_dir, info, all_index_locations):
     if len(good_candidates) == 0:
         if len(bad_candidates) == 0:
             print(f'Error building {name}: no perfect matches to sgRNA {protospacer} found in {genome}')
+            print(imperfect_als)
             return 
 
         else:
@@ -681,6 +866,17 @@ def build_target_info(base_dir, info, all_index_locations):
 
     if has_nh_donor:
         manifest['nonhomologous_donor'] = nh_donor_name
+
+    manifest['features_to_show'] = [
+        [donor_name, 'scaffold'],
+        [donor_name, 'protospacer'],
+        [donor_name, 'HA_RT'],
+        [donor_name, 'HA_PBS'],
+        [target_name, 'HA_RT'],
+        [target_name, 'HA_PBS'],
+        [target_name, 'forward_primer'],
+        [target_name, 'reverse_primer'],
+    ]
 
     manifest_fn.write_text(yaml.dump(manifest, default_flow_style=False))
         

@@ -15,7 +15,6 @@ import numpy as np
 import bokeh.palettes
 import pysam
 import yaml
-import scipy.signal
 import ipywidgets
 
 from hits import sam, fastq, utilities, visualize_structure, sw, adapters, mapping_tools, interval
@@ -25,7 +24,7 @@ from . import target_info, blast, layout, visualize, read_outcome, svg, table
 
 def color_groups():
     starts_20c = np.arange(4) * 4
-    starts_20b = np.array([3, 1, 0, 2, 5]) * 4
+    starts_20b = np.array([3, 1, 0, 2, 4]) * 4
 
     groups_20c = [bokeh.palettes.Category20c_20[start:start + 3] for start in starts_20c]
     groups_20b = [bokeh.palettes.Category20b_20[start:start + 3] for start in starts_20b]
@@ -88,13 +87,13 @@ class Experiment(object):
             self.description = description
 
         self.project = self.description.get('project', 'knockin')
-        self.layout_module = layout
         self.max_insertion_length = 20
 
         self.sgRNA = self.description.get('sgRNA')
         self.donor = self.description.get('donor')
         self.nonhomologous_donor = self.description.get('nonhomologous_donor')
         self.primer_names = self.description.get('primer_names', ['forward_primer', 'reverse_primer'])
+        self.sequencing_start_feature_name = self.description.get('sequencing_start_feature_name', None)
         self.infer_homology_arms = self.description.get('infer_homology_arms', False)
 
         # When checking if an Experiment meets filtering conditions, want to be
@@ -134,6 +133,11 @@ class Experiment(object):
             self.supplemental_index_names = index_names.split(';')
 
     @memoized_property
+    def layout_module(self):
+        # This needs to be a memoized_property because subclasses use it as one.
+        return layout
+
+    @memoized_property
     def dir(self):
         return self.base_dir / 'results' / self.group / self.name
 
@@ -143,10 +147,6 @@ class Experiment(object):
         return {name: locations[name] for name in self.supplemental_index_names}
 
     @memoized_property
-    def supplemental_headers(self):
-       return {name: sam.header_from_STAR_index(d['STAR']) for name, d in self.supplemental_indices.items()}
-
-    @memoized_property
     def target_info(self):
         return target_info.TargetInfo(self.base_dir,
                                       self.target_name,
@@ -154,7 +154,8 @@ class Experiment(object):
                                       nonhomologous_donor=self.nonhomologous_donor,
                                       sgRNA=self.sgRNA,
                                       primer_names=self.primer_names,
-                                      supplemental_headers=self.supplemental_headers,
+                                      sequencing_start_feature_name=self.sequencing_start_feature_name,
+                                      supplemental_indices=self.supplemental_indices,
                                       infer_homology_arms=self.infer_homology_arms,
                                      )
 
@@ -340,7 +341,7 @@ class Experiment(object):
                         # or that have too many edits (per aligned nt). Keep this in
                         # mind when interpretting short unexplained gaps in reads.
 
-                        if min_length is not None and al.query_alignment_length <= min_length:
+                        if min_length is not None and al.query_alignment_length < min_length:
                             continue
 
                         #if al.get_tag('AS') / al.query_alignment_length <= 0.8:
@@ -546,10 +547,12 @@ class Experiment(object):
         else:
             to_plot = als
 
+        kwargs.setdefault('features_to_show', self.target_info.features_to_show)
+
         diagram = visualize.ReadDiagram(to_plot, self.target_info,
-                                        features_to_show=self.target_info.features_to_show,
                                         max_qual=self.max_qual,
-                                        **kwargs)
+                                        **kwargs,
+                                       )
 
         return diagram
 
@@ -562,7 +565,21 @@ class Experiment(object):
                                                          num_examples,
                                                         )
 
-    def length_distribution_figure(self, outcome=None, show_ranges=False, show_title=False):
+    def length_distribution_figure(self,
+                                   outcome=None,
+                                   show_ranges=False,
+                                   show_title=False,
+                                   fig_size=(12, 6),
+                                   font_size=12,
+                                   x_tick_multiple=None,
+                                   max_relevant_length=None,
+                                  ):
+        if x_tick_multiple is None:
+            x_tick_multiple = self.x_tick_multiple
+
+        if max_relevant_length is None:
+            max_relevant_length = self.max_relevant_length
+
         all_ys = self.read_lengths / self.total_reads
 
         def convert_to_smoothed_percentages(ys):
@@ -570,8 +587,7 @@ class Experiment(object):
             smoothed = pd.Series(ys).rolling(window=window, center=True, min_periods=1).sum()
             return smoothed * 100
 
-        fig, ax = plt.subplots(figsize=(12, 6))
-
+        fig, ax = plt.subplots(figsize=fig_size)
 
         if outcome is None:
             ys_list = [
@@ -637,7 +653,7 @@ class Experiment(object):
         y_lims = (0, max_y * 1.05)
         ax.set_ylim(*y_lims)
 
-        x_max = int(self.max_relevant_length * 1.005)
+        x_max = int(max_relevant_length * 1.005)
         ax.set_xlim(0, x_max)
         
         if show_title:
@@ -649,7 +665,9 @@ class Experiment(object):
 
             ax.set_title(title)
             
-        ax.legend(framealpha=0.5)
+        if outcome is not None:
+            # No need to draw legend if only showing all reads
+            ax.legend(framealpha=0.5)
         
         expected_lengths = {
             'expected\nWT': self.target_info.amplicon_length,
@@ -657,21 +675,22 @@ class Experiment(object):
         if self.target_info.clean_HDR_length is not None:
             expected_lengths['expected\nHDR'] = self.target_info.clean_HDR_length
         
-        for name, length in expected_lengths.items():
-            ax.axvline(length, ymin=0, ymax=1.02, color='black', alpha=0.4, clip_on=False)
+        for i, (name, length) in enumerate(expected_lengths.items()):
+            y = 1 + 0.02  + 0.04 * i
+            ax.axvline(length, ymin=0, ymax=y, color='black', alpha=0.4, clip_on=False)
 
             ax.annotate(name,
-                        xy=(length, 1.02), xycoords=('data', 'axes fraction'),
+                        xy=(length, y), xycoords=('data', 'axes fraction'),
                         xytext=(0, 1), textcoords='offset points',
                         ha='center', va='bottom',
                         size=10,
                        )
         
-        main_ticks = list(range(0, self.max_relevant_length, self.x_tick_multiple))
-        main_tick_labels = [str(x) for x in main_ticks]
+        main_ticks = list(range(0, max_relevant_length, x_tick_multiple))
+        main_tick_labels = [f'{x:,}' for x in main_ticks]
 
-        extra_ticks = [self.max_relevant_length]
-        extra_tick_labels = [f'$\geq${self.max_relevant_length}']
+        extra_ticks = [max_relevant_length]
+        extra_tick_labels = [f'$\geq${max_relevant_length}']
 
         if self.length_to_store_unknown is not None:
             extra_ticks.append(self.length_to_store_unknown)
@@ -680,11 +699,11 @@ class Experiment(object):
         ax.set_xticks(main_ticks + extra_ticks)
         ax.set_xticklabels(main_tick_labels + extra_tick_labels)
         
-        minor = [x for x in np.arange(0, x_max, self.x_tick_multiple // 2) if x % self.x_tick_multiple != 0]
+        minor = [x for x in np.arange(0, x_max, x_tick_multiple // 2) if x % x_tick_multiple != 0]
         ax.set_xticks(minor, minor=True)
 
-        ax.set_ylabel('Percentage of reads', size=12)
-        ax.set_xlabel('amplicon length', size=12)
+        ax.set_ylabel('percentage of reads', size=font_size)
+        ax.set_xlabel('amplicon length', size=font_size)
 
         return fig
 
@@ -2012,10 +2031,19 @@ def get_all_experiments(base_dir, conditions=None, as_dictionary=False, progress
             continue
 
         for name, description in sample_sheet.items():
+            if isinstance(description, str):
+                continue
+
             if description.get('platform') == 'illumina':
                 exp_class = IlluminaExperiment
             elif description.get('platform') == 'pacbio':
                 exp_class = PacbioExperiment
+            elif description.get('platform') == 'prime':
+                from ddr.prime_editing_experiment import PrimeEditingExperiment
+                exp_class = PrimeEditingExperiment
+            elif description.get('platform') == 'prime_fixed_offset':
+                from ddr.prime_editing_experiment import PrimeEditingFixedOffsetExperiment
+                exp_class = PrimeEditingFixedOffsetExperiment
             else:
                 exp_class = Experiment
             

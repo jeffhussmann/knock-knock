@@ -107,10 +107,16 @@ def process(args):
             exp_class = experiment.PacbioExperiment
         elif description.get('platform') == 'illumina':
             exp_class = experiment.IlluminaExperiment
+        elif description.get('platform') == 'prime':
+            from ddr.prime_editing_experiment import PrimeEditingExperiment
+            exp_class = PrimeEditingExperiment
+        elif description.get('platform') == 'prime_fixed_offset':
+            from ddr.prime_editing_experiment import PrimeEditingFixedOffsetExperiment
+            exp_class = PrimeEditingFixedOffsetExperiment
         else:
             raise ValueError(description)
 
-    exp = exp_class(args.project_directory, args.group, args.sample, description, args.progress)
+    exp = exp_class(args.project_directory, args.group, args.sample, description=description, progress=args.progress)
 
     stages = args.stages.split(',')
     for stage in stages:
@@ -153,7 +159,6 @@ def build_indices(args):
 def install_example_data(args):
     import os
     import shutil
-    import knock_knock
 
     package_dir = Path(os.path.realpath(knock_knock.__file__)).parent / 'example_data'
     subdirs_to_copy = ['data', 'targets']
