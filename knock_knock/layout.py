@@ -2122,7 +2122,7 @@ def get_indel_info(alignment):
     return indels
 
 def split_at_edit_clusters(al, target_info):
-    ''' Identify read locations at which there are more than 5 edits in a 11 nt window. 
+    ''' Identify read locations at which there are at least 5 edits in a 11 nt window. 
     Excise outwards from any such location until reaching a stretch of 5 exact matches.
     Remove the excised region, producing new cropped alignments.
     '''
@@ -2148,7 +2148,7 @@ def split_at_edit_clusters(al, target_info):
 
     argmax = rolling_sums.idxmax()
 
-    if rolling_sums[argmax] <= 5:
+    if rolling_sums[argmax] < 5:
         split_als.append(al)
     else:
         last_read_p_in_before = None
