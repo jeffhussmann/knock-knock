@@ -49,7 +49,7 @@ def load_counts(base_dir, conditions=None, exclude_malformed=False, exclude_empt
     df = df.reindex(layout_module.full_index, fill_value=0)
 
     if exclude_malformed:
-        df = df.drop('malformed layout', axis='index', level=0, errors='ignore')
+        df = df.drop(['malformed layout', 'nonspecific amplification'], axis='index', level=0, errors='ignore')
         totals_row_label = totals_relevant_row_label
     else:
         totals_row_label = totals_all_row_label
