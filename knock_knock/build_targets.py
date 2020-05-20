@@ -868,15 +868,27 @@ def build_target_info(base_dir, info, all_index_locations):
         manifest['nonhomologous_donor'] = nh_donor_name
 
     manifest['features_to_show'] = [
-        [donor_name, 'scaffold'],
-        [donor_name, 'protospacer'],
-        [donor_name, 'HA_RT'],
-        [donor_name, 'HA_PBS'],
-        [target_name, 'HA_RT'],
-        [target_name, 'HA_PBS'],
         [target_name, 'forward_primer'],
         [target_name, 'reverse_primer'],
     ]
+
+    if donor_type == 'pegRNA':
+        manifest['features_to_show'].extend([
+            [donor_name, 'scaffold'],
+            [donor_name, 'protospacer'],
+            [donor_name, 'HA_RT'],
+            [donor_name, 'HA_PBS'],
+            [target_name, 'HA_RT'],
+            [target_name, 'HA_PBS'],
+        ])
+    else:
+        manifest['features_to_show'].extend([
+            [donor_name, 'HA_1'],
+            [donor_name, 'HA_2'],
+            [donor_name, 'donor_specific'],
+            [target_name, 'HA_1'],
+            [target_name, 'HA_2'],
+        ])
 
     manifest_fn.write_text(yaml.dump(manifest, default_flow_style=False))
         
