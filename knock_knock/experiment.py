@@ -1335,6 +1335,9 @@ class PacbioExperiment(Experiment):
             by_name_fn = self.fns_by_read_type['supplemental_bam_by_name'][read_type, index_name]
             by_name_sorter = sam.AlignmentSorter(by_name_fn, new_header, by_name=True)
 
+            # Sorting key prioritizes first longer alignments, then ones with fewer edits.
+            sorting_key = lambda al: (-al.query_alignment_length, al.get_tag('NM'))
+
             # Unless I am missing an option, minimap2 omits seq and qual for mapped reads.
             # Add them back.
             with by_name_sorter:
@@ -1350,7 +1353,10 @@ class PacbioExperiment(Experiment):
                     qual = fastq.decode_sanger_to_array(read.qual)
                     qual_rc = qual[::-1]
 
-                    for al in als:
+                    # Only retain the top 50 alignments.
+                    sorted_als = sorted((al for al in als if not al.is_unmapped), key=sorting_key)[:50]
+
+                    for al in sorted_als:
                         if not al.is_reverse:
                             al.query_sequence = seq
                             al.query_qualities = qual
