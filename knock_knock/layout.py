@@ -2086,7 +2086,7 @@ def split_at_edit_clusters(al, target_info):
         if last_read_p_in_before is not None:
             cropped_before = sam.crop_al_to_query_int(al, 0, last_read_p_in_before)
             if cropped_before is not None:
-                split_als.append(cropped_before)
+                split_als.extend(split_at_edit_clusters(cropped_before, target_info))
 
         first_read_p_in_after = None
             
@@ -2100,7 +2100,7 @@ def split_at_edit_clusters(al, target_info):
         if first_read_p_in_after is not None:
             cropped_after = sam.crop_al_to_query_int(al, first_read_p_in_after, np.inf)
             if cropped_after is not None:
-                split_als.append(cropped_after)
+                split_als.extend(split_at_edit_clusters(cropped_after, target_info))
 
     return split_als
 
