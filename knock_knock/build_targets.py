@@ -234,28 +234,27 @@ def identify_homology_arms(donor_seq, donor_type, target_seq, cut_after, colors,
                         possible_HA_boundaries.append((donor_seq, before_al.reference_start, after_al.reference_end))
                 elif strand == '-':
                     if before_al.reference_start > after_al.reference_end:
-                        flipped = utilities.reverse_complement(donor_seq)
+                        flipped_seq = utilities.reverse_complement(donor_seq)
                         start = len(donor_seq) - 1 - (before_al.reference_end - 1)
                         end = len(donor_seq) - 1 - after_al.reference_start + 1
-                        possible_HA_boundaries.append((flipped, start, end))
+                        possible_HA_boundaries.append((flipped_seq, start, end))
 
-         
     possible_HAs = []
     for possibly_flipped_donor_seq, HA_start, HA_end in possible_HA_boundaries:
         donor_window = possibly_flipped_donor_seq[HA_start:HA_end]
 
         donor_prefix = donor_window[:required_match_length]
 
-        if donor_prefix not in target_seq:
-            raise ValueError
-
         donor_suffix = donor_window[-required_match_length:]
 
-        if donor_suffix not in target_seq:
-            raise ValueError
+        # Try to be resilient against multiple occurrence of HA substrings in the target
+        # by prioritizing matches closest to the cut site.
+        target_HA_start = target_seq.rfind(donor_prefix, 0, cut_after + required_match_length)
+        target_HA_end = target_seq.find(donor_suffix, cut_after - required_match_length) + len(donor_suffix)
 
-        target_HA_start = target_seq.index(donor_prefix)
-        target_HA_end = target_seq.index(donor_suffix) + len(donor_suffix)
+        if target_HA_start == -1 or target_HA_end == -1 or target_HA_start >= target_HA_end:
+            results = {'failed': f'cannot locate homology arms in target'}
+            return results
 
         relevant_target_seq = target_seq[target_HA_start:target_HA_end]
 
@@ -324,29 +323,29 @@ def identify_homology_arms(donor_seq, donor_type, target_seq, cut_after, colors,
     target_strand = 1
 
     donor_features = [
-        SeqFeature(location=FeatureLocation(donor_starts[key], donor_ends[key], strand=donor_strand),
-                    id=key,
+        SeqFeature(location=FeatureLocation(donor_starts[feature_name], donor_ends[feature_name], strand=donor_strand),
+                    id=feature_name,
                     type='misc_feature',
-                    qualifiers={'label': key,
-                                'ApEinfo_fwdcolor': colors[key],
+                    qualifiers={'label': feature_name,
+                                'ApEinfo_fwdcolor': colors[feature_name],
                                 },
                 )
-        for key in donor_starts
+        for feature_name in donor_starts
     ]
 
     target_features = ([
-        SeqFeature(location=FeatureLocation(target_starts[key], target_ends[key], strand=target_strand),
-                    id=key,
+        SeqFeature(location=FeatureLocation(target_starts[feature_name], target_ends[feature_name], strand=target_strand),
+                    id=feature_name,
                     type='misc_feature',
-                    qualifiers={'label': key,
-                                'ApEinfo_fwdcolor': colors[key],
+                    qualifiers={'label': feature_name,
+                                'ApEinfo_fwdcolor': colors[feature_name],
                                 },
                     )
-        for key in target_starts
+        for feature_name in target_starts
     ])
 
     HA_info = {
-        'possibly_flipped_donor_seq': donor_seq,
+        'possibly_flipped_donor_seq': results['possibly_flipped_donor_seq'],
         'donor_features': donor_features,
         'target_features': target_features,
     }
@@ -657,7 +656,7 @@ def build_target_info(base_dir, info, all_index_locations):
         rightmost_start = full_around.index(rightmost_primer)
 
         if leftmost_start >= rightmost_start:
-            results['failed'] = f'primer don\'t flank protospacer'
+            results['failed'] = f'primers don\'t flank protospacer'
             return results
         
         # Now that primers have been located, redefine the target sequence to include a fixed
