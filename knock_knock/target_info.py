@@ -49,7 +49,9 @@ class TargetInfo():
         self.dir = Path(base_dir) / 'targets' / name
 
         manifest_fn = self.dir / 'manifest.yaml'
-        self.manifest = yaml.safe_load(manifest_fn.open())
+        with manifest_fn.open() as manifest_fh:
+            self.manifest = yaml.safe_load(manifest_fh)
+
         self.target = self.manifest['target']
         self.sources = self.manifest['sources']
         self.gb_records = gb_records
