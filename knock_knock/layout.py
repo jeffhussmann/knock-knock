@@ -1053,7 +1053,7 @@ class Layout(object):
         for side in [5, 3]:
             primer_al = self.primer_alignments[side]
             donor_al = self.closest_donor_alignment_to_edge[side]
-            overlap = self.junction_microhomology(primer_al, donor_al)
+            overlap = junction_microhomology(self.target_info, primer_al, donor_al)
             short_gap[side] = overlap > -10
 
         is_blunt = {side: reaches_end[side] and short_gap[side] for side in [5, 3]}
@@ -1647,7 +1647,7 @@ class Layout(object):
         if target_al is None or donor_al is None:
             MH_nts = None
         else:
-            MH_nts = self.junction_microhomology(self.target_info, target_al, donor_al)
+            MH_nts = junction_microhomology(self.target_info, target_al, donor_al)
 
         return MH_nts
 
