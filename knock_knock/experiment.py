@@ -163,6 +163,9 @@ class Experiment(object):
     def target_name(self):
         return self.description['target_info']
 
+    def check_combined_read_length(self):
+        pass
+
     @memoized_property
     def fns_by_read_type(self):
         fns = defaultdict(dict)
@@ -419,11 +422,11 @@ class Experiment(object):
     def record_sanitized_category_names(self):
         sanitized_to_original = {}
         for outcome in self.outcomes:
-            sanitized_string = layout.outcome_to_sanitized_string(outcome)
+            sanitized_string = self.layout_module.outcome_to_sanitized_string(outcome)
             sanitized_to_original[sanitized_string] = ', '.join(outcome)
         
         for category in sorted(set(c for c, s in self.outcomes)):
-            sanitized_string = layout.outcome_to_sanitized_string(category)
+            sanitized_string = self.layout_module.outcome_to_sanitized_string(category)
             sanitized_to_original[sanitized_string] = category
 
         with open(self.fns['sanitized_category_names'], 'w') as fh:
@@ -431,9 +434,8 @@ class Experiment(object):
                 fh.write(f'{k}\t{v}\n')
 
     def categorize_outcomes(self, fn_key='bam_by_name', read_type=None):
-        combined_read_length = self.R1_read_length + self.R2_read_length
-        if combined_read_length < self.target_info.amplicon_length:
-            print(f'Warning: {self.group} {self.name} combined read length ({combined_read_length}) less than expected amplicon length ({self.target_info.amplicon_length:,}).')
+
+        self.check_combined_read_length()
 
         if self.fns['outcomes_dir'].is_dir():
             shutil.rmtree(str(self.fns['outcomes_dir']))
@@ -1498,7 +1500,12 @@ class IlluminaExperiment(Experiment):
     def R2_read_length(self):
         R1, R2 = next(self.read_pairs)
         return len(R2)
-    
+
+    def check_combined_read_length(self):
+        combined_read_length = self.R1_read_length + self.R2_read_length
+        if combined_read_length < self.target_info.amplicon_length:
+            print(f'Warning: {self.group} {self.name} combined read length ({combined_read_length}) less than expected amplicon length ({self.target_info.amplicon_length:,}).')
+
     @memoized_property
     def max_relevant_length(self):
         return self.R1_read_length + self.R2_read_length + 100
