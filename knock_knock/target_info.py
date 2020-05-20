@@ -491,6 +491,13 @@ class TargetInfo():
         return by_side
 
     @memoized_property
+    def combined_primer_length(self):
+        if len(self.primers) != 2:
+            raise ValueError(self.primers)
+        else:
+            return sum(len(f) for name, f in self.primers.items())
+
+    @memoized_property
     def target_side_intervals(self):
         ''' intervals of target 5' and 3' of cut '''
         return {

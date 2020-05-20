@@ -178,7 +178,7 @@ class Layout(object):
     def categorize_with_donor(self):
         details = 'n/a'
         
-        if self.seq is None or len(self.seq) <= 50:
+        if self.seq is None or len(self.seq) <= self.target_info.combined_primer_length + 10:
             category = 'malformed layout'
             subcategory = 'too short'
             self.relevant_alignments = self.uncategorized_relevant_alignments
