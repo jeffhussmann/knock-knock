@@ -3,6 +3,7 @@ import functools
 import io
 import os
 import zipfile
+import shutil
 
 from pathlib import Path
 
@@ -399,9 +400,10 @@ def make_self_contained_zip(base_dir, conditions, table_name,
     fn_prefix = results_dir / table_name
     fns_to_zip = []
 
-    logo_fn = Path(os.path.realpath(__file__)).parent / 'docs/' / 'logo_v2.png'
+    logo_fn = Path(os.path.realpath(__file__)).parent / 'docs' / 'logo_v2.png'
     if logo_fn.exists():
-        fns_to_zip.append(logo_fn)
+        shutil.copy(logo_fn, results_dir / 'logo_v2.png') 
+        fns_to_zip.append(results_dir / 'logo_v2.png')
 
     print('Generating high-level html table...')
     html_fn = fn_prefix.with_suffix('.html')
