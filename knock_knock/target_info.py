@@ -912,7 +912,7 @@ class TargetInfo():
 
     @memoized_property
     def inferred_HA_features(self):
-        if not self.infer_homology_arms:
+        if self.donor is None or not self.infer_homology_arms:
             return None
 
         donor_SNVs, HAs = self.inferred_donor_SNVs_and_HAs
@@ -927,7 +927,9 @@ class TargetInfo():
     
     @memoized_property
     def donor_SNVs(self):
-        if self.infer_homology_arms:
+        if self.donor is None:
+            donor_SNVs = self.donor_SNVs_manual
+        elif self.infer_homology_arms:
             donor_SNVs, HAs = self.inferred_donor_SNVs_and_HAs
         else:
             donor_SNVs = self.donor_SNVs_manual
