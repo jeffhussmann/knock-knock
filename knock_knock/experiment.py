@@ -1133,21 +1133,25 @@ Esc when done to deactivate the category.'''
         self.generate_all_outcome_length_range_figures()
         self.generate_all_outcome_example_figures()
         svg.decorate_outcome_browser(self)
-    
+
+    def example_diagrams(self, outcome, num_examples):
+        al_groups = self.alignment_groups(outcome=outcome)
+        diagrams = self.alignment_groups_to_diagrams(al_groups, num_examples=num_examples, **self.diagram_kwargs)
+        return diagrams
+        
     def generate_outcome_example_figures(self, outcome, num_examples, **kwargs):
         if isinstance(outcome, tuple):
             description = ': '.join(outcome)
         else:
             description = outcome
 
-        al_groups = self.alignment_groups(outcome=outcome)
-        diagrams = self.alignment_groups_to_diagrams(al_groups, num_examples=num_examples, **kwargs)
-        
         def fig_to_img_tag(fig):
             URI, width, height = table.fig_to_png_URI(fig)
             plt.close(fig)
             tag = f"<img src={URI} class='center'>"
             return tag
+
+        diagrams = self.example_diagrams(outcome, num_examples)
         
         outcome_fns = self.outcome_fns(outcome)
         outcome_dir = outcome_fns['dir']
@@ -1188,8 +1192,9 @@ p {{
             fh.write(f'<h2>{description}</h2>\n')
             
             fig = self.length_distribution_figure(outcome=outcome)
-            tag = fig_to_img_tag(fig)
-            fh.write(f'{tag}\n<hr>\n')
+            if fig is not None:
+                tag = fig_to_img_tag(fig)
+                fh.write(f'{tag}\n<hr>\n')
                 
             for i, diagram in enumerate(self.progress(diagrams, desc=description)):
                 if i == 0:
@@ -1198,7 +1203,7 @@ p {{
                 fh.write(f'<p>{diagram.query_name}</p>\n')
                 tag = fig_to_img_tag(diagram.fig)
                 fh.write(f'{tag}\n')
-    
+
     def generate_all_outcome_example_figures(self, num_examples=10, **kwargs):
         for outcome in self.progress(self.outcomes, desc='Making diagrams for detailed subcategories'):
             self.generate_outcome_example_figures(outcome=outcome, num_examples=num_examples, **kwargs)
@@ -1302,6 +1307,8 @@ class PacbioExperiment(Experiment):
         self.outcome_fn_keys = ['outcome_list']
 
         self.length_plot_smooth_window = 7
+
+        self.diagram_kwargs = dict(draw_sequence=False)
 
     def alignment_groups(self, fn_key='bam_by_name', outcome=None, read_type='CCS'):
         groups = super().alignment_groups(fn_key=fn_key, outcome=outcome, read_type=read_type)
@@ -1425,7 +1432,7 @@ class PacbioExperiment(Experiment):
         items = self.progress(by_length_range.items(), desc=description, total=len(by_length_range))
 
         for (start, end), sampler in items:
-            diagrams = self.alignment_groups_to_diagrams(sampler.sample, num_examples=num_examples)
+            diagrams = self.alignment_groups_to_diagrams(sampler.sample, num_examples=num_examples, **self.diagram_kwargs)
             im = visualize.make_stacked_Image(diagrams, titles='')
             fn = fns['length_range_figure'](start, end)
             im.save(fn)
@@ -1496,6 +1503,8 @@ class IlluminaExperiment(Experiment):
         ]
 
         self.length_plot_smooth_window = 0
+
+        self.diagram_kwargs = dict(draw_sequence=True)
 
     @memoized_property
     def R1_read_length(self):
@@ -1741,7 +1750,7 @@ class IlluminaExperiment(Experiment):
         items = self.progress(by_length.items(), desc=description, total=len(by_length))
 
         for length, sampler in items:
-            diagrams = self.alignment_groups_to_diagrams(sampler.sample, num_examples=num_examples)
+            diagrams = self.alignment_groups_to_diagrams(sampler.sample, num_examples=num_examples, **self.diagram_kwargs)
             im = visualize.make_stacked_Image(diagrams, titles='')
             fn = fns['length_range_figure'](length, length)
             im.save(fn)
