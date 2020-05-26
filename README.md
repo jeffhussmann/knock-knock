@@ -94,7 +94,7 @@ These files are stored in directory called `indices` inside a project directory.
 
 knock-knock provides a built-in way to download references and build indices for human (hg38), mouse (mm10), or e. coli genomes. To do this, run
 
-```knock-knock build_indices PROJECT_DIR ORGANISM [--num_threads NUM_THREADS]```
+```knock-knock build-indices PROJECT_DIR ORGANISM [--num-threads NUM_THREADS]```
 
 where ORGANISM is one of hg38, mm10, or e_coli, and NUM_THREADS is an optional argument that can be provided to use multiple threads for index building.
 (This can take up to several hours for mammalian-scale genomes.)
