@@ -1057,3 +1057,34 @@ def download_genome_and_build_indices(base_dir, genome_name, num_threads=8):
     subprocess.run(gunzip_command, check=True)
 
     build_indices(base_dir, genome_name, num_threads=num_threads)
+
+def build_manual_target(base_dir, target_name):
+    target_dir = base_dir / 'targets' / target_name
+
+    gb_fns = sorted(target_dir.glob('*.gb'))
+
+    if len(gb_fns) != 1:
+        raise ValueError
+
+    gb_fn = gb_fns[0]
+
+    records = list(Bio.SeqIO.parse(str(gb_fn), 'genbank'))
+
+    if len(records) != 1:
+        raise ValueError
+
+    record = records[0]
+
+    manifest = {
+        'sources': [gb_fn.stem],
+        'target': record.id,
+    }
+
+    manifest_fn = target_dir / 'manifest.yaml'
+
+    with manifest_fn.open('w') as fh:
+        fh.write(yaml.dump(manifest, default_flow_style=False))
+
+    ti = target_info.TargetInfo(base_dir, target_name)
+    ti.make_references()    
+    ti.identify_degenerate_indels()
