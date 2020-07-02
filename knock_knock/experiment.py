@@ -2051,7 +2051,7 @@ def get_all_experiments(base_dir, conditions=None, as_dictionary=False, progress
     groups = get_all_groups(base_dir)
 
     if 'group' in conditions:
-        groups = (n for n in groups if n in conditions['group'])
+        groups = (n for n in groups if n == conditions['group'])
     
     for group in groups:
         sample_sheet = load_sample_sheet(base_dir, group)
