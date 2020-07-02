@@ -1504,17 +1504,20 @@ class IlluminaExperiment(Experiment):
 
         self.length_plot_smooth_window = 0
 
+        self.trim_from_R1 = self.description.get('trim_from_R1', 0)
+        self.trim_from_R2 = self.description.get('trim_from_R2', 0)
+
         self.diagram_kwargs = dict(draw_sequence=True)
 
     @memoized_property
     def R1_read_length(self):
         R1, R2 = next(self.read_pairs)
-        return len(R1)
+        return len(R1) - self.trim_from_R1
     
     @memoized_property
     def R2_read_length(self):
         R1, R2 = next(self.read_pairs)
-        return len(R2)
+        return len(R2) - self.trim_from_R2
 
     def check_combined_read_length(self):
         combined_read_length = self.R1_read_length + self.R2_read_length
@@ -1685,11 +1688,16 @@ class IlluminaExperiment(Experiment):
                     print(f'R2 file name: {R2_fns}')
                     print(f'R1 read {R1.name} paired with R2 read {R2.name}.')
                     sys.exit(1)
+
                 stitched = sw.stitch_read_pair(R1, R2, before_R1, before_R2, indel_penalty=-1000)
+
                 if len(stitched) == self.R1_read_length + self.R2_read_length:
                     R1_fh.write(str(R1))
                     R2_fh.write(str(R2))
                 else:
+                    # Trim after stitching to leave adapters in expected place during stitching.
+                    stitched = stitched[self.trim_from_R1:len(stitched) - self.trim_from_R2]
+
                     stitched_fh.write(str(stitched))
 
     def alignment_groups(self, fn_key=None, outcome=None, read_type=None):
