@@ -421,14 +421,14 @@ class Experiment(object):
     
     def record_sanitized_category_names(self):
         sanitized_to_original = {}
-        for outcome in self.outcomes:
-            sanitized_string = self.layout_module.outcome_to_sanitized_string(outcome)
-            sanitized_to_original[sanitized_string] = ', '.join(outcome)
+        for cat, subcats in self.layout_module.category_order:
+            sanitized_string = self.layout_module.outcome_to_sanitized_string(cat)
+            sanitized_to_original[sanitized_string] = cat
+            for subcat in subcats:
+                outcome = (cat, subcat)
+                sanitized_string = self.layout_module.outcome_to_sanitized_string(outcome)
+                sanitized_to_original[sanitized_string] = ', '.join(outcome)
         
-        for category in sorted(set(c for c, s in self.outcomes)):
-            sanitized_string = self.layout_module.outcome_to_sanitized_string(category)
-            sanitized_to_original[sanitized_string] = category
-
         with open(self.fns['sanitized_category_names'], 'w') as fh:
             for k, v in sorted(sanitized_to_original.items()):
                 fh.write(f'{k}\t{v}\n')
