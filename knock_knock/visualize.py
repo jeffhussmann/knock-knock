@@ -87,7 +87,7 @@ class ReadDiagram():
                 all_split_als = []
                 for al in als:
                     if al.reference_name in [self.target_info.target, self.target_info.donor]:
-                        split_als = layout_module.comprehensively_split_alignment(al, self.target_info, 2, 2, 'illumina')
+                        split_als = layout_module.comprehensively_split_alignment(al, self.target_info, 'illumina', 2, 2)
 
                         target_seq_bytes = self.target_info.reference_sequences[al.reference_name].encode()
                         extended = [sw.extend_alignment(al, target_seq_bytes) for al in split_als]

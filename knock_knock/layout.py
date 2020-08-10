@@ -16,11 +16,10 @@ idx = pd.IndexSlice
 class Layout(object):
     def __init__(self, alignments, target_info, mode='illumina'):
         self.mode = mode
+
         if mode == 'illumina':
-            self.indel_size_to_split_at = 3
             self.max_indel_allowed_in_donor = 1
         elif mode == 'pacbio':
-            self.indel_size_to_split_at = 5
             self.max_indel_allowed_in_donor = 3
 
         self.target_info = target_info
@@ -64,7 +63,7 @@ class Layout(object):
             if extend_before or extend_after:
                 al = sw.extend_repeatedly(al, target_seq_bytes, extend_before=extend_before, extend_after=extend_after)
 
-            split_als = comprehensively_split_alignment(al, self.target_info, self.indel_size_to_split_at, self.indel_size_to_split_at, self.mode)
+            split_als = comprehensively_split_alignment(al, self.target_info, self.mode)
 
             extended = [sw.extend_alignment(split_al, target_seq_bytes) for split_al in split_als]
 
@@ -100,7 +99,7 @@ class Layout(object):
         processed_als = []
 
         for al in original_als:
-            split_als = comprehensively_split_alignment(al, self.target_info, self.indel_size_to_split_at, self.indel_size_to_split_at, self.mode)
+            split_als = comprehensively_split_alignment(al, self.target_info, self.mode)
             processed_als.extend(split_als)
 
         return processed_als
@@ -114,7 +113,8 @@ class Layout(object):
         processed_als = []
 
         for al in original_als:
-            processed_als.extend(sam.split_at_deletions(al, self.indel_size_to_split_at))
+            split_als = comprehensively_split_alignment(al, self.target_info, self.mode)
+            processed_als.extend(split_als)
 
         return processed_als
 
@@ -575,8 +575,8 @@ class Layout(object):
     @memoized_property
     def possibly_imperfect_gap_alignments(self):
         gap_als = []
-        if self.integration_interval.total_length >= 10:
-            for al in self.target_alignments + self.donor_alignments:
+        if self.gap_between_primer_alignments.total_length >= 10:
+            for al in self.target_alignments:
                 if (self.integration_interval - interval.get_covered(al)).total_length <= 2:
                     gap_als.append(al)
 
@@ -658,6 +658,8 @@ class Layout(object):
     def any_donor_specific_present(self):
         ti = self.target_info
         if ti.donor is None:
+            return False
+        elif (ti.donor, ti.donor_specific) not in ti.features:
             return False
         else:
             donor_specific = ti.features[ti.donor, ti.donor_specific]
@@ -1364,24 +1366,22 @@ class Layout(object):
 
     @memoized_property
     def genomic_insertion(self):
-        min_gap_length = 10
-        gap = self.gap_between_primer_alignments
+        min_gap_length = 20
         
         covered_by_normal = interval.get_disjoint_covered(self.alignments)
-        unexplained_gap = gap - covered_by_normal
+        unexplained_gaps = self.whole_read - covered_by_normal
 
-        if unexplained_gap.total_length < min_gap_length:
-            return None
+        long_unexplained_gaps = [gap for gap in unexplained_gaps if len(gap) >= min_gap_length]
+
+        if len(long_unexplained_gaps) != 1:
+            covering_als = None
         elif self.gap_alignments:
             # gap aligns to the target in the amplicon region
-            return None
+            covering_als = None
         else:
-            relevant_ref_names = []
+            gap = long_unexplained_gaps[0]
 
-            for genome_name, header in self.target_info.supplemental_headers.items():
-                for ref_name in header.references:
-                    full_ref_name = f'{genome_name}_{ref_name}'
-                    relevant_ref_names.append(full_ref_name)
+            relevant_ref_names = []
 
             covering_als = []
             for al in self.supplemental_alignments:
@@ -1395,7 +1395,7 @@ class Layout(object):
             if len(covering_als) == 0:
                 covering_als = None
 
-            return covering_als
+        return covering_als
         
     @memoized_property
     def one_sided_covering_als(self):
@@ -1858,7 +1858,7 @@ class NonoverlappingPairLayout():
         als = {which: l.uncategorized_relevant_alignments for which, l in self.layouts.items()}
 
         return als
-        
+
     def categorize(self):
         kind = self.successful_bridging_kind
         if kind == 'h' and self.inferred_length > 0:
@@ -2104,27 +2104,52 @@ def split_at_edit_clusters(al, target_info):
 
     return split_als
 
-def comprehensively_split_alignment(al, target_info, ins_size_to_split_at, del_size_to_split_at, mode):
+def comprehensively_split_alignment(al, target_info, mode, ins_size_to_split_at=None, del_size_to_split_at=None):
     # It is easier to reason about alignments if any that contain long insertions, long deletions, or clusters
     # of many edits are split into multiple alignments.
 
+    split_als = []
+
     if mode == 'illumina':
-        split_at_clusters = split_at_edit_clusters(al, target_info)
-    else:
+        if ins_size_to_split_at is None:
+            ins_size_to_split_at = 3
+        
+        if del_size_to_split_at is None:
+            del_size_to_split_at = 1
+
+        for split_1 in split_at_edit_clusters(al, target_info):
+            for split_2 in sam.split_at_deletions(split_1, del_size_to_split_at):
+                for split_3 in sam.split_at_large_insertions(split_2, ins_size_to_split_at):
+                    split_als.append(split_3)
+
+    elif mode == 'pacbio':
         # Empirically, for Pacbio data, it is hard to find a threshold for number of edits within a window that
-        # doesn't produce a lot of false positive splits.
-        split_at_clusters = [al]
+        # doesn't produce a lot of false positive splits, so don't try to split at edit clusters.
 
-    split_at_dels = []
-    for split_al in split_at_clusters:
-        split_at_dels.extend(sam.split_at_deletions(split_al, del_size_to_split_at))
+        if ins_size_to_split_at is None:
+            ins_size_to_split_at = 5
+        
+        if del_size_to_split_at is None:
+            del_size_to_split_at = 3
 
-    split_at_indels = []
-    for split_al in split_at_dels:
-        split_at_ins = sam.split_at_large_insertions(split_al, ins_size_to_split_at)
-        split_at_indels.extend(split_at_ins)
+        if al.reference_name == target_info.target:
+            # First split at short indels close to expected cuts.
+            exempt = target_info.not_around_cuts(50)
+            for split_1 in sam.split_at_deletions(al, del_size_to_split_at, exempt_if_overlaps=exempt):
+                for split_2 in sam.split_at_large_insertions(split_1, ins_size_to_split_at, exempt_if_overlaps=exempt):
+                    # Then at longer indels anywhere.
+                    for split_3 in sam.split_at_deletions(split_2, 10):
+                        for split_4 in sam.split_at_large_insertions(split_3, 10):
+                            split_als.append(split_4)
+        else:
+            for split_1 in sam.split_at_deletions(al, del_size_to_split_at):
+                for split_2 in sam.split_at_large_insertions(split_1, ins_size_to_split_at):
+                    split_als.append(split_2)
+    
+    else:
+        raise ValueError(mode)
 
-    return split_at_indels
+    return split_als
 
 def junction_microhomology(target_info, first_al, second_al):
     als_by_order = {
