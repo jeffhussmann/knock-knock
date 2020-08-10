@@ -1,5 +1,7 @@
 import sys
 import copy
+import functools
+import operator
 from pathlib import Path
 from collections import defaultdict
 
@@ -13,6 +15,7 @@ import Bio.SeqUtils
 from hits import fasta, gff, utilities, mapping_tools, interval, sam, sw, genomes
 
 memoized_property = utilities.memoized_property
+memoized_with_key = utilities.memoized_with_key
 
 class Effector():
     def __init__(self, name, PAM_pattern, PAM_side, cut_after_offset):
@@ -32,6 +35,7 @@ effectors = {
 
 # Hack because 'sgRNA_SaCas9H840A' is one character too long for genbank format.
 effectors['SaCas9H840'] = effectors['SaCas9H840A']
+effectors['SpCas9H840'] = effectors['SpCas9H840A']
 
 class TargetInfo():
     def __init__(self, base_dir, name,
@@ -369,7 +373,27 @@ class TargetInfo():
                 raise ValueError(f'{name}: {PAM_seq} doesn\'t match {pattern} PAM')
 
         return PAM_slices
-    
+
+    @memoized_property
+    def PAM_features(self):
+        PAM_features = {}
+
+        for name, sl in self.PAM_slices.items():
+            PAM_name = f'{name}_PAM'
+            f = gff.Feature.from_fields(self.target,
+                                        '.',
+                                        'PAM',
+                                        sl.start,
+                                        sl.stop - 1,
+                                        '.',
+                                        '.',
+                                        '.',
+                                        f'ID={PAM_name}',
+                                       )
+            PAM_features[self.target, PAM_name] = f
+
+        return PAM_features
+                                    
     @memoized_property
     def PAM_slice(self):
         return self.PAM_slices[self.primary_sgRNA]
@@ -423,11 +447,20 @@ class TargetInfo():
             if sgRNA_name == self.primary_sgRNA:
                 primary_cut_afters.append(cut_after)
 
-        return min(primary_cut_afters)
+        if len(primary_cut_afters) == 0:
+            return None
+        else:
+            return min(primary_cut_afters)
 
+    @memoized_with_key
     def around_cuts(self, each_side):
         intervals = [interval.Interval(cut_after - each_side + 1, cut_after + each_side) for cut_after in self.cut_afters.values()]
-        return interval.DisjointIntervals(intervals)
+        return functools.reduce(operator.or_, intervals) 
+
+    @memoized_with_key
+    def not_around_cuts(self, each_side):
+        whole_target = interval.Interval(0, len(self.target_sequence))
+        return whole_target - self.around_cuts(each_side)
 
     def around_or_between_cuts(self, each_side):
         left = min(self.cut_afters.values()) - each_side
@@ -491,6 +524,25 @@ class TargetInfo():
         primers = [primer for primer in self.primers.values()]
         by_side[5], by_side[3] = sorted(primers, key=lambda p: p.start)
         return by_side
+
+    @memoized_property
+    def primers_by_side_of_read(self):
+        if self.sequencing_direction == '+':
+            by_side = {
+                'left': self.primers_by_side_of_target[5],
+                'right': self.primers_by_side_of_target[3],
+            }
+        else:
+            by_side = {
+                'left': self.primers_by_side_of_target[3],
+                'right': self.primers_by_side_of_target[5],
+            }
+
+        return by_side
+
+    @memoized_property
+    def sequencing_direction(self):
+        return self.sequencing_start.strand
 
     @memoized_property
     def combined_primer_length(self):
@@ -697,6 +749,17 @@ class TargetInfo():
         return ref_p_to_offset
 
     @memoized_property
+    def past_HA_in_sequencing_read_interval(self):
+        right_HA = self.homology_arms['right']['target']
+
+        if self.sequencing_start.strand == '+':
+            target_past_HA_interval = interval.Interval(right_HA.end + 1, len(self.target_sequence))
+        else:
+            target_past_HA_interval = interval.Interval(0, right_HA.start - 1)
+
+        return target_past_HA_interval
+
+    @memoized_property
     def amplicon_interval(self):
         primers = self.primers_by_side_of_target
         return interval.Interval(primers[5].start, primers[3].end)
@@ -704,6 +767,14 @@ class TargetInfo():
     @memoized_property
     def amplicon_length(self):
         return len(self.amplicon_interval)
+
+    @memoized_property
+    def wild_type_amplicon_sequence(self):
+        seq = self.target_sequence[self.amplicon_interval.start:self.amplicon_interval.end + 1]
+        if self.sequencing_direction == '-':
+            seq = utilities.reverse_complement(seq)
+
+        return seq
 
     @memoized_property
     def clean_HDR_length(self):
@@ -995,13 +1066,13 @@ class TargetInfo():
     def donor_locii(self):
         return ''.join([b for _, b in self.fingerprints[self.donor]])
 
-    def identify_degenerate_indels(self):
+    def identify_degenerate_indels(self, max_deletion_length=200):
         degenerate_dels = defaultdict(list)
 
         possible_starts = range(self.primers_by_side_of_target[5].start, self.primers_by_side_of_target[3].end)
         for starts_at in possible_starts:
             before = self.target_sequence[:starts_at]
-            for length in range(1, 200):
+            for length in range(1, max_deletion_length):
                 if starts_at + length >= len(self.target_sequence):
                     continue
                 after = self.target_sequence[starts_at + length:]
