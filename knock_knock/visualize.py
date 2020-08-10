@@ -68,6 +68,7 @@ class ReadDiagram():
                  emphasize_parsimonious=False,
                  manual_x_lims=None,
                  label_offsets=None,
+                 center_on_primers=False,
                  **kwargs):
 
         self.parsimonious = parsimonious
@@ -141,6 +142,7 @@ class ReadDiagram():
         self.default_color = default_color
         self.mode = mode
         self.force_left_aligned = force_left_aligned
+        self.center_on_primers = center_on_primers
         self.manual_x_lims = manual_x_lims
 
         if label_offsets is None:
@@ -925,10 +927,24 @@ class ReadDiagram():
                 xs, ps, y, strand, parsimony_multiplier = self.alignment_coordinates[ref_name][0]
 
                 anchor_ref = ps[0]
+
                 if (strand == '+' and not flip) or (strand == '-' and flip):
                     anchor_read = xs[0]
                 else:
                     anchor_read = xs[1]
+
+            elif ref_name == ti.target and self.center_on_primers:
+                if self.flip_target:
+                    anchor_ref = ti.amplicon_interval.end - (len(ti.amplicon_interval) - self.query_length) / 2
+                else:
+                    anchor_ref = ti.amplicon_interval.start + (len(ti.amplicon_interval) - self.query_length) / 2
+
+                xs, ps, y, strand, parsimony_multiplier = self.alignment_coordinates[ref_name][0]
+                if (strand == '+' and not flip) or (strand == '-' and flip):
+                    anchor_read = xs[0]
+                else:
+                    anchor_read = xs[1]
+
             else:
                 anchor_ref = center_p
 
@@ -985,6 +1001,10 @@ class ReadDiagram():
                 # Draw lines connecting alignment edges to reference.
                 for x, ref_x in zip(xs, ref_xs):
                     self.ax.plot([x, ref_x], [y, ref_border_y], color=color, alpha=0.3 * parsimony_multiplier, clip_on=False)
+
+            if self.center_on_primers:
+                ref_al_min = min(ref_al_min, ti.amplicon_interval.start)
+                ref_al_max = max(ref_al_max, ti.amplicon_interval.end)
 
             self.min_y = min(self.min_y, ref_y)
             self.max_y = max(self.max_y, ref_y)
