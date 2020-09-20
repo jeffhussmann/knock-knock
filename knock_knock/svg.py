@@ -155,8 +155,8 @@ javascript:(function(){
     });
 } )();'''
 
-def decorate_outcome_browser(exp):
-    fig = exp.plot_outcome_stratified_lengths()
+def decorate_outcome_browser(exp, min_total_to_label=0.1):
+    fig = exp.plot_outcome_stratified_lengths(min_total_to_label=min_total_to_label)
     num_panels = len(fig.axes)
 
     # Write matplotlib svg to a string.
@@ -223,7 +223,7 @@ def decorate_outcome_browser(exp):
         if sanitized_outcome == 'all':
             fns = exp.fns
         else:
-            outcome = exp.layout_module.sanitized_string_to_outcome(sanitized_outcome)
+            outcome = exp.categorizer.sanitized_string_to_outcome(sanitized_outcome)
             fns = exp.outcome_fns(outcome)
 
         fn = fns['length_range_figure'](start, end)
@@ -232,7 +232,7 @@ def decorate_outcome_browser(exp):
             if inline_images:
                 URI, width, height = table.fn_to_URI(fn)
             else:
-                relative_path = fn.relative_to(exp.fns['dir'])
+                relative_path = fn.relative_to(exp.fns['results_dir'])
                 URI = str(relative_path)
                 if fn.exists():
                     with PIL.Image.open(fn) as im:
@@ -315,11 +315,18 @@ def decorate_outcome_browser(exp):
         decorate_with_help_toggle(group)
 
     with exp.fns['outcome_browser'].open('w') as fh:
-        fh.write(before_svg_template(title=exp.name))
+        fh.write(before_svg_template(title=exp.sample_name))
         d.write(fh, encoding='unicode')
         fh.write(after_svg)
 
-def length_plot_with_popovers(exp, outcome=None, standalone=False, container_selector='body', x_lims=None, y_lims=None, inline_images=True):
+def length_plot_with_popovers(exp,
+                              outcome=None,
+                              standalone=False,
+                              container_selector='body',
+                              x_lims=None,
+                              y_lims=None,
+                              inline_images=True,
+                             ):
     fig = exp.length_distribution_figure(outcome=outcome, show_ranges=True, x_lims=x_lims, y_lims=y_lims)
 
     with io.StringIO() as buf:

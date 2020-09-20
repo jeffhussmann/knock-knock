@@ -277,6 +277,7 @@ def identify_homology_arms(donor_seq, donor_type, target_seq, cut_after, colors,
         lengths['donor_specific'] = len(donor_seq) - total_HA_length
         
         info = {
+            'min_mismatches': min_mismatches,
             'possibly_flipped_donor_seq': possibly_flipped_donor_seq,
             'donor_HA_start': HA_start,
             'donor_HA_end': HA_end,
@@ -284,12 +285,15 @@ def identify_homology_arms(donor_seq, donor_type, target_seq, cut_after, colors,
             'target_HA_end': target_HA_end,
             'lengths': lengths,
         }
-        possible_HAs.append((min_mismatches, info))
+        possible_HAs.append((info))
         
+    def priority(info):
+        return info['min_mismatches'], -min(info['lengths']['HA_1'], info['lengths']['HA_2'])
+
     if not possible_HAs:
         results = {'failed': 'cannot locate homology arms'}
     else:
-        results = min(possible_HAs)[1]
+        results = min(possible_HAs, key=priority)
 
     lengths = results['lengths']
 
@@ -485,6 +489,7 @@ def build_target_info(base_dir, info, all_index_locations):
             donor_sequence
             nonhomologous_donor_sequence
             extra_sequences
+            effector
     '''
     genome = info['genome']
     if info['genome'] not in all_index_locations:
@@ -679,7 +684,7 @@ def build_target_info(base_dir, info, all_index_locations):
             'HA_RT': '#c7b0e3',
             'HA_2': '#85dae9',
             'HA_PBS': '#85dae9',
-            'forward_primer': '#ff9ccd',
+            'forward_primer': '#75C6A9',
             'reverse_primer': '#9eafd2',
             'sgRNA': '#c6c9d1',
             'donor_specific': '#b1ff67',
@@ -706,32 +711,35 @@ def build_target_info(base_dir, info, all_index_locations):
                       ),
         ]
 
-        if donor_type == 'pegRNA':
-            if leftmost_primer_name == 'forward_primer':
-                start = leftmost_start - offset
-                start_location = FeatureLocation(start, start + 5, strand=1)
-            else:
-                start = rightmost_start - offset + len(rightmost_primer) - 5
-                start_location = FeatureLocation(start, start + 5, strand=-1)
-
-            target_features.extend([
-                SeqFeature(location=start_location,
-                           id='sequencing_start',
-                           type='misc_feature',
-                           qualifiers={'label': 'sequencing_start',
-                                      },
-                          ),
-                SeqFeature(location=start_location,
-                           id='anchor',
-                           type='misc_feature',
-                           qualifiers={'label': 'anchor',
-                                      },
-                          ),
-            ])
-
-            effector = 'SpCas9H840A'
+        if leftmost_primer_name == 'forward_primer':
+            start = leftmost_start - offset
+            start_location = FeatureLocation(start, start + 5, strand=1)
         else:
-            effector = 'SpCas9'
+            start = rightmost_start - offset + len(rightmost_primer) - 5
+            start_location = FeatureLocation(start, start + 5, strand=-1)
+
+        target_features.extend([
+            SeqFeature(location=start_location,
+                        id='sequencing_start',
+                        type='misc_feature',
+                        qualifiers={'label': 'sequencing_start',
+                                    },
+                        ),
+            SeqFeature(location=start_location,
+                        id='anchor',
+                        type='misc_feature',
+                        qualifiers={'label': 'anchor',
+                                    },
+                        ),
+        ])
+
+        if 'effector' in info:
+            effector = info['effector']
+        else:
+            if donor_type == 'pegRNA':
+                effector = 'SpCas9H840A'
+            else:
+                effector = 'SpCas9'
 
         sgRNA_features = []
         for sgRNA_i, (ps_name, ps_seq, ps_start, ps_strand) in enumerate(protospacer_locations):
@@ -896,6 +904,26 @@ def build_target_info(base_dir, info, all_index_locations):
     ti.make_references()
     ti.identify_degenerate_indels()
 
+def load_pegRNAs(base_dir):
+    base_dir = Path(base_dir)
+    csv_fn = base_dir / 'targets' / 'pegRNAs.csv'
+    if not csv_fn.exists():
+        return None
+
+    df = pd.read_csv(csv_fn, index_col='name')
+
+    component_order = ['protospacer', 'scaffold', 'extension']
+
+    donor_sequences = []
+    for _, row in df.iterrows():
+        donor_sequence = ''.join([row[component] for component in component_order])
+        donor_sequences.append(donor_sequence)
+
+    df['donor_sequence'] = donor_sequences
+    df['donor_type'] = 'pegRNA'
+
+    return df[['donor_sequence', 'donor_type']]
+
 def build_target_infos_from_csv(base_dir):
     base_dir = Path(base_dir)
     csv_fn = base_dir / 'targets' / 'targets.csv'
@@ -932,6 +960,11 @@ def build_target_infos_from_csv(base_dir):
 
     if donors_fn.exists():
         donors = pd.read_csv(donors_fn, index_col='name')
+
+        pegRNAs = load_pegRNAs(base_dir)
+        if pegRNAs is not None:
+            donors = pd.concat([donors, pegRNAs])
+
         registry['donor_sequence'] = donors['donor_sequence']
         registry['donor_type'] = donors['donor_type']
     else:
@@ -988,6 +1021,9 @@ def build_target_infos_from_csv(base_dir):
             'donor_type': lookup(row, 'donor_sequence', 'donor_type', validate_sequence=False),
             'genome': row['genome'],
         }
+
+        if 'effector' in row:
+            info['effector'] = row['effector']
 
         print(f'Building {target_name}...')
         build_target_info(base_dir, info, indices)

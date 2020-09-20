@@ -54,7 +54,7 @@ def parallel(args):
     check_parallel()
 
     if args.group:
-        args.conditions['group'] = args.group
+        args.conditions['batch'] = args.group
 
     exps = experiment.get_all_experiments(args.project_directory, args.conditions)
 
@@ -75,7 +75,7 @@ def parallel(args):
         ':::',
     ]
 
-    arg_tuples = [(exp.group, exp.name, '--stages', args.stages) for exp in exps]
+    arg_tuples = [(batch, sample_name, '--stages', args.stages) for batch, sample_name in exps]
     for t in sorted(arg_tuples):
         parallel_command.extend(t)
 
@@ -104,15 +104,20 @@ def process(args):
         description = sample_sheet[args.sample]
 
         if description.get('platform') == 'pacbio':
-            exp_class = experiment.PacbioExperiment
+            from knock_knock.pacbio_experiment import PacbioExperiment
+            exp_class = PacbioExperiment
         elif description.get('platform') == 'illumina':
-            exp_class = experiment.IlluminaExperiment
+            from knock_knock.illumina_experiment import IlluminaExperiment
+            exp_class = IlluminaExperiment
         elif description.get('platform') == 'prime':
             from ddr.prime_editing_experiment import PrimeEditingExperiment
             exp_class = PrimeEditingExperiment
-        elif description.get('platform') == 'prime_fixed_offset':
-            from ddr.prime_editing_experiment import PrimeEditingFixedOffsetExperiment
-            exp_class = PrimeEditingFixedOffsetExperiment
+        elif description.get('platform') == 'endogenous':
+            import ddr.endogenous
+            exp_class = ddr.endogenous.Experiment
+        elif description.get('platform') == 'tprt':
+            import knock_knock.tprt_experiment
+            exp_class = knock_knock.tprt_experiment.TPRTExperiment
         else:
             raise ValueError(description)
 
@@ -140,7 +145,7 @@ def make_tables(args):
     for group in groups:
         print(group)
 
-        conditions = {'group': group}
+        conditions = {'batch': group}
 
         table.make_self_contained_zip(args.project_directory, conditions, group)
 
@@ -197,7 +202,7 @@ if __name__ == '__main__':
     parser_process.add_argument('group', help='group name')
     parser_process.add_argument('sample', help='sample name')
     parser_process.add_argument('--progress', const=tqdm.tqdm, action='store_const', help='show progress bars')
-    parser_process.add_argument('--stages', default='align,categorize,visualize')
+    parser_process.add_argument('--stages', default='preprocess,align,categorize,visualize')
     parser_process.set_defaults(func=process)
 
     parser_parallel = subparsers.add_parser('parallel', help='process multiple samples in parallel')
@@ -205,7 +210,7 @@ if __name__ == '__main__':
     parser_parallel.add_argument('max_procs', type=int, help='maximum number of samples to process at once')
     parser_parallel.add_argument('--group', help='if specified, the single group name to process; if not specified, all groups will be processed')
     parser_parallel.add_argument('--conditions', type=yaml.safe_load, default={}, help='if specified, conditions that samples must satisfy to be processed, given as yaml; if not specified, all samples will be processed')
-    parser_parallel.add_argument('--stages', default='align,categorize,visualize')
+    parser_parallel.add_argument('--stages', default='preprocess,align,categorize,visualize')
     parser_parallel.set_defaults(func=parallel)
 
     parser_table = subparsers.add_parser('table', help='generate tables of outcome frequencies')
@@ -224,6 +229,7 @@ if __name__ == '__main__':
 
     parser_primers = subparsers.add_parser('design-primers', help='design amplicon primers for sgRNAs')
     add_project_directory_arg(parser_primers)
+    parser_primers.add_argument('--genome', default='hg19')
     parser_primers.set_defaults(func=design_primers)
 
     parser_indices = subparsers.add_parser('build-indices', help='download a reference genome and build alignment indices')

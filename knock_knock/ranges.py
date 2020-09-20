@@ -1,3 +1,5 @@
+from collections import Counter
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -11,9 +13,10 @@ import ddr.prime_editing_layout
 import ddr.outcome
 
 memoized_property = hits.utilities.memoized_property
+idx = pd.IndexSlice
 
 class Ranges:
-    def __init__(self, target_info, sequence_name, range_iter, total_reads):
+    def __init__(self, target_info, sequence_name, range_iter, total_reads, exps=None):
         self.target_info = target_info
 
         if isinstance(sequence_name, str):
@@ -25,6 +28,10 @@ class Ranges:
         self.sequence_name = sequence_name
         self.sequence = {edge: target_info.reference_sequences[n] for edge, n in self.sequence_name.items()}
         self.sequence_length = {edge: len(s) for edge, s in self.sequence.items()}
+
+        if exps is None:
+            exps = []
+        self.exps = {(exp.batch, exp.sample_name): exp for exp in exps}
 
         self.total_reads = total_reads
         
@@ -64,6 +71,18 @@ class Ranges:
         return counts
 
     @memoized_property
+    def joint_percentages(self):
+        return self.joint_counts / self.total_reads * 100
+
+    @memoized_property
+    def edge_percentages(self):
+        return {edge: self.edge_counts[edge] / self.total_reads * 100 for edge in self.edge_counts}
+
+    @memoized_property
+    def total_percentage(self):
+        return len(self.edge_pairs) / self.total_reads * 100
+
+    @memoized_property
     def df(self):
         df = pd.DataFrame({
             'group': [g for g, n, q in self.read_ids],
@@ -76,25 +95,58 @@ class Ranges:
             
     def downsampled_edge_pairs(self, n):
         return hits.utilities.reservoir_sample(self.edge_pairs, n)
+
+    def most_common_edge_pairs(self):
+        return Counter(self.edge_pairs).most_common()
+
+    def edge_pair_percentages(self):
+        return pd.Series(Counter(self.edge_pairs)) / self.total_reads * 100
+
+    def get_example_diagram(self, start_p, end_p, example_num=1):
+        if isinstance(end_p, int):
+            end_p = (end_p, end_p)
+        end_p_min, end_p_max = end_p    
+            
+        if isinstance(start_p, int):
+            start_p = (start_p, start_p)
+        start_p_min, start_p_max = start_p
+        
+        rows = self.df.query('@start_p_min <= start <= @start_p_max and @end_p_min <= end <= @end_p_max')
+        
+        if example_num <= len(rows):
+            row = rows.iloc[example_num - 1]
+            exp = self.exps[row['group'], row['name']]
+            return exp.get_read_diagram(row['query_name'], **exp.diagram_kwargs)        
+        else:
+            return None
+
+    def most_common_example_diagram(self, pair_rank=1, example_num=1):
+        (start_p, end_p), count = self.most_common_edge_pairs()[pair_rank - 1]
+        return self.get_example_diagram(start_p, end_p, example_num=example_num)
             
     @classmethod
-    def deletion_ranges(cls, exps):
+    def deletion_ranges(cls, exps, as_junctions=False):
         ranges = []
         total_reads = 0
         
         for exp in exps:
             for outcome in exp.outcome_iter():
                 total_reads += 1
-                if outcome.category == 'deletion' and outcome.subcategory == 'clean':
+                if outcome.category == 'deletion' and outcome.subcategory in ['clean', 'mismatches']:
                     deletion = knock_knock.target_info.DegenerateDeletion.from_string(outcome.details)
 
                     start, end = deletion.starts_ats[0], deletion.ends_ats[0]
                     start += exp.target_info.anchor
                     end += exp.target_info.anchor
 
-                    ranges.append((start, end))
+                    if as_junctions:
+                        # Treat as end/start of remaining sequence, rather than start/end of removed.
+                        start, end = end + 1, start - 1
+
+                    read_id = (exp.group, exp.sample_name, outcome.query_name)
+                    ranges.append((read_id, start, end))
                 
-        return cls(exp.target_info, exp.target_info.target, ranges, total_reads)
+        return cls(exp.target_info, exp.target_info.target, ranges, total_reads, exps)
 
     @classmethod
     def insertion_ranges(cls, exps):
@@ -112,7 +164,7 @@ class Ranges:
 
                     ranges.append((start, end))
                 
-        return cls(exp.target_info, exp.target_info.target, ranges, total_reads)
+        return cls(exp.target_info, exp.target_info.target, ranges, total_reads, exps)
 
     @classmethod
     def deletion_with_edit_ranges(cls, exps):
@@ -133,7 +185,7 @@ class Ranges:
 
                     ranges.append((start, end))
                 
-        return cls(exp.target_info, exp.target_info.target, ranges, total_reads)
+        return cls(exp.target_info, exp.target_info.target, ranges, total_reads, exps)
     
     @classmethod
     def duplication_ranges(cls, exps):
@@ -152,7 +204,7 @@ class Ranges:
 
                     ranges.append((start, end))
         
-        return cls(exp.target_info, exp.target_info.target, ranges, total_reads)
+        return cls(exp.target_info, exp.target_info.target, ranges, total_reads, exps)
 
     @classmethod
     def duplication_junctions(cls, exps, has_edit=False):
@@ -180,7 +232,7 @@ class Ranges:
 
                     ranges.append(((exp.group, exp.sample_name, outcome.query_name), start, end))
 
-        return cls(exp.target_info, {'start': exp.target_info.target, 'end': exp.target_info.target}, ranges, total_reads)
+        return cls(exp.target_info, {'start': exp.target_info.target, 'end': exp.target_info.target}, ranges, total_reads, exps)
                     
     @classmethod
     def donor_ranges(cls, exps, component='insertion'):
@@ -235,7 +287,7 @@ class Ranges:
                  
                     ranges.append((start, end))
                                             
-        return cls(exp.target_info, sequence_name, ranges, total_reads)
+        return cls(exp.target_info, sequence_name, ranges, total_reads, exps)
 
     @classmethod
     def donor_junctions(cls, exps):
@@ -273,7 +325,7 @@ class Ranges:
                     else:
                         ranges.append(((exp.group, exp.sample_name, outcome.query_name), target_start, donor_end))
 
-        return cls(exp.target_info, {'start': exp.target_info.target, 'end': exp.target_info.donor}, ranges, total_reads)
+        return cls(exp.target_info, {'start': exp.target_info.target, 'end': exp.target_info.donor}, ranges, total_reads, exps)
 
     @classmethod
     def integration_junctions(cls, exps, perfect_side=3):
@@ -307,10 +359,9 @@ class Ranges:
 
                     integration = knock_knock.outcome_record.Integration.from_string(outcome.details)
 
-                    ranges.append(((exp.group, exp.name, outcome.query_name), getattr(integration, start), getattr(integration, end)))
+                    ranges.append(((exp.group, exp.sample_name, outcome.query_name), getattr(integration, start), getattr(integration, end)))
 
-        return cls(exp.target_info, {'start': exp.target_info.target, 'end': exp.target_info.donor}, ranges, total_reads)
-
+        return cls(exp.target_info, {'start': exp.target_info.target, 'end': exp.target_info.donor}, ranges, total_reads, exps)
 
 def plot_ranges(all_ranges,
                 names=None,
@@ -474,7 +525,9 @@ def plot_ranges(all_ranges,
     
     return fig
 
-def plot_joint(all_ranges, nt_name, other_name, target_min_p, target_max_p, donor_min_p=0, donor_max_p=None,
+def plot_joint(all_ranges, nt_name, other_name, target_min_p, target_max_p,
+               donor_min_p=0,
+               donor_max_p=None,
                v_max=None,
                width=12,
                invert_x=False,
@@ -484,20 +537,24 @@ def plot_joint(all_ranges, nt_name, other_name, target_min_p, target_max_p, dono
                start_label='position in vector where outcome resumes',
               ):
     ranges = all_ranges[nt_name]
-    counts = ranges.joint_counts / ranges.total_reads * 100
+    counts = ranges.joint_percentages
 
-    total_percentage = counts.sum()
-
+    total_percentage = all_ranges[nt_name].total_percentage
 
     ti = ranges.target_info
 
     if other_name is not None:
         other_ranges = all_ranges[other_name]
-        other_counts = other_ranges.joint_counts / other_ranges.total_reads * 100
-        total_other_percentage = other_counts.sum()
+        other_counts = other_ranges.joint_percentages
+        total_other_percentage = all_ranges[other_name].total_percentage
 
     if donor_max_p is None:
-        donor_max_p = ranges.sequence_length['end'] - 0.5
+        donor_max_p = ranges.sequence_length['end']
+
+    matrix_slice = idx[target_min_p:target_max_p + 1, donor_min_p:donor_max_p + 1]
+
+    # bottom/top of extent is confusing
+    extent = (donor_min_p - 0.5, donor_max_p + 0.5, target_max_p + 0.5, target_min_p - 0.5)
 
     height = width * (target_max_p - target_min_p + 1) / (donor_max_p - donor_min_p + 1)
 
@@ -507,7 +564,8 @@ def plot_joint(all_ranges, nt_name, other_name, target_min_p, target_max_p, dono
         if v_max is None:
             v_max = counts.max() * 1.01
         cmap = hits.visualize.reds
-        im = joint_ax.imshow(counts, cmap=cmap, vmax=v_max, interpolation='none')
+        im = joint_ax.imshow(counts[matrix_slice], extent=extent, cmap=cmap, vmax=v_max, interpolation='none')
+        #im = joint_ax.imshow(counts, cmap=cmap, vmax=v_max, interpolation='none')
 
     else:
         cmap = plt.get_cmap('bwr')
@@ -517,7 +575,8 @@ def plot_joint(all_ranges, nt_name, other_name, target_min_p, target_max_p, dono
         if v_max is None:
             v_max = np.abs(diffs).max() * 1.01
 
-        im = joint_ax.imshow(other_counts - counts, cmap=cmap, vmin=-v_max, vmax=v_max, interpolation='none')
+        im = joint_ax.imshow((other_counts - counts)[matrix_slice], extent=extent, cmap=cmap, vmin=-v_max, vmax=v_max, interpolation='none')
+        #im = joint_ax.imshow((other_counts - counts), cmap=cmap, vmin=-v_max, vmax=v_max, interpolation='none')
 
     joint_ax.set_ylim(target_max_p + 0.5, target_min_p - 0.5)
     joint_ax.set_xlim(donor_min_p - 0.5, donor_max_p + 0.5)
@@ -643,14 +702,16 @@ def plot_joint(all_ranges, nt_name, other_name, target_min_p, target_max_p, dono
     return fig
 
 def plot_marginal(all_ranges, name, ax, orientation, color='black'):
-    ranges = all_ranges[name]
-    counts = ranges.joint_counts / ranges.total_reads * 100
+    #ranges = all_ranges[name]
+    #counts = ranges.joint_counts / ranges.total_reads * 100
 
     if orientation == 'vertical':
-        ys = counts.sum(axis=0)
+        #ys = counts.sum(axis=0)
+        ys = all_ranges[name].edge_percentages['end']
         xs = np.arange(len(ys))
     else:
-        xs = counts.sum(axis=1)
+        #xs = counts.sum(axis=1)
+        xs = all_ranges[name].edge_percentages['start']
         ys = np.arange(len(xs))
 
     ax.plot(xs, ys, 'o-', markersize=1, color=color, label=name)

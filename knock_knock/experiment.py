@@ -1,13 +1,13 @@
 import matplotlib
 matplotlib.use('Agg', warn=False)
 
+import heapq
 import shutil
 import sys
 import gzip
 from pathlib import Path
 from itertools import islice, chain
 from collections import defaultdict, Counter
-from contextlib import ExitStack
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -17,10 +17,11 @@ import pysam
 import yaml
 import ipywidgets
 
-from hits import sam, fastq, utilities, visualize_structure, sw, adapters, mapping_tools, interval
+from hits import sam, fastq, utilities, visualize_structure, mapping_tools, interval
 from hits.utilities import memoized_property, group_by
 
-from . import target_info, blast, layout, visualize, read_outcome, svg, table
+from . import target_info, blast, visualize, outcome_record, svg, table, explore
+from . import layout as layout_module
 
 def color_groups():
     starts_20c = np.arange(4) * 4
@@ -35,15 +36,15 @@ def color_groups():
 
 def extract_color(description):
     color = description.get('color')
-    if color is None:
+    if color is None or color == 0:
         color = 'grey'
-
-    try:
-        num = int(color) - 1
-        replicate = description.get('replicate', 1) - 1
-        color = color_groups()[num][replicate]
-    except ValueError:
-        pass
+    else:
+        try:
+            num = int(color) - 1
+            replicate = int(description.get('replicate', 1)) - 1
+            color = color_groups()[num][replicate]
+        except ValueError:
+            color = 'grey'
 
     return color
         
@@ -54,10 +55,11 @@ def ensure_list(possibly_list):
         definitely_list = [possibly_list]
     return definitely_list
 
-class Experiment(object):
-    def __init__(self, base_dir, group, name, description=None, progress=None):
-        self.group = group
-        self.name = name
+class Experiment:
+    def __init__(self, base_dir, batch, sample_name, description=None, progress=None):
+        self.batch = batch
+        self.group = batch # hack for now
+        self.sample_name = sample_name
 
         if progress is None:
             self.silent = True
@@ -73,20 +75,13 @@ class Experiment(object):
         self.progress = pass_along_kwargs
 
         self.base_dir = Path(base_dir)
-        self.dir.mkdir(exist_ok=True, parents=True)
-
-        self.data_dir = self.base_dir / 'data' / group
+        self.results_dir.mkdir(exist_ok=True, parents=True)
 
         if description is None:
-            self.sample_sheet = load_sample_sheet(self.base_dir, self.group)
-            if name in self.sample_sheet:
-                self.description = self.sample_sheet[name]
-            else:
-                self.description = self.sample_sheet
-        else:
-            self.description = description
+            description = self.load_description()
 
-        self.project = self.description.get('project', 'knockin')
+        self.description = description
+
         self.max_insertion_length = 20
 
         self.sgRNA = self.description.get('sgRNA')
@@ -98,24 +93,23 @@ class Experiment(object):
 
         # When checking if an Experiment meets filtering conditions, want to be
         # able to just test description.
-        self.description['group'] = group
-        self.description['name'] = name
+        self.description['batch'] = batch
+        self.description['sample_name'] = sample_name
 
         self.fns = {
-            'dir': self.dir,
-            'outcomes_dir': self.dir / 'outcomes',
-            'sanitized_category_names': self.dir / 'outcomes' / 'sanitized_category_names.txt',
-            'outcome_counts': self.dir / 'outcome_counts.csv',
-            'outcome_list': self.dir / 'outcome_list.txt',
+            'results_dir': self.results_dir,
+            'outcomes_dir': self.results_dir / 'outcomes',
+            'sanitized_category_names': self.results_dir / 'outcomes' / 'sanitized_category_names.txt',
+            'outcome_counts': self.results_dir / 'outcome_counts.csv',
+            'outcome_list': self.results_dir / 'outcome_list.txt',
 
-            'lengths': self.dir / 'lengths.txt',
-            'lengths_figure': self.dir / 'all_lengths.png',
+            'lengths': self.results_dir / 'lengths.txt',
+            'lengths_figure': self.results_dir / 'all_lengths.png',
 
-            'donor_microhomology_lengths': self.dir / 'donor_microhomology_lengths.txt', 
+            'donor_microhomology_lengths': self.results_dir / 'donor_microhomology_lengths.txt', 
 
-            'length_ranges_dir': self.dir / 'length_ranges',
-            'lengths_svg': self.dir / (self.name + '_by_length.html'),
-            'outcome_browser': self.dir / 'outcome_browser.html',
+            'length_ranges_dir': self.results_dir / 'length_ranges',
+            'outcome_browser': self.results_dir / 'outcome_browser.html',
         }
 
         def make_length_range_fig_fn(start, end):
@@ -132,14 +126,45 @@ class Experiment(object):
         else:
             self.supplemental_index_names = index_names.split(';')
 
-    @memoized_property
-    def layout_module(self):
-        # This needs to be a memoized_property because subclasses use it as one.
-        return layout
+        self.diagram_kwargs = dict(features_to_show=self.target_info.features_to_show,
+                                   ref_centric=True,
+                                  )
+
+    @property
+    def final_Outcome(self):
+        return outcome_record.OutcomeRecord
+
+    def load_description(self):
+        return load_sample_sheet(self.base_dir, self.batch)[self.sample_name]
 
     @memoized_property
-    def dir(self):
-        return self.base_dir / 'results' / self.group / self.name
+    def categorizer(self):
+        # This needs to be a memoized_property because subclasses use it as one.
+        return layout_module.Layout
+
+    @memoized_property
+    def results_dir(self):
+        d = self.base_dir / 'results' 
+
+        if isinstance(self.batch, tuple):
+            for level in self.batch:
+                d /= level
+        else:
+            d /= self.batch
+
+        return d / self.sample_name
+
+    @memoized_property
+    def data_dir(self):
+        d = self.base_dir / 'data'
+
+        if isinstance(self.batch, tuple):
+            for level in self.batch:
+                d /= level
+        else:
+            d /= self.batch
+
+        return d
 
     @memoized_property
     def supplemental_indices(self):
@@ -174,26 +199,26 @@ class Experiment(object):
             if read_type == 'CCS':
                 fns['fastq'][read_type] = self.fns['CCS_fastqs']
             else:
-                fns['fastq'][read_type] = self.dir / f'{read_type}.fastq.gz'
+                fns['fastq'][read_type] = self.results_dir / f'{read_type}.fastq.gz'
 
-            fns['primary_bam'][read_type] = self.dir / f'{read_type}_alignments.bam'
-            fns['primary_bam_by_name'][read_type] = self.dir / f'{read_type}_alignments.by_name.bam'
+            fns['primary_bam'][read_type] = self.results_dir / f'{read_type}_alignments.bam'
+            fns['primary_bam_by_name'][read_type] = self.results_dir / f'{read_type}_alignments.by_name.bam'
 
             for index_name in self.supplemental_index_names:
-                fns['supplemental_STAR_prefix'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments_STAR.'
-                fns['supplemental_bam'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments.bam'
-                fns['supplemental_bam_by_name'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments.by_name.bam'
-                fns['supplemental_bam_temp'][read_type, index_name] = self.dir / f'{read_type}_{index_name}_alignments.temp.bam'
+                fns['supplemental_STAR_prefix'][read_type, index_name] = self.results_dir / f'{read_type}_{index_name}_alignments_STAR.'
+                fns['supplemental_bam'][read_type, index_name] = self.results_dir / f'{read_type}_{index_name}_alignments.bam'
+                fns['supplemental_bam_by_name'][read_type, index_name] = self.results_dir / f'{read_type}_{index_name}_alignments.by_name.bam'
+                fns['supplemental_bam_temp'][read_type, index_name] = self.results_dir / f'{read_type}_{index_name}_alignments.temp.bam'
 
-            fns['bam'][read_type] = self.dir / f'{read_type}_combined_alignments.bam'
-            fns['bam_by_name'][read_type] = self.dir / f'{read_type}_combined_alignments.by_name.bam'
+            fns['bam'][read_type] = self.results_dir / f'{read_type}_combined_alignments.bam'
+            fns['bam_by_name'][read_type] = self.results_dir / f'{read_type}_combined_alignments.by_name.bam'
         
         return fns
 
     def outcome_fns(self, outcome):
         # To allow outcomes to have arbitrary names without causing file path problems,
         # sanitize the names.
-        outcome_string = self.layout_module.outcome_to_sanitized_string(outcome)
+        outcome_string = self.categorizer.outcome_to_sanitized_string(outcome)
         outcome_dir = self.fns['outcomes_dir'] / outcome_string
         fns = {
             'dir': outcome_dir,
@@ -209,7 +234,6 @@ class Experiment(object):
             'lengths_figure': outcome_dir / 'lengths.png',
             'text_alignments': outcome_dir / 'alignments.txt',
             'length_ranges_dir': outcome_dir / 'length_ranges',
-            'lengths_svg': outcome_dir / 'by_length.html',
             'bam_by_name' : {read_type: outcome_dir / f'{read_type}.by_name.bam' for read_type in self.read_types},
         }
 
@@ -243,19 +267,22 @@ class Experiment(object):
         return pd.DataFrame(ranges, columns=['start', 'end'])
     
     def alignment_groups(self, fn_key='bam_by_name', outcome=None, read_type=None):
+        if read_type is None:
+            read_type = self.default_read_type
+
         if isinstance(outcome, str):
             # outcome is a single category, so need to chain together all relevant
             # (category, subcategory) pairs.
             pairs = [(c, s) for c, s in self.outcomes if c == outcome]
             pair_groups = [self.alignment_groups(fn_key=fn_key, outcome=pair, read_type=read_type) for pair in pairs]
-            return chain.from_iterable(pair_groups)
+            return heapq.merge(*pair_groups)
 
         else:
             if isinstance(outcome, tuple):
                 # outcome is a (category, subcategory) pair
                 fn = self.outcome_fns(outcome)['bam_by_name'][read_type]
             else:
-                fn = self.fns_by_read_type[fn_key][read_type]
+                fn = self.fns_by_read_type['bam_by_name'][read_type]
 
             if fn.exists():
                 grouped = sam.grouped_by_name(fn)
@@ -264,7 +291,14 @@ class Experiment(object):
 
             return grouped
 
+    def query_names(self):
+        for qname, als in self.alignment_groups():
+            yield qname
+    
     def generate_alignments(self, read_type=None):
+        if read_type is None:
+            read_type = self.default_read_type
+
         reads = self.reads_by_type(read_type)
         if read_type is None:
             description = 'Generating alignments'
@@ -312,9 +346,7 @@ class Experiment(object):
         for fn in bam_by_name_fns:
             fn.unlink()
     
-    def generate_supplemental_alignments(self, read_type=None, min_length=None):
-        ''' Use STAR to produce local alignments, post-filtering spurious alignmnents.
-        '''
+    def generate_supplemental_alignments_with_STAR(self, read_type=None, min_length=None):
         for index_name in self.supplemental_indices:
             if not self.silent:
                 print(f'Generating {read_type} supplemental alignments to {index_name}...')
@@ -366,10 +398,60 @@ class Experiment(object):
 
             Path(bam_fn).unlink()
 
-            #sam.sort_bam(by_name_fn,
-            #             self.fns_by_read_type['supplemental_bam'][read_type, index_name],
-            #            )
-    
+    def generate_supplemental_alignments_with_minimap2(self, read_type=None):
+        for index_name in self.supplemental_indices:
+            if not self.silent:
+                print(f'Generating {read_type} supplemental alignments to {index_name}...')
+
+            # Note: this doesn't support multiple intput fastqs.
+            fastq_fn = self.fns_by_read_type['fastq'][read_type][0]
+            index = self.supplemental_indices[index_name]['minimap2']
+            temp_bam_fn = self.fns_by_read_type['supplemental_bam_temp'][read_type, index_name]
+
+            mapping_tools.map_minimap2(fastq_fn, index, temp_bam_fn)
+
+            all_mappings = pysam.AlignmentFile(temp_bam_fn)
+            header = all_mappings.header
+            new_references = ['{}_{}'.format(index_name, ref) for ref in header.references]
+            new_header = pysam.AlignmentHeader.from_references(new_references, header.lengths)
+
+            by_name_fn = self.fns_by_read_type['supplemental_bam_by_name'][read_type, index_name]
+            by_name_sorter = sam.AlignmentSorter(by_name_fn, new_header, by_name=True)
+
+            # Sorting key prioritizes first longer alignments, then ones with fewer edits.
+            sorting_key = lambda al: (-al.query_alignment_length, al.get_tag('NM'))
+
+            # Unless I am missing an option, minimap2 omits seq and qual for mapped reads.
+            # Add them back.
+            with by_name_sorter:
+                al_groups = sam.grouped_by_name(all_mappings)
+                reads = self.reads_by_type(read_type)
+                for (qname, als), read in zip(al_groups, reads):
+                    if qname != read.name:
+                        raise ValueError('iters out of sync')
+
+                    seq = read.seq
+                    seq_rc = utilities.reverse_complement(seq)
+
+                    qual = fastq.decode_sanger_to_array(read.qual)
+                    qual_rc = qual[::-1]
+
+                    # Only retain the top 50 alignments.
+                    sorted_als = sorted((al for al in als if not al.is_unmapped), key=sorting_key)[:50]
+
+                    for al in sorted_als:
+                        if not al.is_reverse:
+                            al.query_sequence = seq
+                            al.query_qualities = qual
+                        else:
+                            al.query_sequence = seq_rc
+                            al.query_qualities = qual_rc
+
+                        by_name_sorter.write(al)
+
+            temp_bam_fn.unlink()
+
+
     def combine_alignments(self, read_type=None):
         for by_name in [True]:
             if by_name:
@@ -421,12 +503,12 @@ class Experiment(object):
     
     def record_sanitized_category_names(self):
         sanitized_to_original = {}
-        for cat, subcats in self.layout_module.category_order:
-            sanitized_string = self.layout_module.outcome_to_sanitized_string(cat)
+        for cat, subcats in self.categorizer.category_order:
+            sanitized_string = self.categorizer.outcome_to_sanitized_string(cat)
             sanitized_to_original[sanitized_string] = cat
             for subcat in subcats:
                 outcome = (cat, subcat)
-                sanitized_string = self.layout_module.outcome_to_sanitized_string(outcome)
+                sanitized_string = self.categorizer.outcome_to_sanitized_string(outcome)
                 sanitized_to_original[sanitized_string] = ', '.join(outcome)
         
         with open(self.fns['sanitized_category_names'], 'w') as fh:
@@ -453,7 +535,7 @@ class Experiment(object):
 
             for name, als in self.progress(alignment_groups, desc=description):
                 try:
-                    layout = self.layout_module.Layout(als, self.target_info, mode=self.layout_mode)
+                    layout = self.categorizer(als, self.target_info, mode=self.layout_mode)
                     if self.target_info.donor is not None or self.target_info.nonhomologous_donor is not None:
                         category, subcategory, details = layout.categorize()
                     else:
@@ -469,7 +551,7 @@ class Experiment(object):
                 else:
                     length = len(layout.seq)
 
-                outcome = read_outcome.Outcome(name, length, category, subcategory, details)
+                outcome = self.final_Outcome(name, length, category, subcategory, details)
                 fh.write(f'{outcome}\n')
 
         counts = {description: len(names) for description, names in outcomes.items()}
@@ -512,6 +594,9 @@ class Experiment(object):
             fh.close()
 
     def get_read_alignments(self, read_id, fn_key='bam_by_name', outcome=None, read_type=None):
+        if read_type is None:
+            read_type = self.default_read_type
+
         # iter() necessary because tqdm objects aren't iterators
         read_groups = iter(self.alignment_groups(fn_key, outcome, read_type))
 
@@ -543,16 +628,19 @@ class Experiment(object):
             return None
 
         if relevant:
-            layout = self.layout_module.Layout(als, self.target_info, mode=self.layout_mode)
+            layout = self.categorizer(als, self.target_info, mode=self.layout_mode)
             layout.categorize()
             to_plot = layout.relevant_alignments
+            inferred_amplicon_length = layout.inferred_amplicon_length
         else:
             to_plot = als
+            inferred_amplicon_length = None
 
-        kwargs.setdefault('features_to_show', self.target_info.features_to_show)
+        for k, v in self.diagram_kwargs.items():
+            kwargs.setdefault(k, v)
 
         diagram = visualize.ReadDiagram(to_plot, self.target_info,
-                                        max_qual=self.max_qual,
+                                        inferred_amplicon_length=inferred_amplicon_length,
                                         **kwargs,
                                        )
 
@@ -660,10 +748,10 @@ class Experiment(object):
         
         if show_title:
             if outcome is None:
-                title = f'{self.group}: {self.name}'
+                title = f'{self.batch}: {self.name}'
             else:
                 category, subcategory = outcome
-                title = f'{self.group}: {self.name}\n{category}: {subcategory}'
+                title = f'{self.batch}: {self.name}\n{category}: {subcategory}'
 
             ax.set_title(title)
             
@@ -709,11 +797,14 @@ class Experiment(object):
 
         return fig
 
-    def outcome_iter(self):
-        fhs = [self.fns[key].open() for key in self.outcome_fn_keys]
+    def outcome_iter(self, outcome_fn_keys=None):
+        if outcome_fn_keys is None:
+            outcome_fn_keys = self.outcome_fn_keys
+
+        fhs = [self.fns[key].open() for key in outcome_fn_keys if self.fns[key].exists()]
         chained = chain.from_iterable(fhs)
         for line in chained:
-            outcome = read_outcome.Outcome.from_line(line)
+            outcome = self.final_Outcome.from_line(line)
             yield outcome
 
     @memoized_property
@@ -723,7 +814,7 @@ class Experiment(object):
         outcomes = self.outcome_iter()
         description = 'Counting outcome-specific lengths'
         for outcome in self.progress(outcomes, desc=description):
-            outcome_lengths[outcome.category, outcome.subcategory][outcome.length] += 1
+            outcome_lengths[outcome.category, outcome.subcategory][outcome.inferred_amplicon_length] += 1
 
         max_length = self.max_relevant_length
         if self.length_to_store_unknown is not None:
@@ -813,7 +904,7 @@ class Experiment(object):
             axs = [axs]
 
         ax = axs[0]
-        ax.annotate(f'{self.group}: {self.name}',
+        ax.annotate(f'{self.batch}: {self.sample_name}',
                     xy=(0.5, 1), xycoords='axes fraction',
                     xytext=(0, 40), textcoords='offset points',
                     ha='center',
@@ -823,7 +914,7 @@ class Experiment(object):
 
         y_maxes = []
 
-        listed_order = sorted(outcome_lengths, key=self.layout_module.order)
+        listed_order = sorted(outcome_lengths, key=self.categorizer.order)
 
         non_highlight_color = 'grey'
 
@@ -837,7 +928,7 @@ class Experiment(object):
                 smoothed_lengths = pd.Series(lengths).rolling(window=window, center=True, min_periods=1).sum()
                 ys = smoothed_lengths / self.total_reads
 
-                sanitized_string = self.layout_module.outcome_to_sanitized_string(outcome)
+                sanitized_string = self.categorizer.outcome_to_sanitized_string(outcome)
 
                 if outcome in group:
                     gid = f'line_highlighted_{sanitized_string}_{panel_i}'
@@ -889,7 +980,7 @@ class Experiment(object):
             for outcome, line in zip(high_enough_to_show, legend.get_lines()):
                 if line.get_color() != non_highlight_color:
                     line.set_linewidth(5)
-                    sanitized_string = self.layout_module.outcome_to_sanitized_string(outcome)
+                    sanitized_string = self.categorizer.outcome_to_sanitized_string(outcome)
                     line.set_gid(f'outcome_{sanitized_string}')
 
             expected_lengths = {
@@ -1072,28 +1163,31 @@ Esc when done to deactivate the category.'''
 
         if relevant:
             only_relevant = []
+            inferred_amplicon_lengths = []
+
             for qname, als in subsample:
                 if isinstance(als, dict):
-                    l = self.layout_module.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
+                    l = layout_module.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
                 else:
-                    l = self.layout_module.Layout(als, self.target_info, mode=self.layout_mode)
+                    l = self.categorizer(als, self.target_info, mode=self.layout_mode)
 
                 l.categorize()
                 
                 only_relevant.append(l.relevant_alignments)
+                inferred_amplicon_lengths.append(l.inferred_amplicon_length)
 
             subsample = only_relevant
+
+        else:
+            inferred_amplicon_lengths = [None]*len(subsample)
         
         kwargs = dict(
-            ref_centric=True,
             label_layout=label_layout,
-            force_left_aligned=False,
             title='',
-            features_to_show=self.target_info.features_to_show,
         )
         kwargs.update(diagram_kwargs)
         
-        for als in subsample:
+        for als, inferred_amplicon_length in zip(subsample, inferred_amplicon_lengths):
             if isinstance(als, dict):
                 # Draw qualities for non-overlapping pairs.
                 draw_qualities = False
@@ -1102,24 +1196,17 @@ Esc when done to deactivate the category.'''
                 draw_qualities = False
 
             try:
-                d = visualize.ReadDiagram(als, self.target_info, draw_qualities=draw_qualities, **kwargs)
+                d = visualize.ReadDiagram(als, self.target_info,
+                                          draw_qualities=draw_qualities,
+                                          inferred_amplicon_length=inferred_amplicon_length,
+                                          **kwargs,
+                                         )
             except:
                 print(als[0].query_name)
                 raise
                 
             yield d
             
-    def generate_svg(self, outcome=None):
-        html = svg.length_plot_with_popovers(self, outcome=outcome, standalone=True, x_lims=(0, 505), inline_images=False)
-
-        if outcome is None:
-            fns = self.fns
-        else:
-            fns = self.outcome_fns(outcome)
-
-        with fns['lengths_svg'].open('w') as fh:
-            fh.write(html)
-
     def generate_all_outcome_length_range_figures(self):
         outcomes = sorted(self.outcome_stratified_lengths)
         description = 'Generating outcome-specific length range diagrams'
@@ -1188,7 +1275,7 @@ p {{
 </head>
 <body>
 ''')
-            fh.write(f'<h2>{self.group}: {self.name}</h1>\n')
+            fh.write(f'<h2>{self.batch}: {self.sample_name}</h1>\n')
             fh.write(f'<h2>{description}</h2>\n')
             
             fig = self.length_distribution_figure(outcome=outcome)
@@ -1213,7 +1300,7 @@ p {{
             self.generate_outcome_example_figures(outcome=outcome, num_examples=num_examples, **kwargs)
             
     def explore(self, by_outcome=True, **kwargs):
-        return explore(self.base_dir, by_outcome=by_outcome, target=self.target_name, experiment=self, **kwargs)
+        return explore.explore(self.base_dir, by_outcome=by_outcome, target=self.target_name, experiment=self, **kwargs)
 
     def get_read_layout(self, read_id, qname_to_als=None, fn_key='bam_by_name', outcome=None, read_type=None):
         # qname_to_als is to allow caching of many sets of als (e.g. for all
@@ -1223,7 +1310,7 @@ p {{
         else:
             als = qname_to_als[read_id]
 
-        layout = self.layout_module.Layout(als, self.target_info, mode=self.layout_mode)
+        layout = self.categorizer(als, self.target_info, mode=self.layout_mode)
 
         return layout
 
@@ -1231,7 +1318,7 @@ p {{
         MH_lengths = defaultdict(lambda: np.zeros(100, int))
 
         for line in self.fns['outcome_list'].open():
-            outcome = read_outcome.Outcome.from_line(line)
+            outcome = self.final_Outcome.from_line(line)
             if outcome.category == 'incomplete HDR':
                 if outcome.subcategory == "5' HDR, 3' imperfect":
                     MH_category = 'incomplete HDR, 3\' junction'
@@ -1240,11 +1327,12 @@ p {{
                 else:
                     continue
                 
-                if outcome.details != 'None':
+                if outcome.details != 'None' and outcome.details != 'n/a':
                     try:
-                        MH_length = int(outcome.details)
+                        integration = outcome_record.Integration.from_string(outcome.details)
+                        MH_length = integration.mh_length
                     except:
-                        print(self.group, self.name, outcome)
+                        print(self.batch, self.name, outcome)
                         raise
 
                     if MH_length >= 0:
@@ -1281,701 +1369,6 @@ p {{
 
         return mh_lengths
 
-class PacbioExperiment(Experiment):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        self.paired_end_read_length = None
-        auto_length = int((self.target_info.amplicon_length * 2.5 // 1000 + 1)) * 1000
-        self.max_relevant_length = self.description.get('max_relevant_length', auto_length)
-        self.length_to_store_unknown = None
-
-        self.x_tick_multiple = 500
-
-        self.layout_mode = 'pacbio'
-
-        ccs_fastq_fns = ensure_list(self.description['CCS_fastq_fn'])
-        self.fns['CCS_fastqs'] = [self.data_dir / name for name in ccs_fastq_fns]
-
-        for fn in self.fns['CCS_fastqs']:
-            if not fn.exists():
-                #raise ValueError(f'{self.group}: {self.name} specifies non-existent {fn}')
-                pass
-
-        self.read_types = ['CCS']
-
-        self.outcome_fn_keys = ['outcome_list']
-
-        self.length_plot_smooth_window = 7
-
-        self.diagram_kwargs = dict(draw_sequence=False)
-
-    def alignment_groups(self, fn_key='bam_by_name', outcome=None, read_type='CCS'):
-        groups = super().alignment_groups(fn_key=fn_key, outcome=outcome, read_type=read_type)
-        return groups
-    
-    def get_read_alignments(self, read_id, fn_key='bam_by_name', outcome=None, read_type='CCS'):
-        return super().get_read_alignments(read_id, fn_key=fn_key, outcome=outcome, read_type=read_type)
-    
-    def get_read_layout(self, read_id, qname_to_als=None, fn_key='bam_by_name', outcome=None, read_type='CCS'):
-        return super().get_read_layout(read_id, qname_to_als=qname_to_als, fn_key=fn_key, outcome=outcome, read_type=read_type)
-
-    def generate_supplemental_alignments(self, read_type=None):
-        ''' Use minimap2 to produce local alignments.
-        '''
-        for index_name in self.supplemental_indices:
-            if not self.silent:
-                print(f'Generating {read_type} supplemental alignments to {index_name}...')
-
-            # Note: this doesn't support multiple intput fastqs.
-            fastq_fn = self.fns_by_read_type['fastq'][read_type][0]
-            index = self.supplemental_indices[index_name]['minimap2']
-            temp_bam_fn = self.fns_by_read_type['supplemental_bam_temp'][read_type, index_name]
-
-            mapping_tools.map_minimap2(fastq_fn, index, temp_bam_fn)
-
-            all_mappings = pysam.AlignmentFile(temp_bam_fn)
-            header = all_mappings.header
-            new_references = ['{}_{}'.format(index_name, ref) for ref in header.references]
-            new_header = pysam.AlignmentHeader.from_references(new_references, header.lengths)
-
-            by_name_fn = self.fns_by_read_type['supplemental_bam_by_name'][read_type, index_name]
-            by_name_sorter = sam.AlignmentSorter(by_name_fn, new_header, by_name=True)
-
-            # Sorting key prioritizes first longer alignments, then ones with fewer edits.
-            sorting_key = lambda al: (-al.query_alignment_length, al.get_tag('NM'))
-
-            # Unless I am missing an option, minimap2 omits seq and qual for mapped reads.
-            # Add them back.
-            with by_name_sorter:
-                al_groups = sam.grouped_by_name(all_mappings)
-                reads = self.reads_by_type(read_type)
-                for (qname, als), read in zip(al_groups, reads):
-                    if qname != read.name:
-                        raise ValueError('iters out of sync')
-
-                    seq = read.seq
-                    seq_rc = utilities.reverse_complement(seq)
-
-                    qual = fastq.decode_sanger_to_array(read.qual)
-                    qual_rc = qual[::-1]
-
-                    # Only retain the top 50 alignments.
-                    sorted_als = sorted((al for al in als if not al.is_unmapped), key=sorting_key)[:50]
-
-                    for al in sorted_als:
-                        if not al.is_reverse:
-                            al.query_sequence = seq
-                            al.query_qualities = qual
-                        else:
-                            al.query_sequence = seq_rc
-                            al.query_qualities = qual_rc
-
-                        by_name_sorter.write(al)
-
-            temp_bam_fn.unlink()
-
-    def length_ranges(self, outcome=None):
-        interval_length = self.max_relevant_length // 50
-        starts = np.arange(0, self.max_relevant_length + interval_length, interval_length)
-
-        if outcome is None:
-            lengths = self.read_lengths
-        else:
-            lengths = self.outcome_stratified_lengths[outcome]
-
-        ranges = []
-        for start in starts:
-            if sum(lengths[start:start + interval_length]) > 0:
-                ranges.append((start, start + interval_length - 1))
-
-        return pd.DataFrame(ranges, columns=['start', 'end'])
-
-    def generate_length_range_figures(self, outcome=None, num_examples=1):
-        by_length_range = defaultdict(lambda: utilities.ReservoirSampler(num_examples))
-        length_ranges = [interval.Interval(row['start'], row['end']) for _, row in self.length_ranges(outcome).iterrows()]
-
-        fn_key = 'bam_by_name'
-
-        al_groups = self.alignment_groups(outcome=outcome, fn_key=fn_key)
-        for name, group in al_groups:
-            length = group[0].query_length
-
-            # Need to make sure that the last interval catches anything longer than
-            # self.max_relevant_length.
-
-            if length >= self.max_relevant_length:
-                last_range = length_ranges[-1]
-                if last_range.start == self.max_relevant_length:
-                    by_length_range[last_range.start, last_range.end].add((name, group))
-            else:
-                for length_range in length_ranges:
-                    if length in length_range:
-                        by_length_range[length_range.start, length_range.end].add((name, group))
-
-        if outcome is None:
-            fns = self.fns
-        else:
-            fns = self.outcome_fns(outcome)
-
-        fig_dir = fns['length_ranges_dir']
-            
-        if fig_dir.is_dir():
-            shutil.rmtree(str(fig_dir))
-        fig_dir.mkdir()
-
-        if outcome is not None:
-            description = ': '.join(outcome)
-        else:
-            description = 'Generating length-specific diagrams'
-
-        items = self.progress(by_length_range.items(), desc=description, total=len(by_length_range))
-
-        for (start, end), sampler in items:
-            diagrams = self.alignment_groups_to_diagrams(sampler.sample, num_examples=num_examples, **self.diagram_kwargs)
-            im = visualize.make_stacked_Image(diagrams, titles='')
-            fn = fns['length_range_figure'](start, end)
-            im.save(fn)
-    
-    def generate_svg(self):
-        html = svg.length_plot_with_popovers(self, standalone=True)
-
-        with self.fns['lengths_svg'].open('w') as fh:
-            fh.write(html)
-
-    def preprocess(self):
-        pass
-    
-    def process(self, stage):
-        try:
-            if stage == 'align':
-                self.preprocess()
-
-                for read_type in self.read_types:
-                    self.generate_alignments(read_type=read_type)
-                    self.generate_supplemental_alignments(read_type=read_type)
-                    self.combine_alignments(read_type=read_type)
-
-            elif stage == 'categorize':
-                self.categorize_outcomes(read_type='CCS')
-                self.record_sanitized_category_names()
-                self.count_read_lengths()
-                self.extract_donor_microhomology_lengths()
-
-            elif stage == 'visualize':
-                self.generate_figures()
-        except:
-            print(self.group, self.name)
-            raise
-
-class IlluminaExperiment(Experiment):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        
-        self.fns.update({
-            'no_overlap_outcome_counts': self.dir / 'no_overlap_outcome_counts.csv',
-            'no_overlap_outcome_list': self.dir / 'no_overlap_outcome_list.txt',
-        })
-
-        self.sequencing_primers = self.description.get('sequencing_primers', 'truseq')
-        self.x_tick_multiple = 100
-
-        self.layout_mode = 'illumina'
-
-        self.max_qual = 41
-
-        self.outcome_fn_keys = ['outcome_list', 'no_overlap_outcome_list']
-
-        for k in ['R1', 'R2', 'I1', 'I2']:
-            if k in self.description:
-                fastq_fns = ensure_list(self.description[k])
-                self.fns[k] = [self.data_dir / name for name in fastq_fns]
-        
-                for fn in self.fns[k]:
-                    if not fn.exists():
-                        #raise ValueError(f'{self.group}: {self.name} specifies non-existent {fn}')
-                        pass
-
-        self.read_types = [
-            'stitched',
-            'R1_no_overlap',
-            'R2_no_overlap',
-        ]
-
-        self.length_plot_smooth_window = 0
-
-        self.trim_from_R1 = self.description.get('trim_from_R1', 0)
-        self.trim_from_R2 = self.description.get('trim_from_R2', 0)
-
-        self.diagram_kwargs = dict(draw_sequence=True)
-
-    @memoized_property
-    def R1_read_length(self):
-        R1, R2 = next(self.read_pairs)
-        return len(R1) - self.trim_from_R1
-    
-    @memoized_property
-    def R2_read_length(self):
-        R1, R2 = next(self.read_pairs)
-        return len(R2) - self.trim_from_R2
-
-    def check_combined_read_length(self):
-        combined_read_length = self.R1_read_length + self.R2_read_length
-        if combined_read_length < self.target_info.amplicon_length:
-            print(f'Warning: {self.group} {self.name} combined read length ({combined_read_length}) less than expected amplicon length ({self.target_info.amplicon_length:,}).')
-
-    @memoized_property
-    def max_relevant_length(self):
-        return self.R1_read_length + self.R2_read_length + 100
-
-    @memoized_property
-    def length_to_store_unknown(self):
-        return int(self.max_relevant_length * 1.05)
-
-    def get_read_alignments(self, read_id, fn_key='bam_by_name', outcome=None, read_type=None):
-        if read_type is None:
-            if read_id in self.no_overlap_qnames:
-                als = self.get_no_overlap_read_alignments(read_id, outcome=outcome)
-            else:
-                als = super().get_read_alignments(read_id, fn_key=fn_key, outcome=outcome, read_type='stitched')
-        else:
-            als = super().get_read_alignments(read_id, fn_key=fn_key, outcome=outcome, read_type=read_type)
-            
-        return als
-
-    def get_no_overlap_read_alignments(self, read_id, outcome=None):
-        als = {}
-
-        for which in ['R1', 'R2']:
-            als[which] = self.get_read_alignments(read_id, fn_key='bam_by_name', outcome=outcome, read_type=f'{which}_no_overlap')
-
-        return als
-
-    def get_read_diagram(self, qname, outcome=None, relevant=True, **kwargs):
-        if qname in self.no_overlap_qnames:
-            als = self.get_no_overlap_read_alignments(qname, outcome=outcome)
-
-            if relevant:
-                layout = self.layout_module.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
-                layout.categorize()
-                to_plot = layout.relevant_alignments
-            else:
-                to_plot = als
-
-            diagram = visualize.ReadDiagram(to_plot, self.target_info,
-                                            features_to_show=self.target_info.features_to_show,
-                                            max_qual=self.max_qual,
-                                            **kwargs)
-
-        else:
-            diagram = super().get_read_diagram(qname, outcome=outcome, relevant=relevant, read_type='stitched', **kwargs)
-
-        return diagram
-    
-    @property
-    def read_pairs(self):
-        read_pairs = fastq.read_pairs(self.fns['R1'], self.fns['R2'], up_to_space=True)
-        return read_pairs
-
-    @memoized_property
-    def no_overlap_qnames(self):
-        fn = self.fns_by_read_type['fastq']['R1_no_overlap']
-        return {r.name for r in fastq.reads(fn, up_to_space=True)}
-
-    def load_outcome_counts(self):
-        stitched = super().load_outcome_counts(key='outcome_counts')
-        no_overlap = super().load_outcome_counts(key='no_overlap_outcome_counts')
-
-        if stitched is None and no_overlap is None:
-            return None
-        elif stitched is not None and no_overlap is None:
-            return stitched
-        elif stitched is None and no_overlap is not None:
-            return no_overlap
-        else:
-            combined = stitched.add(no_overlap, fill_value=0).astype(int)
-            return combined
-
-    def no_overlap_alignment_groups(self, outcome=None):
-        R1_read_type = 'R1_no_overlap'
-        R2_read_type = 'R2_no_overlap'
-        
-        if outcome is not None:
-            R1_fn_key = 'R1_no_overlap_bam_by_name'
-            R2_fn_key = 'R2_no_overlap_bam_by_name'
-            
-        else:
-            R1_fn_key = 'bam_by_name'
-            R2_fn_key = 'bam_by_name'
-
-        R1_groups = self.alignment_groups(outcome=outcome, fn_key=R1_fn_key, read_type=R1_read_type)
-        R2_groups = self.alignment_groups(outcome=outcome, fn_key=R2_fn_key, read_type=R2_read_type)
-
-        group_pairs = zip(R1_groups, R2_groups)
-
-        for (R1_name, R1_als), (R2_name, R2_als) in group_pairs:
-            if R1_name != R2_name:
-                raise ValueError(R1_name, R2_name)
-            else:
-                yield R1_name, {'R1': R1_als, 'R2': R2_als}
-    
-    def categorize_no_overlap_outcomes(self):
-        outcomes = defaultdict(list)
-
-        with self.fns['no_overlap_outcome_list'].open('w') as fh:
-            alignment_groups = self.no_overlap_alignment_groups()
-            for name, als in self.progress(alignment_groups, desc='Categorizing non-overlapping read pairs'):
-                try:
-                    pair_layout = layout.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
-                    category, subcategory, details = pair_layout.categorize()
-                except:
-                    print(self.name, name)
-                    raise
-                
-                outcomes[category, subcategory].append(name)
-
-                outcome = read_outcome.Outcome(name, pair_layout.length, category, subcategory, details)
-                fh.write(f'{outcome}\n')
-
-        counts = {description: len(names) for description, names in outcomes.items()}
-        pd.Series(counts).to_csv(self.fns['no_overlap_outcome_counts'], sep='\t', header=False)
-
-        # To make plotting easier, for each outcome, make a file listing all of
-        # qnames for the outcome and a bam file (sorted by name) with all of the
-        # alignments for these qnames.
-
-        qname_to_outcome = {}
-        bam_fhs = {}
-
-        with ExitStack() as stack:
-            full_bam_fns = {which: self.fns_by_read_type['bam_by_name'][f'{which}_no_overlap'] for which in ['R1', 'R2']}
-            full_bam_fhs = {which: stack.enter_context(pysam.AlignmentFile(full_bam_fns[which])) for which in ['R1', 'R2']}
-        
-            for outcome, qnames in outcomes.items():
-                outcome_fns = self.outcome_fns(outcome)
-                outcome_fns['dir'].mkdir(exist_ok=True)
-                for which in ['R1', 'R2']:
-                    bam_fn = outcome_fns['bam_by_name'][f'{which}_no_overlap']
-                    bam_fhs[outcome, which] = stack.enter_context(pysam.AlignmentFile(bam_fn, 'wb', template=full_bam_fhs[which]))
-                
-                fh = stack.enter_context(outcome_fns['no_overlap_query_names'].open('w'))
-                for qname in qnames:
-                    qname_to_outcome[qname] = outcome
-                    fh.write(qname + '\n')
-            
-            for which in ['R1', 'R2']:
-                for al in full_bam_fhs[which]:
-                    outcome = qname_to_outcome[al.query_name]
-                    bam_fhs[outcome, which].write(al)
-
-    def stitch_read_pairs(self):
-        before_R1 = adapters.primers[self.sequencing_primers]['R1']
-        before_R2 = adapters.primers[self.sequencing_primers]['R2']
-
-        fns = self.fns_by_read_type['fastq']
-
-        with gzip.open(fns['stitched'], 'wt', compresslevel=1) as stitched_fh, \
-             gzip.open(fns['R1_no_overlap'], 'wt', compresslevel=1) as R1_fh, \
-             gzip.open(fns['R2_no_overlap'], 'wt', compresslevel=1) as R2_fh:
-
-            description = 'Stitching read pairs'
-            for R1, R2 in self.progress(self.read_pairs, desc=description):
-                if R1.name != R2.name:
-                    print(f'Error: read pairs are out of sync in {self.group} {self.name}.')
-                    R1_fns = ','.join(str(fn) for fn in self.fns['R1'])
-                    R2_fns = ','.join(str(fn) for fn in self.fns['R2'])
-                    print(f'R1 file name: {R1_fns}')
-                    print(f'R2 file name: {R2_fns}')
-                    print(f'R1 read {R1.name} paired with R2 read {R2.name}.')
-                    sys.exit(1)
-
-                stitched = sw.stitch_read_pair(R1, R2, before_R1, before_R2, indel_penalty=-1000)
-
-                if len(stitched) == self.R1_read_length + self.R2_read_length:
-                    R1_fh.write(str(R1))
-                    R2_fh.write(str(R2))
-                else:
-                    # Trim after stitching to leave adapters in expected place during stitching.
-                    stitched = stitched[self.trim_from_R1:len(stitched) - self.trim_from_R2]
-
-                    stitched_fh.write(str(stitched))
-
-    def alignment_groups(self, fn_key=None, outcome=None, read_type=None):
-        if fn_key is not None or read_type is not None:
-            groups = super().alignment_groups(fn_key=fn_key, outcome=outcome, read_type=read_type)
-            for name, als in groups:
-                yield name, als
-        else:
-            stitched_groups = super().alignment_groups(outcome=outcome, read_type='stitched')
-            for name, als in stitched_groups:
-                yield name, als
-                
-            no_overlap_groups = self.no_overlap_alignment_groups(outcome=outcome)
-            for name, als in no_overlap_groups:
-                yield name, als
-    
-    def generate_length_range_figures(self, outcome=None, num_examples=1):
-        def extract_length(als):
-            if isinstance(als, dict):
-                pair_layout = self.layout_module.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
-                pair_layout.categorize()
-                length = pair_layout.length
-            else:
-                length = als[0].query_length
-                
-            if length == -1:
-                converted = self.length_to_store_unknown
-            elif length > self.max_relevant_length:
-                converted = self.max_relevant_length
-            else:
-                converted = length
-            
-            return converted
-
-        by_length = defaultdict(lambda: utilities.ReservoirSampler(num_examples))
-
-        al_groups = self.alignment_groups(outcome=outcome)
-        for name, als in al_groups:
-            length = extract_length(als)
-            by_length[length].add((name, als))
-        
-        if outcome is None:
-            fns = self.fns
-        else:
-            fns = self.outcome_fns(outcome)
-
-        fig_dir = fns['length_ranges_dir']
-            
-        if fig_dir.is_dir():
-            shutil.rmtree(str(fig_dir))
-        fig_dir.mkdir()
-
-        if outcome is not None:
-            description = ': '.join(outcome)
-        else:
-            description = 'Generating length-specific diagrams'
-
-        items = self.progress(by_length.items(), desc=description, total=len(by_length))
-
-        for length, sampler in items:
-            diagrams = self.alignment_groups_to_diagrams(sampler.sample, num_examples=num_examples, **self.diagram_kwargs)
-            im = visualize.make_stacked_Image(diagrams, titles='')
-            fn = fns['length_range_figure'](length, length)
-            im.save(fn)
-
-    def preprocess(self):
-        self.stitch_read_pairs()
-
-    def process(self, stage):
-        try:
-            if stage == 'align':
-                self.preprocess()
-                
-                for read_type in self.read_types:
-                    self.generate_alignments(read_type)
-                    self.generate_supplemental_alignments(read_type)
-                    self.combine_alignments(read_type)
-
-            elif stage == 'categorize':
-                self.categorize_outcomes(read_type='stitched')
-                self.categorize_no_overlap_outcomes()
-
-                self.record_sanitized_category_names()
-                self.count_read_lengths()
-                self.extract_donor_microhomology_lengths()
-            
-            elif stage == 'visualize':
-                self.generate_figures()
-        except:
-            print(self.group, self.name)
-            raise
-
-def explore(base_dir, by_outcome=False, target=None, experiment=None, **kwargs):
-    if target is None:
-        target_names = sorted([t.name for t in target_info.get_all_targets(base_dir)])
-    else:
-        target_names = [target]
-
-    default_filename = Path.cwd() / 'figure.png'
-
-    widgets = {
-        'target': ipywidgets.Select(options=target_names, value=target_names[0], layout=ipywidgets.Layout(height='200px')),
-        'experiment': ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='450px')),
-        'read_id': ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='600px')),
-        'outcome': ipywidgets.Select(options=[], continuous_update=False, layout=ipywidgets.Layout(height='200px', width='450px')),
-    }
-
-    non_widgets = {
-        'file_name': ipywidgets.Text(value=str(default_filename)),
-        'save': ipywidgets.Button(description='Save snapshot'),
-    }
-
-    toggles = [
-        ('parsimonious', False),
-        ('relevant', True),
-        ('ref_centric', True),
-        ('draw_sequence', False),
-        ('draw_qualities', False),
-        ('draw_mismatches', True),
-        ('draw_read_pair', False),
-        ('force_left_aligned', False),
-        ('split_at_indels', False),
-    ]
-    for key, default_value in toggles:
-        widgets[key] = ipywidgets.ToggleButton(value=kwargs.pop(key, default_value))
-
-    # For some reason, the target widget doesn't get a label without this.
-    for k, v in widgets.items():
-        v.description = k
-
-    if experiment is None:
-        conditions = {}
-        exps = get_all_experiments(base_dir)
-    else:
-        exps = [experiment]
-
-    output = ipywidgets.Output()
-
-    @output.capture()
-    def populate_experiments(change):
-        target = widgets['target'].value
-        previous_value = widgets['experiment'].value
-        datasets = sorted([(f'{exp.group}: {exp.name}', exp)
-                           for exp in exps
-                           if exp.target_info.name == target
-                          ])
-        widgets['experiment'].options = datasets
-
-        if datasets:
-            if previous_value in datasets:
-                widgets['experiment'].value = previous_value
-                populate_outcomes(None)
-            else:
-                widgets['experiment'].index = 0
-        else:
-            widgets['experiment'].value = None
-
-    @output.capture()
-    def populate_outcomes(change):
-        previous_value = widgets['outcome'].value
-        exp = widgets['experiment'].value
-        if exp is None:
-            return
-
-        outcomes = exp.outcomes
-        widgets['outcome'].options = [('_'.join(outcome), outcome) for outcome in outcomes]
-        if len(outcomes) > 0:
-            if previous_value in outcomes:
-                widgets['outcome'].value = previous_value
-                populate_read_ids(None)
-            else:
-                widgets['outcome'].value = widgets['outcome'].options[0][1]
-        else:
-            widgets['outcome'].value = None
-
-    @output.capture()
-    def populate_read_ids(change):
-        exp = widgets['experiment'].value
-
-        if exp is None:
-            return
-
-        if by_outcome:
-            outcome = widgets['outcome'].value
-            if outcome is None:
-                qnames = []
-            else:
-                qnames = exp.outcome_query_names(outcome)[:200]
-        else:
-            qnames = list(islice(exp.query_names, 200))
-
-        widgets['read_id'].options = qnames
-
-        if qnames:
-            widgets['read_id'].value = qnames[0]
-            widgets['read_id'].index = 0
-        else:
-            widgets['read_id'].value = None
-            
-    populate_experiments({'name': 'initial'})
-    if by_outcome:
-        populate_outcomes({'name': 'initial'})
-    populate_read_ids({'name': 'initial'})
-
-    widgets['target'].observe(populate_experiments, names='value')
-
-    if by_outcome:
-        widgets['outcome'].observe(populate_read_ids, names='value')
-        widgets['experiment'].observe(populate_outcomes, names='value')
-    else:
-        widgets['experiment'].observe(populate_read_ids, names='value')
-
-    @output.capture(clear_output=True)
-    def plot(experiment, read_id, **plot_kwargs):
-        exp = experiment
-
-        if exp is None:
-            return
-
-        if by_outcome:
-            als = exp.get_read_alignments(read_id, outcome=plot_kwargs['outcome'])
-        else:
-            als = exp.get_read_alignments(read_id)
-
-        if als is None:
-            return None
-
-        print(als[0].query_name)
-        print(als[0].get_forward_sequence())
-
-        l = exp.layout_module.Layout(als, exp.target_info, mode=exp.layout_mode)
-        info = l.categorize()
-        
-        if widgets['relevant'].value:
-            als = l.relevant_alignments
-
-        diagram = visualize.ReadDiagram(als, exp.target_info,
-                                        max_qual=exp.max_qual,
-                                        features_to_show=exp.target_info.features_to_show,
-                                        **plot_kwargs)
-        fig = diagram.fig
-
-        fig.axes[0].set_title(' '.join((l.name,) + info[:3]))
-
-        return diagram.fig
-
-    all_kwargs = {**{k: ipywidgets.fixed(v) for k, v in kwargs.items()}, **widgets}
-
-    interactive = ipywidgets.interactive(plot, **all_kwargs)
-    interactive.update()
-
-    def make_row(keys):
-        return ipywidgets.HBox([widgets[k] if k in widgets else non_widgets[k] for k in keys])
-
-    if by_outcome:
-        top_row_keys = ['target', 'experiment', 'outcome', 'read_id']
-    else:
-        top_row_keys = ['target', 'experiment', 'read_id']
-
-    @output.capture(clear_output=False)
-    def save(_):
-        fig = interactive.result
-        fn = non_widgets['file_name'].value
-        fig.savefig(fn, bbox_inches='tight')
-
-    non_widgets['save'].on_click(save)
-
-    layout = ipywidgets.VBox(
-        [make_row(top_row_keys),
-         make_row([k for k, d in toggles]),
-         make_row(['file_name', 'save']),
-         interactive.children[-1],
-         output,
-        ],
-    )
-
-    return layout
-
 def load_sample_sheet_from_csv(csv_fn):
     csv_fn = Path(csv_fn)
 
@@ -1997,12 +1390,12 @@ def load_sample_sheet_from_csv(csv_fn):
 
     return sample_sheet
 
-def load_sample_sheet(base_dir, group):
+def load_sample_sheet(base_dir, batch):
     data_dir = Path(base_dir) / 'data'
-    data_yaml_fn = data_dir / group / 'sample_sheet.yaml'
+    data_yaml_fn = data_dir / batch / 'sample_sheet.yaml'
 
     results_dir = Path(base_dir) / 'results'
-    results_yaml_fn = results_dir / group / 'sample_sheet.yaml'
+    results_yaml_fn = results_dir / batch / 'sample_sheet.yaml'
 
     if data_yaml_fn.exists():
         sample_sheet = yaml.safe_load(data_yaml_fn.read_text())
@@ -2017,12 +1410,32 @@ def load_sample_sheet(base_dir, group):
 
     return sample_sheet
 
-def get_all_groups(base_dir):
+def get_all_batches(base_dir):
     data_dir = Path(base_dir) / 'data'
-    groups = sorted(p.name for p in data_dir.iterdir() if p.is_dir())
-    return groups
+    batches = sorted(p.name for p in data_dir.iterdir() if p.is_dir())
+    return batches
 
-def get_all_experiments(base_dir, conditions=None, as_dictionary=False, progress=None):
+def get_combined_sample_sheet(base_dir):
+    batches = get_all_batches(base_dir)
+
+    sample_sheets = {}
+
+    for batch in batches:
+        sample_sheet = load_sample_sheet(base_dir, batch)
+
+        if sample_sheet is None:
+            print(f'Error: {batch} has no sample sheet')
+            continue
+
+        sample_sheets[batch] = sample_sheet
+
+    dfs = {k: pd.DataFrame.from_dict(v, orient='index') for k, v in sample_sheets.items()}
+
+    combined = pd.concat(dfs, sort=True)
+
+    return combined
+
+def get_all_experiments(base_dir, conditions=None, as_dictionary=True, progress=None):
     if conditions is None:
         conditions = {}
 
@@ -2042,22 +1455,27 @@ def get_all_experiments(base_dir, conditions=None, as_dictionary=False, progress
                 else:
                     exp_values = [exp_value]
 
-            if not any(exp_value in v for exp_value in exp_values):
+            if not any(exp_value in vs for exp_value in exp_values):
                 return False
 
         return True
 
     exps = []
-    groups = get_all_groups(base_dir)
+    batches = get_all_batches(base_dir)
 
-    if 'group' in conditions:
-        groups = (n for n in groups if n == conditions['group'])
+    if 'batch' in conditions:
+        v = conditions['batch']
+        if not isinstance(v, (list, tuple, set)):
+            vs = [v]
+        else:
+            vs = v
+        batches = (n for n in batches if n in vs)
     
-    for group in groups:
-        sample_sheet = load_sample_sheet(base_dir, group)
+    for batch in batches:
+        sample_sheet = load_sample_sheet(base_dir, batch)
 
         if sample_sheet is None:
-            print(f'Error: {group} has no sample sheet')
+            print(f'Error: {batch} has no sample sheet')
             continue
 
         for name, description in sample_sheet.items():
@@ -2065,19 +1483,24 @@ def get_all_experiments(base_dir, conditions=None, as_dictionary=False, progress
                 continue
 
             if description.get('platform') == 'illumina':
+                from knock_knock.illumina_experiment import IlluminaExperiment
                 exp_class = IlluminaExperiment
             elif description.get('platform') == 'pacbio':
+                from knock_knock.pacbio_experiment import PacbioExperiment
                 exp_class = PacbioExperiment
             elif description.get('platform') == 'prime':
                 from ddr.prime_editing_experiment import PrimeEditingExperiment
                 exp_class = PrimeEditingExperiment
-            elif description.get('platform') == 'prime_fixed_offset':
-                from ddr.prime_editing_experiment import PrimeEditingFixedOffsetExperiment
-                exp_class = PrimeEditingFixedOffsetExperiment
+            elif description.get('platform') == 'endogenous':
+                import ddr.endogenous
+                exp_class = ddr.endogenous.Experiment
+            elif description.get('platform') == 'tprt':
+                from knock_knock.tprt_experiment import TPRTExperiment
+                exp_class = TPRTExperiment
             else:
                 exp_class = Experiment
             
-            exp = exp_class(base_dir, group, name, description=description, progress=progress)
+            exp = exp_class(base_dir, batch, name, description=description, progress=progress)
             exps.append(exp)
 
     filtered = [exp for exp in exps if check_conditions(exp)]
@@ -2087,7 +1510,7 @@ def get_all_experiments(base_dir, conditions=None, as_dictionary=False, progress
     if as_dictionary:
         d = {}
         for exp in filtered:
-            d[exp.group, exp.name] = exp
+            d[exp.batch, exp.sample_name] = exp
         
         filtered = d
 

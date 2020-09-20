@@ -69,10 +69,18 @@ class ReadDiagram():
                  manual_x_lims=None,
                  label_offsets=None,
                  center_on_primers=False,
-                 **kwargs):
+                 invisible_alignments=None,
+                 truncate_read=None,
+                 hide_xticks=False,
+                 inferred_amplicon_length=None,
+                 **kwargs,
+                ):
 
         self.parsimonious = parsimonious
         self.emphasize_parismonious = emphasize_parsimonious
+        if invisible_alignments is None:
+            invisible_alignments = []
+        self.invisible_alignments = invisible_alignments
 
         self.target_info = target_info
 
@@ -81,6 +89,10 @@ class ReadDiagram():
                 als = []
 
             als = copy.deepcopy(als)
+
+            if truncate_read is not None:
+                als = [sam.crop_al_to_query_int(al, 0, truncate_read) for al in als]
+
             if refs_to_hide is not None:
                 als = [al for al in als if al.reference_name not in refs_to_hide]
 
@@ -103,6 +115,8 @@ class ReadDiagram():
                 als = [al for al in als if al.reference_name in [self.target_info.target, self.target_info.donor]]
 
             all_als = als
+
+            als = sam.make_nonredundant(als)
 
             if self.parsimonious:
                 als = interval.make_parsimonious(als)
@@ -144,6 +158,8 @@ class ReadDiagram():
         self.force_left_aligned = force_left_aligned
         self.center_on_primers = center_on_primers
         self.manual_x_lims = manual_x_lims
+        self.hide_xticks = hide_xticks
+        self.inferred_amplicon_length = inferred_amplicon_length
 
         if label_offsets is None:
             label_offsets = {}
@@ -231,6 +247,9 @@ class ReadDiagram():
         else:
             self.query_length = 50
             self.query_name = None
+
+        if truncate_read is not None:
+            self.query_length = truncate_read + 1
 
         if self.R2_alignments is not None:
             self.R2_query_length = self.R2_alignments[0].query_length
@@ -322,11 +341,7 @@ class ReadDiagram():
 
     @memoized_property
     def features(self):
-        all_features = copy.deepcopy(self.target_info.features)
-
-        inferred_HA_features = self.target_info.inferred_HA_features
-        if inferred_HA_features is not None:
-            all_features.update(inferred_HA_features)
+        all_features = self.target_info.annotated_and_inferred_features
 
         if self.features_to_show is not None:
             features_to_show = self.features_to_show
@@ -474,6 +489,9 @@ class ReadDiagram():
                     parsimony_width_multiplier = 1
 
                 alpha_multiplier = parsimony_multiplier * hide_multiplier
+
+                if alignment in self.invisible_alignments:
+                    alpha_multiplier = 0
 
                 start, end = sam.query_interval(alignment)
 
@@ -790,6 +808,9 @@ class ReadDiagram():
         ax.set_ylim(1.1 * self.min_y, 1.1 * self.max_y)
         ax.set_xlim(self.min_x, self.max_x)
         ax.set_yticks([])
+
+        if self.hide_xticks:
+            ax.set_xticks([])
         
         ax.spines['bottom'].set_position(('data', 0))
         ax.spines['bottom'].set_alpha(0.1)
@@ -853,7 +874,10 @@ class ReadDiagram():
                                 )
                         
         if self.draw_sequence:
-            seq = self.alignments[0].get_forward_sequence()
+            seq = self.alignments[0].get_forward_sequence()[:self.query_length]
+            if self.reverse_complement:
+                seq = utilities.reverse_complement(seq)
+
             seq_kwargs = dict(family='monospace',
                               size=self.font_sizes['sequence'],
                               ha='center',
@@ -907,7 +931,12 @@ class ReadDiagram():
 
         if len(self.alignment_coordinates[ti.target]) > 0:
             #params.append((ti.target, np.mean(list(ti.cut_afters.values())), target_y, self.flip_target))
-            params.append((ti.target, ti.cut_after, target_y, self.flip_target))
+            if ti.cut_after is None:
+                center = np.mean([ti.amplicon_interval.start, ti.amplicon_interval.end])
+            else:
+                center = ti.cut_after
+
+            params.append((ti.target, center, target_y, self.flip_target))
 
         if len(self.alignment_coordinates[ti.donor]) > 0:
             if (ti.donor, ti.donor_specific) in ti.features:
@@ -934,10 +963,15 @@ class ReadDiagram():
                     anchor_read = xs[1]
 
             elif ref_name == ti.target and self.center_on_primers:
-                if self.flip_target:
-                    anchor_ref = ti.amplicon_interval.end - (len(ti.amplicon_interval) - self.query_length) / 2
+                if self.inferred_amplicon_length is not None:
+                    relevant_length = self.inferred_amplicon_length
                 else:
-                    anchor_ref = ti.amplicon_interval.start + (len(ti.amplicon_interval) - self.query_length) / 2
+                    relevant_length = self.query_length
+
+                if self.flip_target:
+                    anchor_ref = ti.amplicon_interval.end - (len(ti.amplicon_interval) - relevant_length) / 2
+                else:
+                    anchor_ref = ti.amplicon_interval.start + (len(ti.amplicon_interval) - relevant_length) / 2
 
                 xs, ps, y, strand, parsimony_multiplier = self.alignment_coordinates[ref_name][0]
                 if (strand == '+' and not flip) or (strand == '-' and flip):
@@ -1076,6 +1110,7 @@ class ReadDiagram():
                 right_alpha = 1
 
             image[:, :, 3] = np.concatenate([np.linspace(left_alpha, 1, 100), [1] * 800, np.linspace(1, right_alpha, 100)])
+
             self.ax.imshow(image,
                            extent=(ref_xs[0], ref_xs[1], ref_y - ref_line_width, ref_y + ref_line_width),
                            aspect='auto',
@@ -1111,6 +1146,9 @@ class ReadDiagram():
 
                     name = feature.attribute['ID']
                     label = self.label_overrides.get(name, name)
+
+                    if 'PAM' in label:
+                        label = 'PAM'
 
                     label_offset = self.label_offsets.get(name, 0)
                     y_points = 5 + label_offset * self.font_sizes['feature_label']
@@ -1193,35 +1231,3 @@ class ReadDiagram():
         fig_height = self.height_per_unit * 1.2 * self.height * self.size_multiple
 
         self.fig.set_size_inches((fig_width, fig_height))
-
-def make_stacked_Image(diagrams, titles=None, **kwargs):
-    if titles is None or titles == '':
-        titles = itertools.repeat(titles)
-
-    ims = []
-
-    for diagram, title in zip(diagrams, titles):
-        if title is not None:
-            diagram.fig.axes[0].set_title(title)
-        
-        with io.BytesIO() as buffer:
-            diagram.fig.savefig(buffer, format='png', bbox_inches='tight')
-            im = PIL.Image.open(buffer)
-            im.load()
-            ims.append(im)
-
-        plt.close(diagram.fig)
-        
-    if not ims:
-        return None
-
-    total_height = sum(im.height for im in ims)
-    max_width = max(im.width for im in ims)
-
-    stacked_im = PIL.Image.new('RGBA', size=(max_width, total_height), color='white')
-    y_start = 0
-    for im in ims:
-        stacked_im.paste(im, (max_width - im.width, y_start))
-        y_start += im.height
-
-    return stacked_im

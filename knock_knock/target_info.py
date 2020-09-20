@@ -113,7 +113,7 @@ class TargetInfo():
     @memoized_property
     def primary_sgRNA(self):
         primary_sgRNA = self.manifest.get('primary_sgRNA')
-        if primary_sgRNA is None:
+        if primary_sgRNA is None and len(self.sgRNAs) > 0:
             primary_sgRNA = self.sgRNAs[0]
         return primary_sgRNA
 
@@ -236,6 +236,18 @@ class TargetInfo():
         return features
 
     @memoized_property
+    def annotated_and_inferred_features(self):
+        all_features = copy.deepcopy(self.features)
+
+        inferred_HA_features = self.inferred_HA_features
+        if inferred_HA_features is not None:
+            all_features.update(inferred_HA_features)
+
+        all_features.update(self.PAM_features)
+
+        return all_features
+
+    @memoized_property
     def features_to_show(self):
         if self.manual_features_to_show is not None:
             return {tuple(f) for f in self.manual_features_to_show}
@@ -329,7 +341,10 @@ class TargetInfo():
     
     @memoized_property
     def sgRNA_feature(self):
-        return self.sgRNA_features[self.primary_sgRNA]
+        if self.primary_sgRNA is None:
+            return None
+        else:
+            return self.sgRNA_features[self.primary_sgRNA]
 
     @memoized_property
     def all_sgRNA_features(self):
@@ -388,8 +403,14 @@ class TargetInfo():
                                         '.',
                                         '.',
                                         '.',
-                                        f'ID={PAM_name}',
+                                        '.',
                                        )
+            f.attribute = {
+                'ID': PAM_name,
+                'color': '#9C4040',
+                'short_name': 'PAM',
+            }
+
             PAM_features[self.target, PAM_name] = f
 
         return PAM_features
@@ -454,8 +475,13 @@ class TargetInfo():
 
     @memoized_with_key
     def around_cuts(self, each_side):
-        intervals = [interval.Interval(cut_after - each_side + 1, cut_after + each_side) for cut_after in self.cut_afters.values()]
-        return functools.reduce(operator.or_, intervals) 
+        if len(self.cut_afters) == 0:
+            around_cuts = interval.Interval.empty()
+        else:
+            intervals = [interval.Interval(cut_after - each_side + 1, cut_after + each_side) for cut_after in self.cut_afters.values()]
+            around_cuts = functools.reduce(operator.or_, intervals) 
+
+        return around_cuts
 
     @memoized_with_key
     def not_around_cuts(self, each_side):
@@ -541,6 +567,12 @@ class TargetInfo():
         return by_side
 
     @memoized_property
+    def between_primers_interval(self):
+        start = self.primers_by_side_of_target[5].end + 1
+        end = self.primers_by_side_of_target[3].start - 1
+        return interval.Interval(start, end)
+
+    @memoized_property
     def sequencing_direction(self):
         return self.sequencing_start.strand
 
@@ -569,6 +601,9 @@ class TargetInfo():
 
     @memoized_property
     def target_side_to_PAM_side(self):
+        if self.sgRNA_feature is None:
+            return None
+
         strand = self.sgRNA_feature.strand
         PAM_side = self.effector.PAM_side
 
@@ -692,7 +727,10 @@ class TargetInfo():
         by_target_side[5], by_target_side[3] = sorted(paired_HAs, key=lambda n: HAs[n]['target'].start)
 
         for target_side, name in by_target_side.items():
-            PAM_side = self.target_side_to_PAM_side[target_side]
+            if self.target_side_to_PAM_side is not None:
+                PAM_side = self.target_side_to_PAM_side[target_side]
+            else:
+                PAM_side = None
 
             # If sequencing start isn't annotated, don't populate by read side.
             if self.target_side_to_read_side is not None:
@@ -1144,6 +1182,32 @@ class TargetInfo():
 
         return ('insertion', 'insertion', str(shifted))
 
+    @memoized_property
+    def edit_name(self):
+        SNVs = self.donor_SNVs
+        if len(SNVs['target']) == 1:
+            SNV_name = sorted(SNVs['target'])[0]
+            position = SNVs['target'][SNV_name]['position']
+            strand = SNVs['target'][SNV_name]['strand']
+            target_base = SNVs['target'][SNV_name]['base']
+            donor_base = SNVs['donor'][SNV_name]['base']
+            
+            if strand != self.sgRNA_feature.strand:
+                raise ValueError
+                
+            if strand == '+':
+                offset = position - self.cut_after
+            else:
+                offset = self.cut_after - position + 1
+
+            edit_name = f'+{offset:02d}_{target_base}_to_{donor_base}'
+        elif len(SNVs['target']) > 1:
+            raise NotImplementedError
+        else:
+            edit_name = 'no_edit'
+
+        return edit_name
+
     def calculate_microhomology_lengths(self, donor_to_use='homologous', donor_strand='+'):
         def num_matches_at_edge(first, second, relevant_edge):
             ''' Count the number of identical characters at the beginning
@@ -1307,6 +1371,22 @@ class TargetInfo():
             offset = None
 
         return offset
+
+    def remove_organism_from_alignment(self, al):
+        organism, original_name = al.reference_name.split('_', 1)
+        organism_matches = {n for n in self.supplemental_headers if al.reference_name.startswith(n)}
+        if len(organism_matches) != 1:
+            raise ValueError(al.reference_name, self.supplemental_headers)
+        else:
+            organism = organism_matches.pop()
+            original_name = al.reference_name[len(organism) + 1:]
+
+        header = self.supplemental_headers[organism]
+        al_dict = al.to_dict()
+        al_dict['ref_name'] = original_name
+        original_al = pysam.AlignedSegment.from_dict(al_dict, header)
+
+        return organism, original_al
         
 def degenerate_indel_from_string(details_string):
     kind, rest = details_string.split(':')

@@ -26,12 +26,12 @@ def load_counts(base_dir, conditions=None, exclude_malformed=False, exclude_empt
     counts = {}
     no_outcomes = []
 
-    for exp in exps:
+    for (group, name), exp in exps.items():
         exp_counts = exp.load_outcome_counts()
         if exp_counts is None:
-            no_outcomes.append((exp.group, exp.name))
+            no_outcomes.append((group, name))
         else:
-            counts[exp.group, exp.name] = exp_counts
+            counts[group, name] = exp_counts
 
     if no_outcomes:
         no_outcomes_string = '\n'.join(f'\t{group}: {name}' for group, name in no_outcomes)
@@ -40,17 +40,17 @@ def load_counts(base_dir, conditions=None, exclude_malformed=False, exclude_empt
     df = pd.DataFrame(counts).fillna(0)
 
     # Sort order for outcomes is defined in the relevant layout module.
-    layout_modules = {exp.layout_module for exp in exps}
+    categorizers = {exp.categorizer for exp in exps.values()}
     
-    if len(layout_modules) > 1:
+    if len(categorizers) > 1:
         raise ValueError('Can\'t make table for experiments with inconsistent layout modules.')
     
-    layout_module = layout_modules.pop()
+    categorizer = categorizers.pop()
     
-    df = df.reindex(layout_module.full_index, fill_value=0)
+    df = df.reindex(categorizer.full_index(), fill_value=0)
 
     if exclude_malformed:
-        df = df.drop(['malformed layout', 'nonspecific amplification'], axis='index', level=0, errors='ignore')
+        df = df.drop(['malformed layout', 'nonspecific amplification', 'bad sequence'], axis='index', level=0, errors='ignore')
         totals_row_label = totals_relevant_row_label
     else:
         totals_row_label = totals_all_row_label
@@ -423,7 +423,7 @@ def make_self_contained_zip(base_dir, conditions, table_name,
     fns_to_zip.append(csv_fn)
     
     print('Generating performance metrics...')
-    pms_fn = fn_prefix.parent / (f'{fn_prefix.name}_performance_metics.csv')
+    pms_fn = fn_prefix.parent / (f'{fn_prefix.name}_performance_metrics.csv')
     pms = calculate_performance_metrics(base_dir, conditions)
     pms.to_csv(pms_fn)
     fns_to_zip.append(pms_fn)
@@ -433,7 +433,7 @@ def make_self_contained_zip(base_dir, conditions, table_name,
     exps_missing_files = set()
 
     if include_images:
-        for exp in exps:
+        for exp in exps.values():
             def add_fn(fn):
                 if not fn.exists():
                     exps_missing_files.add((exp.group, exp.name))

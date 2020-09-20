@@ -35,9 +35,10 @@ def blast(ref_fn, reads, bam_fn, bam_by_name_fn, max_insertion_length=None):
                 fastq_dict['+'][read.name] = read
                 fastq_dict['-'][read.name] = read.reverse_complement()
 
-                fasta_read = fasta.Read(read.name, read.seq)
-                fasta_fh.write(str(fasta_read))
-                
+                if len(read) > 0:
+                    fasta_read = fasta.Read(read.name, read.seq)
+                    fasta_fh.write(str(fasta_read))
+
         pysam.faidx(str(reads_fasta_fn))
             
         blast_command = [
