@@ -256,6 +256,14 @@ class Experiment:
         lengths = sum(self.outcome_stratified_lengths.values())
         np.savetxt(self.fns['lengths'], lengths, '%d')
 
+    def count_outcomes(self):
+        counts = Counter()
+        for outcome in self.outcome_iter():
+            counts[outcome.category, outcome.subcategory, outcome.details] += 1
+
+        counts = pd.Series(counts).sort_values(ascending=False)
+        counts.to_csv(self.fns['outcome_counts'], sep='\t', header=False)
+
     def length_ranges(self, outcome=None):
         if outcome is None:
             lengths = self.read_lengths
