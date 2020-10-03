@@ -48,13 +48,18 @@ class Ranges:
             self.edge_counts['start'][start] += 1
             self.edge_counts['end'][end] += 1
             
-            if sequence_name['start'] == sequence_name['end']:
-                self.positions_involved[start:end + 1] += 1
-            
             self.edge_pairs.append((start, end))
 
             self.read_ids.append(read_id)
 
+            if end < start:
+                # Deletion junctions flip the meaning of start and end.
+                # For positions_involved to be useful, flip them back
+                start, end = end + 1, start - 1
+
+            if sequence_name['start'] == sequence_name['end']:
+                self.positions_involved[start:end + 1] += 1
+            
         self.cumulative_counts = {edge: {} for edge in self.edge_counts}
         
         for edge in ['start', 'end']:
@@ -131,7 +136,8 @@ class Ranges:
         
         for exp in exps:
             for outcome in exp.outcome_iter():
-                total_reads += 1
+                if outcome.category != 'nonspecific amplification':
+                    total_reads += 1
                 if outcome.category == 'deletion' and outcome.subcategory in ['clean', 'mismatches']:
                     deletion = knock_knock.target_info.DegenerateDeletion.from_string(outcome.details)
 
@@ -183,7 +189,8 @@ class Ranges:
                     start += exp.target_info.anchor
                     end += exp.target_info.anchor
 
-                    ranges.append((start, end))
+                    read_id = (exp.group, exp.sample_name, outcome.query_name)
+                    ranges.append((read_id, start, end))
                 
         return cls(exp.target_info, exp.target_info.target, ranges, total_reads, exps)
     
@@ -230,7 +237,8 @@ class Ranges:
                     start += exp.target_info.anchor
                     end += exp.target_info.anchor
 
-                    ranges.append(((exp.group, exp.sample_name, outcome.query_name), start, end))
+                    read_id = (exp.group, exp.sample_name, outcome.query_name)
+                    ranges.append((read_id, start, end))
 
         return cls(exp.target_info, {'start': exp.target_info.target, 'end': exp.target_info.target}, ranges, total_reads, exps)
                     
@@ -254,7 +262,8 @@ class Ranges:
                 raise ValueError
         
             for outcome in exp.outcome_iter():
-                total_reads += 1
+                if outcome.category != 'nonspecific amplification':
+                    total_reads += 1
                 if outcome.category == 'unintended donor integration':
                     lti = ddr.pooled_layout.LongTemplatedInsertionOutcome.from_string(outcome.details)
 
@@ -323,7 +332,8 @@ class Ranges:
                     if target_start == ddr.outcome.NAN_INT or donor_end == ddr.outcome.NAN_INT:
                         continue
                     else:
-                        ranges.append(((exp.group, exp.sample_name, outcome.query_name), target_start, donor_end))
+                        read_id = (exp.group, exp.sample_name, outcome.query_name)
+                        ranges.append((read_id, target_start, donor_end))
 
         return cls(exp.target_info, {'start': exp.target_info.target, 'end': exp.target_info.donor}, ranges, total_reads, exps)
 
@@ -363,6 +373,24 @@ class Ranges:
 
         return cls(exp.target_info, {'start': exp.target_info.target, 'end': exp.target_info.donor}, ranges, total_reads, exps)
 
+    @classmethod
+    def donor_fragments(cls, exps):
+        ranges = []
+        total_reads = 0
+
+        for exp in exps:
+            for outcome in exp.outcome_iter():
+                total_reads += 1
+
+                if outcome.category == 'donor fragment':
+                    integration = knock_knock.outcome_record.Integration.from_string(outcome.details)
+                    start, end = sorted([integration.donor_start, integration.donor_end])
+
+                    read_id = (exp.group, exp.sample_name, outcome.query_name)
+                    ranges.append((read_id,  start, end))
+
+        return cls(exp.target_info, {'start': exp.target_info.donor, 'end': exp.target_info.donor}, ranges, total_reads, exps)
+
 def plot_ranges(all_ranges,
                 names=None,
                 primary_name='nt',
@@ -374,7 +402,6 @@ def plot_ranges(all_ranges,
                 panels=None,
                 sort_kwargs=None,
                ):
-
     if names is None:
         names = sorted(all_ranges)
 
@@ -382,6 +409,14 @@ def plot_ranges(all_ranges,
         panels = [
             'start',
         ]
+
+    primary_ranges = all_ranges[primary_name]
+
+    if primary_ranges.sequence_name['start'] != primary_ranges.sequence_name['end']:
+        raise ValueError(primary_ranges.sequence_name)
+
+    sequence_length = primary_ranges.sequence_length['start'] 
+    sequence_name = primary_ranges.sequence_name['start'] 
 
     if sort_kwargs is None:
         sort_kwargs = dict(key=lambda d: (d[1] - d[0], d[0]), reverse=True)
@@ -391,7 +426,7 @@ def plot_ranges(all_ranges,
 
     sampled = all_ranges[primary_name].downsampled_edge_pairs(num_examples)
     
-    xs = np.arange(all_ranges[primary_name].sequence_length) - landmark
+    xs = np.arange(sequence_length) - landmark
     
     ordered = sorted(sampled, **sort_kwargs)
     ordered = np.array(ordered)
@@ -496,36 +531,20 @@ def plot_ranges(all_ranges,
     panel_axs[panels[0]].legend()
     
     if x_lims is None:
-        x_lims = (0, all_ranges[primary_name].sequence_length)
+        x_lims = (0, sequence_length)
 
-    for feature_name in features_to_draw:
-        feature = all_ranges[primary_name].target_info.annotated_and_inferred_features[feature_name]
-        if x_lims[0] <= feature.start <= x_lims[1] or x_lims[0] <= feature.end <= x_lims[1]:
-            color = feature.attribute['color']
-            label = feature.attribute.get('short_name', feature_name[1])
-
-            pair_ax.axvspan(feature.start - 0.5, feature.end + 0.5, color=color, alpha=0.5)
-
-
-            pair_ax.annotate(label,
-                            xy=(np.mean([feature.start, feature.end]), 1),
-                            xycoords=('data', 'axes fraction'),
-                            xytext=(0, 4),
-                            textcoords='offset points',
-                            ha='center',
-                            va='bottom', 
-                            color=color,
-                            weight='bold',
-                            )
-        
     ax.set_xlim(*x_lims)
+
+    draw_features(ax, primary_ranges.target_info, sequence_name, x_lims[0], x_lims[1])
 
     if invert:
         ax.invert_xaxis()
     
     return fig
 
-def plot_joint(all_ranges, nt_name, other_name, target_min_p, target_max_p,
+def plot_joint(all_ranges, nt_name, other_name,
+               target_min_p,
+               target_max_p,
                donor_min_p=0,
                donor_max_p=None,
                v_max=None,
@@ -702,21 +721,19 @@ def plot_joint(all_ranges, nt_name, other_name, target_min_p, target_max_p,
     return fig
 
 def plot_marginal(all_ranges, name, ax, orientation, color='black'):
-    #ranges = all_ranges[name]
-    #counts = ranges.joint_counts / ranges.total_reads * 100
-
     if orientation == 'vertical':
-        #ys = counts.sum(axis=0)
         ys = all_ranges[name].edge_percentages['end']
         xs = np.arange(len(ys))
     else:
-        #xs = counts.sum(axis=1)
         xs = all_ranges[name].edge_percentages['start']
         ys = np.arange(len(xs))
 
     ax.plot(xs, ys, 'o-', markersize=1, color=color, label=name)
 
-def draw_features(ax, ti, seq_name, min_p, max_p, orientation='vertical'):
+def draw_features(ax, ti, seq_name, min_p, max_p, orientation='vertical', label_offsets=None, alpha=0.5):
+    if label_offsets is None:
+        label_offsets = {}
+
     features = [(s_name, f_name) for s_name, f_name in ti.features_to_show if s_name == seq_name]
 
     if orientation == 'right':
@@ -736,9 +753,10 @@ def draw_features(ax, ti, seq_name, min_p, max_p, orientation='vertical'):
             label = feature.attribute.get('short_name', f_name)
 
             offset_points = 4
-            if label == 'PAM':
-                offset_points = -20
-                
+            if f_name in label_offsets:
+                extra_offsets = 12 * label_offsets[f_name]
+                offset_points += extra_offsets
+
             center = np.mean([feature.start, feature.end])
             if orientation == 'right':
                 annotate_kwargs = dict(
@@ -758,7 +776,7 @@ def draw_features(ax, ti, seq_name, min_p, max_p, orientation='vertical'):
                     va='bottom',
                 )
                 
-            span(feature.start - 0.5, feature.end + 0.5, color=color, alpha=0.5)
+            span(feature.start - 0.5, feature.end + 0.5, color=color, alpha=alpha)
 
             ax.annotate(label,
                         textcoords='offset points',
