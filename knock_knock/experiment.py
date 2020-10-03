@@ -281,7 +281,7 @@ class Experiment:
         if isinstance(outcome, str):
             # outcome is a single category, so need to chain together all relevant
             # (category, subcategory) pairs.
-            pairs = [(c, s) for c, s in self.outcomes if c == outcome]
+            pairs = [(c, s) for c, s in self.categories_by_frequency if c == outcome]
             pair_groups = [self.alignment_groups(fn_key=fn_key, outcome=pair, read_type=read_type) for pair in pairs]
             return heapq.merge(*pair_groups)
 
@@ -483,26 +483,36 @@ class Experiment:
             for fn in fns_to_merge:
                 fn.unlink()
 
-    def load_outcome_counts(self, key='outcome_counts'):
-        if self.fns[key].exists() and self.fns[key].stat().st_size > 0:
-            counts = pd.read_csv(self.fns[key],
-                                 index_col=(0, 1),
+    @memoized_property
+    def outcome_counts(self):
+        fn = self.fns['outcome_counts']
+        if fn.exists() and fn.stat().st_size > 0:
+            counts = pd.read_csv(fn,
+                                 index_col=(0, 1, 2),
                                  header=None,
                                  squeeze=True,
+                                 na_filter=False,
                                  sep='\t',
                                 )
+            counts.index.names = ['category', 'subcategory', 'details']
         else:
             counts = None
 
         return counts
 
     @memoized_property
-    def outcomes(self):
-        counts = self.load_outcome_counts()
-        if counts is None:
-            return []
+    def category_counts(self):
+        if self.outcome_counts is None:
+            return None
         else:
-            return list(counts.sort_values(ascending=False).index)
+            return self.outcome_counts.sum(level=['category', 'subcategory'])
+
+    @memoized_property
+    def categories_by_frequency(self):
+        if self.category_counts is None:
+            return None
+        else:
+            return list(self.category_counts.sort_values(ascending=False).index)
 
     def outcome_query_names(self, outcome):
         fns = self.outcome_fns(outcome)
@@ -561,9 +571,6 @@ class Experiment:
 
                 outcome = self.final_Outcome(name, length, category, subcategory, details)
                 fh.write(f'{outcome}\n')
-
-        counts = {description: len(names) for description, names in outcomes.items()}
-        pd.Series(counts).to_csv(self.fns['outcome_counts'], sep='\t', header=False)
 
         # To make plotting easier, for each outcome, make a file listing all of
         # qnames for the outcome and a bam file (sorted by name) with all of the
@@ -655,7 +662,7 @@ class Experiment:
         return diagram
 
     def make_text_visualizations(self, num_examples=10):
-        for outcome in self.outcomes:
+        for outcome in self.categories_by_frequency:
             outcome_fns = self.outcome_fns(outcome)
             visualize_structure.visualize_bam_alignments(outcome_fns['bam_by_name'],
                                                          self.target_info.fns['ref_fasta'],
@@ -864,7 +871,7 @@ class Experiment:
         # To minimize the chance that a color will be used more than once in the same panel in 
         # outcome_stratified_lengths plots, sort color order by highest point.
         # Factored out here so that same colors can be used in svgs.
-        color_order = sorted(self.outcome_stratified_lengths, key=self.outcome_highest_points.get, reverse=True)
+        color_order = sorted(self.categories_by_frequency, key=self.outcome_highest_points.get, reverse=True)
         return {outcome: f'C{i % 10}' for i, outcome in enumerate(color_order)}
 
     def plot_outcome_stratified_lengths(self, x_lims=None, min_total_to_label=0.1, zoom_factor=0.1):
@@ -1216,7 +1223,7 @@ Esc when done to deactivate the category.'''
             yield d
             
     def generate_all_outcome_length_range_figures(self):
-        outcomes = sorted(self.outcome_stratified_lengths)
+        outcomes = sorted(self.categories_by_frequency)
         description = 'Generating outcome-specific length range diagrams'
         for outcome in self.progress(outcomes, desc=description):
             self.generate_length_range_figures(outcome=outcome)
@@ -1300,10 +1307,10 @@ p {{
                 fh.write(f'{tag}\n')
 
     def generate_all_outcome_example_figures(self, num_examples=10, **kwargs):
-        for outcome in self.progress(self.outcomes, desc='Making diagrams for detailed subcategories'):
+        for outcome in self.progress(self.categories_by_frequency, desc='Making diagrams for detailed subcategories'):
             self.generate_outcome_example_figures(outcome=outcome, num_examples=num_examples, **kwargs)
         
-        categories = sorted(set(c for c, s in self.outcomes))
+        categories = sorted(set(c for c, s in self.categories_by_frequency))
         for outcome in self.progress(categories, desc='Making diagrams for grouped categories'):
             self.generate_outcome_example_figures(outcome=outcome, num_examples=num_examples, **kwargs)
             

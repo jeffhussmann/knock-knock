@@ -77,10 +77,10 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, clear_outp
         if exp is None:
             return
 
-        outcomes = exp.outcomes
-        widgets['outcome'].options = [('_'.join(outcome), outcome) for outcome in outcomes]
-        if len(outcomes) > 0:
-            if previous_value in outcomes:
+        categories = exp.categories_by_frequency
+        widgets['outcome'].options = [('_'.join(outcome), outcome) for outcome in categories]
+        if len(categories) > 0:
+            if previous_value in categories:
                 widgets['outcome'].value = previous_value
                 populate_read_ids(None)
             else:

@@ -27,11 +27,10 @@ def load_counts(base_dir, conditions=None, exclude_malformed=False, exclude_empt
     no_outcomes = []
 
     for (group, name), exp in exps.items():
-        exp_counts = exp.load_outcome_counts()
-        if exp_counts is None:
+        if exp.category_counts is None:
             no_outcomes.append((group, name))
         else:
-            counts[group, name] = exp_counts
+            counts[group, name] = exp.category_counts
 
     if no_outcomes:
         no_outcomes_string = '\n'.join(f'\t{group}: {name}' for group, name in no_outcomes)

@@ -147,20 +147,6 @@ class IlluminaExperiment(Experiment):
     def no_overlap_qnames(self):
         return {r.name for r in self.reads_by_type('R1_no_overlap')}
 
-    def load_outcome_counts(self):
-        stitched = super().load_outcome_counts(key='outcome_counts')
-        no_overlap = super().load_outcome_counts(key='no_overlap_outcome_counts')
-
-        if stitched is None and no_overlap is None:
-            return None
-        elif stitched is not None and no_overlap is None:
-            return stitched
-        elif stitched is None and no_overlap is not None:
-            return no_overlap
-        else:
-            combined = stitched.add(no_overlap, fill_value=0).astype(int)
-            return combined
-
     def no_overlap_alignment_groups(self, outcome=None):
         R1_read_type = 'R1_no_overlap'
         R2_read_type = 'R2_no_overlap'
@@ -201,9 +187,6 @@ class IlluminaExperiment(Experiment):
 
                 outcome = self.final_Outcome.from_layout(pair_layout)
                 fh.write(f'{outcome}\n')
-
-        counts = {description: len(names) for description, names in outcomes.items()}
-        pd.Series(counts).to_csv(self.fns['no_overlap_outcome_counts'], sep='\t', header=False)
 
         # To make plotting easier, for each outcome, make a file listing all of
         # qnames for the outcome and a bam file (sorted by name) with all of the
@@ -335,9 +318,12 @@ class IlluminaExperiment(Experiment):
                 self.categorize_outcomes(read_type='stitched')
                 self.categorize_no_overlap_outcomes()
 
-                self.record_sanitized_category_names()
+                self.count_outcomes()
                 self.count_read_lengths()
+
                 self.extract_donor_microhomology_lengths()
+
+                self.record_sanitized_category_names()
             
             elif stage == 'visualize':
                 self.generate_figures()
