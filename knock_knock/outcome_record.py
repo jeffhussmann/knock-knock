@@ -61,17 +61,19 @@ CommonSequenceOutcomeRecord = OutcomeRecord_factory(
 )
 
 class Integration:
-    def __init__(self, target_edge_before, target_edge_after, donor_start, donor_end, mh_length):
+    def __init__(self, target_edge_before, target_edge_after, donor_strand, donor_start, donor_end, mh_length_5, mh_length_3):
         self.target_edge_before = target_edge_before
         self.target_edge_after = target_edge_after
+        self.donor_strand = donor_strand
         self.donor_start = donor_start
         self.donor_end = donor_end
-        self.mh_length = mh_length
+        self.mh_length_5 = mh_length_5
+        self.mh_length_3 = mh_length_3
 
     @classmethod
     def from_string(cls, details_string):
-        fields = [int(f) for f in details_string.split(',')]
+        fields = [int(f) if (f != '+' and f != '-') else f for f in details_string.split(',')]
         return Integration(*fields)
 
     def __str__(self):
-        return ','.join(map(str, [self.target_edge_before, self.target_edge_after, self.donor_start, self.donor_end, self.mh_length]))
+        return ','.join(map(str, [self.target_edge_before, self.target_edge_after, self.donor_strand, self.donor_start, self.donor_end, self.mh_length_5, self.mh_length_3]))

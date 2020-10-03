@@ -534,7 +534,6 @@ class Experiment:
                 fh.write(f'{k}\t{v}\n')
 
     def categorize_outcomes(self, fn_key='bam_by_name', read_type=None):
-
         self.check_combined_read_length()
 
         if self.fns['outcomes_dir'].is_dir():
@@ -544,8 +543,12 @@ class Experiment:
 
         outcomes = defaultdict(list)
 
+        if read_type is None:
+            read_type = self.default_read_type
+
         with self.fns['outcome_list'].open('w') as fh:
             alignment_groups = self.alignment_groups(fn_key, read_type=read_type)
+
             if read_type is None:
                 description = 'Categorizing reads'
             else:
@@ -555,11 +558,11 @@ class Experiment:
                 try:
                     layout = self.categorizer(als, self.target_info, mode=self.layout_mode)
                     if self.target_info.donor is not None or self.target_info.nonhomologous_donor is not None:
-                        category, subcategory, details = layout.categorize()
+                        category, subcategory, details, *rest = layout.categorize()
                     else:
-                        category, subcategory, details = layout.categorize_no_donor()
+                        category, subcategory, details, *rest = layout.categorize_no_donor()
                 except:
-                    print(self.name, name)
+                    print(self.sample_name, name)
                     raise
                 
                 outcomes[category, subcategory].append(name)
@@ -602,8 +605,9 @@ class Experiment:
                         fh.write(qname + '\n')
             
             for al in full_bam_fh:
-                outcome = qname_to_outcome[al.query_name]
-                bam_fhs[outcome].write(al)
+                if al.query_name in qname_to_outcome:
+                    outcome = qname_to_outcome[al.query_name]
+                    bam_fhs[outcome].write(al)
 
         for outcome, fh in bam_fhs.items():
             fh.close()
@@ -1334,37 +1338,47 @@ p {{
 
         for line in self.fns['outcome_list'].open():
             outcome = self.final_Outcome.from_line(line)
+
+            category_and_sides = []
+
             if outcome.category == 'incomplete HDR':
                 if outcome.subcategory == "5' HDR, 3' imperfect":
-                    MH_category = 'incomplete HDR, 3\' junction'
+                    category_and_sides.append(('incomplete HDR, 3\' junction', 3))
                 elif outcome.subcategory == "5' imperfect, 3' HDR":
-                    MH_category = 'incomplete HDR, 5\' junction'
-                else:
-                    continue
+                    category_and_sides.append(('incomplete HDR, 5\' junction', 5))
+
+            elif outcome.category == 'donor fragment':
+                integration = outcome_record.Integration.from_string(outcome.details)
+                strand = integration.donor_strand
+                category_and_sides.append((f'donor fragment, {strand}, 5\' junction', 5))
+                category_and_sides.append((f'donor fragment, {strand}, 3\' junction', 3))
                 
-                if outcome.details != 'None' and outcome.details != 'n/a':
-                    try:
-                        integration = outcome_record.Integration.from_string(outcome.details)
-                        MH_length = integration.mh_length
-                    except:
-                        print(self.batch, self.name, outcome)
-                        raise
-
-                    if MH_length >= 0:
-                        MH_lengths[MH_category][MH_length] += 1
-
-            elif outcome.category == 'non-homologous donor' and outcome.subcategory == 'simple':
-                strand, NH_5, NH_3 = outcome.details.split(',')
-
-                NH_junctions = {
-                    5: int(NH_5),
-                    3: int(NH_3),
+            if len(category_and_sides) > 0:
+                integration = outcome_record.Integration.from_string(outcome.details)
+                junctions = {
+                    5: integration.mh_length_5,
+                    3: integration.mh_length_3,
                 }
 
-                for junction in [5, 3]:
-                    MH_category = f'non-homologous donor, {strand}, {junction}\' junction'
-                    if NH_junctions[junction] >= 0:
-                        MH_lengths[MH_category][NH_junctions[junction]] += 1
+                for category, side in category_and_sides:
+                    length = junctions[side]
+                    if length >= 0:
+                        if 'donor fragment' in category and length > 20:
+                            print(outcome)
+                        MH_lengths[category][length] += 1
+
+            #elif outcome.category == 'non-homologous donor' and outcome.subcategory == 'simple':
+            #    strand, NH_5, NH_3 = outcome.details.split(',')
+
+            #    NH_junctions = {
+            #        5: int(NH_5),
+            #        3: int(NH_3),
+            #    }
+
+            #    for junction in [5, 3]:
+            #        MH_category = f'non-homologous donor, {strand}, {junction}\' junction'
+            #        if NH_junctions[junction] >= 0:
+            #            MH_lengths[MH_category][NH_junctions[junction]] += 1
 
         with self.fns['donor_microhomology_lengths'].open('w') as fh:
             for MH_category, lengths in MH_lengths.items():

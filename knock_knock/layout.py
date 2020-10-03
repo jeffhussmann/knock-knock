@@ -117,13 +117,15 @@ class Layout(Categorizer):
         ('incomplete HDR',
             ("5' HDR, 3' imperfect",
              "5' imperfect, 3' HDR",
-             "5' imperfect, 3' imperfect",
-             "5' HDR, 3' HDR",
             ),
         ),
-        ('complex misintegration',
+        ('donor fragment',
             ("5' imperfect, 3' imperfect",
-            'other',
+            ),
+        ),
+
+        ('complex misintegration',
+            ('other',
             ),
         ),
         ('concatenated misintegration',
@@ -291,7 +293,7 @@ class Layout(Categorizer):
 
     @memoized_property
     def nonredundant_supplemental_alignments(self):
-        primary_als = self.alignments + self.nonhomologous_donor_alignments + self.extra_alignments
+        primary_als = self.parsimonious_and_gap_alignments + self.nonhomologous_donor_alignments + self.extra_alignments
         covered = interval.get_disjoint_covered(primary_als)
 
         supp_als_to_keep = []
@@ -352,6 +354,8 @@ class Layout(Categorizer):
 
             target_edge_before = sam.crop_al_to_query_int(left_target_al, 0, left_junction['switch_after']).reference_end - 1
             target_edge_after = sam.crop_al_to_query_int(right_target_al, right_junction['switch_after'] + 1, np.inf).reference_start
+
+            donor_strand = sam.get_strand(donor_al)
         else:
             right_target_al = self.primer_alignments[5]
             left_target_al = self.primer_alignments[3]
@@ -362,18 +366,32 @@ class Layout(Categorizer):
             target_edge_after = sam.crop_al_to_query_int(left_target_al, 0, left_junction['switch_after']).reference_start
             target_edge_before = sam.crop_al_to_query_int(right_target_al, right_junction['switch_after'] + 1, np.inf).reference_end - 1
 
+            # Unclear what the right approach to recording strand is here.
+            donor_strand = sam.get_opposite_strand(donor_al)
+
         donor_al_cropped = sam.crop_al_to_query_int(donor_al, left_junction['switch_after'] + 1, right_junction['switch_after'])
 
         donor_start = donor_al_cropped.reference_start
         donor_end = donor_al_cropped.reference_end - 1
 
-        mh_length = self.donor_microhomology
-        if mh_length is None:
-            mh_length = 0
+        mh_lengths = self.donor_microhomology
 
-        integration = Integration(target_edge_before, target_edge_after, donor_start, donor_end, mh_length)
+        integration = Integration(target_edge_before, target_edge_after, donor_strand, donor_start, donor_end, mh_lengths[5], mh_lengths[3])
 
         return str(integration)
+
+    def register_nonspecific_amplification(self):
+        als = self.nonspecific_amplification
+
+        al = als[0]
+
+        organism, original_al = self.target_info.remove_organism_from_alignment(al)
+
+        self.category = 'nonspecific amplification'
+        self.subcategory = organism
+        self.details = 'n/a'
+
+        self.relevant_alignments = self.parsimonious_target_alignments + self.nonspecific_amplification
     
     def categorize(self):
         if self.target_info.donor is None and self.target_info.nonhomologous_donor is None:
@@ -451,35 +469,49 @@ class Layout(Categorizer):
 
         elif self.integration_summary == 'donor':
             junctions = set(self.junction_summary_per_side.values())
+
             if junctions == set(['HDR']):
                 self.category = 'HDR'
                 self.subcategory = 'HDR'
                 self.relevant_alignments = self.parsimonious_and_gap_alignments
+
             elif self.gap_covered_by_target_alignment:
                 self.category = 'complex indel'
                 self.subcategory = 'templated insertion'
                 self.details = 'n/a'
                 self.relevant_alignments = self.templated_insertion_relevant_alignments
+
+            elif junctions == set(['imperfect']):
+                if self.not_covered_by_initial_alignments.total_length >= 2:
+                    self.category = 'complex misintegration'
+                    self.subcategory = 'other'
+                else:
+                    self.category = 'donor fragment'
+                    self.subcategory = f'5\' {self.junction_summary_per_side[5]}, 3\' {self.junction_summary_per_side[3]}'
+                    self.details = self.register_integration_details()
+
+                self.relevant_alignments = self.parsimonious_and_gap_alignments
+
             else:
                 self.subcategory = f'5\' {self.junction_summary_per_side[5]}, 3\' {self.junction_summary_per_side[3]}'
-                if 'blunt' in junctions:
 
+                if 'blunt' in junctions:
                     self.category = 'blunt misintegration'
+                    self.details = self.register_integration_details()
 
                 elif junctions == set(['imperfect', 'HDR']):
-                    if self.donor_microhomology is None or self.donor_microhomology < -10:
-                        # Long negative microhomology means a long gap between the target edge alignment
-                        # and the relevant donor alignment.
+                    if self.not_covered_by_initial_alignments.total_length >= 2:
                         self.category = 'complex misintegration'
                         self.subcategory = 'other'
                     else:
                         self.category = 'incomplete HDR'
+                    self.details = self.register_integration_details()
                 else:
                     self.category = 'complex misintegration'
+                    self.subcategory = 'other'
+                    self.details = 'n/a'
 
-                self.details = self.register_integration_details()
-
-                self.relevant_alignments = self.parsimonious_target_alignments + self.parsimonious_donor_alignments
+                self.relevant_alignments = self.parsimonious_and_gap_alignments
         
         # TODO: check here for HA extensions into donor specific
         elif self.gap_covered_by_target_alignment:
@@ -526,11 +558,7 @@ class Layout(Categorizer):
             self.relevant_alignments = self.parsimonious_target_alignments + self.nonhomologous_donor_alignments
 
         elif self.nonspecific_amplification is not None:
-            self.category = 'nonspecific amplification'
-            self.subcategory = 'nonspecific amplification'
-            self.details = 'n/a'
-            
-            self.relevant_alignments = self.parsimonious_target_alignments + self.nonspecific_amplification
+            self.register_nonspecific_amplification()
 
         elif self.genomic_insertion is not None:
             self.register_genomic_insertion()
@@ -638,8 +666,6 @@ class Layout(Categorizer):
 
         elif self.genomic_insertion is not None:
             self.register_genomic_insertion()
-
-            self.relevant_alignments = self.parsimonious_target_alignments + self.min_edit_distance_genomic_insertions
 
         else:
             self.category = 'uncategorized'
@@ -781,18 +807,24 @@ class Layout(Categorizer):
         return gap_als
 
     @memoized_property
-    def improved_gap_alignments(self):
+    def not_covered_by_initial_alignments(self):
+        uncovered = self.whole_read - interval.get_disjoint_covered(self.alignments)
+        return uncovered
+
+    @memoized_property
+    def not_covered_by_refined_alignments(self):
+        uncovered = self.whole_read - interval.get_disjoint_covered(self.parsimonious_and_gap_alignments)
+        return uncovered
+
+    @memoized_property
+    def sw_gap_alignments(self):
         ti = self.target_info
 
-        initial_als = self.target_alignments + self.donor_alignments
-
-        initial_uncovered = self.whole_read - interval.get_disjoint_covered(initial_als)
-        
         gap_covers = []
         
         target_interval = ti.amplicon_interval
         
-        for gap in initial_uncovered:
+        for gap in self.not_covered_by_initial_alignments:
             if gap.total_length == 1:
                 continue
 
@@ -831,9 +863,7 @@ class Layout(Categorizer):
             
             gap_covers.extend(als)
 
-        all_als = initial_als + gap_covers
-
-        return sam.make_nonredundant(interval.make_parsimonious(all_als))
+        return gap_covers
 
     @memoized_property
     def possibly_imperfect_gap_alignments(self):
@@ -1076,7 +1106,7 @@ class Layout(Categorizer):
     @memoized_property
     def parsimonious_and_gap_alignments(self):
         ''' identification of gap_alignments requires further processing of parsimonious alignments '''
-        return sam.make_nonredundant(interval.make_parsimonious(self.parsimonious_alignments + self.gap_alignments))
+        return sam.make_nonredundant(interval.make_parsimonious(self.parsimonious_alignments + self.sw_gap_alignments))
 
     @memoized_property
     def parsimonious_target_alignments(self):
@@ -1162,11 +1192,15 @@ class Layout(Categorizer):
             for side in [5, 3]
         }
 
+        donor_matches_past_HA = {
+            side: donor_past_HA_length[side] - donor_past_HA_edit_distance[side]
+            for side in [5, 3]
+        }
+
         donor_contains_full_arm = {
             side: donor_contains_arm_external[side] and \
                   donor_contains_arm_internal[side] and \
-                  donor_past_HA_length[side] >= 5 and \
-                  donor_past_HA_edit_distance[side] / donor_past_HA_length[side] < 0.1
+                  (donor_matches_past_HA[side] >= 5 or (donor_past_HA_length[side] >= 2 and donor_past_HA_edit_distance[side] == 0))
             for side in [5, 3]
         }
             
@@ -1701,7 +1735,9 @@ class Layout(Categorizer):
         self.category = 'genomic insertion'
         self.subcategory = organism
         self.details = str(outcome)
-        
+
+        self.relevant_alignments = self.parsimonious_target_alignments + self.min_edit_distance_genomic_insertions
+
     @memoized_property
     def one_sided_covering_als(self):
         all_covering_als = {
@@ -1937,22 +1973,12 @@ class Layout(Categorizer):
 
     @memoized_property
     def donor_microhomology(self):
-        if self.junction_summary_per_side == {5: 'HDR', 3: 'imperfect'}:
-            target_al = self.primer_alignments[3]
-        elif self.junction_summary_per_side == {5: 'imperfect', 3: 'HDR'}:
-            target_al = self.primer_alignments[5]
-        else:
-            target_al = None
-            
         if len(self.parsimonious_donor_alignments) == 1:
             donor_al = self.parsimonious_donor_alignments[0]
         else:
             donor_al = None
             
-        if target_al is None or donor_al is None:
-            MH_nts = None
-        else:
-            MH_nts = junction_microhomology(self.target_info, target_al, donor_al)
+        MH_nts = {side: junction_microhomology(self.target_info, self.primer_alignments[side], donor_al) for side in [5, 3]}
 
         return MH_nts
 
@@ -1960,9 +1986,11 @@ class Layout(Categorizer):
     def NH_donor_microhomology(self):
         if self.nonhomologous_donor_integration:
             nh_al = self.nonhomologous_donor_alignments[0]
-            MH_nts = {side: junction_microhomology(self.target_info, self.primer_alignments[side], nh_al) for side in [5, 3]}
         else:
-            MH_nts = None
+            nh_al = None
+
+        MH_nts = {side: junction_microhomology(self.target_info, self.primer_alignments[side], nh_al) for side in [5, 3]}
+
         return MH_nts
 
 class NonoverlappingPairLayout():
@@ -2249,8 +2277,8 @@ class NonoverlappingPairLayout():
                 self.details = 'n/a'
             elif junctions == set(['imperfect']):
                 self.category = 'complex misintegration'
-                self.subcategory = f'5\' {self.junctions[5]}, 3\' {self.junctions[3]}'
-                self.details = self.bridging_strand[kind]
+                self.subcategory = 'other'
+                self.details = 'n/a'
 
             else:
                 self.inferred_amplicon_length = -1
@@ -2518,6 +2546,9 @@ def comprehensively_split_alignment(al, target_info, mode, ins_size_to_split_at=
     return split_als
 
 def junction_microhomology(target_info, first_al, second_al):
+    if first_al is None or second_al is None:
+        return -1
+
     als_by_order = {
         'first': first_al,
         'second': second_al,
