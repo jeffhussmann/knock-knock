@@ -397,12 +397,16 @@ class Experiment:
                 'Log.out',
                 'Log.progress.out',
                 'SJ.out.tab',
+                '_STARtmp',
             ]
 
             for suffix in suffixes_to_clean_up:
                 full_fn = Path(str(STAR_prefix) + suffix)
                 if full_fn.exists():
-                    full_fn.unlink()
+                    if full_fn.is_dir():
+                        full_fn.rmdir()
+                    else:
+                        full_fn.unlink()
 
             Path(bam_fn).unlink()
 
