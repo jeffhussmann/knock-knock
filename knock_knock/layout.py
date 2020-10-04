@@ -12,7 +12,7 @@ from .target_info import DegenerateDeletion, DegenerateInsertion
 
 from .outcome_record import Integration
 
-import ddr.outcome
+import knock_knock.outcome
 
 memoized_property = utilities.memoized_property
 memoized_with_key = utilities.memoized_with_key
@@ -1714,7 +1714,7 @@ class Layout(Categorizer):
         insertion_query_bounds = {}
         insertion_query_bounds['left'], insertion_query_bounds['right'] = sam.query_interval(insertion_al)
 
-        outcome = ddr.outcome.LongTemplatedInsertionOutcome(organism,
+        outcome = knock_knock.outcome.LongTemplatedInsertionOutcome(organism,
                                                 original_al.reference_name,
                                                 sam.get_strand(insertion_al),
                                                 insertion_ref_bounds['left'],
@@ -2115,7 +2115,7 @@ class NonoverlappingPairLayout():
             'right': self.inferred_amplicon_length - 1 - sam.query_interval(R2_al)[0],
         }
 
-        outcome = ddr.outcome.LongTemplatedInsertionOutcome(organism,
+        outcome = knock_knock.outcome.LongTemplatedInsertionOutcome(organism,
                                                 original_al.reference_name,
                                                 sam.get_strand(R1_al),
                                                 insertion_ref_bounds['left'],
