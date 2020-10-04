@@ -1,6 +1,6 @@
 import gzip
-import itertools
 import shutil
+from itertools import chain, islice
 
 from collections import defaultdict
 from contextlib import ExitStack
@@ -213,8 +213,9 @@ class IlluminaExperiment(Experiment):
             
             for which in ['R1', 'R2']:
                 for al in full_bam_fhs[which]:
-                    outcome = qname_to_outcome[al.query_name]
-                    bam_fhs[outcome, which].write(al)
+                    if al.query_name in qname_to_outcome:
+                        outcome = qname_to_outcome[al.query_name]
+                        bam_fhs[outcome, which].write(al)
 
     def stitch_read_pairs(self):
         before_R1 = adapters.primers[self.sequencing_primers]['R1']
@@ -271,7 +272,7 @@ class IlluminaExperiment(Experiment):
         al_groups = self.alignment_groups(outcome=outcome)
         no_overlap_al_groups = self.no_overlap_alignment_groups(outcome=outcome)
 
-        for name, als in itertools.chain(al_groups, no_overlap_al_groups):
+        for name, als in chain(al_groups, no_overlap_al_groups):
             length = extract_length(als)
             by_length[length].add((name, als))
 

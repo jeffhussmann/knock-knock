@@ -537,7 +537,7 @@ class Experiment:
             for k, v in sorted(sanitized_to_original.items()):
                 fh.write(f'{k}\t{v}\n')
 
-    def categorize_outcomes(self, fn_key='bam_by_name', read_type=None):
+    def categorize_outcomes(self, fn_key='bam_by_name', read_type=None, max_reads=None):
         self.check_combined_read_length()
 
         if self.fns['outcomes_dir'].is_dir():
@@ -552,6 +552,9 @@ class Experiment:
 
         with self.fns['outcome_list'].open('w') as fh:
             alignment_groups = self.alignment_groups(fn_key, read_type=read_type)
+
+            if max_reads is not None:
+                alignment_groups = islice(alignment_groups, max_reads)
 
             if read_type is None:
                 description = 'Categorizing reads'
