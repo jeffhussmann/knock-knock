@@ -20,18 +20,16 @@ the complexity of integration outcomes in CRISPR knock-in experiments."
 https://www.biorxiv.org/content/10.1101/841098v1 (2019).
 '''
 
-def check_blastn():
+def check_blastn(require_precise_version=False):
     no_blastn = False
 
     try:
         output = subprocess.check_output(['blastn', '-version'])
         if b'2.7.1' not in output:
-            no_blastn = True
+            print('blastn 2.7.1 is required and couldn\'t be found')
+            sys.exit(0)
     except:
-        no_blastn = True
-
-    if no_blastn:
-        print('blastn 2.7.1 is required and couldn\'t be found')
+        print('blastn is required and couldn\'t be found')
         sys.exit(0)
 
 def check_parallel():
