@@ -730,7 +730,12 @@ def plot_marginal(all_ranges, name, ax, orientation, color='black'):
 
     ax.plot(xs, ys, 'o-', markersize=1, color=color, label=name)
 
-def draw_features(ax, ti, seq_name, min_p, max_p, orientation='vertical', label_offsets=None, alpha=0.5):
+def draw_features(ax, ti, seq_name, min_p, max_p,
+                  orientation='vertical',
+                  label_offsets=None,
+                  alpha=0.5,
+                  draw_labels=True,
+                 ):
     if label_offsets is None:
         label_offsets = {}
 
@@ -750,40 +755,42 @@ def draw_features(ax, ti, seq_name, min_p, max_p, orientation='vertical', label_
 
         if min_p <= feature.start <= max_p or min_p <= feature.end <= max_p:
             color = feature.attribute['color']
-            label = feature.attribute.get('short_name', f_name)
 
-            offset_points = 4
-            if f_name in label_offsets:
-                extra_offsets = 12 * label_offsets[f_name]
-                offset_points += extra_offsets
-
-            center = np.mean([feature.start, feature.end])
-            if orientation == 'right':
-                annotate_kwargs = dict(
-                    xy = (1, center),
-                    xycoords = ('axes fraction', 'data'),
-                    xytext = (offset_points, 0),
-                    ha='left',
-                    va='center',
-                    rotation=-90,
-                )
-            else:
-                annotate_kwargs = dict(
-                    xy = (center, 1),
-                    xycoords = ('data', 'axes fraction'),
-                    xytext = (0, offset_points),
-                    ha='center',
-                    va='bottom',
-                )
-                
             span(feature.start - 0.5, feature.end + 0.5, color=color, alpha=alpha)
 
-            ax.annotate(label,
-                        textcoords='offset points',
-                        color=color,
-                        weight='bold',
-                        **annotate_kwargs,
-                       )
+            if draw_labels:
+                label = feature.attribute.get('short_name', f_name)
+                offset_points = 4
+                if f_name in label_offsets:
+                    extra_offsets = 12 * label_offsets[f_name]
+                    offset_points += extra_offsets
+
+                center = np.mean([feature.start, feature.end])
+                if orientation == 'right':
+                    annotate_kwargs = dict(
+                        xy = (1, center),
+                        xycoords = ('axes fraction', 'data'),
+                        xytext = (offset_points, 0),
+                        ha='left',
+                        va='center',
+                        rotation=-90,
+                    )
+                else:
+                    annotate_kwargs = dict(
+                        xy = (center, 1),
+                        xycoords = ('data', 'axes fraction'),
+                        xytext = (0, offset_points),
+                        ha='center',
+                        va='bottom',
+                    )
+                    
+
+                ax.annotate(label,
+                            textcoords='offset points',
+                            color=color,
+                            weight='bold',
+                            **annotate_kwargs,
+                           )
 
     if seq_name == ti.target:
         for _, p in ti.cut_afters.items():
