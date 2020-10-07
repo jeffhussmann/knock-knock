@@ -399,6 +399,12 @@ def make_self_contained_zip(base_dir, conditions, table_name,
     fn_prefix = results_dir / table_name
     fns_to_zip = []
 
+    print('Generating csv table...')
+    csv_fn = fn_prefix.with_suffix('.csv')
+    df = load_counts(base_dir, conditions, exclude_empty=False).T
+    df.to_csv(csv_fn)
+    fns_to_zip.append(csv_fn)
+
     logo_fn = Path(os.path.realpath(__file__)).parent / 'docs' / 'logo_v2.png'
     if logo_fn.exists():
         shutil.copy(logo_fn, results_dir / 'logo_v2.png') 
@@ -415,12 +421,6 @@ def make_self_contained_zip(base_dir, conditions, table_name,
         generate_html(base_dir, html_fn, conditions, show_details=True, include_images=include_images, sort_samples=sort_samples)
         fns_to_zip.append(html_fn)
 
-    print('Generating csv table...')
-    csv_fn = fn_prefix.with_suffix('.csv')
-    df = load_counts(base_dir, conditions, exclude_empty=False).T
-    df.to_csv(csv_fn)
-    fns_to_zip.append(csv_fn)
-    
     print('Generating performance metrics...')
     pms_fn = fn_prefix.parent / (f'{fn_prefix.name}_performance_metrics.csv')
     pms = calculate_performance_metrics(base_dir, conditions)

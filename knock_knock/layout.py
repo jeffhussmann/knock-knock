@@ -12,7 +12,7 @@ from .target_info import DegenerateDeletion, DegenerateInsertion
 
 from .outcome_record import Integration
 
-import ddr.outcome
+import knock_knock.outcome
 
 memoized_property = utilities.memoized_property
 memoized_with_key = utilities.memoized_with_key
@@ -592,7 +592,7 @@ class Layout(Categorizer):
     def categorize_no_donor(self):
         self.details = 'n/a'
 
-        if self.seq is None or len(self.seq) <= 50:
+        if self.seq is None or len(self.seq) <= self.target_info.combined_primer_length + 15:
             self.category = 'malformed layout'
             self.subcategory = 'too short'
             self.relevant_alignments = self.uncategorized_relevant_alignments
@@ -614,7 +614,7 @@ class Layout(Categorizer):
 
         elif self.primer_strands[5] != self.primer_strands[3]:
             self.category = 'malformed layout'
-            subcategory = 'primers not in same orientation'
+            self.subcategory = 'primers not in same orientation'
             self.relevant_alignments = self.uncategorized_relevant_alignments
         
         elif not self.primer_alignments_reach_edges:
@@ -658,11 +658,7 @@ class Layout(Categorizer):
                 self.relevant_alignments = self.parsimonious_target_alignments
         
         elif self.nonspecific_amplification is not None:
-            self.category = 'nonspecific amplification'
-            self.subcategory = 'nonspecific amplification'
-            self.details = 'n/a'
-            
-            self.relevant_alignments = self.parsimonious_target_alignments + self.nonspecific_amplification
+            self.register_nonspecific_amplification()
 
         elif self.genomic_insertion is not None:
             self.register_genomic_insertion()
@@ -848,20 +844,21 @@ class Layout(Categorizer):
             
             gap_covers.extend(als)
 
-            als = sw.align_read(self.read,
-                                [(ti.donor, ti.donor_sequence),
-                                ],
-                                4,
-                                ti.header,
-                                N_matches=False,
-                                max_alignments_per_target=5,
-                                read_interval=extended_gap,
-                                mismatch_penalty=-2,
-                               )
+            if ti.donor is not None:
+                als = sw.align_read(self.read,
+                                    [(ti.donor, ti.donor_sequence),
+                                    ],
+                                    4,
+                                    ti.header,
+                                    N_matches=False,
+                                    max_alignments_per_target=5,
+                                    read_interval=extended_gap,
+                                    mismatch_penalty=-2,
+                                )
 
-            als = [sw.extend_alignment(al, ti.donor_sequence_bytes) for al in als]
-            
-            gap_covers.extend(als)
+                als = [sw.extend_alignment(al, ti.donor_sequence_bytes) for al in als]
+                
+                gap_covers.extend(als)
 
         return gap_covers
 
@@ -1714,7 +1711,7 @@ class Layout(Categorizer):
         insertion_query_bounds = {}
         insertion_query_bounds['left'], insertion_query_bounds['right'] = sam.query_interval(insertion_al)
 
-        outcome = ddr.outcome.LongTemplatedInsertionOutcome(organism,
+        outcome = knock_knock.outcome.LongTemplatedInsertionOutcome(organism,
                                                 original_al.reference_name,
                                                 sam.get_strand(insertion_al),
                                                 insertion_ref_bounds['left'],
@@ -2115,7 +2112,7 @@ class NonoverlappingPairLayout():
             'right': self.inferred_amplicon_length - 1 - sam.query_interval(R2_al)[0],
         }
 
-        outcome = ddr.outcome.LongTemplatedInsertionOutcome(organism,
+        outcome = knock_knock.outcome.LongTemplatedInsertionOutcome(organism,
                                                 original_al.reference_name,
                                                 sam.get_strand(R1_al),
                                                 insertion_ref_bounds['left'],
