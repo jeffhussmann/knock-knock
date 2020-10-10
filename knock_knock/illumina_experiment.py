@@ -23,6 +23,7 @@ class IlluminaExperiment(Experiment):
         self.fns.update({
             'no_overlap_outcome_counts': self.results_dir / 'no_overlap_outcome_counts.csv',
             'no_overlap_outcome_list': self.results_dir / 'no_overlap_outcome_list.txt',
+            'too_short_outcome_list': self.results_dir / 'too_short_outcome_list.txt',
         })
 
         self.sequencing_primers = self.description.get('sequencing_primers', 'truseq')
@@ -30,7 +31,11 @@ class IlluminaExperiment(Experiment):
 
         self.layout_mode = 'illumina'
 
-        self.outcome_fn_keys = ['outcome_list', 'no_overlap_outcome_list']
+        self.outcome_fn_keys = [
+            'outcome_list',
+            'no_overlap_outcome_list',
+            'too_short_outcome_list',
+        ]
 
         for k in ['R1', 'R2', 'I1', 'I2']:
             if k in self.description:
@@ -43,6 +48,12 @@ class IlluminaExperiment(Experiment):
                         pass
 
         self.read_types = [
+            'stitched',
+            'R1_no_overlap',
+            'R2_no_overlap',
+        ]
+
+        self.read_types_to_align = [
             'stitched',
             'R1_no_overlap',
             'R2_no_overlap',
@@ -170,11 +181,15 @@ class IlluminaExperiment(Experiment):
             else:
                 yield R1_name, {'R1': R1_als, 'R2': R2_als}
     
-    def categorize_no_overlap_outcomes(self):
+    def categorize_no_overlap_outcomes(self, max_reads=None):
         outcomes = defaultdict(list)
 
         with self.fns['no_overlap_outcome_list'].open('w') as fh:
             alignment_groups = self.no_overlap_alignment_groups()
+
+            if max_reads is not None:
+                alignment_groups = islice(alignment_groups, max_reads)
+
             for name, als in self.progress(alignment_groups, desc='Categorizing non-overlapping read pairs'):
                 try:
                     pair_layout = layout_module.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
@@ -225,7 +240,8 @@ class IlluminaExperiment(Experiment):
 
         with gzip.open(fns['stitched'], 'wt', compresslevel=1) as stitched_fh, \
              gzip.open(fns['R1_no_overlap'], 'wt', compresslevel=1) as R1_fh, \
-             gzip.open(fns['R2_no_overlap'], 'wt', compresslevel=1) as R2_fh:
+             gzip.open(fns['R2_no_overlap'], 'wt', compresslevel=1) as R2_fh, \
+             open(self.fns['too_short_outcome_list'], 'w') as too_short_fh:
 
             description = 'Stitching read pairs'
             for R1, R2 in self.progress(self.read_pairs, desc=description):
@@ -243,6 +259,11 @@ class IlluminaExperiment(Experiment):
                 if len(stitched) == self.R1_read_length + self.R2_read_length:
                     R1_fh.write(str(R1))
                     R2_fh.write(str(R2))
+
+                elif len(stitched) <= 10:
+                    outcome = self.final_Outcome(stitched.name, len(stitched), 'malformed layout', 'too short', 'n/a')
+                    too_short_fh.write(f'{outcome}\n')
+
                 else:
                     # Trim after stitching to leave adapters in expected place during stitching.
                     stitched = stitched[self.trim_from_R1:len(stitched) - self.trim_from_R2]
@@ -310,7 +331,7 @@ class IlluminaExperiment(Experiment):
 
             elif stage == 'align':
                 
-                for read_type in self.read_types:
+                for read_type in self.read_types_to_align:
                     self.generate_alignments(read_type)
                     self.generate_supplemental_alignments_with_STAR(read_type)
                     self.combine_alignments(read_type)
