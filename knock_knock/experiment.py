@@ -61,7 +61,7 @@ class Experiment:
         self.group = batch # hack for now
         self.sample_name = sample_name
 
-        if progress is None:
+        if progress is None or getattr(progress, '_silent', False):
             self.silent = True
             def ignore_kwargs(x, **kwargs):
                 return x
