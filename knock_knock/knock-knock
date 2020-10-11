@@ -25,7 +25,7 @@ def check_blastn(require_precise_version=False):
 
     try:
         output = subprocess.check_output(['blastn', '-version'])
-        if b'2.7.1' not in output:
+        if require_precise_version and b'2.7.1' not in output:
             print('blastn 2.7.1 is required and couldn\'t be found')
             sys.exit(0)
     except:
