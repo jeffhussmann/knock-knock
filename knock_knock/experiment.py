@@ -1471,6 +1471,30 @@ def get_combined_sample_sheet(base_dir):
 
     return combined
 
+def get_exp_class(platform):
+    if platform == 'illumina':
+        from knock_knock.illumina_experiment import IlluminaExperiment
+        exp_class = IlluminaExperiment
+    elif platform == 'pacbio':
+        from knock_knock.pacbio_experiment import PacbioExperiment
+        exp_class = PacbioExperiment
+    elif platform == 'prime':
+        from ddr.prime_editing_experiment import PrimeEditingExperiment
+        exp_class = PrimeEditingExperiment
+    elif platform == 'endogenous':
+        import ddr.endogenous
+        exp_class = ddr.endogenous.Experiment
+    elif platform == 'tprt':
+        from knock_knock.tprt_experiment import TPRTExperiment
+        exp_class = TPRTExperiment
+    elif platform == 'dCas9_fusions':
+        from dCas9_fusions.experiment import dCas9FusionExperiment
+        exp_class = dCas9FusionExperiment
+    else:
+        exp_class = Experiment
+
+    return exp_class
+
 def get_all_experiments(base_dir, conditions=None, as_dictionary=True, progress=None):
     if conditions is None:
         conditions = {}
@@ -1518,23 +1542,7 @@ def get_all_experiments(base_dir, conditions=None, as_dictionary=True, progress=
             if isinstance(description, str):
                 continue
 
-            if description.get('platform') == 'illumina':
-                from knock_knock.illumina_experiment import IlluminaExperiment
-                exp_class = IlluminaExperiment
-            elif description.get('platform') == 'pacbio':
-                from knock_knock.pacbio_experiment import PacbioExperiment
-                exp_class = PacbioExperiment
-            elif description.get('platform') == 'prime':
-                from ddr.prime_editing_experiment import PrimeEditingExperiment
-                exp_class = PrimeEditingExperiment
-            elif description.get('platform') == 'endogenous':
-                import ddr.endogenous
-                exp_class = ddr.endogenous.Experiment
-            elif description.get('platform') == 'tprt':
-                from knock_knock.tprt_experiment import TPRTExperiment
-                exp_class = TPRTExperiment
-            else:
-                exp_class = Experiment
+            exp_class = get_exp_class(description.get('platform'))
             
             exp = exp_class(base_dir, batch, name, description=description, progress=progress)
             exps.append(exp)

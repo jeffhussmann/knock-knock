@@ -101,24 +101,7 @@ def process(args):
     else:
         description = sample_sheet[args.sample]
 
-        if description.get('platform') == 'pacbio':
-            from knock_knock.pacbio_experiment import PacbioExperiment
-            exp_class = PacbioExperiment
-        elif description.get('platform') == 'illumina':
-            from knock_knock.illumina_experiment import IlluminaExperiment
-            exp_class = IlluminaExperiment
-        elif description.get('platform') == 'prime':
-            from ddr.prime_editing_experiment import PrimeEditingExperiment
-            exp_class = PrimeEditingExperiment
-        elif description.get('platform') == 'endogenous':
-            import ddr.endogenous
-            exp_class = ddr.endogenous.Experiment
-        elif description.get('platform') == 'tprt':
-            import knock_knock.tprt_experiment
-            exp_class = knock_knock.tprt_experiment.TPRTExperiment
-        else:
-            raise ValueError(description)
-
+    exp_class = experiment.get_exp_class(description.get('platform'))
     exp = exp_class(args.project_directory, args.group, args.sample, description=description, progress=args.progress)
 
     stages = args.stages.split(',')
