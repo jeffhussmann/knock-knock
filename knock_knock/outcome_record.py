@@ -13,7 +13,7 @@ def OutcomeRecord_factory(columns_arg, converters_arg):
 
         @classmethod
         def from_line(cls, line):
-            fields = line.strip().split('\t')
+            fields = line.strip('\n').split('\t')
             for i, converter in field_index_to_converter.items():
                 fields[i] = converter(fields[i])
 
