@@ -15,8 +15,8 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, clear_outp
     widgets = {
         'target': ipywidgets.Select(options=target_names, value=target_names[0], layout=ipywidgets.Layout(height='200px')),
         'experiment': ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='450px')),
-        'read_id': ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='600px')),
-        'outcome': ipywidgets.Select(options=[], continuous_update=False, layout=ipywidgets.Layout(height='200px', width='450px')),
+        'read_id': ipywidgets.Select(options=[], layout=ipywidgets.Layout(height='200px', width='500px')),
+        'outcome': ipywidgets.Select(options=[], continuous_update=False, layout=ipywidgets.Layout(height='200px', width='500px')),
     }
 
     non_widgets = {
@@ -170,10 +170,15 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, clear_outp
     def make_row(keys):
         return ipywidgets.HBox([widgets[k] if k in widgets else non_widgets[k] for k in keys])
 
-    if by_outcome:
-        top_row_keys = ['target', 'experiment', 'outcome', 'read_id']
+    if experiment is None:
+        top_row_keys = ['target', 'experiment']
     else:
-        top_row_keys = ['target', 'experiment', 'read_id']
+        top_row_keys = []
+
+    if by_outcome:
+        top_row_keys.extend(['outcome', 'read_id'])
+    else:
+        top_row_keys.extend(['read_id'])
 
     @output.capture(clear_output=False)
     def save(_):
