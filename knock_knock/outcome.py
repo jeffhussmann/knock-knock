@@ -3,6 +3,12 @@ import numpy as np
 from knock_knock.target_info import DegenerateDeletion, DegenerateInsertion, SNV, SNVs
 
 class Outcome:
+    def __init__(self, description):
+        self.description = description
+
+    def __str__(self):
+        return self.description
+
     def perform_anchor_shift(self, anchor):
         return self
 
@@ -25,6 +31,28 @@ class DeletionOutcome(Outcome):
         shifted_starts_ats = [starts_at - anchor for starts_at in self.deletion.starts_ats]
         shifted_deletion = DegenerateDeletion(shifted_starts_ats, self.deletion.length)
         return type(self)(shifted_deletion)
+
+    def get_min_removed(self, ti):
+        min_removed = {
+            5: max(0, ti.cut_after - max(self.deletion.starts_ats) + 1),
+            3: max(0, min(self.deletion.ends_ats) - ti.cut_after),
+        }
+        for target_side, PAM_side in ti.target_side_to_PAM_side.items():
+            min_removed[PAM_side] = min_removed[target_side]
+
+        return min_removed
+
+    def classify_directionality(self, ti):
+        min_removed = self.get_min_removed(ti)
+        if min_removed['PAM-proximal'] > 0 and min_removed['PAM-distal'] > 0:
+            directionality = 'bidirectional'
+        elif min_removed['PAM-proximal'] > 0 and min_removed['PAM-distal'] <= 0:
+            directionality = 'PAM-proximal'
+        elif min_removed['PAM-proximal'] <= 0 and min_removed['PAM-distal'] > 0:
+            directionality = 'PAM-distal'
+        else:
+            directionality = 'ambiguous'
+        return directionality
 
 class InsertionOutcome(Outcome):
     def __init__(self, insertion):
@@ -192,6 +220,26 @@ class DeletionPlusMismatchOutcome(Outcome):
         shifted_mismatch = self.mismatch_outcome.perform_anchor_shift(anchor)
         return type(self)(shifted_deletion, shifted_mismatch)
 
+class InsertionPlusMismatchOutcome(Outcome):
+    def __init__(self, insertion_outcome, mismatch_outcome):
+        self.insertion_outcome = insertion_outcome
+        self.mismatch_outcome = mismatch_outcome
+
+    @classmethod
+    def from_string(cls, details_string):
+        insertion_string, mismatch_string = details_string.split(';', 1)
+        insertion_outcome = InsertionOutcome.from_string(insertion_string)
+        mismatch_outcome = MismatchOutcome.from_string(mismatch_string)
+        return DeletionPlusMismatchOutcome(insertion_outcome, mismatch_outcome)
+
+    def __str__(self):
+        return f'{self.insertion_outcome};{self.mismatch_outcome}'
+
+    def perform_anchor_shift(self, anchor):
+        shifted_insertion = self.insertion_outcome.perform_anchor_shift(anchor)
+        shifted_mismatch = self.mismatch_outcome.perform_anchor_shift(anchor)
+        return type(self)(shifted_insertion, shifted_mismatch)
+
 NAN_INT = np.iinfo(np.int64).min
 
 def int_or_nan_from_string(s):
@@ -240,6 +288,14 @@ class LongTemplatedInsertionOutcome(Outcome):
         for name, arg in zip(self.__class__.field_names, args):
             setattr(self, name, arg)
 
+    @property
+    def left_gap(self):
+        return self.left_insertion_query_bound - self.left_target_query_bound - 1
+
+    @property
+    def right_gap(self):
+        return self.right_target_query_bound - self.right_insertion_query_bound - 1
+
     def insertion_length(self, single_end_read_length=None):
         if single_end_read_length is not None and self.right_insertion_query_bound == single_end_read_length - 1:
             length = single_end_read_length
@@ -274,13 +330,22 @@ class DuplicationOutcome(Outcome):
         fields = details_string.split(';')
         ref_junctions = []
         for field in fields:
-            l, r = field.split(',')
-            ref_junctions.append((int(l), int(r)))
+            lefts, rights = field.split(',')
+            lefts = [int(l) for l in lefts.strip('{}').split('|')]
+            rights = [int(r) for r in rights.strip('{}').split('|')]
+            ref_junctions.append((lefts, rights))
         return DuplicationOutcome(ref_junctions)
 
     def __str__(self):
-        return ';'.join(f'{left},{right}' for left, right in self.ref_junctions)
+        fields = []
+        for lefts, rights in self.ref_junctions:
+            lefts_string = '|'.join(map(str, lefts))
+            rights_string = '|'.join(map(str, rights))
+            field = '{' + lefts_string + '},{' + rights_string + '}'
+            fields.append(field)
+
+        return ';'.join(fields)
 
     def perform_anchor_shift(self, anchor):
-        shifted_ref_junctions = [(left - anchor, right - anchor) for left, right in self.ref_junctions]
+        shifted_ref_junctions = [([l - anchor for l in lefts], [r - anchor for r in rights]) for lefts, rights in self.ref_junctions]
         return type(self)(shifted_ref_junctions)
