@@ -719,10 +719,10 @@ TargetInfo:
 
         if len(HAs) == 0:
             return None
-                    
+
         paired_HAs = {}
 
-        # Confirm that every HA name that exists on both the target and donor has the same
+        # Check if every HA name that exists on both the target and donor has the same
         # sequence on each.
         for name in HAs:
             if 'target' not in HAs[name] or 'donor' not in HAs[name]:
@@ -745,6 +745,7 @@ TargetInfo:
 
             paired_HAs[name] = HAs[name]
 
+        # We expect two HAs to exists on both target and donor.
         if len(paired_HAs) != 2:
             # If there is only one set of homology arms to use, just use it.
             if len(HAs) == 2:
@@ -757,6 +758,11 @@ TargetInfo:
                 else:
                     for name in self.default_HAs:
                         paired_HAs[name] = HAs[name]
+
+        # Remove any HAs not present in both target and donor.
+        for name in sorted(HAs):
+            if name not in paired_HAs:
+                HAs.pop(name)
 
         by_target_side = {}
         by_target_side[5], by_target_side[3] = sorted(paired_HAs, key=lambda n: HAs[n]['target'].start)
@@ -820,6 +826,14 @@ TargetInfo:
                 ref_p_to_offset[name, side] = ref_p_to_offset[name, self.read_side_to_PAM_side[side]]
 
         return ref_p_to_offset
+
+    @memoized_property
+    def offset_to_HA_ref_ps(self):
+        offset_to_HA_ref_ps = defaultdict(dict)
+        for (name, HA_label), p_to_offset in self.HA_ref_p_to_offset.items():
+            for p, offset in p_to_offset.items():
+                offset_to_HA_ref_ps[offset][name, HA_label] = p
+        return offset_to_HA_ref_ps
 
     @memoized_property
     def past_HA_in_sequencing_read_interval(self):
