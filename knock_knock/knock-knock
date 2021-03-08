@@ -1,6 +1,7 @@
 #!/usr/bin/env python3.6
 
 import argparse
+import datetime
 import subprocess
 import sys
 import os
@@ -61,11 +62,16 @@ def parallel(args):
         print(args.conditions)
         sys.exit(0)
 
+    if args.show_progress_bars:
+        possibly_progress = ['--bar']
+    else:
+        possibly_progress = []
+
     parallel_command = [
         'parallel',
         '--will-cite',
         '-n', '4', 
-        '--bar',
+    ] + possibly_progress + [
         '--max-procs', str(args.max_procs),
         'knock-knock',
         'process',
@@ -105,8 +111,14 @@ def process(args):
     exp = exp_class(args.project_directory, args.group, args.sample, description=description, progress=args.progress)
 
     stages = args.stages.split(',')
+
+    def timestamp():
+        return f'{datetime.datetime.now():%Y-%m-%d %H:%M:%S}'
+
     for stage in stages:
+        print(f'{timestamp()} Started {exp.batch}: {exp.sample_name} {stage}')
         exp.process(stage)
+        print(f'{timestamp()} Finished {exp.batch}: {exp.sample_name} {stage}')
 
 def make_tables(args):
     from knock_knock import experiment, table
@@ -128,11 +140,14 @@ def make_tables(args):
 
         conditions = {'batch': group}
 
-        table.make_self_contained_zip(args.project_directory, conditions, group)
+        table.make_self_contained_zip(args.project_directory, conditions, group, sort_samples=not args.unsorted)
 
 def build_targets(args):
     from knock_knock import build_targets
-    build_targets.build_target_infos_from_csv(args.project_directory)
+    build_targets.build_target_infos_from_csv(args.project_directory,
+                                              offtargets=args.offtargets,
+                                              defer_HA_identification=args.defer_HA_identification,
+                                             )
 
 def build_manual_target(args):
     from knock_knock import build_targets
@@ -144,7 +159,10 @@ def design_primers(args):
 
 def build_indices(args):
     from knock_knock import build_targets
-    build_targets.download_genome_and_build_indices(args.project_directory, args.genome_name, args.num_threads)
+    build_targets.download_genome_and_build_indices(args.project_directory,
+                                                    args.genome_name,
+                                                    args.num_threads
+                                                   )
 
 def install_example_data(args):
     import os
@@ -192,15 +210,19 @@ if __name__ == '__main__':
     parser_parallel.add_argument('--group', help='if specified, the single group name to process; if not specified, all groups will be processed')
     parser_parallel.add_argument('--conditions', type=yaml.safe_load, default={}, help='if specified, conditions that samples must satisfy to be processed, given as yaml; if not specified, all samples will be processed')
     parser_parallel.add_argument('--stages', default='preprocess,align,categorize,visualize')
+    parser_parallel.add_argument('--show_progress_bars', action='store_true')
     parser_parallel.set_defaults(func=parallel)
 
     parser_table = subparsers.add_parser('table', help='generate tables of outcome frequencies')
     add_project_directory_arg(parser_table)
     parser_table.add_argument('--group', help='if specified, the single group name to generate tables for; if not specified, all groups will be generated')
+    parser_table.add_argument('--unsorted', action='store_true', help='don\'t sort samples')
     parser_table.set_defaults(func=make_tables)
 
     parser_targets = subparsers.add_parser('build-targets', help='build annotations of target locii')
     add_project_directory_arg(parser_targets)
+    parser_targets.add_argument('--offtargets', action='store_true', help='don\'t enforce PAMs')
+    parser_targets.add_argument('--defer_HA_identification', action='store_true', help='don\'t try to identiy homology arms')
     parser_targets.set_defaults(func=build_targets)
 
     parser_manual_target = subparsers.add_parser('build-manual-target', help='build a single target from a hand-annotated genbank file')
