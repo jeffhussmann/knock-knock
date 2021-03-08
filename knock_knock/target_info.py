@@ -105,6 +105,14 @@ class TargetInfo():
         if self.gb_records is not None:
             self.make_references()
 
+    def __repr__(self):
+        return f'''\
+TargetInfo:
+    name = {self.name}
+    base_dir = {self.base_dir}
+    target = {self.target}
+    sgRNA = {self.sgRNA}
+    donor = {self.donor}'''
 
     @memoized_property
     def header(self):
