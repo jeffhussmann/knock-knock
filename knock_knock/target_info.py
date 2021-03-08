@@ -1149,17 +1149,19 @@ class TargetInfo():
     def degenerate_indels(self):
         singleton_to_full = {}
 
-        for line in self.fns['degenerate_deletions'].open():
-            deletion = degenerate_indel_from_string(line.strip())
+        with self.fns['degenerate_deletions'].open() as fh:
+            for line in fh:
+                deletion = degenerate_indel_from_string(line.strip())
 
-            for singleton in deletion.singletons():
-                singleton_to_full[singleton] = deletion
+                for singleton in deletion.singletons():
+                    singleton_to_full[singleton] = deletion
         
-        for line in self.fns['degenerate_insertions'].open():
-            insertion = degenerate_indel_from_string(line.strip())
+        with self.fns['degenerate_insertions'].open() as fh:
+            for line in fh:
+                insertion = degenerate_indel_from_string(line.strip())
 
-            for singleton in insertion.singletons():
-                singleton_to_full[singleton] = insertion
+                for singleton in insertion.singletons():
+                    singleton_to_full[singleton] = insertion
 
         return singleton_to_full
 
