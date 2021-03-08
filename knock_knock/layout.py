@@ -144,6 +144,7 @@ class Layout(Categorizer):
         ('genomic insertion',
             ('hg38',
              'hg19',
+             'mm10',
             ),
         ),
         ('uncategorized',
@@ -164,6 +165,7 @@ class Layout(Categorizer):
         ('nonspecific amplification',
             ('hg38',
              'hg19',
+             'mm10',
             ),
         ),
         ('malformed layout',
@@ -505,6 +507,7 @@ class Layout(Categorizer):
                         self.subcategory = 'other'
                     else:
                         self.category = 'incomplete HDR'
+
                     self.details = self.register_integration_details()
                 else:
                     self.category = 'complex misintegration'
@@ -532,14 +535,19 @@ class Layout(Categorizer):
 
         elif self.integration_summary == 'concatamer':
             if self.target_info.donor_type == 'plasmid':
-                self.category = 'incomplete HDR'
                 # blunt isn't a meaningful concept for plasmid donors
                 HDR_or_imperfect = {
                     side: 'HDR' if junction == 'HDR' else 'imperfect'
                     for side, junction in self.junction_summary_per_side.items()
                 }
+                if 'HDR' in HDR_or_imperfect.values():
+                    self.category = 'incomplete HDR'
+                else:
+                    self.category = 'donor fragment'
+
                 self.subcategory = f"5' {HDR_or_imperfect[5]}, 3' {HDR_or_imperfect[3]}"
-                self.details = str(self.donor_microhomology)
+                self.details = self.register_integration_details()
+
             else:
                 self.category = 'concatenated misintegration'
                 self.subcategory = self.junction_summary
@@ -1444,6 +1452,8 @@ class Layout(Categorizer):
             between_primers = interval.Interval(left_covered.start, right_covered.end)
         elif self.strand == '-':
             between_primers = interval.Interval(right_covered.start, left_covered.end)
+        else:
+            raise ValueError
 
         gap = between_primers - left_covered - right_covered
         
@@ -1546,6 +1556,7 @@ class Layout(Categorizer):
     @memoized_property
     def integration_summary(self):
         integration_donor_als = []
+
         for al in self.parsimonious_donor_alignments:
             covered = interval.get_covered(al)
             if (self.integration_interval - covered).total_length == 0:
@@ -1562,8 +1573,9 @@ class Layout(Categorizer):
             summary = 'other'
 
         elif len(integration_donor_als) == 1:
-            covered = interval.get_disjoint_covered(self.parsimonious_target_alignments + integration_donor_als)
-            uncovered_length = len(self.seq) - covered.total_length
+            covered_by_donor = interval.get_disjoint_covered(integration_donor_als)
+            uncovered_length = (self.integration_interval - covered_by_donor).total_length
+
             if uncovered_length > 10:
                 summary = 'other'
             else:
