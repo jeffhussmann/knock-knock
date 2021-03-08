@@ -1,4 +1,3 @@
-import sys
 import copy
 import functools
 import operator
@@ -13,6 +12,7 @@ import Bio.SeqIO
 import Bio.SeqUtils
 
 from hits import fasta, gff, utilities, mapping_tools, interval, sam, sw, genomes
+import hits.visualize
 
 memoized_property = utilities.memoized_property
 memoized_with_key = utilities.memoized_with_key
@@ -419,7 +419,7 @@ TargetInfo:
                 PAM_seq = utilities.reverse_complement(PAM_seq)
             pattern, *matches = Bio.SeqUtils.nt_search(PAM_seq, effector.PAM_pattern) 
             if 0 not in matches:
-                raise ValueError(f'{name}: {PAM_seq} doesn\'t match {pattern} PAM')
+                print(f'Warning: {name}: {PAM_seq} doesn\'t match {pattern} PAM')
 
         return PAM_slices
 
