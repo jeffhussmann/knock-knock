@@ -1,12 +1,15 @@
+from itertools import islice
 from pathlib import Path
 
 import knock_knock.visualize
+import knock_knock.target_info
+import knock_knock.experiment
 
 import ipywidgets
 
 def explore(base_dir, by_outcome=False, target=None, experiment=None, clear_output=True, **kwargs):
     if target is None:
-        target_names = sorted([t.name for t in target_info.get_all_targets(base_dir)])
+        target_names = sorted([t.name for t in knock_knock.target_info.get_all_targets(base_dir)])
     else:
         target_names = [target]
 
@@ -45,7 +48,7 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, clear_outp
 
     if experiment is None:
         conditions = {}
-        exps = get_all_experiments(base_dir, as_dictionary=False)
+        exps = knock_knock.experiment.get_all_experiments(base_dir, as_dictionary=False)
     else:
         exps = [experiment]
 

@@ -5,10 +5,10 @@ if 'inline' not in matplotlib.get_backend():
 import heapq
 import shutil
 import sys
-import gzip
 from pathlib import Path
 from itertools import islice, chain
 from collections import defaultdict, Counter
+from contextlib import ExitStack
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -16,10 +16,9 @@ import numpy as np
 import bokeh.palettes
 import pysam
 import yaml
-import ipywidgets
 
-from hits import sam, fastq, utilities, visualize_structure, mapping_tools, interval
-from hits.utilities import memoized_property, group_by
+from hits import sam, fastq, utilities, mapping_tools
+from hits.utilities import memoized_property
 
 from . import target_info, blast, visualize, outcome_record, svg, table, explore
 from . import layout as layout_module
@@ -131,6 +130,10 @@ class Experiment:
                                    ref_centric=True,
                                   )
 
+    @memoized_property
+    def length_to_store_unknown(self):
+        return int(self.max_relevant_length * 1.05)
+
     @property
     def final_Outcome(self):
         return outcome_record.OutcomeRecord
@@ -174,16 +177,18 @@ class Experiment:
 
     @memoized_property
     def target_info(self):
-        return target_info.TargetInfo(self.base_dir,
-                                      self.target_name,
-                                      donor=self.donor,
-                                      nonhomologous_donor=self.nonhomologous_donor,
-                                      sgRNA=self.sgRNA,
-                                      primer_names=self.primer_names,
-                                      sequencing_start_feature_name=self.sequencing_start_feature_name,
-                                      supplemental_indices=self.supplemental_indices,
-                                      infer_homology_arms=self.infer_homology_arms,
-                                     )
+        ti = target_info.TargetInfo(self.base_dir,
+                                    self.target_name,
+                                    donor=self.donor,
+                                    nonhomologous_donor=self.nonhomologous_donor,
+                                    sgRNA=self.sgRNA,
+                                    primer_names=self.primer_names,
+                                    sequencing_start_feature_name=self.sequencing_start_feature_name,
+                                    supplemental_indices=self.supplemental_indices,
+                                    infer_homology_arms=self.infer_homology_arms,
+                                   )
+
+        return ti
 
     @memoized_property
     def target_name(self):
@@ -246,7 +251,22 @@ class Experiment:
         return fns
 
     def reads_by_type(self, read_type):
-        reads = fastq.reads(self.fns_by_read_type['fastq'][read_type], up_to_space=True)
+        fn_source = self.fns_by_read_type['fastq'][read_type]
+
+        missing_file = False
+        if isinstance(fn_source, list):
+            if not all(fn.exists() for fn in fn_source):
+                missing_file = True
+        else:
+            if not fn_source.exists():
+                missing_file = True
+
+        if missing_file:
+            print(f'Warning: {self.group}, {self.sample_name} {read_type} not found')
+            reads = []
+        else:
+            reads = fastq.reads(fn_source, up_to_space=True)
+
         return reads
     
     @memoized_property
@@ -418,14 +438,19 @@ class Experiment:
 
             # Note: this doesn't support multiple intput fastqs.
             fastq_fn = self.fns_by_read_type['fastq'][read_type][0]
-            index = self.supplemental_indices[index_name]['minimap2']
+
+            try:
+                index = self.supplemental_indices[index_name]['minimap2']
+            except:
+                raise ValueError(index_name, 'minimap2')
+
             temp_bam_fn = self.fns_by_read_type['supplemental_bam_temp'][read_type, index_name]
 
             mapping_tools.map_minimap2(fastq_fn, index, temp_bam_fn)
 
             all_mappings = pysam.AlignmentFile(temp_bam_fn)
             header = all_mappings.header
-            new_references = ['{}_{}'.format(index_name, ref) for ref in header.references]
+            new_references = [f'{index_name}_{ref}' for ref in header.references]
             new_header = pysam.AlignmentHeader.from_references(new_references, header.lengths)
 
             by_name_fn = self.fns_by_read_type['supplemental_bam_by_name'][read_type, index_name]
@@ -521,7 +546,7 @@ class Experiment:
 
     def outcome_query_names(self, outcome):
         fns = self.outcome_fns(outcome)
-        qnames = [l.strip() for l in open(str(fns['query_names']))]
+        qnames = fns['query_names'].read_text().splitlines()
         return qnames
     
     def record_sanitized_category_names(self):
@@ -543,7 +568,7 @@ class Experiment:
 
         if self.fns['outcomes_dir'].is_dir():
             shutil.rmtree(str(self.fns['outcomes_dir']))
-            
+           
         self.fns['outcomes_dir'].mkdir()
 
         outcomes = defaultdict(list)
@@ -673,15 +698,6 @@ class Experiment:
 
         return diagram
 
-    def make_text_visualizations(self, num_examples=10):
-        for outcome in self.categories_by_frequency:
-            outcome_fns = self.outcome_fns(outcome)
-            visualize_structure.visualize_bam_alignments(outcome_fns['bam_by_name'],
-                                                         self.target_info.fns['ref_fasta'],
-                                                         outcome_fns['text_alignments'],
-                                                         num_examples,
-                                                        )
-
     def length_distribution_figure(self,
                                    outcome=None,
                                    show_ranges=False,
@@ -807,7 +823,7 @@ class Experiment:
         main_tick_labels = [f'{x:,}' for x in main_ticks]
 
         extra_ticks = [max_relevant_length]
-        extra_tick_labels = [f'$\geq${max_relevant_length}']
+        extra_tick_labels = [r'$\geq$' + f'{max_relevant_length}']
 
         if self.length_to_store_unknown is not None:
             extra_ticks.append(self.length_to_store_unknown)
@@ -828,11 +844,17 @@ class Experiment:
         if outcome_fn_keys is None:
             outcome_fn_keys = self.outcome_fn_keys
 
-        fhs = [self.fns[key].open() for key in outcome_fn_keys if self.fns[key].exists()]
-        chained = chain.from_iterable(fhs)
-        for line in chained:
-            outcome = self.final_Outcome.from_line(line)
-            yield outcome
+        with ExitStack() as stack:
+            fhs = []
+            for key in outcome_fn_keys:
+                fn = self.fns[key]
+                if fn.exists():
+                    fhs.append(stack.enter_context(fn.open()))
+
+            chained = chain.from_iterable(fhs)
+            for line in chained:
+                outcome = self.final_Outcome.from_line(line)
+                yield outcome
 
     @memoized_property
     def outcome_stratified_lengths(self):
@@ -1024,7 +1046,7 @@ class Experiment:
             main_tick_labels = [str(x) for x in main_ticks]
 
             extra_ticks = [self.max_relevant_length]
-            extra_tick_labels = [f'$\geq${self.max_relevant_length}']
+            extra_tick_labels = [r'$\geq$' + f'{self.max_relevant_length}']
 
             if self.length_to_store_unknown is not None:
                 extra_ticks.append(self.length_to_store_unknown)
@@ -1342,7 +1364,7 @@ p {{
         return layout
 
     def extract_donor_microhomology_lengths(self):
-        MH_lengths = defaultdict(lambda: np.zeros(100, int))
+        MH_lengths = defaultdict(lambda: np.zeros(10000, int))
 
         for line in self.fns['outcome_list'].open():
             outcome = self.final_Outcome.from_line(line)
@@ -1371,8 +1393,6 @@ p {{
                 for category, side in category_and_sides:
                     length = junctions[side]
                     if length >= 0:
-                        if 'donor fragment' in category and length > 20:
-                            print(outcome)
                         MH_lengths[category][length] += 1
 
             #elif outcome.category == 'non-homologous donor' and outcome.subcategory == 'simple':
@@ -1479,18 +1499,6 @@ def get_exp_class(platform):
     elif platform == 'pacbio':
         from knock_knock.pacbio_experiment import PacbioExperiment
         exp_class = PacbioExperiment
-    elif platform == 'prime':
-        from ddr.prime_editing_experiment import PrimeEditingExperiment
-        exp_class = PrimeEditingExperiment
-    elif platform == 'endogenous':
-        import ddr.endogenous
-        exp_class = ddr.endogenous.Experiment
-    elif platform == 'tprt':
-        from knock_knock.tprt_experiment import TPRTExperiment
-        exp_class = TPRTExperiment
-    elif platform == 'dCas9_fusions':
-        from dCas9_fusions.experiment import dCas9FusionExperiment
-        exp_class = dCas9FusionExperiment
     else:
         exp_class = Experiment
 

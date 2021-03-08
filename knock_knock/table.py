@@ -435,7 +435,7 @@ def make_self_contained_zip(base_dir, conditions, table_name,
         for exp in exps.values():
             def add_fn(fn):
                 if not fn.exists():
-                    exps_missing_files.add((exp.group, exp.name))
+                    exps_missing_files.add((exp.group, exp.sample_name))
                 else:
                     if fn.is_dir():
                         for child_fn in fn.iterdir():
@@ -446,14 +446,14 @@ def make_self_contained_zip(base_dir, conditions, table_name,
             add_fn(exp.fns['outcome_browser'])
             add_fn(exp.fns['lengths_figure'])
 
-            for outcome in exp.outcomes:
+            for outcome in exp.categories_by_frequency:
                 outcome_fns = exp.outcome_fns(outcome)
                 if include_details:
                     add_fn(outcome_fns['diagrams_html'])
                     add_fn(outcome_fns['first_example'])
                 add_fn(outcome_fns['length_ranges_dir'])
 
-            categories = set(c for c, s in exp.outcomes)
+            categories = set(c for c, s in exp.categories_by_frequency)
             for category in categories:
                 outcome_fns = exp.outcome_fns(category)
                 add_fn(outcome_fns['diagrams_html'])

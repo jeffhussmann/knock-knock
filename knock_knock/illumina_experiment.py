@@ -44,16 +44,9 @@ class IlluminaExperiment(Experiment):
         
                 for fn in self.fns[k]:
                     if not fn.exists():
-                        #raise ValueError(f'{self.group}: {self.name} specifies non-existent {fn}')
-                        pass
+                        print(f'Warning: {self.group} {self.sample_name} specifies non-existent {fn}')
 
         self.read_types = [
-            'stitched',
-            'R1_no_overlap',
-            'R2_no_overlap',
-        ]
-
-        self.read_types_to_align = [
             'stitched',
             'R1_no_overlap',
             'R2_no_overlap',
@@ -69,6 +62,9 @@ class IlluminaExperiment(Experiment):
                                         center_on_primers=True,
                                         ))
 
+    def __repr__(self):
+        return f'IlluminaExperiment: batch={self.batch}, sample_name={self.sample_name}, base_dir={self.base_dir}'
+
     @property
     def preprocessed_read_type(self):
         return 'stitched'
@@ -76,6 +72,14 @@ class IlluminaExperiment(Experiment):
     @property
     def default_read_type(self):
         return 'stitched'
+
+    @property
+    def read_types_to_align(self):
+        return [
+            'stitched',
+            'R1_no_overlap',
+            'R2_no_overlap',
+        ]
 
     @memoized_property
     def R1_read_length(self):
@@ -95,10 +99,6 @@ class IlluminaExperiment(Experiment):
     @memoized_property
     def max_relevant_length(self):
         return self.R1_read_length + self.R2_read_length + 100
-
-    @memoized_property
-    def length_to_store_unknown(self):
-        return int(self.max_relevant_length * 1.05)
 
     def get_read_layout(self, read_id, fn_key='bam_by_name', outcome=None, read_type=None):
         if read_id in self.no_overlap_qnames:
