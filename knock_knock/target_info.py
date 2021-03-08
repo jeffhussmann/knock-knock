@@ -1225,7 +1225,7 @@ TargetInfo:
     def expand_degenerate_indel(self, indel):
         return self.degenerate_indels.get(indel, indel)
 
-    def overhang_insertion(self, length):
+    def overhang_insertion(self, length, copies=1):
         ''' Return DegenerateInsertion from offset RuvC cut producing 5' overhang. '''
         if self.sgRNA_feature.strand == '-':
             start_after = self.cut_after
@@ -1234,7 +1234,7 @@ TargetInfo:
             start_after = self.cut_after
             seq = self.target_sequence[self.cut_after - (length - 1):self.cut_after + 1]
 
-        actual_insertion = DegenerateInsertion([start_after], [seq])
+        actual_insertion = DegenerateInsertion([start_after], [seq * copies])
         degenerate_insertion = self.expand_degenerate_indel(actual_insertion)
 
         shifted = DegenerateInsertion([s - self.anchor for s in degenerate_insertion.starts_afters], degenerate_insertion.seqs)
