@@ -1433,7 +1433,7 @@ TargetInfo:
             sign_multiple = -1 if self.sgRNA_feature.strand == '-' else 1
             offset = sign_multiple * (nick_cut_after - primary_cut_after)
         else:
-            offset = None
+            offset = 0
 
         return offset
 
