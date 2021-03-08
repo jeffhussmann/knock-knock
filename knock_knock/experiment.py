@@ -1,5 +1,6 @@
 import matplotlib
-matplotlib.use('Agg', warn=False)
+if 'inline' not in matplotlib.get_backend():
+    matplotlib.use('Agg')
 
 import heapq
 import shutil

@@ -5,7 +5,8 @@ import xml.etree.ElementTree as ET
 
 import PIL
 import matplotlib
-matplotlib.use('Agg', warn=False)
+if 'inline' not in matplotlib.get_backend():
+    matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from . import table, layout
