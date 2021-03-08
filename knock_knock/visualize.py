@@ -1,23 +1,16 @@
-import sys
-import traceback
 import copy
-import io
-import itertools
 from collections import defaultdict
 
 import matplotlib
 if 'inline' not in matplotlib.get_backend():
     matplotlib.use('Agg')
 
-import PIL
 import numpy as np
 import matplotlib.pyplot as plt
-import pandas as pd
 
 from hits import utilities, interval, sam, sw
+import hits.visualize
 
-from . import experiment as experiment_module
-from . import target_info as target_info_module
 from . import layout as layout_module
 
 memoized_property = utilities.memoized_property
@@ -26,10 +19,8 @@ class ReadDiagram():
     def __init__(self, 
                  alignments,
                  target_info,
-                 R2_alignments=None,
                  ref_centric=True,
                  parsimonious=False,
-                 zoom_in=None,
                  size_multiple=1,
                  draw_qualities=False,
                  draw_mismatches=True,
@@ -59,6 +50,7 @@ class ReadDiagram():
                  color_overrides=None,
                  title=None,
                  mode='normal',
+                 label_differences=False,
                  label_overrides=None,
                  split_at_indels=False,
                  only_target_and_donor=False,
@@ -71,69 +63,19 @@ class ReadDiagram():
                  label_offsets=None,
                  center_on_primers=False,
                  invisible_alignments=None,
-                 truncate_read=None,
+                 query_interval=None,
                  hide_xticks=False,
                  inferred_amplicon_length=None,
+                 manual_anchors=None,
+                 prevent_fade=False,
+                 ref_line_width=0.001,
                  **kwargs,
                 ):
 
         self.parsimonious = parsimonious
         self.emphasize_parismonious = emphasize_parsimonious
-        if invisible_alignments is None:
-            invisible_alignments = []
-        self.invisible_alignments = invisible_alignments
-
-        self.target_info = target_info
-
-        def clean_up_alignments(als):
-            if als is None:
-                als = []
-
-            als = copy.deepcopy(als)
-
-            if truncate_read is not None:
-                als = [sam.crop_al_to_query_int(al, 0, truncate_read) for al in als]
-
-            if refs_to_hide is not None:
-                als = [al for al in als if al.reference_name not in refs_to_hide]
-
-            if split_at_indels:
-                all_split_als = []
-                for al in als:
-                    if al.reference_name in [self.target_info.target, self.target_info.donor]:
-                        split_als = layout_module.comprehensively_split_alignment(al, self.target_info, 'illumina', 2, 2)
-
-                        target_seq_bytes = self.target_info.reference_sequences[al.reference_name].encode()
-                        extended = [sw.extend_alignment(al, target_seq_bytes) for al in split_als]
-                        all_split_als.extend(extended)
-
-                    else:
-                        all_split_als.append(al)
-
-                als = all_split_als
-
-            if only_target_and_donor:
-                als = [al for al in als if al.reference_name in [self.target_info.target, self.target_info.donor]]
-
-            all_als = als
-
-            als = sam.make_nonredundant(als)
-
-            if self.parsimonious:
-                als = interval.make_parsimonious(als)
-
-            return als, all_als
-
-        if isinstance(alignments, dict):
-            self.alignments, _ = clean_up_alignments(alignments['R1'])
-            self.R2_alignments, _ = clean_up_alignments(alignments['R2'])
-        else:
-            self.alignments, self.all_alignments = clean_up_alignments(alignments)
-            self.R2_alignments = None
-
         self.ref_centric = ref_centric
         self.target_on_top = target_on_top
-        self.zoom_in = zoom_in
         self.size_multiple = size_multiple
         self.draw_qualities = draw_qualities
         self.draw_mismatches = draw_mismatches
@@ -161,6 +103,86 @@ class ReadDiagram():
         self.manual_x_lims = manual_x_lims
         self.hide_xticks = hide_xticks
         self.inferred_amplicon_length = inferred_amplicon_length
+        self.prevent_fade = prevent_fade
+        self.label_differences = label_differences
+        self.draw_arrowheads = kwargs.get('draw_arrowheads', True)
+
+        if invisible_alignments is None:
+            invisible_alignments = []
+        self.invisible_alignments = invisible_alignments
+
+        if manual_anchors is None:
+            manual_anchors = {}
+        self.manual_anchors = manual_anchors
+
+        self.target_info = target_info
+
+        # If query_interval is initially None, will be set
+        # to whole query after alignments are cleaned up.
+        self.query_interval = query_interval
+
+        if self.query_interval is not None:
+            if isinstance(self.query_interval, int):
+                self.query_interval = (0, self.query_interval)
+
+        def clean_up_alignments(als):
+            if als is None:
+                als = []
+
+            als = copy.deepcopy(als)
+
+            if refs_to_hide is not None:
+                als = [al for al in als if al.reference_name not in refs_to_hide]
+
+            if split_at_indels:
+                all_split_als = []
+                for al in als:
+                    if al.reference_name in [self.target_info.target, self.target_info.donor]:
+                        split_als = layout_module.comprehensively_split_alignment(al, self.target_info, 'illumina', 1, 1)
+
+                        target_seq_bytes = self.target_info.reference_sequences[al.reference_name].encode()
+                        extended = [sw.extend_alignment(al, target_seq_bytes) for al in split_als]
+                        all_split_als.extend(extended)
+
+                    else:
+                        all_split_als.append(al)
+
+                als = all_split_als
+
+            # Truncation needs to happen after extension or extension will undo it.
+            if self.query_interval is not None:
+                # If reverse complement, query_interval is specific relative to flipped read and needs to be un-flipped
+                # before applying
+                if reverse_complement:
+                    query_length = als[0].query_length
+                    start, end = self.query_interval
+                    query_interval_to_apply = (query_length - 1 - end, query_length - 1 - start)
+                else:
+                    query_interval_to_apply = self.query_interval
+
+                als = [sam.crop_al_to_query_int(al, *query_interval_to_apply) for al in als]
+                als = [al for al in als if al is not None]
+
+            if only_target_and_donor:
+                als = [al for al in als if al.reference_name in [self.target_info.target, self.target_info.donor]]
+
+            all_als = als
+
+            als = sam.make_nonredundant(als)
+
+            if self.parsimonious:
+                als = interval.make_parsimonious(als)
+
+            return als, all_als
+
+        if isinstance(alignments, dict):
+            self.alignments, _ = clean_up_alignments(alignments['R1'])
+            self.R2_alignments, _ = clean_up_alignments(alignments['R2'])
+        else:
+            self.alignments, self.all_alignments = clean_up_alignments(alignments)
+            self.R2_alignments = None
+
+        self.ref_line_width = ref_line_width
 
         if label_offsets is None:
             label_offsets = {}
@@ -189,40 +211,40 @@ class ReadDiagram():
 
         elif self.mode == 'paper':
             self.font_sizes = {
-                'read_label': 18,
-                'ref_label': 18,
-                'feature_label': 14,
+                'read_label': 12,
+                'ref_label': 12,
+                'feature_label': 12,
                 'number': 8,
                 'sequence': 3.5 * self.size_multiple,
                 'title': 16,
             }
 
-            self.target_and_donor_y_gap = kwargs.get('target_and_donor_y_gap', 0.02)
-            self.initial_alignment_y_offset = 5
+            self.target_and_donor_y_gap = kwargs.get('target_and_donor_y_gap', 0.015)
+            self.initial_alignment_y_offset = kwargs.get('initial_alignment_y_offset', 5)
             self.feature_line_width = 0.005
-            self.gap_between_als = 0.003
-            self.label_cut = False
+            self.gap_between_als = kwargs.get('gap_between_als', 0.003)
+            self.label_cut = kwargs.get('label_cut', False)
 
             if self.label_left:
-                self.label_x_offset = -30
+                self.label_x_offset = -10
             else:
                 self.label_x_offset = 20
 
         elif self.mode == 'compact':
             self.font_sizes = {
-                'read_label': 10,
-                'ref_label': 16,
+                'read_label': 12,
+                'ref_label': 12,
                 'feature_label': 12,
                 'number': 8,
                 'sequence': 3.5 * self.size_multiple,
                 'title': 22,
             }
 
-            self.target_and_donor_y_gap = kwargs.get('target_and_donor_y_gap', 0.015)
+            self.target_and_donor_y_gap = kwargs.get('target_and_donor_y_gap', 0.01)
             self.initial_alignment_y_offset = 3
             self.feature_line_width = 0.004
             self.gap_between_als = 0.003
-            self.label_cut = False
+            self.label_cut = kwargs.get('label_cut', False)
 
             if self.label_left:
                 self.label_x_offset = -5
@@ -249,8 +271,10 @@ class ReadDiagram():
             self.query_length = 50
             self.query_name = None
 
-        if truncate_read is not None:
-            self.query_length = truncate_read + 1
+        if self.query_interval is None:
+            self.query_interval = (0, self.query_length - 1)
+
+        self.query_length = self.query_interval[1] - self.query_interval[0] + 1
 
         if self.R2_alignments is not None:
             self.R2_query_length = self.R2_alignments[0].query_length
@@ -277,7 +301,7 @@ class ReadDiagram():
             self.arrow_linewidth = 2
 
         if arrow_width is None:
-            arrow_width = self.query_length * 0.007
+            arrow_width = self.query_length * 0.01
         self.arrow_width = arrow_width
         self.arrow_height_over_width = self.width_per_unit / self.height_per_unit
 
@@ -285,8 +309,10 @@ class ReadDiagram():
 
         self.text_y = -7
 
-        #self.cross_x = max(0.5, self.query_length * 0.004)
-        self.cross_x = 0.7
+        # cross_x and cross_y are the width and height of each X arm
+        # (i.e. half the width of the whole X)
+
+        self.cross_x = 0.6
         self.cross_y = self.cross_x * self.width_per_unit / self.height_per_unit
 
         if self.ax is None:
@@ -359,6 +385,7 @@ class ReadDiagram():
 
     def draw_read_arrows(self):
         ''' Draw black arrows that represent the sequencing read or read pair. '''
+
         arrow_kwargs = {
             'linewidth': self.arrow_linewidth,
             'color': 'black'
@@ -366,8 +393,9 @@ class ReadDiagram():
 
         if self.R2_alignments is None:
             arrow_infos = [
-                ([0, self.query_length - 1], self.reverse_complement),
+                (self.query_interval, self.reverse_complement),
             ]
+
         else:
             R2_start = self.query_length + self.gap_between_read_pair
 
@@ -378,12 +406,19 @@ class ReadDiagram():
 
         for (x_start, x_end), reverse_complement in arrow_infos:
             if not reverse_complement:
-                arrow_xs = [x_start, x_end, x_end - self.arrow_width]
+                arrow_xs = [x_start, x_end]
+                if self.draw_arrowheads:
+                    arrow_xs.append(x_end - self.arrow_width)
             else:
-                arrow_xs = [x_end, x_start, x_start + self.arrow_width]
+                arrow_xs = [x_end, x_start]
+                if self.draw_arrowheads:
+                    arrow_xs.append(x_start + self.arrow_width)
 
             arrow_y = self.arrow_width * self.arrow_height_over_width
-            arrow_ys = [0, 0, arrow_y]
+            arrow_ys = [0, 0]
+            if self.draw_arrowheads:
+                arrow_ys.append(arrow_y)
+
             self.ax.plot(arrow_xs, arrow_ys, **arrow_kwargs)
 
         label_y_offset = 0
@@ -526,7 +561,7 @@ class ReadDiagram():
                         kwargs = {'ha': 'left', 'xytext': (2, 0)}
 
                     if self.draw_edge_numbers or ref_name not in (self.target_info.target, self.target_info.donor):
-                        ax.annotate('{0:,}'.format(r),
+                        ax.annotate(f'{r:,}',
                                     xy=(final_x, y),
                                     xycoords='data',
                                     textcoords='offset points',
@@ -534,11 +569,12 @@ class ReadDiagram():
                                     va='center',
                                     size=self.font_sizes['number'],
                                     alpha=1 * alpha_multiplier,
-                                    **kwargs)
+                                    **kwargs,
+                                   )
 
                 if self.draw_mismatches:
                     mismatches = layout_module.get_mismatch_info(alignment, self.target_info)
-                    for read_p, read_b, ref_p, ref_b, q in mismatches:
+                    for mismatch_i, (read_p, read_b, ref_p, ref_b, q) in enumerate(mismatches):
                         if q < self.max_qual * 0.75:
                             alpha = 0.25
                         else:
@@ -552,6 +588,17 @@ class ReadDiagram():
                         ax.plot([read_x - self.cross_x, read_x + self.cross_x], cross_ys, **cross_kwargs)
                         ax.plot([read_x + self.cross_x, read_x - self.cross_x], cross_ys, **cross_kwargs)
 
+                        if self.label_differences:
+                            ax.annotate('mismatch',
+                                        xy=(read_x, y + self.cross_y),
+                                        xycoords='data',
+                                        xytext=(0, 2 + 10 * mismatch_i),
+                                        textcoords='offset points',
+                                        ha='center',
+                                        va='bottom',
+                                        size=10,
+                                       )
+                                       
                 # Draw the alignment, with downward dimples at insertions and upward loops at deletions.
 
                 xs = [left_offset(start)]
@@ -616,6 +663,16 @@ class ReadDiagram():
                                     )
                         indel_xs = [starts_at - 0.5, centered_at, ends_at + 0.5]
                         indel_ys = [y, y - height, y]
+
+                        if self.label_differences:
+                            ax.annotate(f'{length}-nt\ninsertion',
+                                        xy=(centered_at, y - height),
+                                        xycoords='data',
+                                        xytext=(0, -2),
+                                        textcoords='offset points',
+                                        ha='center',
+                                        va='top',
+                                       )
                         
                     xs.extend([middle_offset(x) for x in indel_xs])
                     ys.extend(indel_ys)
@@ -658,10 +715,9 @@ class ReadDiagram():
                     arrow_xs = [left_offset(start), left_offset(start + capped_arrow_width)]
                     arrow_ys = [y, y - capped_arrow_width * self.arrow_height_over_width]
                     
-                draw_arrow = True
-                if self.zoom_in is not None:
-                    if not all(self.min_x <= x <= self.max_x for x in arrow_xs):
-                        draw_arrow = False
+                draw_arrow = self.draw_arrowheads
+                if not all(self.min_x <= x <= self.max_x for x in arrow_xs):
+                    draw_arrow = False
 
                 if draw_arrow:
                     ax.plot(arrow_xs, arrow_ys, clip_on=False, **kwargs)
@@ -680,6 +736,9 @@ class ReadDiagram():
                     else:
                         SNVs = {}
 
+                    box_half_width = self.cross_x * 1.5
+                    box_half_height = self.cross_y * 2.5
+
                     for SNV_name, SNV_info in SNVs.items():
                         SNV_r = SNV_info['position']
                         qs = [q for q, r in q_to_r.items() if r == SNV_r]
@@ -688,17 +747,26 @@ class ReadDiagram():
 
                         q = qs[0]
 
-                        left_x = q - 0.5 * 1.2
-                        right_x = q + 0.5 * 1.2
-                        bottom_y = y - (self.cross_y * 2.5)
-                        top_y = y + (self.cross_y * 2.5)
+                        left_x = q - box_half_width
+                        right_x = q + box_half_width
+                        bottom_y = y - box_half_height
+                        top_y = y + box_half_height
                         path_xs = [left_x, right_x, right_x, left_x]
                         path_ys = [bottom_y, bottom_y, top_y, top_y]
                         path = np.array([path_xs, path_ys]).T
-                        patch = plt.Polygon(path, color='black', alpha=0.2, linewidth=0)
+                        patch = plt.Polygon(path, color='black', alpha=0.25, linewidth=0)
                         ax.add_patch(patch)
-                        
-                # Draw filled rectangles connecting reference features in alignments to the read.
+
+                        if self.label_differences:
+                            if ref_name == self.target_info.donor:
+                                ax.annotate('edit\nposition',
+                                            xy=(q, y + box_half_height),
+                                            xycoords='data',
+                                            xytext=(0, 2),
+                                            textcoords='offset points',
+                                            ha='center',
+                                            va='bottom',
+                                           )
 
                 for feature_reference, feature_name in self.features:
                     if ref_name != feature_reference:
@@ -747,10 +815,13 @@ class ReadDiagram():
                         if query_extent[1] - query_extent[0] > 18 or feature.attribute['ID'] == self.target_info.sgRNA:
                             label = feature.attribute['ID']
 
+                            label_offset = self.label_offsets.get(label, 0)
+                            y_points = -5 - label_offset * self.font_sizes['feature_label']
+
                             ax.annotate(label,
                                         xy=(np.mean(query_extent), 0),
                                         xycoords='data',
-                                        xytext=(0, self.text_y),
+                                        xytext=(0, y_points),
                                         textcoords='offset points',
                                         va='top',
                                         ha='center',
@@ -761,7 +832,8 @@ class ReadDiagram():
 
                     if self.features_on_alignments:
                         xs = [min(qs) - 0.5 + x_offset, max(qs) + 0.5 + x_offset]
-                        ax.fill_between(xs, [y] * 2, [0] * 2, color=feature_color, alpha=0.7 * alpha_multiplier)
+                        final_feature_color = hits.visualize.apply_alpha(feature_color, alpha=0.7 * alpha_multiplier, multiplicative=True)
+                        ax.fill_between(xs, [y] * 2, [0] * 2, color=final_feature_color, edgecolor='none')
                         
     def plot_read(self):
         ax = self.ax
@@ -769,17 +841,13 @@ class ReadDiagram():
         if (not self.alignments) or (self.alignments[0].query_sequence is None):
             return self.fig
 
-        if self.zoom_in is not None:
-            self.min_x = self.zoom_in[0]
-            self.max_x = self.zoom_in[1]
+        if self.R2_alignments is None:
+            total_query_length = self.query_length
         else:
-            if self.R2_alignments is None:
-                total_query_length = self.query_length
-            else:
-                total_query_length = self.query_length + self.R2_query_length + self.gap_between_read_pair
+            total_query_length = self.query_length + self.R2_query_length + self.gap_between_read_pair
 
-            self.min_x = -0.05 * total_query_length
-            self.max_x = 1.05 * total_query_length
+        self.min_x = self.query_interval[0] - 0.05 * total_query_length
+        self.max_x = self.query_interval[1] + 0.05 * total_query_length
             
         self.draw_read_arrows()
 
@@ -861,7 +929,7 @@ class ReadDiagram():
                     if length > 10:
                         ax.fill_between([start, start + length - 1], [self.max_y + self.arrow_height] * 2, [0] * 2, color=color, alpha=0.2)
                         
-                        ax.annotate('poly{}'.format(b),
+                        ax.annotate(f'poly{b}',
                                     xy=(start + length / 2, 0),
                                     xycoords='data',
                                     xytext=(0, self.text_y),
@@ -875,7 +943,8 @@ class ReadDiagram():
                                 )
                         
         if self.draw_sequence:
-            seq = self.alignments[0].get_forward_sequence()[:self.query_length]
+            start, end = self.query_interval
+            seq = self.alignments[0].get_forward_sequence()[start:end + 1]
             if self.reverse_complement:
                 seq = utilities.reverse_complement(seq)
 
@@ -887,7 +956,7 @@ class ReadDiagram():
                               xytext=(0, -2),
                              )
 
-            for x, b in enumerate(seq):
+            for x, b in zip(np.arange(start, end + 1), seq):
                 if self.min_x <= x <= self.max_x:
                     ax.annotate(b, xy=(x, 0), **seq_kwargs)
             
@@ -919,7 +988,6 @@ class ReadDiagram():
             return xs
 
         ti = self.target_info
-        ref_line_width = 0.001
         
         if self.target_on_top:
             target_y = self.max_y + self.target_and_donor_y_gap
@@ -953,7 +1021,10 @@ class ReadDiagram():
 
             # To establish a mapping between reference position and x coordinate,
             # pick anchor points on the ref and read that will line up with each other. 
-            if self.force_left_aligned or (len(self.alignment_coordinates[ref_name]) == 1):
+            if ref_name in self.manual_anchors:
+                anchor_read, anchor_ref = self.manual_anchors[ref_name]
+
+            elif self.force_left_aligned or (len(self.alignment_coordinates[ref_name]) == 1):
                 xs, ps, y, strand, parsimony_multiplier = self.alignment_coordinates[ref_name][0]
 
                 anchor_ref = ps[0]
@@ -1024,9 +1095,9 @@ class ReadDiagram():
                 parallelogram_alpha = 0.05 * parsimony_multiplier
                 # Shade parallelograms between alignments and reference.
                 if ref_y < 0:
-                    ref_border_y = ref_y + ref_line_width
+                    ref_border_y = ref_y + self.ref_line_width
                 else:
-                    ref_border_y = ref_y - ref_line_width
+                    ref_border_y = ref_y - self.ref_line_width
 
                 self.ax.fill_betweenx([y, ref_border_y], [xs[0], ref_xs[0]], [xs[1], ref_xs[1]],
                                       color=color,
@@ -1100,20 +1171,23 @@ class ReadDiagram():
             rgba = matplotlib.colors.to_rgba(color)
             image = np.expand_dims(np.array([rgba]*1000), 0)
 
-            if fade_left:
+            if fade_left and not self.prevent_fade:
                 left_alpha = 0
             else:
                 left_alpha = 1
 
-            if fade_right:
+            if fade_right and not self.prevent_fade:
                 right_alpha = 0
             else:
                 right_alpha = 1
 
-            image[:, :, 3] = np.concatenate([np.linspace(left_alpha, 1, 100), [1] * 800, np.linspace(1, right_alpha, 100)])
+            image[:, :, 3] = np.concatenate([np.linspace(left_alpha, 1, 100),
+                                             [1] * 800,
+                                             np.linspace(1, right_alpha, 100),
+                                            ])
 
             self.ax.imshow(image,
-                           extent=(ref_xs[0], ref_xs[1], ref_y - ref_line_width, ref_y + ref_line_width),
+                           extent=(ref_xs[0], ref_xs[1], ref_y - self.ref_line_width, ref_y + self.ref_line_width),
                            aspect='auto',
                            interpolation='none',
                            zorder=3,
@@ -1133,7 +1207,7 @@ class ReadDiagram():
 
                 xs = adjust_edges([ref_p_to_x(p) for p in [feature.start, feature.end]])
                     
-                start = ref_y + np.sign(ref_y) * ref_line_width
+                start = ref_y + np.sign(ref_y) * self.ref_line_width
                 end = start + np.sign(ref_y) * self.feature_line_width
 
                 bottom = min(start, end)
@@ -1143,16 +1217,20 @@ class ReadDiagram():
 
                 # + 0.5 in this check to account for adjust_edges
                 if min(xs) >= self.min_x and max(xs) <= self.max_x + 0.5:
-                    self.ax.fill_between(xs, [start] * 2, [end] * 2, color=feature_color, alpha=0.7, linewidth=0)
+                    final_feature_color = hits.visualize.apply_alpha(feature_color, alpha=0.7, multiplicative=True)
+                    self.ax.fill_between(xs, [start] * 2, [end] * 2, color=final_feature_color, linewidth=0)
 
                     name = feature.attribute['ID']
                     label = self.label_overrides.get(name, name)
+
+                    if label is None:
+                        continue
 
                     if 'PAM' in label:
                         label = 'PAM'
 
                     label_offset = self.label_offsets.get(name, 0)
-                    y_points = 5 + label_offset * self.font_sizes['feature_label']
+                    y_points = 5 + label_offset * (2 + self.font_sizes['feature_label'])
 
                     self.ax.annotate(label,
                                      xy=(np.mean(xs), end),
@@ -1183,13 +1261,13 @@ class ReadDiagram():
             # Draw the cut site(s).
             if ref_name == ti.target:
                 for cut_after_name, cut_after in ti.cut_afters.items():
-                    cut_after_x = ref_p_to_x(cut_after)
+                    cut_after_x = ref_p_to_x(cut_after + 0.5)
 
-                    strand = cut_after_name.rsplit('_', 1)[1]
+                    name, strand = cut_after_name.rsplit('_', 1)
 
-                    cut_y_bottom = ref_y - self.feature_line_width
+                    cut_y_bottom = ref_y - 0.75 * self.feature_line_width
                     cut_y_middle = ref_y
-                    cut_y_top = ref_y + self.feature_line_width
+                    cut_y_top = ref_y + 0.75 * self.feature_line_width
 
                     if strand == 'both':
                         ys = [cut_y_bottom, cut_y_top]
@@ -1200,15 +1278,25 @@ class ReadDiagram():
                     else:
                         raise ValueError(strand)
 
-                    self.ax.plot([cut_after_x, cut_after_x], ys, '--', color='black', zorder=10)
+                    self.ax.plot([cut_after_x, cut_after_x],
+                                  ys,
+                                  '-',
+                                  linewidth=2,
+                                  color='black',
+                                  solid_capstyle='butt',
+                                  zorder=10,
+                                 )
+
+                    color = ti.PAM_features[ti.target, f'{name}_PAM'].attribute['color']
 
                     if self.label_cut:
-                        self.ax.annotate('cut site',
+                        label = self.label_overrides.get(f'{name}_cut', f'{name}_cut')
+                        self.ax.annotate(label,
                                         xy=(cut_after_x, cut_y_bottom),
                                         xycoords='data',
-                                        xytext=(0, 5 * np.sign(ref_y)),
+                                        xytext=(0, 10 * np.sign(ref_y)),
                                         textcoords='offset points',
-                                        color='black',
+                                        color=color,
                                         ha='center',
                                         va='top' if ref_y < 0 else 'bottom',
                                         size=self.font_sizes['ref_label'],
@@ -1225,9 +1313,6 @@ class ReadDiagram():
         return self.max_x - self.min_x
 
     def update_size(self):
-        #fig_width = 0.04 * (self.width + 50) * self.size_multiple
-        #fig_height = 40 * self.height * self.size_multiple
-
         fig_width = self.width_per_unit * max(self.width, 50) * self.size_multiple
         fig_height = self.height_per_unit * 1.2 * self.height * self.size_multiple
 
