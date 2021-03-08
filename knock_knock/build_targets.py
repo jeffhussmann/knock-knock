@@ -481,7 +481,10 @@ def identify_pegRNA_homology_arms(donor_seq, target_seq, cut_after, protospacer_
 
     return HA_info
 
-def build_target_info(base_dir, info, all_index_locations):
+def build_target_info(base_dir, info, all_index_locations,
+                      defer_HA_identification=False,
+                      offtargets=False,
+                     ):
     ''' info should have keys:
             sgRNA_sequence
             amplicon_primers
@@ -599,6 +602,11 @@ def build_target_info(base_dir, info, all_index_locations):
         protospacer_locations = [(protospacer_name, ps_seq, ps_start, ps_strand)]
 
         for other_protospacer_name, other_protospacer_seq in other_protospacers:
+
+            # Initial G may not match genome.
+            if other_protospacer_seq.startswith('G'):
+                other_protospacer_seq = other_protospacer_seq[1:]
+
             if other_protospacer_seq in full_around:
                 ps_seq = other_protospacer_seq
                 ps_strand = 1
@@ -612,10 +620,20 @@ def build_target_info(base_dir, info, all_index_locations):
             ps_start = full_around.index(ps_seq)
             protospacer_locations.append((other_protospacer_name, ps_seq, ps_start, ps_strand))
 
-        for ps_name, ps_seq, ps_start, ps_strand in protospacer_locations:
-            PAM_pattern = 'NGG'
+        if 'effector' in info:
+            effector_type = info['effector']
+        else:
+            if donor_type == 'pegRNA':
+                effector_type = 'SpCas9H840A'
+            else:
+                effector_type = 'SpCas9'
 
-            if ps_strand == 1:
+        effector = target_info.effectors[effector_type]
+
+        for ps_name, ps_seq, ps_start, ps_strand in protospacer_locations:
+            PAM_pattern = effector.PAM_pattern
+
+            if (ps_strand == 1 and effector.PAM_side == 3) or (ps_strand == -1 and effector.PAM_side == 5):
                 PAM_offset = len(ps_seq)
                 PAM_transform = utilities.identity
             else:
@@ -626,7 +644,7 @@ def build_target_info(base_dir, info, all_index_locations):
             PAM = PAM_transform(full_around[PAM_start:PAM_start + len(PAM_pattern)])
             pattern, *matches = Bio.SeqUtils.nt_search(PAM, PAM_pattern)
 
-            if 0 not in matches:
+            if 0 not in matches and not offtargets:
                 # Note: this could incorrectly fail if there are multiple exact matches for an other_protospacer
                 # in full_around.
                 results['failed'] = f'bad PAM: {PAM} next to {ps_seq} (strand {ps_strand})'
@@ -733,19 +751,11 @@ def build_target_info(base_dir, info, all_index_locations):
                         ),
         ])
 
-        if 'effector' in info:
-            effector = info['effector']
-        else:
-            if donor_type == 'pegRNA':
-                effector = 'SpCas9H840A'
-            else:
-                effector = 'SpCas9'
-
         sgRNA_features = []
         for sgRNA_i, (ps_name, ps_seq, ps_start, ps_strand) in enumerate(protospacer_locations):
             sgRNA_feature = SeqFeature(location=FeatureLocation(ps_start - offset, ps_start - offset + len(ps_seq), strand=ps_strand),
                                        id=f'sgRNA_{ps_name}',
-                                       type=f'sgRNA_{effector}',
+                                       type=f'sgRNA_{effector.name}',
                                        qualifiers={'label': f'sgRNA_{ps_name}',
                                                    'ApEinfo_fwdcolor': colors['sgRNA'],
                                                    },
@@ -756,35 +766,39 @@ def build_target_info(base_dir, info, all_index_locations):
         results['gb_Records'] = {}
 
         if has_donor:
-            # Identify the homology arms.
+            if not defer_HA_identification:
+                # If multiple sgRNAs are given, the edited one must be listed first.
+                sgRNA_feature = sgRNA_features[0]
 
-            # If multiple sgRNAs are given, the edited one must be listed first.
-            sgRNA_feature = sgRNA_features[0]
+                cut_after_offset = [offset for offset in effector.cut_after_offset if offset is not None][0]
 
-            cut_after_offset = [offset for offset in target_info.effectors[effector].cut_after_offset if offset is not None][0]
+                if sgRNA_feature.strand == 1:
+                    # sgRNA_feature.end is the first nt of the PAM
+                    cut_after = sgRNA_feature.location.end + cut_after_offset
+                else:
+                    # sgRNA_feature.start - 1 is the first nt of the PAM
+                    cut_after = sgRNA_feature.location.start - 1 - cut_after_offset - 1
 
-            if sgRNA_feature.strand == 1:
-                # sgRNA_feature.end is the first nt of the PAM
-                cut_after = sgRNA_feature.location.end + cut_after_offset
+                if donor_type == 'pegRNA':
+                    HA_info = identify_pegRNA_homology_arms(donor_seq, target_seq, cut_after, protospacer_seq, colors)
+                else:
+                    HA_info = identify_homology_arms(donor_seq, donor_type, target_seq, cut_after, colors)
+
+                if 'failed' in HA_info:
+                    results['failed'] = HA_info['failed']
+                    return results
+
+                donor_Seq = Seq(HA_info['possibly_flipped_donor_seq'], generic_dna)
+                donor_features = HA_info['donor_features']
+                target_features.extend(HA_info['target_features'])
+
             else:
-                # sgRNA_feature.start - 1 is the first nt of the PAM
-                cut_after = sgRNA_feature.location.start - 1 - cut_after_offset - 1
+                donor_Seq = Seq(donor_seq, generic_dna)
+                donor_features = []
 
-            if donor_type == 'pegRNA':
-                HA_info = identify_pegRNA_homology_arms(donor_seq, target_seq, cut_after, protospacer_seq, colors)
-            else:
-                HA_info = identify_homology_arms(donor_seq, donor_type, target_seq, cut_after, colors)
-
-            if 'failed' in HA_info:
-                results['failed'] = HA_info['failed']
-                return results
-
-            donor_Seq = Seq(HA_info['possibly_flipped_donor_seq'], generic_dna)
-            donor_Record = SeqRecord(donor_Seq, name=donor_name, features=HA_info['donor_features'])
+            donor_Record = SeqRecord(donor_Seq, name=donor_name, features=donor_features)
             results['gb_Records']['donor'] = donor_Record
-
-            target_features.extend(HA_info['target_features'])
-
+            
         target_Seq = Seq(target_seq, generic_dna)
         target_Record = SeqRecord(target_Seq, name=target_name, features=target_features)
         results['gb_Records']['target'] = target_Record
@@ -879,23 +893,24 @@ def build_target_info(base_dir, info, all_index_locations):
         [target_name, 'reverse_primer'],
     ]
 
-    if donor_type == 'pegRNA':
-        manifest['features_to_show'].extend([
-            [donor_name, 'scaffold'],
-            [donor_name, 'protospacer'],
-            [donor_name, 'HA_RT'],
-            [donor_name, 'HA_PBS'],
-            [target_name, 'HA_RT'],
-            [target_name, 'HA_PBS'],
-        ])
-    else:
-        manifest['features_to_show'].extend([
-            [donor_name, 'HA_1'],
-            [donor_name, 'HA_2'],
-            [donor_name, 'donor_specific'],
-            [target_name, 'HA_1'],
-            [target_name, 'HA_2'],
-        ])
+    if has_donor:
+        if donor_type == 'pegRNA':
+            manifest['features_to_show'].extend([
+                [donor_name, 'scaffold'],
+                [donor_name, 'protospacer'],
+                [donor_name, 'HA_RT'],
+                [donor_name, 'HA_PBS'],
+                [target_name, 'HA_RT'],
+                [target_name, 'HA_PBS'],
+            ])
+        else:
+            manifest['features_to_show'].extend([
+                [donor_name, 'HA_1'],
+                [donor_name, 'HA_2'],
+                [donor_name, 'donor_specific'],
+                [target_name, 'HA_1'],
+                [target_name, 'HA_2'],
+            ])
 
     manifest_fn.write_text(yaml.dump(manifest, default_flow_style=False))
         
@@ -907,6 +922,7 @@ def build_target_info(base_dir, info, all_index_locations):
 def load_pegRNAs(base_dir):
     base_dir = Path(base_dir)
     csv_fn = base_dir / 'targets' / 'pegRNAs.csv'
+
     if not csv_fn.exists():
         return None
 
@@ -924,7 +940,7 @@ def load_pegRNAs(base_dir):
 
     return df[['donor_sequence', 'donor_type']]
 
-def build_target_infos_from_csv(base_dir):
+def build_target_infos_from_csv(base_dir, offtargets=False, defer_HA_identification=False):
     base_dir = Path(base_dir)
     csv_fn = base_dir / 'targets' / 'targets.csv'
 
@@ -958,15 +974,20 @@ def build_target_infos_from_csv(base_dir):
 
     donors_fn = base_dir / 'targets' / 'donors.csv'
 
+    all_donors = []
     if donors_fn.exists():
         donors = pd.read_csv(donors_fn, index_col='name')
+        all_donors.append(donors)
 
-        pegRNAs = load_pegRNAs(base_dir)
-        if pegRNAs is not None:
-            donors = pd.concat([donors, pegRNAs])
+    pegRNAs = load_pegRNAs(base_dir)
+    if pegRNAs is not None:
+        all_donors.append(pegRNAs)
 
-        registry['donor_sequence'] = donors['donor_sequence']
-        registry['donor_type'] = donors['donor_type']
+    if len(all_donors) > 0:
+        all_donors = pd.concat(all_donors)
+
+        registry['donor_sequence'] = all_donors['donor_sequence']
+        registry['donor_type'] = all_donors['donor_type']
     else:
         registry['donor_sequence'] = {}
         registry['donor_type'] = {}
@@ -993,14 +1014,14 @@ def build_target_infos_from_csv(base_dir):
             else:
                 value_name = None
                 seq = value_to_lookup
-                possible_error_message = f'invalid char in {row.name}: {seq} \n Registered names: {registered_values}'
+                possible_error_message = f'Error: {row.name} value for {column_to_lookup} ({seq}) is not a registered name but also doesn\'t look like a valid sequence.\nRegistered names: {registered_values}'
 
             if seq is not None and validate_sequence:
                 seq = seq.upper()
                 invalid_chars = set(seq) - valid_chars
                 if invalid_chars:
                     print(possible_error_message)
-                    print(invalid_chars)
+                    print(f'Valid sequence characters are {valid_chars}; {seq} contains {invalid_chars}')
                     sys.exit(0)
 
             looked_up.append((value_name, seq))
@@ -1026,7 +1047,10 @@ def build_target_infos_from_csv(base_dir):
             info['effector'] = row['effector']
 
         print(f'Building {target_name}...')
-        build_target_info(base_dir, info, indices)
+        build_target_info(base_dir, info, indices,
+                          offtargets=offtargets,
+                          defer_HA_identification=defer_HA_identification,
+                         )
 
 def build_indices(base_dir, name, num_threads=1):
     base_dir = Path(base_dir)
