@@ -57,12 +57,11 @@ def blast(ref_fn, reads, bam_fn, bam_by_name_fn, max_insertion_length=None):
                            stdout=subprocess.PIPE,
                           )
         except subprocess.CalledProcessError as e:
-            print('blastn command returned code {0}'.format(e.returncode))
-            print('full command was:\n\n{0}\n'.format(' '.join(blast_command)))
-            print('stdout from blastn was:\n\n{0}\n'.format(e.stdout.decode()))
-            print('stderr from blastn was:\n\n{0}\n'.format(e.stderr.decode()))
+            print(f'blastn command returned code {e.returncode}')
+            print(f'full command was:\n\n{0}\n'.format(' '.join(blast_command)))
+            print(f'stdout from blastn was:\n\n{e.stdout.decode()}\n')
+            print(f'stderr from blastn was:\n\n{e.stderr.decode()}\n')
             raise
-            
 
         def undo_hard_clipping(al):
             strand = sam.get_strand(al)
