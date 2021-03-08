@@ -1131,7 +1131,7 @@ class TargetInfo():
     def donor_locii(self):
         return ''.join([b for _, b in self.fingerprints[self.donor]])
 
-    def identify_degenerate_indels(self, max_deletion_length=200):
+    def identify_degenerate_indels(self, max_deletion_length=400):
         degenerate_dels = defaultdict(list)
 
         possible_starts = range(self.primers_by_side_of_target[5].start, self.primers_by_side_of_target[3].end)
