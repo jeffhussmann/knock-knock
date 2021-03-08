@@ -448,7 +448,11 @@ class TargetInfo():
 
     @memoized_property
     def anchor(self):
-        return self.features[self.target, 'anchor'].start
+        feature = self.features.get((self.target, 'anchor'))
+        if feature is not None:
+            return feature.start
+        else:
+            return 0
 
     @memoized_property
     def cut_afters(self):
