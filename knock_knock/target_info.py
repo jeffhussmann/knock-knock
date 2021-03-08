@@ -1244,6 +1244,7 @@ TargetInfo:
     @memoized_property
     def edit_name(self):
         SNVs = self.donor_SNVs
+
         if len(SNVs['target']) == 1:
             SNV_name = sorted(SNVs['target'])[0]
             position = SNVs['target'][SNV_name]['position']
@@ -1260,8 +1261,13 @@ TargetInfo:
                 offset = self.cut_after - position + 1
 
             edit_name = f'+{offset:02d}_{target_base}_to_{donor_base}'
+
         elif len(SNVs['target']) > 1:
             raise NotImplementedError
+
+        elif len(self.donor_insertions) == 1:
+            edit_name = 'insertion'
+
         else:
             edit_name = 'no_edit'
 
