@@ -1,3 +1,5 @@
+import copy
+import itertools
 from collections import Counter
 
 import numpy as np
@@ -8,12 +10,22 @@ import hits.utilities
 import hits.visualize
 import knock_knock.target_info
 import knock_knock.outcome_record
+import knock_knock.outcome
+
 import ddr.pooled_layout
 import ddr.prime_editing_layout
-import ddr.outcome
 
 memoized_property = hits.utilities.memoized_property
 idx = pd.IndexSlice
+
+def combine_ranges(ranges_list):
+    starts = itertools.chain.from_iterable([r.starts for r in ranges_list])
+    ends = itertools.chain.from_iterable([r.ends for r in ranges_list])
+    total_reads = sum(r.total_reads for r in ranges_list)
+
+    empty_read_info = ('', '', '')
+    range_iter = ((empty_read_info, start, end) for start, end in zip(starts, ends))
+    return Ranges(ranges_list[0].target_info, ranges_list[0].sequence_name, range_iter, total_reads)
 
 class Ranges:
     def __init__(self, target_info, sequence_name, range_iter, total_reads, exps=None):
@@ -35,9 +47,11 @@ class Ranges:
 
         self.total_reads = total_reads
         
-        self.edge_counts = {edge: np.zeros(length) for edge, length in self.sequence_length.items()}
+        self.edge_counts = {edge: np.zeros(length, int) for edge, length in self.sequence_length.items()}
 
         self.edge_pairs = []
+        self.starts = []
+        self.ends = []
 
         self.read_ids = []
         
@@ -48,6 +62,8 @@ class Ranges:
             self.edge_counts['start'][start] += 1
             self.edge_counts['end'][end] += 1
             
+            self.starts.append(start)
+            self.ends.append(end)
             self.edge_pairs.append((start, end))
 
             self.read_ids.append(read_id)
@@ -88,6 +104,19 @@ class Ranges:
         return len(self.edge_pairs) / self.total_reads * 100
 
     @memoized_property
+    def percentages_involved(self):
+        return self.positions_involved / self.total_reads * 100
+
+    @memoized_property
+    def differences(self):
+        counts = np.zeros(self.sequence_length['start'] + 1)
+
+        for start, end in self.edge_pairs:
+            counts[end - start + 1] += 1
+
+        return counts
+
+    @memoized_property
     def df(self):
         df = pd.DataFrame({
             'group': [g for g, n, q in self.read_ids],
@@ -101,58 +130,135 @@ class Ranges:
     def downsampled_edge_pairs(self, n):
         return hits.utilities.reservoir_sample(self.edge_pairs, n)
 
-    def most_common_edge_pairs(self):
-        return Counter(self.edge_pairs).most_common()
+    def most_common_edge_pairs(self, start_p=None, end_p=None):
+        if start_p is not None:
+            if isinstance(start_p, int):
+                start_p = (start_p, start_p)
+            start_p_min, start_p_max = start_p
+        else:
+            start_p_min, start_p_max = -np.inf, np.inf
+
+        if end_p is not None:
+            if isinstance(end_p, int):
+                end_p = (end_p, end_p)
+            end_p_min, end_p_max = end_p    
+        else:
+            end_p_min, end_p_max = -np.inf, np.inf
+
+        edge_pairs = Counter(self.edge_pairs).most_common()
+
+        edge_pairs = [((start, end), count) for (start, end), count in edge_pairs
+                      if start_p_min <= start <= start_p_max
+                      and end_p_min <= end <= end_p_max
+                     ]
+
+        return edge_pairs
 
     def edge_pair_percentages(self):
         return pd.Series(Counter(self.edge_pairs)) / self.total_reads * 100
 
-    def get_example_diagram(self, start_p, end_p, example_num=1):
-        if isinstance(end_p, int):
-            end_p = (end_p, end_p)
-        end_p_min, end_p_max = end_p    
-            
-        if isinstance(start_p, int):
-            start_p = (start_p, start_p)
-        start_p_min, start_p_max = start_p
-        
-        rows = self.df.query('@start_p_min <= start <= @start_p_max and @end_p_min <= end <= @end_p_max')
-        
+    def get_example_diagram(self, start_p=None, end_p=None, example_num=1, **diagram_kwargs):
+        constraints = []
+
+        if start_p is not None:
+            if isinstance(start_p, int):
+                start_p = (start_p, start_p)
+            start_p_min, start_p_max = start_p
+
+            constraints.append('@start_p_min <= start <= @start_p_max')
+
+        if end_p is not None:
+            if isinstance(end_p, int):
+                end_p = (end_p, end_p)
+            end_p_min, end_p_max = end_p    
+
+            constraints.append('@end_p_min <= end <= @end_p_max')
+
+        if constraints:
+            query = ' and '.join(constraints)
+            rows = self.df.query(query)
+        else:
+            rows = self.df
+
         if example_num <= len(rows):
             row = rows.iloc[example_num - 1]
+            print(row)
             exp = self.exps[row['group'], row['name']]
-            return exp.get_read_diagram(row['query_name'], **exp.diagram_kwargs)        
+            
+            # Hack for now
+            exp.target_info.features_to_show.update(set(self.target_info.PAM_features))
+            
+            exp_diagram_kwargs = copy.deepcopy(exp.diagram_kwargs)
+            exp_diagram_kwargs.update(diagram_kwargs)
+
+            return exp.get_read_diagram(row['query_name'], **exp_diagram_kwargs)
         else:
             return None
 
-    def most_common_example_diagram(self, pair_rank=1, example_num=1):
+    def most_common_example_diagram(self, pair_rank=1, example_num=1, **diagram_kwargs):
         (start_p, end_p), count = self.most_common_edge_pairs()[pair_rank - 1]
-        return self.get_example_diagram(start_p, end_p, example_num=example_num)
+        return self.get_example_diagram(start_p, end_p, example_num=example_num, **diagram_kwargs)
             
     @classmethod
-    def deletion_ranges(cls, exps, as_junctions=False):
+    def deletion_ranges(cls, exps, as_junctions=False,
+                        without_edit=True,
+                        with_edit=False,
+                        exclude_buffer_around_primers=None,
+                       ):
         ranges = []
         total_reads = 0
-        
+
+        with_edit_subcategories = [('edit + indel', 'edit + deletion')]
+        def get_with_edit_deletion(outcome):
+            full_Outcome = ddr.prime_editing_layout.HDRPlusDeletionOutcome.from_string(outcome.details)
+            deletion = full_Outcome.deletion_outcome.deletion
+            return deletion
+
+        without_edit_subcategories = [('deletion', 'clean'), ('deletion', 'mismatches')]
+        def get_without_edit_deletion(outcome):
+            deletion = knock_knock.target_info.DegenerateDeletion.from_string(outcome.details)
+            return deletion
+
         for exp in exps:
+            target_info = exp.target_info
+
+            if exclude_buffer_around_primers is None:
+                primer_intervals = hits.interval.Interval.empty()
+            else:
+                primer_intervals = []
+                for name, feature in target_info.primers.items():
+                    interval = hits.interval.Interval(feature.start - exclude_buffer_around_primers, feature.end + exclude_buffer_around_primers)
+                    primer_intervals.append(interval)
+
+                primer_intervals = hits.interval.DisjointIntervals(primer_intervals)
+
             for outcome in exp.outcome_iter():
                 if outcome.category != 'nonspecific amplification':
                     total_reads += 1
-                if outcome.category == 'deletion' and outcome.subcategory in ['clean', 'mismatches']:
-                    deletion = knock_knock.target_info.DegenerateDeletion.from_string(outcome.details)
 
-                    start, end = deletion.starts_ats[0], deletion.ends_ats[0]
-                    start += exp.target_info.anchor
-                    end += exp.target_info.anchor
+                cs = (outcome.category, outcome.subcategory)
+                if with_edit and cs in with_edit_subcategories:
+                    deletion = get_with_edit_deletion(outcome)
+                elif without_edit and cs in without_edit_subcategories:
+                    deletion = get_without_edit_deletion(outcome)
+                else:
+                    continue
 
-                    if as_junctions:
-                        # Treat as end/start of remaining sequence, rather than start/end of removed.
-                        start, end = end + 1, start - 1
+                start, end = deletion.starts_ats[0], deletion.ends_ats[0]
+                start += exp.target_info.anchor
+                end += exp.target_info.anchor
 
-                    read_id = (exp.group, exp.sample_name, outcome.query_name)
-                    ranges.append((read_id, start, end))
+                if start in primer_intervals or end in primer_intervals:
+                    continue
+
+                if as_junctions:
+                    # Treat as end/start of remaining sequence, rather than start/end of removed.
+                    start, end = end + 1, start - 1
+
+                read_id = (exp.group, exp.sample_name, outcome.query_name)
+                ranges.append((read_id, start, end))
                 
-        return cls(exp.target_info, exp.target_info.target, ranges, total_reads, exps)
+        return cls(target_info, target_info.target, ranges, total_reads, exps)
 
     @classmethod
     def insertion_ranges(cls, exps):
@@ -162,13 +268,14 @@ class Ranges:
         for exp in exps:
             for outcome in exp.outcome_iter():
                 total_reads += 1
-                if outcome.category == 'insertion' and outcome.subcategory == 'clean':
+                if outcome.category == 'insertion':
                     insertion = knock_knock.target_info.DegenerateInsertion.from_string(outcome.details)
 
                     start = insertion.starts_afters[0] + exp.target_info.anchor
                     end = start + 1
 
-                    ranges.append((start, end))
+                    read_id = (exp.group, exp.sample_name, outcome.query_name)
+                    ranges.append((read_id, start, end))
                 
         return cls(exp.target_info, exp.target_info.target, ranges, total_reads, exps)
 
@@ -209,9 +316,10 @@ class Ranges:
                     start += exp.target_info.anchor
                     end += exp.target_info.anchor
 
-                    ranges.append((start, end))
+                    read_id = (exp.group, exp.sample_name, outcome.query_name)
+                    ranges.append((read_id, start, end))
         
-        return cls(exp.target_info, exp.target_info.target, ranges, total_reads, exps)
+        return cls(exp.target_info, {'start': exp.target_info.target, 'end': exp.target_info.target}, ranges, total_reads, exps)
 
     @classmethod
     def duplication_junctions(cls, exps, has_edit=False):
@@ -224,18 +332,14 @@ class Ranges:
             category = 'duplication'
 
         for exp in exps:
-            sequencing_direction = exp.target_info.sequencing_direction
-            sgRNA_strand = exp.target_info.sgRNA_feature.strand
-
             for outcome in exp.outcome_iter():
                 total_reads += 1
                 if outcome.category == category and outcome.subcategory == 'simple':
-                    duplication = ddr.outcome.DuplicationOutcome.from_string(outcome.details)
+                    duplication = knock_knock.outcome.DuplicationOutcome.from_string(outcome.details).undo_anchor_shift(exp.target_info.anchor)
 
-                    (start, end), = duplication.ref_junctions
-
-                    start += exp.target_info.anchor
-                    end += exp.target_info.anchor
+                    (starts, ends), = duplication.ref_junctions
+                    start = starts[0]
+                    end = ends[0]
 
                     read_id = (exp.group, exp.sample_name, outcome.query_name)
                     ranges.append((read_id, start, end))
@@ -243,16 +347,16 @@ class Ranges:
         return cls(exp.target_info, {'start': exp.target_info.target, 'end': exp.target_info.target}, ranges, total_reads, exps)
                     
     @classmethod
-    def donor_ranges(cls, exps, component='insertion'):
+    def donor_ranges(cls, exps, component='insertion', subcategories=None, strand=None):
         ranges = []
         total_reads = 0
 
         for exp in exps:
             sequencing_direction = exp.target_info.sequencing_direction
-            sgRNA_strand = exp.target_info.sgRNA_features.strand
+            sgRNA_strand = exp.target_info.sgRNA_feature.strand
 
-            left_primer = exp.target_info.primers_by_side_of_reads['left']
-            right_primer = exp.target_info.primers_by_side_of_reads['right']
+            left_primer = exp.target_info.primers_by_side_of_read['left']
+            right_primer = exp.target_info.primers_by_side_of_read['right']
 
             if component == 'insertion':
                 sequence_name = exp.target_info.donor
@@ -264,42 +368,76 @@ class Ranges:
             for outcome in exp.outcome_iter():
                 if outcome.category != 'nonspecific amplification':
                     total_reads += 1
-                if outcome.category == 'unintended donor integration':
+
+                if (outcome.category, outcome.subcategory) in subcategories:
                     lti = ddr.pooled_layout.LongTemplatedInsertionOutcome.from_string(outcome.details)
 
                     if component == 'insertion':
                         left = lti.left_insertion_ref_bound
                         right = lti.right_insertion_ref_bound
 
-                        if sequencing_direction == sgRNA_strand:
-                            start, end = right, left
-                        else:
-                            start, end = left, right
+                        if lti.strand != strand:
+                            continue
+
+                        start, end = sorted([right, left])
 
                     elif component == 'target':
                         if sequencing_direction == '+' and sgRNA_strand == '-':
-                            start = left_primer.start
+                            start = lti.right_target_ref_bound
                             end = lti.left_target_ref_bound
 
                         elif sequencing_direction == '-' and sgRNA_strand == '+':
                             start = lti.left_target_ref_bound
-                            end = left_primer.end
+                            end = lti.right_target_ref_bound
 
                         elif sequencing_direction == '+' and sgRNA_strand == '+':
                             start = lti.right_target_ref_bound
-                            end = right_primer.end
+                            end = lti.left_target_ref_bound
 
                         else:
                             raise NotImplementedError
                     else:
                         raise ValueError
+
+                    if start == knock_knock.outcome.NAN_INT or end == knock_knock.outcome.NAN_INT:
+                        continue
                  
-                    ranges.append((start, end))
+                    read_id = (exp.group, exp.sample_name, outcome.query_name)
+                    ranges.append((read_id, start, end))
                                             
         return cls(exp.target_info, sequence_name, ranges, total_reads, exps)
 
     @classmethod
-    def donor_junctions(cls, exps):
+    def genomic_insertion_boundaries(cls, exps, subcategories=None, min_length=0, max_length=np.inf):
+        if subcategories is None:
+            subcategories = [('genomic insertion', 'hg19')]
+
+        ranges = []
+        total_reads = 0
+
+        for exp in exps:
+            for outcome in exp.outcome_iter():
+                if outcome.category != 'nonspecific amplification':
+                    total_reads += 1
+
+                if (outcome.category, outcome.subcategory) in subcategories:
+                    lti = ddr.pooled_layout.LongTemplatedInsertionOutcome.from_string(outcome.details)
+
+                    length = lti.insertion_length()
+                    if min_length <= length <= max_length:
+                        start, end = sorted([lti.right_target_ref_bound, lti.left_target_ref_bound])
+                        if start == knock_knock.outcome.NAN_INT:
+                            start = 0
+                        if end == knock_knock.outcome.NAN_INT:
+                            end = len(exp.target_info.target_sequence)
+                    
+                        read_id = (exp.group, exp.sample_name, outcome.query_name)
+                        ranges.append((read_id, start, end))
+                                            
+        return cls(exp.target_info, exp.target_info.target, ranges, total_reads, exps)
+
+    @classmethod
+    def donor_junctions(cls, exps, require_SNV=True):
         ranges = []
         total_reads = 0
 
@@ -310,7 +448,12 @@ class Ranges:
             for outcome in exp.outcome_iter():
                 total_reads += 1
 
-                if outcome.category == 'unintended donor integration':
+                if outcome.category == 'unintended annealing of RT\'ed sequence' \
+                    and 'with deletion' not in outcome.subcategory:
+
+                    if require_SNV and outcome.subcategory == 'no scaffold, no SNV':
+                        continue
+
                     lti = ddr.pooled_layout.LongTemplatedInsertionOutcome.from_string(outcome.details)
 
                     if sequencing_direction == '-' and sgRNA_strand == '+':
@@ -329,11 +472,42 @@ class Ranges:
                         donor_end = lti.left_insertion_ref_bound
                         target_start = lti.left_target_ref_bound
 
-                    if target_start == ddr.outcome.NAN_INT or donor_end == ddr.outcome.NAN_INT:
+                    else:
+                        raise ValueError
+
+                    if target_start == knock_knock.outcome.NAN_INT or donor_end == knock_knock.outcome.NAN_INT:
                         continue
                     else:
                         read_id = (exp.group, exp.sample_name, outcome.query_name)
                         ranges.append((read_id, target_start, donor_end))
+
+        return cls(exp.target_info, {'start': exp.target_info.target, 'end': exp.target_info.donor}, ranges, total_reads, exps)
+
+    @classmethod
+    def DSB_donor_junctions(cls, exps, subcategory):
+        ranges = []
+        total_reads = 0
+
+        for exp in exps:
+            for outcome in exp.outcome_iter():
+                total_reads += 1
+
+                if outcome.category == 'donor misintegration' and outcome.subcategory == subcategory:
+                    lti = ddr.pooled_layout.LongTemplatedInsertionOutcome.from_string(outcome.details)
+
+                    if lti.left_gap == 0:
+                        if 'left unintended' in subcategory:
+                            target_start = lti.left_target_ref_bound
+                            donor_end = lti.left_insertion_ref_bound
+                        else:
+                            target_start = lti.right_target_ref_bound
+                            donor_end = lti.right_insertion_ref_bound
+
+                        if target_start == knock_knock.outcome.NAN_INT or donor_end == knock_knock.outcome.NAN_INT:
+                            continue
+                        else:
+                            read_id = (exp.group, exp.sample_name, outcome.query_name)
+                            ranges.append((read_id, target_start, donor_end))
 
         return cls(exp.target_info, {'start': exp.target_info.target, 'end': exp.target_info.donor}, ranges, total_reads, exps)
 
@@ -393,11 +567,12 @@ class Ranges:
 
 def plot_ranges(all_ranges,
                 names=None,
-                primary_name='nt',
+                primary_name='negative_control',
                 features_to_draw=None,
                 landmark=0,
                 x_lims=None,
-                num_examples=300,
+                y_lims=None,
+                num_examples=100,
                 invert=False,
                 panels=None,
                 sort_kwargs=None,
@@ -408,7 +583,11 @@ def plot_ranges(all_ranges,
     if panels is None:
         panels = [
             'start',
+            'end',
         ]
+
+    if y_lims is None:
+        y_lims = {}
 
     primary_ranges = all_ranges[primary_name]
 
@@ -421,9 +600,6 @@ def plot_ranges(all_ranges,
     if sort_kwargs is None:
         sort_kwargs = dict(key=lambda d: (d[1] - d[0], d[0]), reverse=True)
     
-    if features_to_draw is None:
-        features_to_draw = []
-
     sampled = all_ranges[primary_name].downsampled_edge_pairs(num_examples)
     
     xs = np.arange(sequence_length) - landmark
@@ -438,12 +614,14 @@ def plot_ranges(all_ranges,
 
     ax_p = bottom_ax.get_position()
 
-    pair_ax_height = ax_p.height * (len(ordered) / 100)
+    pair_ax_height = ax_p.height * (len(ordered) / 25)
     pair_ax_y0 = ax_p.y0 - ax_p.height * 0.5 - pair_ax_height
     pair_ax = fig.add_axes((ax_p.x0, pair_ax_y0, ax_p.width, pair_ax_height), sharex=bottom_ax)
 
+    pair_ax.set_ylabel(f'random sample of {num_examples} examples')
+
     for i, (start, end) in enumerate(ordered):
-        pair_ax.plot([start - 0.5, end + 0.5], [i, i], color='black')
+        pair_ax.plot([start - 0.5, end + 0.5], [i, i], linewidth=2, color='black')
 
     if all_ranges[primary_name].sequence_name == all_ranges[primary_name].target_info.target:
         for name, cut_after in all_ranges[primary_name].target_info.cut_afters.items():
@@ -464,12 +642,19 @@ def plot_ranges(all_ranges,
         if panel == 'start':
             get_ys = lambda ranges: ranges.edge_counts['start'] / ranges.total_reads * 100
             y_label = 'start (percentage)'
+
         elif panel == 'end':
             get_ys = lambda ranges: ranges.edge_counts['end'] / ranges.total_reads * 100
             y_label = 'end (percentage)'
+
         elif panel == 'involved':
             get_ys = lambda ranges: ranges.positions_involved / ranges.total_reads * 100
-            y_label = 'involved (percentage)'
+            y_label = 'involved\n(percentage)'
+
+        elif panel == 'relative involved':
+            get_ys = lambda ranges: ranges.positions_involved / len(ranges.edge_pairs) * 100
+            y_label = 'involved\n(percentage of all deletions)'
+
         elif isinstance(panel, tuple):
             if panel[0] == 'log2_fc':
                 if len(panel) == 3:
@@ -479,7 +664,9 @@ def plot_ranges(all_ranges,
                         denominator = all_ranges[primary_name].cumulative_counts[edge][side] / all_ranges[primary_name].total_reads * 100
                         ys = np.log2(numerator / denominator)
                         return ys
+
                     y_label = f'log2 fold change, {edge}, {side}'
+
                 else:
                     edge = panel[1]
                     def get_ys(ranges):
@@ -487,7 +674,9 @@ def plot_ranges(all_ranges,
                         denominator = all_ranges[primary_name].edge_counts[edge] / all_ranges[primary_name].total_reads * 100
                         ys = np.log2(numerator / denominator)
                         return ys
+
                     y_label = f'log2 fold change, {edge}'
+
             elif panel[0] == 'diff':
                 if len(panel) == 3:
                     edge, side = panel[1:]
@@ -496,7 +685,9 @@ def plot_ranges(all_ranges,
                         denominator = all_ranges[primary_name].cumulative_counts[edge][side] / all_ranges[primary_name].total_reads * 100
                         ys = numerator - denominator
                         return ys
+
                     y_label = f'diff from {primary_name}, {edge} {side}'
+
                 else:
                     edge = panel[1]
                     def get_ys(ranges):
@@ -504,7 +695,13 @@ def plot_ranges(all_ranges,
                         denominator = all_ranges[primary_name].edge_counts[edge] / all_ranges[primary_name].total_reads * 100
                         ys = numerator - denominator
                         return ys
+
                     y_label = f'diff from {primary_name}, {edge}'
+
+            elif panel[0] == 'log10' and panel[1] == 'involved':
+                get_ys = lambda ranges: np.log10(ranges.positions_involved / ranges.total_reads * 100)
+                y_label = 'involved (percentage)'
+
             else:
                 edge, side = panel
                 get_ys = lambda ranges: ranges.cumulative_counts[edge][side] / ranges.total_reads * 100
@@ -519,7 +716,7 @@ def plot_ranges(all_ranges,
                 color = f'C{color_i}'
                 color_i += 1
 
-            ax.plot(xs, get_ys(ranges), color=color, label=name)
+            ax.plot(xs, get_ys(ranges), marker='o', markersize=2, color=color, label=name)
 
         ax.grid(axis='y', alpha=0.3)
 
@@ -528,6 +725,10 @@ def plot_ranges(all_ranges,
             
         ax.set_ylabel(y_label)
 
+        panel_y_lim = y_lims.get(panel)
+        if panel_y_lim is not None:
+            ax.set_ylim(*panel_y_lim)
+
     panel_axs[panels[0]].legend()
     
     if x_lims is None:
@@ -535,16 +736,25 @@ def plot_ranges(all_ranges,
 
     ax.set_xlim(*x_lims)
 
-    draw_features(ax, primary_ranges.target_info, sequence_name, x_lims[0], x_lims[1])
+    for panel_name, panel_ax in panel_axs.items():
+        draw_features(panel_ax,
+                      primary_ranges.target_info,
+                      sequence_name,
+                      x_lims[0], x_lims[1],
+                      draw_labels=(panel_name == panels[0]),
+                      features_to_draw=features_to_draw,
+                     )
 
     if invert:
         ax.invert_xaxis()
     
     return fig
 
-def plot_joint(all_ranges, nt_name, other_name,
-               target_min_p,
-               target_max_p,
+def plot_joint(all_ranges,
+               nt_name='negative_control',
+               other_name=None,
+               target_min_p=None,
+               target_max_p=None,
                donor_min_p=0,
                donor_max_p=None,
                v_max=None,
@@ -552,8 +762,9 @@ def plot_joint(all_ranges, nt_name, other_name,
                invert_x=False,
                invert_y=False,
                title='',
-               end_label='position in pegRNA where integration ends',
-               start_label='position in vector where outcome resumes',
+               end_label='position in donor where integration ends',
+               start_label='position in target where outcome resumes',
+               label_offsets=None,
               ):
     ranges = all_ranges[nt_name]
     counts = ranges.joint_percentages
@@ -570,6 +781,12 @@ def plot_joint(all_ranges, nt_name, other_name,
     if donor_max_p is None:
         donor_max_p = ranges.sequence_length['end']
 
+    if target_min_p is None:
+        target_min_p = ti.cut_after - 100
+
+    if target_max_p is None:
+        target_max_p = ti.cut_after + 100
+
     matrix_slice = idx[target_min_p:target_max_p + 1, donor_min_p:donor_max_p + 1]
 
     # bottom/top of extent is confusing
@@ -583,11 +800,12 @@ def plot_joint(all_ranges, nt_name, other_name,
         if v_max is None:
             v_max = counts.max() * 1.01
         cmap = hits.visualize.reds
+        #cmap = copy.copy(plt.get_cmap('Oranges'))
+        #cmap.set_over('black')
         im = joint_ax.imshow(counts[matrix_slice], extent=extent, cmap=cmap, vmax=v_max, interpolation='none')
-        #im = joint_ax.imshow(counts, cmap=cmap, vmax=v_max, interpolation='none')
 
     else:
-        cmap = plt.get_cmap('bwr')
+        cmap = copy.copy(plt.get_cmap('bwr'))
         cmap.set_over('black')
         diffs = other_counts - counts
 
@@ -595,7 +813,6 @@ def plot_joint(all_ranges, nt_name, other_name,
             v_max = np.abs(diffs).max() * 1.01
 
         im = joint_ax.imshow((other_counts - counts)[matrix_slice], extent=extent, cmap=cmap, vmin=-v_max, vmax=v_max, interpolation='none')
-        #im = joint_ax.imshow((other_counts - counts), cmap=cmap, vmin=-v_max, vmax=v_max, interpolation='none')
 
     joint_ax.set_ylim(target_max_p + 0.5, target_min_p - 0.5)
     joint_ax.set_xlim(donor_min_p - 0.5, donor_max_p + 0.5)
@@ -630,8 +847,14 @@ def plot_joint(all_ranges, nt_name, other_name,
     ax_donor.set_ylabel('percentage of reads')
     plt.setp(ax_donor.get_xticklabels(), visible=False)
 
-    draw_features(ax_target, ti, ranges.sequence_name['start'], target_min_p, target_max_p, orientation='right')
-    draw_features(ax_donor, ti, ranges.sequence_name['end'], donor_min_p, donor_max_p, orientation='vertical')
+    draw_features(ax_target, ti, ranges.sequence_name['start'], target_min_p, target_max_p,
+                  orientation='right',
+                  label_offsets=label_offsets,
+                 )
+    draw_features(ax_donor, ti, ranges.sequence_name['end'], donor_min_p, donor_max_p,
+                  orientation='vertical',
+                  label_offsets=label_offsets,
+                 )
                 
     for ax in [ax_donor, ax_target]:
         plt.setp(ax.spines.values(), visible=False)
@@ -697,7 +920,7 @@ def plot_joint(all_ranges, nt_name, other_name,
     ax_donor.set_title(title, y=1.2)
     cax.set_title(colorbar_title, y=1.1)
 
-    ax_donor.annotate(f'{nt_name:>8}: {total_percentage:2.2f}%',
+    ax_donor.annotate(f'{str(nt_name):>8}: {total_percentage:2.2f}%',
                       xy=(1, 0.9),
                       xycoords='axes fraction',
                       xytext=(2, 0),
@@ -708,7 +931,7 @@ def plot_joint(all_ranges, nt_name, other_name,
                      )
 
     if other_name is not None:
-        ax_donor.annotate(f'{other_name:>8}: {total_other_percentage:2.2f}%',
+        ax_donor.annotate(f'{str(other_name):>8}: {total_other_percentage:2.2f}%',
                           xy=(1, 0.9),
                           xycoords='axes fraction',
                           xytext=(2, -16),
@@ -735,11 +958,27 @@ def draw_features(ax, ti, seq_name, min_p, max_p,
                   label_offsets=None,
                   alpha=0.5,
                   draw_labels=True,
+                  label_PAMs=False,
+                  features_to_draw=None,
+                  relative_to_cut_after=False,
+                  label_overrides=None,
+                  above=False,
                  ):
     if label_offsets is None:
         label_offsets = {}
 
-    features = [(s_name, f_name) for s_name, f_name in ti.features_to_show if s_name == seq_name]
+    if label_overrides is None:
+        label_overrides = {}
+
+    if features_to_draw is None:
+        features_to_draw = ti.features_to_show
+
+    if relative_to_cut_after:
+        x_offset = ti.cut_after + 0.5
+    else:
+        x_offset = 0
+
+    features = [(s_name, f_name) for s_name, f_name in features_to_draw if s_name == seq_name]
 
     if orientation == 'right':
         span = ax.axhspan
@@ -756,16 +995,29 @@ def draw_features(ax, ti, seq_name, min_p, max_p,
         if min_p <= feature.start <= max_p or min_p <= feature.end <= max_p:
             color = feature.attribute['color']
 
-            span(feature.start - 0.5, feature.end + 0.5, color=color, alpha=alpha)
+            if above:
+                args = (0.95, 1)
+            else:
+                args = (0, 1)
+            span(feature.start - 0.5 - x_offset, feature.end + 0.5 - x_offset, *args, facecolor=color, alpha=alpha, edgecolor='none', clip_on=False)
 
             if draw_labels:
                 label = feature.attribute.get('short_name', f_name)
+
+                label = label_overrides.get(label, label)
+
+                if label is None:
+                    continue
+
+                if 'PAM' in label and not label_PAMs:
+                    continue
+
                 offset_points = 4
                 if f_name in label_offsets:
                     extra_offsets = 12 * label_offsets[f_name]
                     offset_points += extra_offsets
 
-                center = np.mean([feature.start, feature.end])
+                center = np.mean([feature.start, feature.end]) - x_offset
                 if orientation == 'right':
                     annotate_kwargs = dict(
                         xy = (1, center),
@@ -784,7 +1036,6 @@ def draw_features(ax, ti, seq_name, min_p, max_p,
                         va='bottom',
                     )
                     
-
                 ax.annotate(label,
                             textcoords='offset points',
                             color=color,
@@ -794,4 +1045,25 @@ def draw_features(ax, ti, seq_name, min_p, max_p,
 
     if seq_name == ti.target:
         for _, p in ti.cut_afters.items():
-            line(p + 0.5, color='black', linestyle='--', alpha=0.5)
+            line(p + 0.5 - x_offset, color='black', linestyle='--', linewidth=1.5, alpha=0.5)
+
+def load_pool_ranges(pool, keys, RangesClass, progress=None, **kwargs):
+    ''' keys: a list of genes or guides
+        RangesClass
+    '''
+    ranges = {}
+
+    for key in keys:
+        if key in pool.variable_guide_library.guides:
+            guides = [key]
+        else:
+            guides = pool.variable_guide_library.gene_guides(key, only_best_promoter=True)
+
+        exps = [pool.single_guide_experiment('none', guide) for guide in guides]
+
+        if progress is not None:
+            exps = progress(exps)
+
+        ranges[key] = RangesClass(exps, **kwargs)
+
+    return ranges
