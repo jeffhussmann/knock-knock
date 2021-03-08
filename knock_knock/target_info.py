@@ -43,7 +43,7 @@ class TargetInfo():
                  nonhomologous_donor=None,
                  sgRNA=None,
                  primer_names=None,
-                 sequencing_start_feature_name=None,
+                 sequencing_start_feature_name='sequencing_start',
                  supplemental_indices=None,
                  gb_records=None,
                  infer_homology_arms=False,
