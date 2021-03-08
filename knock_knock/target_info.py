@@ -233,6 +233,24 @@ class TargetInfo():
             for f in gff.get_all_features(self.fns['ref_gff'])
             if 'ID' in f.attribute
         }
+
+        # Override colors of protospacers in pooled screening vector
+        # to ensure consistency.
+
+        override_colors = {
+            ('pooled_vector', 'sgRNA-5'): 'tab:green',
+            ('pooled_vector', 'sgRNA-3'): 'tab:orange',
+            ('pooled_vector', 'sgRNA-2'): 'tab:blue',
+            ('pooled_vector', 'sgRNA-7'): 'tab:red',
+        }
+
+        for name, color in override_colors.items():
+            override_colors[name] = hits.visualize.apply_alpha(color, 0.5)
+
+        for name, feature in features.items():
+            if name in override_colors:
+                feature.attribute['color'] = override_colors[name]
+
         return features
 
     @memoized_property
@@ -395,23 +413,28 @@ class TargetInfo():
 
         for name, sl in self.PAM_slices.items():
             PAM_name = f'{name}_PAM'
-            f = gff.Feature.from_fields(self.target,
-                                        '.',
-                                        'PAM',
-                                        sl.start,
-                                        sl.stop - 1,
-                                        '.',
-                                        '.',
-                                        '.',
-                                        '.',
-                                       )
-            f.attribute = {
+            PAM_feature = gff.Feature.from_fields(self.target,
+                                                  '.',
+                                                  'PAM',
+                                                  sl.start,
+                                                  sl.stop - 1,
+                                                  '.',
+                                                  '.',
+                                                  '.',
+                                                  '.',
+                                                 )
+
+            sgRNA = self.features[self.target, name]
+            sgRNA_color = sgRNA.attribute['color']
+            PAM_color = hits.visualize.scale_darkness(sgRNA_color, 1.3)
+
+            PAM_feature.attribute = {
                 'ID': PAM_name,
-                'color': '#9C4040',
+                'color': PAM_color,
                 'short_name': 'PAM',
             }
 
-            PAM_features[self.target, PAM_name] = f
+            PAM_features[self.target, PAM_name] = PAM_feature
 
         return PAM_features
                                     
