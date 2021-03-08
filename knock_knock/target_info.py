@@ -148,6 +148,10 @@ TargetInfo:
     def make_references(self):
         ''' Generate fasta and gff files from genbank inputs. '''
         gb_fns = [self.dir / (source + '.gb') for source in self.sources]
+        gb_fns = [fn for fn in gb_fns if fn.exists()]
+
+        fasta_fns = [self.dir / (source + '.fasta') for source in self.sources]
+        fasta_fns = [fn for fn in fasta_fns if fn.exists()]
         
         fasta_records = []
         all_gff_features = []
@@ -163,6 +167,10 @@ TargetInfo:
 
             fasta_records.append(fasta_record)
             all_gff_features.extend(gff_features)
+
+        for fasta_fn in fasta_fns:
+            for fasta_record in fasta.records(fasta_fn):
+                fasta_records.append(fasta_record)
             
         with self.fns['ref_fasta'].open('w') as fasta_fh:
             for record in fasta_records:
