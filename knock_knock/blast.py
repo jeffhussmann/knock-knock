@@ -6,13 +6,8 @@ import pysam
 
 from hits import sam, fasta, fastq
 
-def h_to_s(kind):
-    if kind == sam.BAM_CHARD_CLIP:
-        kind = sam.BAM_CSOFT_CLIP
-    return kind
-
-def replace_hard_clip_with_soft(cigar):
-    return [(h_to_s(k), l) for k, l in cigar]
+HARD_CLIP = sam.BAM_CHARD_CLIP
+SOFT_CLIP = sam.BAM_CSOFT_CLIP
 
 def blast(ref_fn, reads, bam_fn, bam_by_name_fn, max_insertion_length=None):
     with tempfile.TemporaryDirectory(suffix='_blast') as temp_dir:
@@ -76,7 +71,7 @@ def blast(ref_fn, reads, bam_fn, bam_by_name_fn, max_insertion_length=None):
             al.query_sequence = read.seq
             al.query_qualities = fastq.decode_sanger(read.qual)
 
-            al.cigar = replace_hard_clip_with_soft(al.cigar)
+            al.cigar = [(SOFT_CLIP if k == HARD_CLIP else k, l) for k, l in al.cigar]
     
         def make_unaligned(read):
             unal = pysam.AlignedSegment()
