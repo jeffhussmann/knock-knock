@@ -3,7 +3,6 @@ import functools
 import io
 import os
 import zipfile
-import shutil
 
 from pathlib import Path
 
@@ -343,10 +342,13 @@ def make_table(base_dir,
     return styled
 
 def generate_html(base_dir, fn, conditions=None, show_details=True, include_images=True, sort_samples=True):
+    logo_fn = Path(os.path.realpath(__file__)).parent / 'logo_v2.png'
+    logo_URI, logo_width, logo_height = fn_to_URI(logo_fn)
+
     nb = nbf.new_notebook()
 
     documentation_cell_contents = f'''\
-<a target="_blank" href="https://github.com/jeffhussmann/knock-knock" rel="nofollow"><img src="logo_v2.png" alt="knock-knock" align="left"></a>
+<a target="_blank" href="https://github.com/jeffhussmann/knock-knock" rel="nofollow"><img width={logo_width} height={logo_height} src={logo_URI} alt="knock-knock" align="left"></a>
 <br clear="all">
 
 knock-knock is a tool for exploring, categorizing, and quantifying the full spectrum of sequence outcomes produced by CRISPR knock-in experiments.
@@ -404,11 +406,6 @@ def make_self_contained_zip(base_dir, conditions, table_name,
     df = load_counts(base_dir, conditions, exclude_empty=False).T
     df.to_csv(csv_fn)
     fns_to_zip.append(csv_fn)
-
-    logo_fn = Path(os.path.realpath(__file__)).parent / 'docs' / 'logo_v2.png'
-    if logo_fn.exists():
-        shutil.copy(logo_fn, results_dir / 'logo_v2.png') 
-        fns_to_zip.append(results_dir / 'logo_v2.png')
 
     print('Generating high-level html table...')
     html_fn = fn_prefix.with_suffix('.html')
