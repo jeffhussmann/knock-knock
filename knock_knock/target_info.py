@@ -287,34 +287,37 @@ TargetInfo:
         if self.manual_features_to_show is not None:
             return {tuple(f) for f in self.manual_features_to_show}
         else:
-            whitelist = {
+            features_to_show = set()
+
+            if self.donor is not None:
+                features_to_show.update({
                 (self.donor, 'GFP'),
                 (self.donor, 'GFP11'),
                 (self.donor, 'PPX'),
                 (self.donor, 'donor_specific'),
                 (self.donor, 'PCR_adapter_1'),
                 (self.donor, 'PCR_adapter_2'),
-            }
+            })
 
             for sgRNA_name in self.sgRNA_features:
-                whitelist.add((self.target, sgRNA_name))
+                features_to_show.add((self.target, sgRNA_name))
 
             for side in [5, 3]:
                 try:
                     primer = (self.target, self.primers_by_side_of_target[side].attribute['ID'])
-                    whitelist.add(primer)
+                    features_to_show.add(primer)
                 except KeyError:
                     pass
 
                 if self.homology_arms is not None:
                     target_HA = (self.target, self.homology_arms[side]['target'].attribute['ID'])
-                    whitelist.add(target_HA)
+                    features_to_show.add(target_HA)
 
                     if self.has_shared_homology_arms:
                         donor_HA = (self.donor, self.homology_arms[side]['donor'].attribute['ID'])
-                        whitelist.add(donor_HA)
+                        features_to_show.add(donor_HA)
 
-            return whitelist
+            return features_to_show
 
     @memoized_property
     def sequencing_start(self):

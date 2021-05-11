@@ -907,6 +907,8 @@ def build_target_info(base_dir, info, all_index_locations,
                 [donor_name, 'HA_1'],
                 [donor_name, 'HA_2'],
                 [donor_name, 'donor_specific'],
+                [donor_name, 'PCR_adapter_1'],
+                [donor_name, 'PCR_adapter_2'],
                 [target_name, 'HA_1'],
                 [target_name, 'HA_2'],
             ])
