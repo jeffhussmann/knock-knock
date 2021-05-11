@@ -55,7 +55,7 @@ class ReadDiagram():
                  split_at_indels=False,
                  only_target_and_donor=False,
                  force_left_aligned=False,
-                 gap_between_read_pair=5,
+                 force_right_aligned=False,
                  width_per_unit=None,
                  arrow_width=None,
                  emphasize_parsimonious=False,
@@ -68,7 +68,6 @@ class ReadDiagram():
                  inferred_amplicon_length=None,
                  manual_anchors=None,
                  prevent_fade=False,
-                 ref_line_width=0.001,
                  **kwargs,
                 ):
 
@@ -99,6 +98,7 @@ class ReadDiagram():
         self.default_color = default_color
         self.mode = mode
         self.force_left_aligned = force_left_aligned
+        self.force_right_aligned = force_right_aligned
         self.center_on_primers = center_on_primers
         self.manual_x_lims = manual_x_lims
         self.hide_xticks = hide_xticks
@@ -182,7 +182,7 @@ class ReadDiagram():
             self.alignments, self.all_alignments = clean_up_alignments(alignments)
             self.R2_alignments = None
 
-        self.ref_line_width = ref_line_width
+        self.ref_line_width = kwargs.get('ref_line_width', 0.001) * self.size_multiple
 
         if label_offsets is None:
             label_offsets = {}
@@ -211,17 +211,17 @@ class ReadDiagram():
 
         elif self.mode == 'paper':
             self.font_sizes = {
-                'read_label': 12,
-                'ref_label': 12,
-                'feature_label': 12,
-                'number': 8,
+                'read_label': kwargs.get('label_size', 12),
+                'ref_label': kwargs.get('label_size', 12),
+                'feature_label': kwargs.get('feature_label_size', 12),
+                'number': kwargs.get('number_size', 8),
                 'sequence': 3.5 * self.size_multiple,
                 'title': 16,
             }
 
             self.target_and_donor_y_gap = kwargs.get('target_and_donor_y_gap', 0.015)
             self.initial_alignment_y_offset = kwargs.get('initial_alignment_y_offset', 5)
-            self.feature_line_width = 0.005
+            self.feature_line_width = kwargs.get('feature_line_width', 0.005)
             self.gap_between_als = kwargs.get('gap_between_als', 0.003)
             self.label_cut = kwargs.get('label_cut', False)
 
@@ -271,15 +271,19 @@ class ReadDiagram():
             self.query_length = 50
             self.query_name = None
 
+        if self.R2_alignments is not None:
+            self.R1_query_length = self.query_length
+            self.R2_query_length = self.R2_alignments[0].query_length
+            self.total_query_length = self.inferred_amplicon_length
+            self.R2_query_start = self.total_query_length - self.R2_query_length
+        else:
+            self.total_query_length = self.query_length
+
         if self.query_interval is None:
-            self.query_interval = (0, self.query_length - 1)
+            # TODO: -1 confuses me.
+            self.query_interval = (0, self.total_query_length - 1)
 
         self.query_length = self.query_interval[1] - self.query_interval[0] + 1
-
-        if self.R2_alignments is not None:
-            self.R2_query_length = self.R2_alignments[0].query_length
-        else:
-            self.R2_query_length = None
 
         if width_per_unit is None:
             if self.query_length < 750:
@@ -305,14 +309,12 @@ class ReadDiagram():
         self.arrow_width = arrow_width
         self.arrow_height_over_width = self.width_per_unit / self.height_per_unit
 
-        self.gap_between_read_pair = gap_between_read_pair
-
         self.text_y = -7
 
         # cross_x and cross_y are the width and height of each X arm
         # (i.e. half the width of the whole X)
 
-        self.cross_x = 0.6
+        self.cross_x = kwargs.get('cross_x', 0.6)
         self.cross_y = self.cross_x * self.width_per_unit / self.height_per_unit
 
         if self.ax is None:
@@ -387,8 +389,8 @@ class ReadDiagram():
         ''' Draw black arrows that represent the sequencing read or read pair. '''
 
         arrow_kwargs = {
-            'linewidth': self.arrow_linewidth,
-            'color': 'black'
+            'linewidth': self.arrow_linewidth * self.size_multiple,
+            'color': 'black',
         }
 
         if self.R2_alignments is None:
@@ -397,11 +399,9 @@ class ReadDiagram():
             ]
 
         else:
-            R2_start = self.query_length + self.gap_between_read_pair
-
             arrow_infos = [
-                ([0, self.query_length - 1], False),
-                ([R2_start, R2_start + self.R2_query_length - 1], True),
+                ([0, self.R1_query_length - 1], False),
+                ([self.R2_query_start, self.total_query_length - 1], True),
             ]
 
         for (x_start, x_end), reverse_complement in arrow_infos:
@@ -442,7 +442,7 @@ class ReadDiagram():
 
         reverse_complement = self.reverse_complement or is_R2
         if is_R2:
-            x_offset = self.query_length + self.gap_between_read_pair
+            x_offset = self.R2_query_start
         else:
             x_offset = 0
 
@@ -580,7 +580,7 @@ class ReadDiagram():
                         else:
                             alpha = 0.85
 
-                        cross_kwargs = dict(zorder=10, color='black', alpha=alpha * alpha_multiplier)
+                        cross_kwargs = dict(zorder=10, linewidth=self.size_multiple, color='black', alpha=alpha * alpha_multiplier)
                         cross_ys = [y - self.cross_y, y + self.cross_y]
 
                         read_x = middle_offset(read_p)
@@ -698,8 +698,9 @@ class ReadDiagram():
                 
                 kwargs = {
                     'color': color,
-                    'linewidth': 1.5 * parsimony_width_multiplier,
+                    'linewidth': 1.5 * parsimony_width_multiplier * self.size_multiple,
                     'alpha': 1 * alpha_multiplier,
+                    'solid_capstyle': 'butt',
                 }
 
                 ax.plot(xs, ys, **kwargs)
@@ -841,13 +842,8 @@ class ReadDiagram():
         if (not self.alignments) or (self.alignments[0].query_sequence is None):
             return self.fig
 
-        if self.R2_alignments is None:
-            total_query_length = self.query_length
-        else:
-            total_query_length = self.query_length + self.R2_query_length + self.gap_between_read_pair
-
-        self.min_x = self.query_interval[0] - 0.05 * total_query_length
-        self.max_x = self.query_interval[1] + 0.05 * total_query_length
+        self.min_x = self.query_interval[0] - 0.05 * self.total_query_length
+        self.max_x = self.query_interval[1] + 0.05 * self.total_query_length
             
         self.draw_read_arrows()
 
@@ -889,8 +885,8 @@ class ReadDiagram():
         # Set how far tick labels should be from axes
         if self.draw_sequence:
             ax.tick_params(length=0, pad=self.font_sizes['sequence'] * 1.5)
-        elif not self.ref_centric:
-            ax.tick_params(pad=14)
+        else:
+            ax.tick_params(labelsize=self.font_sizes['number'], pad=2)
 
         if self.draw_qualities:
             def quals_to_ys(quals):
@@ -903,7 +899,7 @@ class ReadDiagram():
             if self.R2_alignments is not None:
                 qual_ys = quals_to_ys(self.R2_alignments[0].get_forward_qualities())
 
-                x_start = self.query_length + self.gap_between_read_pair
+                x_start = self.R2_query_start
                 xs = x_start + np.arange(self.R2_query_length)[::-1]
 
                 ax.plot(xs, qual_ys, color='black', alpha=0.5)
@@ -943,17 +939,20 @@ class ReadDiagram():
                                 )
                         
         if self.draw_sequence:
-            start, end = self.query_interval
-            seq = self.alignments[0].get_forward_sequence()[start:end + 1]
+            seq = self.alignments[0].get_forward_sequence()
             if self.reverse_complement:
                 seq = utilities.reverse_complement(seq)
+
+            # Note that query_interval is relative to reverse complement if relevant.
+            start, end = self.query_interval
+            seq = seq[start:end + 1]
 
             seq_kwargs = dict(family='monospace',
                               size=self.font_sizes['sequence'],
                               ha='center',
                               textcoords='offset points',
                               va='top',
-                              xytext=(0, -2),
+                              xytext=(0, -2 * self.size_multiple),
                              )
 
             for x, b in zip(np.arange(start, end + 1), seq):
@@ -963,7 +962,7 @@ class ReadDiagram():
             if self.R2_alignments is not None:
                 seq = utilities.reverse_complement(self.R2_alignments[0].get_forward_sequence())
 
-                x_start = self.query_length + self.gap_between_read_pair
+                x_start = self.R2_query_start
                 for x_offset, b in enumerate(seq):
                     x = x_start + x_offset
                     if self.min_x <= x <= self.max_x:
@@ -1024,7 +1023,14 @@ class ReadDiagram():
             if ref_name in self.manual_anchors:
                 anchor_read, anchor_ref = self.manual_anchors[ref_name]
 
-            elif self.force_left_aligned or (len(self.alignment_coordinates[ref_name]) == 1):
+            # Default to lining up the left edge vertically with the reference position
+            # it is mapped to if there is only one alignment to this reference, or
+            # if there are two but they might just a single alignment split across R1
+            # and R2.
+            elif (self.force_left_aligned or 
+                  (len(self.alignment_coordinates[ref_name]) == 1) or 
+                  (len(self.alignment_coordinates[ref_name]) == 2 and ref_name == ti.donor and self.R2_alignments is not None) 
+                 ):
                 xs, ps, y, strand, parsimony_multiplier = self.alignment_coordinates[ref_name][0]
 
                 anchor_ref = ps[0]
@@ -1033,6 +1039,16 @@ class ReadDiagram():
                     anchor_read = xs[0]
                 else:
                     anchor_read = xs[1]
+
+            elif self.force_right_aligned:
+                xs, ps, y, strand, parsimony_multiplier = self.alignment_coordinates[ref_name][-1]
+
+                anchor_ref = ps[-1]
+
+                if (strand == '+' and not flip) or (strand == '-' and flip):
+                    anchor_read = xs[1]
+                else:
+                    anchor_read = xs[0]
 
             elif ref_name == ti.target and self.center_on_primers:
                 if self.inferred_amplicon_length is not None:
@@ -1054,11 +1070,7 @@ class ReadDiagram():
             else:
                 anchor_ref = center_p
 
-                total_query_length = self.query_length
-                if self.R2_query_length is not None:
-                    total_query_length += self.gap_between_read_pair + self.R2_query_length
-
-                anchor_read = total_query_length // 2
+                anchor_read = self.total_query_length // 2
 
             # With these anchors picked, define the mapping and its inverse.
             if flip:
@@ -1218,7 +1230,7 @@ class ReadDiagram():
                 # + 0.5 in this check to account for adjust_edges
                 if min(xs) >= self.min_x and max(xs) <= self.max_x + 0.5:
                     final_feature_color = hits.visualize.apply_alpha(feature_color, alpha=0.7, multiplicative=True)
-                    self.ax.fill_between(xs, [start] * 2, [end] * 2, color=final_feature_color, linewidth=0)
+                    self.ax.fill_between(xs, [start] * 2, [end] * 2, color=final_feature_color, edgecolor='none')
 
                     name = feature.attribute['ID']
                     label = self.label_overrides.get(name, name)
@@ -1230,7 +1242,7 @@ class ReadDiagram():
                         label = 'PAM'
 
                     label_offset = self.label_offsets.get(name, 0)
-                    y_points = 5 + label_offset * (2 + self.font_sizes['feature_label'])
+                    y_points = 5 * self.feature_line_width / 0.005 + label_offset * (2 + self.font_sizes['feature_label'])
 
                     self.ax.annotate(label,
                                      xy=(np.mean(xs), end),
@@ -1265,9 +1277,9 @@ class ReadDiagram():
 
                     name, strand = cut_after_name.rsplit('_', 1)
 
-                    cut_y_bottom = ref_y - 0.75 * self.feature_line_width
+                    cut_y_bottom = ref_y - self.feature_line_width
                     cut_y_middle = ref_y
-                    cut_y_top = ref_y + 0.75 * self.feature_line_width
+                    cut_y_top = ref_y + self.feature_line_width
 
                     if strand == 'both':
                         ys = [cut_y_bottom, cut_y_top]
@@ -1281,7 +1293,7 @@ class ReadDiagram():
                     self.ax.plot([cut_after_x, cut_after_x],
                                   ys,
                                   '-',
-                                  linewidth=2,
+                                  linewidth=1,
                                   color='black',
                                   solid_capstyle='butt',
                                   zorder=10,
@@ -1294,7 +1306,7 @@ class ReadDiagram():
                         self.ax.annotate(label,
                                         xy=(cut_after_x, cut_y_bottom),
                                         xycoords='data',
-                                        xytext=(0, 10 * np.sign(ref_y)),
+                                        xytext=(0, 10 * self.feature_line_width / 0.005 * np.sign(ref_y)),
                                         textcoords='offset points',
                                         color=color,
                                         ha='center',
