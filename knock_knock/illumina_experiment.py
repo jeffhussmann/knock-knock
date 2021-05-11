@@ -1,5 +1,6 @@
 import gzip
 import shutil
+import sys
 from itertools import chain, islice
 
 from collections import defaultdict
@@ -135,7 +136,10 @@ class IlluminaExperiment(Experiment):
                 layout = layout_module.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
                 layout.categorize()
                 to_plot = layout.relevant_alignments
-                kwargs['gap_between_read_pair'] = layout.gap
+                length = layout.inferred_amplicon_length
+                if length == -1:
+                    length = self.length_to_store_unknown
+                kwargs['inferred_amplicon_length'] = length
             else:
                 to_plot = als
 
@@ -316,7 +320,8 @@ class IlluminaExperiment(Experiment):
         items = self.progress(by_length.items(), desc=description, total=len(by_length))
 
         for length, sampler in items:
-            diagrams = self.alignment_groups_to_diagrams(sampler.sample, num_examples=num_examples, **self.diagram_kwargs)
+            als = sampler.sample
+            diagrams = self.alignment_groups_to_diagrams(als, num_examples=num_examples, **self.diagram_kwargs)
             im = hits.visualize.make_stacked_Image([d.fig for d in diagrams])
             fn = fns['length_range_figure'](length, length)
             im.save(fn)

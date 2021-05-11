@@ -126,9 +126,11 @@ class Experiment:
         else:
             self.supplemental_index_names = index_names.split(';')
 
-        self.diagram_kwargs = dict(features_to_show=self.target_info.features_to_show,
-                                   ref_centric=True,
-                                  )
+        self.diagram_kwargs = dict(
+            features_to_show=self.target_info.features_to_show,
+            ref_centric=True,
+            center_on_primers=True,
+        )
 
     @memoized_property
     def length_to_store_unknown(self):
@@ -546,8 +548,13 @@ class Experiment:
 
     def outcome_query_names(self, outcome):
         fns = self.outcome_fns(outcome)
-        qnames = fns['query_names'].read_text().splitlines()
-        return qnames
+        all_qnames = []
+        for fn_key in ['query_names', 'no_overlap_query_names']:
+            fn = fns[fn_key]
+            if fn.exists():
+                qnames = fn.read_text().splitlines()
+                all_qnames.extend(qnames)
+        return all_qnames
     
     def record_sanitized_category_names(self):
         sanitized_to_original = {}
@@ -605,7 +612,12 @@ class Experiment:
                 else:
                     length = len(layout.seq)
 
-                outcome = self.final_Outcome(name, length, category, subcategory, details)
+                outcome = self.final_Outcome(name,
+                                             length,
+                                             category,
+                                             subcategory,
+                                             details,
+                                            )
                 fh.write(f'{outcome}\n')
 
         # To make plotting easier, for each outcome, make a file listing all of
@@ -1257,10 +1269,10 @@ Esc when done to deactivate the category.'''
             yield d
             
     def generate_all_outcome_length_range_figures(self):
-        outcomes = sorted(self.categories_by_frequency)
+        categories = sorted(self.categories_by_frequency)
         description = 'Generating outcome-specific length range diagrams'
-        for outcome in self.progress(outcomes, desc=description):
-            self.generate_length_range_figures(outcome=outcome)
+        for category in self.progress(categories, desc=description):
+            self.generate_length_range_figures(outcome=category)
 
     def generate_figures(self):
         lengths_fig = self.length_distribution_figure()

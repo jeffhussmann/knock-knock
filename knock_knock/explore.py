@@ -4,6 +4,7 @@ from pathlib import Path
 import knock_knock.visualize
 import knock_knock.target_info
 import knock_knock.experiment
+import knock_knock.layout
 
 import ipywidgets
 
@@ -47,7 +48,6 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, clear_outp
         v.description = k
 
     if experiment is None:
-        conditions = {}
         exps = knock_knock.experiment.get_all_experiments(base_dir, as_dictionary=False)
     else:
         exps = [experiment]
@@ -143,10 +143,18 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, clear_outp
         if als is None:
             return None
 
-        print(als[0].query_name)
-        print(als[0].get_forward_sequence())
+        if isinstance(als, dict):
+            print(als['R1'][0].query_name)
+            print(als['R1'][0].get_forward_sequence())
+            print(als['R2'][0].get_forward_sequence())
 
-        l = exp.categorizer(als, exp.target_info, mode=exp.layout_mode)
+            l = knock_knock.layout.NonoverlappingPairLayout(als['R1'], als['R2'], exp.target_info)
+        else:
+            print(als[0].query_name)
+            print(als[0].get_forward_sequence())
+
+            l = exp.categorizer(als, exp.target_info, mode=exp.layout_mode)
+
         info = l.categorize()
         
         if widgets['relevant'].value:
@@ -154,11 +162,14 @@ def explore(base_dir, by_outcome=False, target=None, experiment=None, clear_outp
 
         inferred_amplicon_length = l.inferred_amplicon_length
 
-        plot_kwargs.setdefault('features_to_show', exp.target_info.features_to_show)
+        for k, v in exp.diagram_kwargs.items():
+            plot_kwargs.setdefault(k, v)
 
-        diagram = knock_knock.visualize.ReadDiagram(als, exp.target_info,
-                                        inferred_amplicon_length=inferred_amplicon_length,
-                                        **plot_kwargs)
+        diagram = knock_knock.visualize.ReadDiagram(als,
+                                                    exp.target_info,
+                                                    inferred_amplicon_length=inferred_amplicon_length,
+                                                    **plot_kwargs,
+                                                   )
         fig = diagram.fig
 
         fig.axes[0].set_title(' '.join((l.query_name,) + info[:3]))

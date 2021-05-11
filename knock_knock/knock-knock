@@ -128,7 +128,7 @@ def make_tables(args):
     if args.group:
         groups = [args.group]
     else:
-        groups = experiment.get_all_groups(args.project_directory)
+        groups = experiment.get_all_batches(args.project_directory)
 
         results_dir = args.project_directory / 'results'
         csv_fn = (results_dir / 'all_groups').with_suffix('.csv')
@@ -168,19 +168,19 @@ def install_example_data(args):
     import os
     import shutil
 
-    package_dir = Path(os.path.realpath(knock_knock.__file__)).parent / 'example_data'
+    package_dir = Path(os.path.realpath(knock_knock.__file__)).parent
     subdirs_to_copy = ['data', 'targets']
     for subdir in subdirs_to_copy:
-        src = package_dir / subdir
+        src = package_dir / 'example_data' / subdir
         dest = args.project_directory / subdir
 
         if dest.exists():
-            print(f'Can\'t install to {str(args.project_directory)}, {str(dest)} already exists')
+            print(f'Can\'t install to {args.project_directory}, {dest} already exists')
             sys.exit(0)
 
         shutil.copytree(str(src), str(dest))
 
-    print(f'Example data installed in {str(args.project_directory)}')
+    print(f'Example data installed in {args.project_directory}')
 
 def print_citation(args):
     print(citation)

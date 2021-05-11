@@ -97,6 +97,10 @@ class TargetInfo():
             'degenerate_deletions': self.dir / 'degenerate_deletions.txt',
         }
         
+        # primer_names may be a semi-colon separated string.
+        if isinstance(primer_names, str):
+            primer_names = primer_names.split(';')
+
         self.primer_names = primer_names
 
         self.sequencing_start_feature_name = sequencing_start_feature_name
@@ -125,6 +129,10 @@ TargetInfo:
         if primary_sgRNA is None and len(self.sgRNAs) > 0:
             primary_sgRNA = self.sgRNAs[0]
         return primary_sgRNA
+
+    @memoized_property
+    def protospacer_color(self):
+        return self.features[self.target, self.primary_sgRNA].attribute['color']
 
     @memoized_property
     def supplemental_headers(self):
@@ -256,9 +264,11 @@ TargetInfo:
 
         override_colors = {
             ('pooled_vector', 'sgRNA-5'): 'tab:green',
+            ('pooled_vector', 'SpCas9 target 1'): 'tab:green',
             ('pooled_vector', 'sgRNA-3'): 'tab:orange',
             ('pooled_vector', 'sgRNA-2'): 'tab:blue',
             ('pooled_vector', 'sgRNA-7'): 'tab:red',
+            ('pooled_vector', 'sgRNA-Cpf1'): 'tab:brown',
         }
 
         for name, color in override_colors.items():
@@ -461,6 +471,10 @@ TargetInfo:
     @memoized_property
     def PAM_slice(self):
         return self.PAM_slices[self.primary_sgRNA]
+
+    @memoized_property
+    def PAM_color(self):
+        return self.PAM_features[self.target, f'{self.primary_sgRNA}_PAM'].attribute['color']
 
     @memoized_property
     def effector(self):
@@ -859,6 +873,16 @@ TargetInfo:
         return target_past_HA_interval
 
     @memoized_property
+    def donor_HA_intervals(self):
+        ''' DisjointIntervals of the regions of the donor covered by homology arms '''
+        return hits.interval.Interval.from_feature(self.homology_arms[5]['donor']) | hits.interval.Interval.from_feature(self.homology_arms[3]['donor'])
+
+    @memoized_property
+    def donor_specific_intervals(self):
+        ''' DisjointIntervals of the regions of the donor NOT covered by homology arms '''
+        return hits.interval.Interval(0, len(self.donor_sequence) - 1) - self.donor_HA_intervals
+
+    @memoized_property
     def amplicon_interval(self):
         primers = self.primers_by_side_of_target
         return interval.Interval(primers[5].start, primers[3].end)
@@ -1243,7 +1267,7 @@ TargetInfo:
 
         shifted = DegenerateInsertion([s - self.anchor for s in degenerate_insertion.starts_afters], degenerate_insertion.seqs)
 
-        return ('insertion', 'insertion', str(shifted))
+        return ('insertion', 'near cut', str(shifted))
 
     @memoized_property
     def edit_name(self):

@@ -200,7 +200,8 @@ class Ranges:
         return self.get_example_diagram(start_p, end_p, example_num=example_num, **diagram_kwargs)
             
     @classmethod
-    def deletion_ranges(cls, exps, as_junctions=False,
+    def deletion_ranges(cls, exps,
+                        as_junctions=False,
                         without_edit=True,
                         with_edit=False,
                         exclude_buffer_around_primers=None,

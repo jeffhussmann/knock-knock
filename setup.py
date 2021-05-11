@@ -34,7 +34,7 @@ setup(
 
     install_requires=[
         'bokeh>=0.12.14',
-        'biopython>=1.70',
+        'biopython>=1.78',
         'ipywidgets>=7.1.2',
         'matplotlib>=2.1.2',
         'nbconvert>=5.3.1',
