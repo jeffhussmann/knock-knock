@@ -30,7 +30,8 @@ effectors = {
     'SpCas9H840A': Effector('SpCas9H840A', 'NGG', 3, (-4, None)),
     'SaCas9': Effector('SaCas9', 'NNGRRT', 3, (-4, -4)),
     'SaCas9H840A': Effector('SaCas9H840A', 'NNGRRT', 3, (-4, None)),
-    'Cpf1': Effector('Cpf1', 'TTTN', 5, (22, 27)),
+    'Cpf1': Effector('Cpf1', 'TTTN', 5, (20, 25)),
+    'AsCas12a': Effector('AsCas12a', 'TTTN', 5, (20, 25)),
 }
 
 # Hack because 'sgRNA_SaCas9H840A' is one character too long for genbank format.
