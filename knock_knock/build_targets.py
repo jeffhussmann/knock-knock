@@ -15,7 +15,6 @@ from Bio import BiopythonWarning
 from Bio.SeqFeature import SeqFeature, FeatureLocation
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-from Bio.Alphabet import generic_dna
 
 from hits import fastq, mapping_tools, sam, genomes, utilities, sw
 from knock_knock import target_info
@@ -788,24 +787,24 @@ def build_target_info(base_dir, info, all_index_locations,
                     results['failed'] = HA_info['failed']
                     return results
 
-                donor_Seq = Seq(HA_info['possibly_flipped_donor_seq'], generic_dna)
+                donor_Seq = Seq(HA_info['possibly_flipped_donor_seq'])
                 donor_features = HA_info['donor_features']
                 target_features.extend(HA_info['target_features'])
 
             else:
-                donor_Seq = Seq(donor_seq, generic_dna)
+                donor_Seq = Seq(donor_seq)
                 donor_features = []
 
-            donor_Record = SeqRecord(donor_Seq, name=donor_name, features=donor_features)
+            donor_Record = SeqRecord(donor_Seq, name=donor_name, features=donor_features, annotations={'molecule_type': 'DNA'})
             results['gb_Records']['donor'] = donor_Record
             
-        target_Seq = Seq(target_seq, generic_dna)
-        target_Record = SeqRecord(target_Seq, name=target_name, features=target_features)
+        target_Seq = Seq(target_seq)
+        target_Record = SeqRecord(target_Seq, name=target_name, features=target_features, annotations={'molecule_type': 'DNA'})
         results['gb_Records']['target'] = target_Record
         
         if has_nh_donor:
-            nh_donor_Seq = Seq(nh_donor_seq, generic_dna)
-            nh_donor_Record = SeqRecord(nh_donor_Seq, name=nh_donor_name)
+            nh_donor_Seq = Seq(nh_donor_seq)
+            nh_donor_Record = SeqRecord(nh_donor_Seq, name=nh_donor_name, annotations={'molecule_type': 'DNA'})
             results['gb_Records']['nh_donor'] = nh_donor_Record
 
         return results
@@ -873,7 +872,7 @@ def build_target_info(base_dir, info, all_index_locations,
         for extra_seq_name, extra_seq in info['extra_sequences']:
             sources.append(extra_seq_name)
 
-            extra_Records.append(SeqRecord(extra_seq, name=extra_seq_name))
+            extra_Records.append(SeqRecord(extra_seq, name=extra_seq_name), annotations={'molecule_type': 'DNA'})
         
     manifest = {
         'sources': sources,
