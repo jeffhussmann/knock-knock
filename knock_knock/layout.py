@@ -46,7 +46,7 @@ class Categorizer:
             try:
                 return (cls.categories().index(category),
                         cls.subcategories()[category].index(subcategory),
-                    )
+                       )
             except:
                 print(category, subcategory)
                 raise
@@ -97,8 +97,7 @@ class Layout(Categorizer):
             ),
         ),
         ('complex indel',
-            ('deletion plus insertion',
-             'templated insertion',
+            ('complex indel',
              'multiple indels',
             ),
         ),
@@ -123,9 +122,8 @@ class Layout(Categorizer):
             ("5' imperfect, 3' imperfect",
             ),
         ),
-
         ('complex misintegration',
-            ('other',
+            ('complex misintegration',
             ),
         ),
         ('concatenated misintegration',
@@ -133,7 +131,7 @@ class Layout(Categorizer):
              '5\' blunt',
              '3\' blunt',
              '5\' and 3\' blunt',
-             'uncategorized',
+             'incomplete',
             ),
         ),
         ('non-homologous donor',
@@ -145,6 +143,7 @@ class Layout(Categorizer):
             ('hg38',
              'hg19',
              'mm10',
+             'e_coli',
             ),
         ),
         ('uncategorized',
@@ -343,9 +342,23 @@ class Layout(Categorizer):
     def whole_read_minus_edges(self, edge_length):
         return interval.Interval(edge_length, len(self.seq) - 1 - edge_length)
 
+    def register_deletion(self):
+        self.category = 'simple indel'
+
+        indel = self.indel_near_cut[0]
+
+        if indel.kind == 'D':
+            if indel.length < 50:
+                self.subcategory = 'deletion <50 nt'
+            else:
+                self.subcategory = 'deletion >=50 nt'
+
+        self.details = self.indel_string
+        self.relevant_alignments = self.parsimonious_target_alignments
+
     def register_integration_details(self):
         ti = self.target_info
-        donor_al = self.parsimonious_donor_alignments[0]
+        donor_al = self.donor_specific_integration_alignments[0]
 
         if self.strand == '+':
             left_target_al = self.primer_alignments[5]
@@ -408,6 +421,7 @@ class Layout(Categorizer):
 
     def categorize_with_donor(self):
         self.details = 'n/a'
+        self.outcome = knock_knock.outcome.Outcome('')
         
         if self.seq is None or len(self.seq) <= self.target_info.combined_primer_length + 10:
             self.category = 'malformed layout'
@@ -441,22 +455,28 @@ class Layout(Categorizer):
 
         elif not self.has_integration:
             if self.indel_near_cut is not None:
+                self.details = self.indel_string
+                self.relevant_alignments = self.parsimonious_target_alignments
+
                 if len(self.indel_near_cut) > 1:
                     self.category = 'uncategorized'
                     self.subcategory = 'multiple indels near cut'
                 else:
                     self.category = 'simple indel'
+
                     indel = self.indel_near_cut[0]
+
                     if indel.kind == 'D':
                         if indel.length < 50:
                             self.subcategory = 'deletion <50 nt'
                         else:
                             self.subcategory = 'deletion >=50 nt'
+
+                        self.outcome = knock_knock.outcome.DeletionOutcome.from_string(self.details)
+
                     elif indel.kind == 'I':
                         self.subcategory = 'insertion'
-
-                self.details = self.indel_string
-                self.relevant_alignments = self.parsimonious_target_alignments
+                        self.outcome = knock_knock.outcome.InsertionOutcome.from_string(self.details)
 
             elif len(self.mismatches_near_cut) > 0:
                 self.category = 'uncategorized'
@@ -479,14 +499,14 @@ class Layout(Categorizer):
 
             elif self.gap_covered_by_target_alignment:
                 self.category = 'complex indel'
-                self.subcategory = 'templated insertion'
+                self.subcategory = 'complex indel'
                 self.details = 'n/a'
-                self.relevant_alignments = self.templated_insertion_relevant_alignments
+                self.relevant_alignments = self.parsimonious_and_gap_alignments
 
             elif junctions == set(['imperfect']):
-                if self.not_covered_by_initial_alignments.total_length >= 2:
+                if self.not_covered_by_refined_alignments.total_length >= 2:
                     self.category = 'complex misintegration'
-                    self.subcategory = 'other'
+                    self.subcategory = 'complex misintegration'
                 else:
                     self.category = 'donor fragment'
                     self.subcategory = f'5\' {self.junction_summary_per_side[5]}, 3\' {self.junction_summary_per_side[3]}'
@@ -502,16 +522,16 @@ class Layout(Categorizer):
                     self.details = self.register_integration_details()
 
                 elif junctions == set(['imperfect', 'HDR']):
-                    if self.not_covered_by_initial_alignments.total_length >= 2:
+                    if self.not_covered_by_refined_alignments.total_length >= 2:
                         self.category = 'complex misintegration'
-                        self.subcategory = 'other'
+                        self.subcategory = 'complex misintegration'
                     else:
                         self.category = 'incomplete HDR'
 
                     self.details = self.register_integration_details()
                 else:
                     self.category = 'complex misintegration'
-                    self.subcategory = 'other'
+                    self.subcategory = 'complex misintegration'
                     self.details = 'n/a'
 
                 self.relevant_alignments = self.parsimonious_and_gap_alignments
@@ -519,9 +539,9 @@ class Layout(Categorizer):
         # TODO: check here for HA extensions into donor specific
         elif self.gap_covered_by_target_alignment:
             self.category = 'complex indel'
-            self.subcategory = 'templated insertion'
+            self.subcategory = 'complex indel'
             self.details = 'n/a'
-            self.relevant_alignments = self.templated_insertion_relevant_alignments
+            self.relevant_alignments = self.parsimonious_and_gap_alignments
 
         elif self.integration_interval.total_length <= 5:
             if self.target_to_at_least_cut[5] and self.target_to_at_least_cut[3]:
@@ -529,30 +549,21 @@ class Layout(Categorizer):
                 self.subcategory = 'insertion'
             else:
                 self.category = 'complex indel'
-                self.subcategory = 'deletion plus insertion'
+                self.subcategory = 'complex indel'
             self.details = 'n/a'
             self.relevant_alignments = self.parsimonious_and_gap_alignments
 
         elif self.integration_summary == 'concatamer':
             if self.target_info.donor_type == 'plasmid':
-                # blunt isn't a meaningful concept for plasmid donors
-                HDR_or_imperfect = {
-                    side: 'HDR' if junction == 'HDR' else 'imperfect'
-                    for side, junction in self.junction_summary_per_side.items()
-                }
-                if 'HDR' in HDR_or_imperfect.values():
-                    self.category = 'incomplete HDR'
-                else:
-                    self.category = 'donor fragment'
-
-                self.subcategory = f"5' {HDR_or_imperfect[5]}, 3' {HDR_or_imperfect[3]}"
-                self.details = self.register_integration_details()
-
+                self.category = 'complex misintegration'
+                self.subcategory = 'complex misintegration'
+                self.details = 'n/a'
             else:
                 self.category = 'concatenated misintegration'
                 self.subcategory = self.junction_summary
+                self.details = self.register_integration_details()
 
-            self.relevant_alignments = self.uncategorized_relevant_alignments
+            self.relevant_alignments = self.parsimonious_and_gap_alignments
 
         elif self.nonhomologous_donor_integration is not None:
             self.category = 'non-homologous donor'
@@ -571,8 +582,6 @@ class Layout(Categorizer):
         elif self.genomic_insertion is not None:
             self.register_genomic_insertion()
 
-            self.relevant_alignments = self.parsimonious_target_alignments + self.min_edit_distance_genomic_insertions
-
         elif self.partial_nonhomologous_donor_integration is not None:
             self.category = 'non-homologous donor'
             self.subcategory = 'complex'
@@ -582,7 +591,7 @@ class Layout(Categorizer):
         
         elif self.any_donor_specific_present:
             self.category = 'complex misintegration'
-            self.subcategory = 'other'
+            self.subcategory = 'complex misintegration'
             self.details = 'n/a'
             self.relevant_alignments = self.uncategorized_relevant_alignments
 
@@ -952,17 +961,19 @@ class Layout(Categorizer):
                     len(self.seq) - self.covered_by_primers_alignments.end <= 10
                    )
 
-    @memoized_property
-    def any_donor_specific_present(self):
+    def overlaps_donor_specific(self, al):
         ti = self.target_info
         if ti.donor is None:
             return False
-        elif (ti.donor, ti.donor_specific) not in ti.features:
-            return False
         else:
-            donor_specific = ti.features[ti.donor, ti.donor_specific]
-            als_to_check = self.parsimonious_and_gap_alignments
-            return any(sam.overlaps_feature(al, donor_specific, False) for al in als_to_check)
+            covered = interval.get_covered_on_ref(al)
+            overlap = covered & ti.donor_specific_intervals
+            return overlap.total_length > 0
+
+    @memoized_property
+    def any_donor_specific_present(self):
+        als_to_check = self.parsimonious_and_gap_alignments
+        return any(self.overlaps_donor_specific(al) for al in als_to_check)
 
     @memoized_property
     def single_merged_primer_alignment(self):
@@ -1510,76 +1521,47 @@ class Layout(Categorizer):
             summary = "5' and 3' blunt"
 
         else:
-            summary = 'uncategorized'
+            summary = 'incomplete'
+
+        # blunt isn't a meaningful concept for plasmid donors
+        if self.target_info.donor_type == 'plasmid':
+            if 'blunt' in summary:
+                summary = 'incomplete'
 
         return summary
 
     @memoized_property
-    def e_coli_integration(self):
-        assert self.has_integration
-
-        e_coli_alignments = [al for al in self.parsimonious_alignments if al.reference_name == 'e_coli_K12']
-
-        int_start = self.integration_interval.start
-        int_end = self.integration_interval.end
-
-        if len(self.parsimonious_donor_alignments) == 0:
-            if len(e_coli_alignments) == 1:
-                covered = interval.get_covered(e_coli_alignments[0])
-                if covered.start - int_start <= 10 and int_end - covered.end <= 10:
-                    return True
-
-        return False
-
-    @memoized_property
-    def flipped_donor(self):
-        return any(sam.get_strand(al) != self.strand for al in self.parsimonious_donor_alignments)
-    
-    @memoized_property
-    def messy_junction_description(self):
-        fields = []
-        for side in [5, 3]:
-            if self.junction_summary_per_side[side] == 'uncategorized':
-                #if self.donor_relative_to_arm['internal'][side] < 0:
-                #    fields += ["{0}' truncated".format(side)]
-                #elif self.donor_relative_to_arm['internal'][side] > 0:
-                #    fields += ["{0}' extended".format(side)]
-                pass
-
-        if len(fields) > 0:
-            description = ', '.join(fields)
-        else:
-            description = 'uncategorized'
-
-        return description
-
-    @memoized_property
-    def integration_summary(self):
+    def donor_specific_integration_alignments(self):
         integration_donor_als = []
 
         for al in self.parsimonious_donor_alignments:
-            covered = interval.get_covered(al)
-            if (self.integration_interval - covered).total_length == 0:
-                # If a single donor al covers the whole integration, use just it.
-                integration_donor_als = [al]
-                break
-            else:
-                covered_integration = self.integration_interval & interval.get_covered(al)
-                # Ignore als that barely extend past the homology arms.
-                if len(covered_integration) >= 5:
-                    integration_donor_als.append(al)
+            if self.overlaps_donor_specific(al):
+                covered = interval.get_covered(al)
+                if (self.integration_interval - covered).total_length == 0:
+                    # If a single donor al covers the whole integration, use just it.
+                    integration_donor_als = [al]
+                    break
+                else:
+                    covered_integration = self.integration_interval & interval.get_covered(al)
+                    # Ignore als that barely extend past the homology arms.
+                    if len(covered_integration) >= 5:
+                        integration_donor_als.append(al)
 
-        if len(integration_donor_als) == 0:
+        return integration_donor_als
+
+    @memoized_property
+    def integration_summary(self):
+        if len(self.donor_specific_integration_alignments) == 0:
             summary = 'other'
 
-        elif len(integration_donor_als) == 1:
-            covered_by_donor = interval.get_disjoint_covered(integration_donor_als)
+        elif len(self.donor_specific_integration_alignments) == 1:
+            donor_al = self.donor_specific_integration_alignments[0]
+            covered_by_donor = interval.get_covered(donor_al)
             uncovered_length = (self.integration_interval - covered_by_donor).total_length
 
             if uncovered_length > 10:
                 summary = 'other'
             else:
-                donor_al = integration_donor_als[0]
                 max_indel_length = sam.max_block_length(donor_al, {sam.BAM_CDEL, sam.BAM_CINS})
                 if max_indel_length > self.max_indel_allowed_in_donor:
                     summary = 'donor with indel'
@@ -1687,8 +1669,6 @@ class Layout(Categorizer):
         else:
             gap = long_unexplained_gaps[0]
 
-            relevant_ref_names = []
-
             covering_als = []
             for al in self.supplemental_alignments:
                 covered = interval.get_covered(al)
@@ -1745,7 +1725,8 @@ class Layout(Categorizer):
         self.subcategory = organism
         self.details = str(outcome)
 
-        self.relevant_alignments = self.parsimonious_target_alignments + self.min_edit_distance_genomic_insertions
+        alignments = self.parsimonious_target_alignments + self.min_edit_distance_genomic_insertions
+        self.relevant_alignments = interval.make_parsimonious(alignments)
 
     @memoized_property
     def one_sided_covering_als(self):
@@ -1940,7 +1921,7 @@ class Layout(Categorizer):
         covering_als = []
         for al in self.supplemental_alignments:
             covered = interval.get_covered(al)
-            if len(need_to_cover - covered) == 0:
+            if len(need_to_cover - covered) < 10:
                 covering_als.append(al)
                 
         if len(covering_als) == 0:
@@ -2014,7 +1995,7 @@ class NonoverlappingPairLayout():
         
         self.name = self.layouts['R1'].name
         self.query_name = self.name
-        
+
     @memoized_property
     def bridging_alignments(self):
         bridging_als = {
@@ -2286,7 +2267,7 @@ class NonoverlappingPairLayout():
                 self.details = 'n/a'
             elif junctions == set(['imperfect']):
                 self.category = 'complex misintegration'
-                self.subcategory = 'other'
+                self.subcategory = 'complex misintegration'
                 self.details = 'n/a'
 
             else:
