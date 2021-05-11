@@ -43,15 +43,39 @@ class DeletionOutcome(Outcome):
         return min_removed
 
     def classify_directionality(self, ti):
-        min_removed = self.get_min_removed(ti)
-        if min_removed['PAM-proximal'] > 0 and min_removed['PAM-distal'] > 0:
-            directionality = 'bidirectional'
-        elif min_removed['PAM-proximal'] > 0 and min_removed['PAM-distal'] <= 0:
-            directionality = 'PAM-proximal'
-        elif min_removed['PAM-proximal'] <= 0 and min_removed['PAM-distal'] > 0:
-            directionality = 'PAM-distal'
+        if ti.effector.name == 'SpCas9':
+            min_removed = self.get_min_removed(ti)
+
+            if min_removed['PAM-proximal'] > 0 and min_removed['PAM-distal'] > 0:
+                directionality = 'bidirectional'
+            elif min_removed['PAM-proximal'] > 0 and min_removed['PAM-distal'] <= 0:
+                directionality = 'PAM-proximal'
+            elif min_removed['PAM-proximal'] <= 0 and min_removed['PAM-distal'] > 0:
+                directionality = 'PAM-distal'
+            else:
+                directionality = 'ambiguous'
+        
+        elif ti.effector.name == 'Cpf1':
+            start = min(self.deletion.starts_ats)
+            end = max(self.deletion.ends_ats)
+            first_nick, second_nick = sorted(ti.cut_afters.values())
+            includes_first_nick = start - 0.5 <= first_nick + 0.5 <= end + 0.5
+            includes_second_nick = start - 0.5 <= second_nick + 0.5 <= end + 0.5
+
+            if not includes_first_nick and not includes_second_nick:
+                includes = 'spans neither'
+            elif includes_first_nick and not includes_second_nick:
+                includes = 'spans PAM-distal nick'
+            elif not includes_first_nick and includes_second_nick:
+                includes = 'spans PAM-proximal nick'
+            else:
+                includes = 'spans both nicks'
+
+            directionality = includes
+
         else:
-            directionality = 'ambiguous'
+            raise NotImplementedError(ti.effector.name)
+
         return directionality
 
 class InsertionOutcome(Outcome):
@@ -83,7 +107,7 @@ class HDROutcome(Outcome):
             deletions = []
         else:
             deletions = [DegenerateDeletion.from_string(s) for s in donor_deletions_string.split(';')]
-        return HDROutcome(SNV_string, deletions)
+        return cls(SNV_string, deletions)
 
     def __str__(self):
         donor_deletions_string = ';'.join(str(d) for d in self.donor_deletions)
@@ -102,7 +126,7 @@ class HDRPlusDeletionOutcome(Outcome):
         deletion_outcome = DeletionOutcome.from_string(deletion_string)
         HDR_outcome = HDROutcome.from_string(HDR_string)
 
-        return HDRPlusDeletionOutcome(HDR_outcome, deletion_outcome)
+        return cls(HDR_outcome, deletion_outcome)
 
     def __str__(self):
         return f'{self.deletion_outcome};{self.HDR_outcome}'
@@ -122,7 +146,7 @@ class DeletionPlusDuplicationOutcome(Outcome):
         duplication_outcome = DuplicationOutcome.from_string(duplication_string)
         deletion_outcome = DeletionOutcome.from_string(deletion_string)
 
-        return DeletionPlusDuplicationOutcome(deletion_outcome, duplication_outcome)
+        return cls(deletion_outcome, duplication_outcome)
 
     def __str__(self):
         return f'{self.deletion_outcome};{self.duplication_outcome}'
@@ -141,7 +165,7 @@ class MultipleDeletionOutcome(Outcome):
         deletion_strings = details_string.split(';', 1)
         deletion_outcomes = [DeletionOutcome.from_string(s) for s in deletion_strings]
 
-        return MultipleDeletionOutcome(deletion_outcomes)
+        return cls(deletion_outcomes)
 
     def __str__(self):
         return ';'.join(map(str, self.deletion_outcomes))
@@ -161,7 +185,7 @@ class HDRPlusInsertionOutcome(Outcome):
         insertion_outcome = InsertionOutcome.from_string(insertion_string)
         HDR_outcome = HDROutcome.from_string(HDR_string)
 
-        return HDRPlusInsertionOutcome(HDR_outcome, insertion_outcome)
+        return cls(HDR_outcome, insertion_outcome)
 
     def __str__(self):
         return f'{self.insertion_outcome};{self.HDR_outcome}'
@@ -177,7 +201,7 @@ class MismatchOutcome(Outcome):
     @classmethod
     def from_string(cls, details_string):
         snvs = SNVs.from_string(details_string)
-        return MismatchOutcome(snvs)
+        return cls(snvs)
 
     def __str__(self):
         return str(self.snvs)
@@ -192,7 +216,7 @@ class TruncationOutcome(Outcome):
 
     @classmethod
     def from_string(cls, details_string):
-        return TruncationOutcome(int(details_string))
+        return cls(int(details_string))
 
     def __str__(self):
         return str(self.edge)
@@ -210,7 +234,7 @@ class DeletionPlusMismatchOutcome(Outcome):
         deletion_string, mismatch_string = details_string.split(';', 1)
         deletion_outcome = DeletionOutcome.from_string(deletion_string)
         mismatch_outcome = MismatchOutcome.from_string(mismatch_string)
-        return DeletionPlusMismatchOutcome(deletion_outcome, mismatch_outcome)
+        return cls(deletion_outcome, mismatch_outcome)
 
     def __str__(self):
         return f'{self.deletion_outcome};{self.mismatch_outcome}'
@@ -230,7 +254,7 @@ class InsertionPlusMismatchOutcome(Outcome):
         insertion_string, mismatch_string = details_string.split(';', 1)
         insertion_outcome = InsertionOutcome.from_string(insertion_string)
         mismatch_outcome = MismatchOutcome.from_string(mismatch_string)
-        return DeletionPlusMismatchOutcome(insertion_outcome, mismatch_outcome)
+        return cls(insertion_outcome, mismatch_outcome)
 
     def __str__(self):
         return f'{self.insertion_outcome};{self.mismatch_outcome}'
@@ -239,6 +263,27 @@ class InsertionPlusMismatchOutcome(Outcome):
         shifted_insertion = self.insertion_outcome.perform_anchor_shift(anchor)
         shifted_mismatch = self.mismatch_outcome.perform_anchor_shift(anchor)
         return type(self)(shifted_insertion, shifted_mismatch)
+
+class InsertionWithDeletionOutcome(Outcome):
+    ''' Deletion with at the same place. '''
+    def __init__(self, insertion_outcome, deletion_outcome):
+        self.insertion_outcome = insertion_outcome
+        self.deletion_outcome = deletion_outcome
+
+    @classmethod
+    def from_string(cls, details_string):
+        insertion_string, deletion_string = details_string.split(';', 1)
+        insertion_outcome = InsertionOutcome.from_string(insertion_string)
+        deletion_outcome = DeletionOutcome.from_string(deletion_string)
+        return cls(insertion_outcome, deletion_outcome)
+
+    def __str__(self):
+        return f'{self.insertion_outcome};{self.deletion_outcome}'
+
+    def perform_anchor_shift(self, anchor):
+        shifted_insertion = self.insertion_outcome.perform_anchor_shift(anchor)
+        shifted_deletion = self.deletion_outcome.perform_anchor_shift(anchor)
+        return type(self)(shifted_insertion, shifted_deletion)
 
 NAN_INT = np.iinfo(np.int64).min
 
