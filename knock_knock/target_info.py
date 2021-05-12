@@ -78,6 +78,8 @@ class TargetInfo():
         self.donor_specific = self.manifest.get('donor_specific', 'GFP11') 
         self.supplemental_indices = supplemental_indices
 
+        self.genome_source = self.manifest.get('genome_source')
+
         self.infer_homology_arms = infer_homology_arms
 
         self.default_HAs = self.manifest.get('default_HAs')
@@ -206,19 +208,20 @@ TargetInfo:
         with open(self.fns['protospacer_fasta'], 'w') as fh:
             for (target, sgRNA_name), feature in sorted(self.all_sgRNA_features.items()):
                 seq = self.target_sequence[feature.start:feature.end + 1]
+                if feature.strand == '-':
+                    seq = utilities.reverse_complement(seq)
                 record = fasta.Read(sgRNA_name, seq)
                 fh.write(str(record))
 
-    def map_protospacers(self):
-        indices = {
-            'hg19': '/nvme/indices/refdata-cellranger-hg19-1.2.0/star',
-            'GRCh38': '/nvme/indices/refdata-cellranger-GRCh38-1.2.0/star/',
-        }
+    def map_protospacers(self, index_name):
+        indices = locate_supplemental_indices(self.base_dir)
 
-        for index_name, index_dir in indices.items():
-            output_prefix = str(self.fns['protospacer_STAR_prefix_template']).format(index_name)
-            bam_fn = str(self.fns['protospacer_bam_template']).format(index_name)
-            mapping_tools.map_STAR(self.fns['protospacer_fasta'], index_dir, output_prefix, mode='guide_alignment', bam_fn=bam_fn)
+        index_dir = indices[index_name]['STAR']
+        output_prefix = str(self.fns['protospacer_STAR_prefix_template']).format(index_name)
+        bam_fn = str(self.fns['protospacer_bam_template']).format(index_name)
+        mapping_tools.map_STAR(self.fns['protospacer_fasta'], index_dir, output_prefix, mode='guide_alignment', bam_fn=bam_fn)
+
+        mapping_tools.clean_up_STAR_output(output_prefix)
 
     def mapped_protospacer_locations(self, sgRNA_name, index_name):
         bam_fn = str(self.fns['protospacer_bam_template']).format(index_name)
@@ -227,18 +230,17 @@ TargetInfo:
         with pysam.AlignmentFile(bam_fn) as bam_fh:
             for al in bam_fh:
                 if al.query_name == sgRNA_name:
-                    locations.add((al.reference_name, al.reference_start))
+                    locations.add((al.reference_name, al.reference_start, sam.get_strand(al)))
 
         return locations
     
-    @memoized_property
-    def mapped_protospacer_location(self):
+    @memoized_with_key
+    def mapped_protospacer_location(self, index_name):
         if len(self.sgRNAs) > 1:
             raise ValueError
         else:
             sgRNA = self.sgRNAs[0]
 
-        index_name = 'GRCh38'
         locations = self.mapped_protospacer_locations(sgRNA, index_name)
         
         if len(locations) > 1:
@@ -247,6 +249,39 @@ TargetInfo:
             location = locations.pop()
 
         return location
+
+    @memoized_property
+    def reference_name_in_genome_source(self):
+        if self.genome_source is None:
+            return None
+        else:
+            rname, pos, strand = self.mapped_protospacer_location(self.genome_source)
+            return f'{self.genome_source}_{rname}'
+
+    def convert_genomic_alignment_to_target_coordinates(self, al):
+        try:
+            organism, al = self.remove_organism_from_alignment(al)
+        except:
+            return False
+
+        protospacer_rname, protospacer_start, protospacer_strand = self.mapped_protospacer_location(organism)
+
+        if al.reference_name != protospacer_rname:
+            return False
+        else:
+            if self.sgRNA_feature.strand == protospacer_strand:
+                # The target is in the same orientation as the reference genome,
+                # so coordinate transform is a simple offset.
+                offset = self.sgRNA_feature.start - protospacer_start
+                return {'start': al.reference_start + offset, 'end': al.reference_end + offset}
+            else:
+                # The target is in the opposite orientation as the reference genome,
+                # so coordinate transform is more complex.
+                if self.sgRNA_feature.strand == '+':
+                    raise NotImplementedError
+                else:
+                    offset = self.sgRNA_feature.end + protospacer_start
+                    return {'start': offset - al.reference_end, 'end': offset - al.reference_start}
 
     def make_bowtie2_index(self):
         mapping_tools.build_bowtie2_index(self.fns['bowtie2_index'], [self.fns['ref_fasta']])

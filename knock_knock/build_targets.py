@@ -1,3 +1,4 @@
+import shutil
 import subprocess
 import sys
 import warnings
@@ -913,12 +914,18 @@ def build_target_info(base_dir, info, all_index_locations,
                 [target_name, 'HA_2'],
             ])
 
+    manifest['genome_source'] = genome
+
     manifest_fn.write_text(yaml.dump(manifest, default_flow_style=False))
         
     gb_records = list(best_candidate['gb_Records'].values()) + extra_Records
     ti = target_info.TargetInfo(base_dir, name, gb_records=gb_records)
     ti.make_references()
+    ti.make_protospacer_fastas()
+    ti.map_protospacers(genome)
     ti.identify_degenerate_indels()
+
+    shutil.rmtree(protospacer_dir)
 
 def load_pegRNAs(base_dir):
     base_dir = Path(base_dir)

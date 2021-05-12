@@ -353,6 +353,9 @@ class ReadDiagram():
         for name, color in self.color_overrides.items():
             self.ref_name_to_color[name] = color
 
+        if self.target_info.reference_name_in_genome_source is not None:
+            self.ref_name_to_color[self.target_info.reference_name_in_genome_source] = self.ref_name_to_color[self.target_info.target]
+
         self.max_y = self.gap_between_als
         self.min_y = -self.gap_between_als 
 
@@ -480,6 +483,7 @@ class ReadDiagram():
                     offsets[name] += sign
 
         for ref_name, ref_alignments in by_reference_name.items():
+
             hide_multiplier = 1
             if self.hide_non_target_alignments and ref_name != self.target_info.target:
                 hide_multiplier = 0
@@ -544,14 +548,20 @@ class ReadDiagram():
                 y = (offset + i * np.sign(offset)) * self.gap_between_als
                 
                 # Annotate the ends of alignments with reference position numbers and vertical lines.
+                r_start, r_end = alignment.reference_start, alignment.reference_end - 1
+                if ref_name == self.target_info.reference_name_in_genome_source:
+                    converted_coords = self.target_info.convert_genomic_alignment_to_target_coordinates(alignment)
+                    if converted_coords:
+                        r_start = converted_coords['start']
+                        r_end = converted_coords['end'] - 1
 
                 for x, which, offset_function in ((start, 'start', left_offset), (end, 'end', right_offset)):
                     final_x = offset_function(x)
 
                     if (which == 'start' and strand == '+') or (which == 'end' and strand == '-'):
-                        r = alignment.reference_start
+                        r = r_start
                     else:
-                        r = alignment.reference_end - 1
+                        r = r_end
 
                     ax.plot([final_x, final_x], [0, y], color=color, alpha=0.3 * alpha_multiplier)
 
@@ -561,6 +571,7 @@ class ReadDiagram():
                         kwargs = {'ha': 'left', 'xytext': (2, 0)}
 
                     if self.draw_edge_numbers or ref_name not in (self.target_info.target, self.target_info.donor):
+
                         ax.annotate(f'{r:,}',
                                     xy=(final_x, y),
                                     xycoords='data',
