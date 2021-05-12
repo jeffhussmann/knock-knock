@@ -406,7 +406,7 @@ class Layout(Categorizer):
         self.subcategory = organism
         self.details = 'n/a'
 
-        self.relevant_alignments = self.parsimonious_target_alignments + self.nonspecific_amplification
+        self.relevant_alignments = interval.make_parsimonious(self.parsimonious_target_alignments + self.nonspecific_amplification)
     
     def categorize(self):
         if self.target_info.donor is None and self.target_info.nonhomologous_donor is None:
@@ -1725,7 +1725,7 @@ class Layout(Categorizer):
         self.subcategory = organism
         self.details = str(outcome)
 
-        alignments = self.parsimonious_target_alignments + self.min_edit_distance_genomic_insertions
+        alignments = self.parsimonious_and_gap_alignments + self.parsimonious_donor_alignments + self.min_edit_distance_genomic_insertions
         self.relevant_alignments = interval.make_parsimonious(alignments)
 
     @memoized_property
@@ -1927,7 +1927,7 @@ class Layout(Categorizer):
         if len(covering_als) == 0:
             covering_als = None
             
-        return covering_als
+        return interval.make_parsimonious(covering_als)
 
     @memoized_property
     def uncategorized_relevant_alignments(self):
