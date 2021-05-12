@@ -395,7 +395,7 @@ class Experiment:
 
             with pysam.AlignmentFile(bam_fn) as all_mappings:
                 header = all_mappings.header
-                new_references = ['{}_{}'.format(index_name, ref) for ref in header.references]
+                new_references = [f'{index_name}_{ref}' for ref in header.references]
                 new_header = pysam.AlignmentHeader.from_references(new_references, header.lengths)
 
                 by_name_fn = self.fns_by_read_type['supplemental_bam_by_name'][read_type, index_name]
@@ -415,21 +415,7 @@ class Experiment:
 
                         by_name_sorter.write(al)
 
-            suffixes_to_clean_up = [
-                'Log.final.out',
-                'Log.out',
-                'Log.progress.out',
-                'SJ.out.tab',
-                '_STARtmp',
-            ]
-
-            for suffix in suffixes_to_clean_up:
-                full_fn = Path(str(STAR_prefix) + suffix)
-                if full_fn.exists():
-                    if full_fn.is_dir():
-                        full_fn.rmdir()
-                    else:
-                        full_fn.unlink()
+            mapping_tools.cleanup_STAR_output(STAR_prefix)
 
             Path(bam_fn).unlink()
 
