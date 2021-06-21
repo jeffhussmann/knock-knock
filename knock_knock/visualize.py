@@ -25,7 +25,7 @@ class ReadDiagram():
                  draw_qualities=False,
                  draw_mismatches=True,
                  draw_polyA=False,
-                 draw_sequence=True,
+                 draw_sequence=False,
                  max_qual=41,
                  process_mappings=None,
                  detect_orientation=False,
@@ -67,7 +67,7 @@ class ReadDiagram():
                  hide_xticks=False,
                  inferred_amplicon_length=None,
                  manual_anchors=None,
-                 prevent_fade=False,
+                 manual_fade=None,
                  **kwargs,
                 ):
 
@@ -103,7 +103,7 @@ class ReadDiagram():
         self.manual_x_lims = manual_x_lims
         self.hide_xticks = hide_xticks
         self.inferred_amplicon_length = inferred_amplicon_length
-        self.prevent_fade = prevent_fade
+        self.manual_fade = manual_fade
         self.label_differences = label_differences
         self.draw_arrowheads = kwargs.get('draw_arrowheads', True)
 
@@ -897,7 +897,9 @@ class ReadDiagram():
         if self.draw_sequence:
             ax.tick_params(length=0, pad=self.font_sizes['sequence'] * 1.5)
         else:
-            ax.tick_params(labelsize=self.font_sizes['number'], pad=2)
+            ax.tick_params(pad=2)
+
+        ax.tick_params(labelsize=self.font_sizes['number'])
 
         if self.draw_qualities:
             def quals_to_ys(quals):
@@ -1194,12 +1196,16 @@ class ReadDiagram():
             rgba = matplotlib.colors.to_rgba(color)
             image = np.expand_dims(np.array([rgba]*1000), 0)
 
-            if fade_left and not self.prevent_fade:
+            if self.manual_fade is not None:
+                fade_left = self.manual_fade[ref_name]
+                fade_right = self.manual_fade[ref_name]
+
+            if fade_left:
                 left_alpha = 0
             else:
                 left_alpha = 1
 
-            if fade_right and not self.prevent_fade:
+            if fade_right:
                 right_alpha = 0
             else:
                 right_alpha = 1
