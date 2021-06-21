@@ -76,6 +76,8 @@ class TargetInfo():
             self.nonhomologous_donor = nonhomologous_donor
 
         self.donor_specific = self.manifest.get('donor_specific', 'GFP11') 
+        if supplemental_indices is None:
+            supplemental_indices = {}
         self.supplemental_indices = supplemental_indices
 
         self.genome_source = self.manifest.get('genome_source')
@@ -138,7 +140,7 @@ TargetInfo:
 
     @memoized_property
     def supplemental_headers(self):
-       return {name: sam.header_from_STAR_index(d['STAR']) for name, d in self.supplemental_indices.items()}
+        return {name: sam.header_from_STAR_index(d['STAR']) for name, d in self.supplemental_indices.items()}
 
     @memoized_property
     def genomic_region_fetchers(self):
