@@ -6,7 +6,6 @@ from itertools import chain, islice
 from collections import defaultdict
 from contextlib import ExitStack
 
-import pandas as pd
 import pysam
 
 from knock_knock.experiment import Experiment, ensure_list
