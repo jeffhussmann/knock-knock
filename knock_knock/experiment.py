@@ -477,7 +477,6 @@ class Experiment:
 
             temp_bam_fn.unlink()
 
-
     def combine_alignments(self, read_type=None):
         for by_name in [True]:
             if by_name:
@@ -1347,7 +1346,8 @@ p {{
             self.generate_outcome_example_figures(outcome=outcome, num_examples=num_examples, **kwargs)
             
     def explore(self, by_outcome=True, **kwargs):
-        return explore.explore(self.base_dir, by_outcome=by_outcome, target=self.target_name, experiment=self, **kwargs)
+        explorer = explore.SingleExperimentExplorer(self, by_outcome, **kwargs)
+        return explorer.layout
 
     def get_read_layout(self, read_id, qname_to_als=None, fn_key='bam_by_name', outcome=None, read_type=None):
         # qname_to_als is to allow caching of many sets of als (e.g. for all
