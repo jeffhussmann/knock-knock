@@ -205,7 +205,12 @@ class Layout(Categorizer):
 
         self.ignore_target_outside_amplicon = True
 
-        self.inferred_amplicon_length = None
+        if self.seq is None:
+            length = 0
+        else:
+            length = len(self.seq)
+
+        self.inferred_amplicon_length = length
 
     @memoized_property
     def target_alignments(self):

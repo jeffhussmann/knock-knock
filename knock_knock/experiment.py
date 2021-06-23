@@ -2,9 +2,11 @@ import matplotlib
 if 'inline' not in matplotlib.get_backend():
     matplotlib.use('Agg')
 
+import datetime
 import heapq
 import shutil
 import sys
+
 from pathlib import Path
 from itertools import islice, chain
 from collections import defaultdict, Counter
@@ -110,6 +112,8 @@ class Experiment:
 
             'length_ranges_dir': self.results_dir / 'length_ranges',
             'outcome_browser': self.results_dir / 'outcome_browser.html',
+
+            'snapshots_dir': self.results_dir / 'snapshots',
         }
 
         def make_length_range_fig_fn(start, end):
@@ -132,6 +136,9 @@ class Experiment:
             center_on_primers=True,
         )
 
+        # count_index_levels are level names for index on outcome counts.
+        self.count_index_levels = ['category', 'subcategory', 'details']
+
     @memoized_property
     def length_to_store_unknown(self):
         return int(self.max_relevant_length * 1.05)
@@ -143,9 +150,9 @@ class Experiment:
     def load_description(self):
         return load_sample_sheet(self.base_dir, self.batch)[self.sample_name]
 
-    @memoized_property
+    @property
     def categorizer(self):
-        # This needs to be a memoized_property because subclasses use it as one.
+        # This needs to be a property because subclasses use it as one.
         return layout_module.Layout
 
     @memoized_property
@@ -275,17 +282,41 @@ class Experiment:
     def read_lengths(self):
         return np.loadtxt(self.fns['lengths'], dtype=int)
     
-    def count_read_lengths(self):
+    def generate_read_lengths(self):
         lengths = sum(self.outcome_stratified_lengths.values())
         np.savetxt(self.fns['lengths'], lengths, '%d')
 
-    def count_outcomes(self):
+    def generate_outcome_counts(self):
+        ''' Note that metadata lines start with '#' so category names can't. '''
+        counts_fn = self.fns['outcome_counts']
+
+        with open(counts_fn, 'w') as fh:
+            for fn_key, metadata_lines in self.outcome_metadata():
+                fh.write(f'# Metadata from {fn_key}:\n') 
+                for line in metadata_lines:
+                    fh.write(line)
+
         counts = Counter()
         for outcome in self.outcome_iter():
             counts[outcome.category, outcome.subcategory, outcome.details] += 1
 
         counts = pd.Series(counts).sort_values(ascending=False)
-        counts.to_csv(self.fns['outcome_counts'], sep='\t', header=False)
+        counts.to_csv(counts_fn, mode='a', sep='\t', header=False)
+
+    def record_snapshot(self):
+        ''' Make copies of per-read outcome categorizations and
+        outcome counts to allow comparison when categorization code
+        changes.
+        '''
+
+        snapshot_name = f'{datetime.datetime.now():%Y-%m-%d_%H%M%S}'
+        snapshot_dir = self.fns['snapshots_dir'] / snapshot_name
+        snapshot_dir.mkdir(parents=True)
+
+        fn_keys_to_snapshot = self.outcome_fn_keys + ['outcome_counts']
+
+        for key in fn_keys_to_snapshot:
+            shutil.copy(self.fns[key], snapshot_dir)
 
     def length_ranges(self, outcome=None):
         if outcome is None:
@@ -505,13 +536,14 @@ class Experiment:
         fn = self.fns['outcome_counts']
         if fn.exists() and fn.stat().st_size > 0:
             counts = pd.read_csv(fn,
-                                 index_col=(0, 1, 2),
+                                 index_col=tuple(range(len(self.count_index_levels))),
                                  header=None,
                                  squeeze=True,
                                  na_filter=False,
                                  sep='\t',
+                                 comment='#',
                                 )
-            counts.index.names = ['category', 'subcategory', 'details']
+            counts.index.names = self.count_index_levels
         else:
             counts = None
 
@@ -569,6 +601,8 @@ class Experiment:
             read_type = self.default_read_type
 
         with self.fns['outcome_list'].open('w') as fh:
+            fh.write(f'## Generated at {utilities.current_time_string()}\n')
+
             alignment_groups = self.alignment_groups(fn_key, read_type=read_type)
 
             if max_reads is not None:
@@ -582,27 +616,14 @@ class Experiment:
             for name, als in self.progress(alignment_groups, desc=description):
                 try:
                     layout = self.categorizer(als, self.target_info, mode=self.layout_mode)
-                    if self.target_info.donor is not None or self.target_info.nonhomologous_donor is not None:
-                        category, subcategory, details, *rest = layout.categorize()
-                    else:
-                        category, subcategory, details, *rest = layout.categorize_no_donor()
+                    layout.categorize()
                 except:
                     print(self.sample_name, name)
                     raise
                 
-                outcomes[category, subcategory].append(name)
+                outcomes[layout.category, layout.subcategory].append(name)
 
-                if layout.seq is None:
-                    length = 0
-                else:
-                    length = len(layout.seq)
-
-                outcome = self.final_Outcome(name,
-                                             length,
-                                             category,
-                                             subcategory,
-                                             details,
-                                            )
+                outcome = self.final_Outcome.from_layout(layout)
                 fh.write(f'{outcome}\n')
 
         # To make plotting easier, for each outcome, make a file listing all of
@@ -850,8 +871,31 @@ class Experiment:
 
             chained = chain.from_iterable(fhs)
             for line in chained:
+                # Metadata lines start with '##'.
+                if line.startswith('##'):
+                    continue
+
                 outcome = self.final_Outcome.from_line(line)
                 yield outcome
+
+    def outcome_metadata(self):
+        ''' Extract metadata lines from all outcome files. '''
+        all_metadata_lines = []
+
+        for key in self.outcome_fn_keys:
+            fn = self.fns[key]
+            if fn.exists():
+                metadata_lines = []
+                with open(fn) as fh:
+                    for line in fh:
+                        # Metadata lines start with '##'.
+                        if line.startswith('##'):
+                            metadata_lines.append(line)
+
+                all_metadata_lines.append((key, metadata_lines))
+
+        return all_metadata_lines
+
 
     @memoized_property
     def outcome_stratified_lengths(self):

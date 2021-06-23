@@ -188,6 +188,8 @@ class IlluminaExperiment(Experiment):
         outcomes = defaultdict(list)
 
         with self.fns['no_overlap_outcome_list'].open('w') as fh:
+            fh.write(f'## Generated at {utilities.current_time_string()}\n')
+
             alignment_groups = self.no_overlap_alignment_groups()
 
             if max_reads is not None:
@@ -246,6 +248,8 @@ class IlluminaExperiment(Experiment):
              gzip.open(fns['R2_no_overlap'], 'wt', compresslevel=1) as R2_fh, \
              open(self.fns['too_short_outcome_list'], 'w') as too_short_fh:
 
+            too_short_fh.write(f'## Generated at {utilities.current_time_string()}\n')
+
             description = 'Stitching read pairs'
             for R1, R2 in self.progress(self.read_pairs, desc=description):
                 if R1.name != R2.name:
@@ -260,6 +264,7 @@ class IlluminaExperiment(Experiment):
                 stitched = sw.stitch_read_pair(R1, R2, before_R1, before_R2, indel_penalty=-1000)
 
                 if len(stitched) == self.R1_read_length + self.R2_read_length:
+                    # No overlap was detected.
                     R1_fh.write(str(R1))
                     R2_fh.write(str(R2))
 
@@ -344,8 +349,8 @@ class IlluminaExperiment(Experiment):
                 self.categorize_outcomes(read_type='stitched')
                 self.categorize_no_overlap_outcomes()
 
-                self.count_outcomes()
-                self.count_read_lengths()
+                self.generate_outcome_counts()
+                self.generate_read_lengths()
 
                 self.extract_donor_microhomology_lengths()
 
