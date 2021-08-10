@@ -970,6 +970,8 @@ class Layout(Categorizer):
         ti = self.target_info
         if ti.donor is None:
             return False
+        elif al.reference_name != ti.donor:
+            return False
         else:
             covered = interval.get_covered_on_ref(al)
             overlap = covered & ti.donor_specific_intervals
