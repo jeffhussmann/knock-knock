@@ -424,6 +424,7 @@ class Experiment:
                                             mode='permissive',
                                            )
 
+            saved_verbosity = pysam.set_verbosity(0)
             with pysam.AlignmentFile(bam_fn) as all_mappings:
                 header = all_mappings.header
                 new_references = [f'{index_name}_{ref}' for ref in header.references]
@@ -445,8 +446,9 @@ class Experiment:
                         #    continue
 
                         by_name_sorter.write(al)
+            pysam.set_verbosity(saved_verbosity)
 
-            mapping_tools.cleanup_STAR_output(STAR_prefix)
+            mapping_tools.clean_up_STAR_output(STAR_prefix)
 
             Path(bam_fn).unlink()
 
@@ -467,8 +469,7 @@ class Experiment:
 
             mapping_tools.map_minimap2(fastq_fn, index, temp_bam_fn)
 
-            all_mappings = pysam.AlignmentFile(temp_bam_fn)
-            header = all_mappings.header
+            header = sam.get_header(temp_bam_fn)
             new_references = [f'{index_name}_{ref}' for ref in header.references]
             new_header = pysam.AlignmentHeader.from_references(new_references, header.lengths)
 
@@ -480,7 +481,8 @@ class Experiment:
 
             # Unless I am missing an option, minimap2 omits seq and qual for mapped reads.
             # Add them back.
-            with by_name_sorter:
+            saved_verbosity = pysam.set_verbosity(0)
+            with pysam.AlignmentFile(temp_bam_fn) as all_mappings, by_name_sorter:
                 al_groups = sam.grouped_by_name(all_mappings)
                 reads = self.reads_by_type(read_type)
                 for (qname, als), read in zip(al_groups, reads):
@@ -505,6 +507,7 @@ class Experiment:
                             al.query_qualities = qual_rc
 
                         by_name_sorter.write(al)
+            pysam.set_verbosity(saved_verbosity)
 
             temp_bam_fn.unlink()
 
@@ -635,6 +638,7 @@ class Experiment:
 
         full_bam_fn = self.fns_by_read_type[fn_key][read_type]
 
+        saved_verbosity = pysam.set_verbosity(0)
         with pysam.AlignmentFile(full_bam_fn) as full_bam_fh:
         
             for outcome, qnames in outcomes.items():
@@ -659,6 +663,7 @@ class Experiment:
                 if al.query_name in qname_to_outcome:
                     outcome = qname_to_outcome[al.query_name]
                     bam_fhs[outcome].write(al)
+        pysam.set_verbosity(saved_verbosity)
 
         for outcome, fh in bam_fhs.items():
             fh.close()

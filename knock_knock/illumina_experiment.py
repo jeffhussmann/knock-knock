@@ -173,8 +173,10 @@ class IlluminaExperiment(Experiment):
             R1_fn_key = 'bam_by_name'
             R2_fn_key = 'bam_by_name'
 
+        saved_verbosity = pysam.set_verbosity(0)
         R1_groups = self.alignment_groups(outcome=outcome, fn_key=R1_fn_key, read_type=R1_read_type)
         R2_groups = self.alignment_groups(outcome=outcome, fn_key=R2_fn_key, read_type=R2_read_type)
+        pysam.set_verbosity(saved_verbosity)
 
         group_pairs = zip(R1_groups, R2_groups)
 
