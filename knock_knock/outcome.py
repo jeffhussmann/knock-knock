@@ -1,5 +1,6 @@
 import numpy as np
 
+import knock_knock.outcome
 from knock_knock.target_info import DegenerateDeletion, DegenerateInsertion, SNV, SNVs
 
 class Outcome:
@@ -394,3 +395,18 @@ class DuplicationOutcome(Outcome):
     def perform_anchor_shift(self, anchor):
         shifted_ref_junctions = [([l - anchor for l in lefts], [r - anchor for r in rights]) for lefts, rights in self.ref_junctions]
         return type(self)(shifted_ref_junctions)
+
+def add_directionalities_to_deletions(outcomes, target_info):
+    combined_categories = []
+
+    for category, subcategory, details in outcomes:
+        if category == 'deletion':
+            deletion = knock_knock.outcome.DeletionOutcome.from_string(details).undo_anchor_shift(target_info.anchor)
+            directionality = deletion.classify_directionality(target_info)
+            combined_category = f'{category}, {directionality}'
+        else:
+            combined_category = category
+            
+        combined_categories.append(combined_category)
+
+    return combined_categories
