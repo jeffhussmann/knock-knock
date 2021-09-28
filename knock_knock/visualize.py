@@ -26,6 +26,7 @@ class ReadDiagram():
                  draw_mismatches=True,
                  draw_polyA=False,
                  draw_sequence=False,
+                 draw_target_sequence=False,
                  max_qual=41,
                  process_mappings=None,
                  detect_orientation=False,
@@ -80,6 +81,7 @@ class ReadDiagram():
         self.draw_mismatches = draw_mismatches
         self.draw_polyA = draw_polyA
         self.draw_sequence = draw_sequence
+        self.draw_target_sequence = draw_target_sequence
         self.max_qual = max_qual
         self.process_mappings = process_mappings
         self.detect_orientation = detect_orientation
@@ -1287,8 +1289,8 @@ class ReadDiagram():
                              size=self.font_sizes['ref_label'],
                             )
 
-            # Draw the cut site(s).
             if ref_name == ti.target:
+                # Draw the cut site(s).
                 for cut_after_name, cut_after in ti.cut_afters.items():
                     cut_after_x = ref_p_to_x(cut_after + 0.5)
 
@@ -1330,7 +1332,25 @@ class ReadDiagram():
                                         va='top' if ref_y < 0 else 'bottom',
                                         size=self.font_sizes['ref_label'],
                                        )
-            
+
+                if self.draw_target_sequence:
+                    target_sequence = ti.reference_sequences[ti.target]
+                    
+                    seq_kwargs = dict(family='monospace',
+                                      size=self.font_sizes['sequence'],
+                                      ha='center',
+                                      textcoords='offset points',
+                                      va='top',
+                                      xytext=(0, -2 * self.size_multiple),
+                                     )
+
+                    start = int(np.ceil(ref_start))
+                    end = int(np.floor(ref_end))
+                    for ref_p in range(start, end):
+                        x = ref_p_to_x(ref_p)
+                        b = target_sequence[ref_p]
+                        self.ax.annotate(b, xy=(x, ref_y), **seq_kwargs)
+                    
         self.ax.set_ylim(self.min_y - 0.1 * self.height, self.max_y + 0.1 * self.height)
 
     @property
