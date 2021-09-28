@@ -432,6 +432,19 @@ TargetInfo:
             return self.sgRNA_features[self.primary_sgRNA]
 
     @memoized_property
+    def sgRNA_sequence(self):
+        if self.sgRNA_feature is None:
+            return None
+        else:
+            sgRNA = self.sgRNA_feature
+            sgRNA_seq = self.target_sequence[sgRNA.start:sgRNA.end + 1]
+            if sgRNA.strand == '-':
+                sgRNA_seq = utilities.reverse_complement(sgRNA_seq)
+
+            return sgRNA_seq
+
+
+    @memoized_property
     def all_sgRNA_features(self):
         # Note: features are processed upstream of this to separate 'sgRNA' from name of effector
         return {name: feature for name, feature in self.features.items() if feature.feature == 'sgRNA'}
