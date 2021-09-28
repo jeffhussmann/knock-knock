@@ -20,8 +20,11 @@ def OutcomeRecord_factory(columns_arg, converters_arg):
             return cls(*fields)
 
         @classmethod
-        def from_layout(cls, layout):
-            args = [getattr(layout, k) for k in columns_arg]
+        def from_layout(cls, layout, **overrides):
+            ''' Use case for overrides is providing a specific read name
+            to a layout looked up from a common sequences dictionary.
+            '''
+            args = [overrides[k] if k in overrides else getattr(layout, k) for k in columns_arg]
             return cls(*args)
 
         @property
