@@ -48,6 +48,7 @@ class TargetInfo():
                  supplemental_indices=None,
                  gb_records=None,
                  infer_homology_arms=False,
+                 target=None,
                 ):
         self.name = name
         self.base_dir = base_dir
@@ -57,7 +58,10 @@ class TargetInfo():
         with manifest_fn.open() as manifest_fh:
             self.manifest = yaml.safe_load(manifest_fh)
 
-        self.target = self.manifest['target']
+        if target is None:
+            target = self.manifest.get('target')
+        self.target = target
+
         self.sources = self.manifest['sources']
         self.gb_records = gb_records
 
