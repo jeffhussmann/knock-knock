@@ -370,8 +370,18 @@ class Layout(Categorizer):
             left_junction = sam.find_best_query_switch_after(left_target_al, donor_al, ti.target_sequence, ti.donor_sequence, min)
             right_junction = sam.find_best_query_switch_after(donor_al, right_target_al, ti.donor_sequence, ti.target_sequence, max)
 
-            target_edge_before = sam.crop_al_to_query_int(left_target_al, 0, left_junction['switch_after']).reference_end - 1
-            target_edge_after = sam.crop_al_to_query_int(right_target_al, right_junction['switch_after'] + 1, np.inf).reference_start
+            left_target_al_cropped = sam.crop_al_to_query_int(left_target_al, 0, left_junction['switch_after'])
+            if left_target_al_cropped is not None:
+                target_edge_before = left_target_al_cropped.reference_end - 1
+            else:
+                # This is an error condition.
+                target_edge_before = -1
+
+            right_target_al_cropped = sam.crop_al_to_query_int(right_target_al, right_junction['switch_after'] + 1, np.inf)
+            if right_target_al_cropped is not None:
+                target_edge_after = right_target_al_cropped.reference_start
+            else:
+                target_edge_after = -1
 
             donor_strand = sam.get_strand(donor_al)
         else:
@@ -381,8 +391,17 @@ class Layout(Categorizer):
             left_junction = sam.find_best_query_switch_after(left_target_al, donor_al, ti.target_sequence, ti.donor_sequence, min)
             right_junction = sam.find_best_query_switch_after(donor_al, right_target_al, ti.donor_sequence, ti.target_sequence, max)
 
-            target_edge_after = sam.crop_al_to_query_int(left_target_al, 0, left_junction['switch_after']).reference_start
-            target_edge_before = sam.crop_al_to_query_int(right_target_al, right_junction['switch_after'] + 1, np.inf).reference_end - 1
+            left_target_al_cropped = sam.crop_al_to_query_int(left_target_al, 0, left_junction['switch_after'])
+            if left_target_al_cropped is not None:
+                target_edge_after = left_target_al_cropped.reference_start
+            else:
+                target_edge_after = -1
+
+            right_target_al_cropped = sam.crop_al_to_query_int(right_target_al, right_junction['switch_after'] + 1, np.inf)
+            if right_target_al_cropped is not None:
+                target_edge_before = right_target_al_cropped.reference_end - 1
+            else:
+                target_edge_before = -1
 
             # Unclear what the right approach to recording strand is here.
             donor_strand = sam.get_opposite_strand(donor_al)
@@ -507,7 +526,7 @@ class Layout(Categorizer):
                 self.relevant_alignments = self.parsimonious_and_gap_alignments
 
             elif junctions == set(['imperfect']):
-                if self.not_covered_by_refined_alignments.total_length >= 2:
+                if self.not_covered_by_simple_integration.total_length >= 2:
                     self.category = 'complex misintegration'
                     self.subcategory = 'complex misintegration'
                 else:
@@ -833,6 +852,17 @@ class Layout(Categorizer):
         return uncovered
 
     @memoized_property
+    def not_covered_by_simple_integration(self):
+        ''' Length of read not covered by primer edge alignments and the
+        longest parsimonious donor integration alignment.
+        '''
+
+        donor_al = self.donor_specific_integration_alignments[0]
+        als = [donor_al, self.primer_alignments[5], self.primer_alignments[3]]
+        uncovered = self.whole_read - interval.get_disjoint_covered(als)
+        return uncovered
+
+    @memoized_property
     def sw_gap_alignments(self):
         ti = self.target_info
 
@@ -975,6 +1005,14 @@ class Layout(Categorizer):
             overlap = covered & ti.donor_specific_intervals
             return overlap.total_length > 0
 
+    def overlaps_primer(self, al, side, require_correct_strand=True):
+        primer = self.target_info.primers_by_side_of_read[side]
+        num_overlapping_bases = al.get_overlap(primer.start, primer.end + 1)
+        overlaps = num_overlapping_bases > 0
+        correct_strand = sam.get_strand(al) == self.target_info.sequencing_direction 
+
+        return overlaps and (correct_strand or not require_correct_strand)
+
     @memoized_property
     def any_donor_specific_present(self):
         als_to_check = self.parsimonious_and_gap_alignments
@@ -995,14 +1033,23 @@ class Layout(Categorizer):
             else:
                 merged = None
         else:
-            merged = sam.merge_multiple_adjacent_alignments(self.parsimonious_target_alignments, ref_seqs)
-            if merged is not None:
-                primers = self.target_info.primers_by_side_of_target.values()
-                # Prefer to have the primers annotated on the strand they anneal to,
-                # so don't require strand match here.
-                reaches_primers = all(sam.overlaps_feature(merged, primer, False) for primer in primers)
-                if not reaches_primers:
-                    merged = None
+            # If there is a single target alignment that reaches both primers (after splitting),
+            # use it to avoid edge cases. 
+            merged = None
+            for al in self.parsimonious_target_alignments:
+                if all(self.overlaps_primer(al, side, False) for side in ['left', 'right']):
+                    merged = al
+                    break
+
+            if merged is None:
+                merged = sam.merge_multiple_adjacent_alignments(self.parsimonious_target_alignments, ref_seqs)
+                if merged is not None:
+                    primers = self.target_info.primers_by_side_of_target.values()
+                    # Prefer to have the primers annotated on the strand they anneal to,
+                    # so don't require strand match here.
+                    reaches_primers = all(sam.overlaps_feature(merged, primer, False) for primer in primers)
+                    if not reaches_primers:
+                        merged = None
 
         return merged
     
@@ -1542,7 +1589,7 @@ class Layout(Categorizer):
         for al in self.parsimonious_donor_alignments:
             if self.overlaps_donor_specific(al):
                 covered = interval.get_covered(al)
-                if (self.integration_interval - covered).total_length == 0:
+                if (self.integration_interval.total_length > 0) and ((self.integration_interval - covered).total_length == 0):
                     # If a single donor al covers the whole integration, use just it.
                     integration_donor_als = [al]
                     break
@@ -1552,7 +1599,7 @@ class Layout(Categorizer):
                     if len(covered_integration) >= 5:
                         integration_donor_als.append(al)
 
-        return integration_donor_als
+        return sorted(integration_donor_als, key=lambda al: al.query_alignment_length, reverse=True)
 
     @memoized_property
     def integration_summary(self):
@@ -1931,8 +1978,10 @@ class Layout(Categorizer):
                 
         if len(covering_als) == 0:
             covering_als = None
+        else:
+            covering_als = interval.make_parsimonious(covering_als)
             
-        return interval.make_parsimonious(covering_als)
+        return covering_als
 
     @memoized_property
     def uncategorized_relevant_alignments(self):
