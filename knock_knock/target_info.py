@@ -15,7 +15,7 @@ from hits import fasta, gff, utilities, mapping_tools, interval, sam, sw, genome
 import hits.visualize
 
 memoized_property = utilities.memoized_property
-memoized_with_key = utilities.memoized_with_key
+memoized_with_args = utilities.memoized_with_args
 
 class Effector():
     def __init__(self, name, PAM_pattern, PAM_side, cut_after_offset):
@@ -236,7 +236,7 @@ TargetInfo:
 
         return locations
     
-    @memoized_with_key
+    @memoized_with_args
     def mapped_protospacer_location(self, index_name):
         if len(self.sgRNAs) > 1:
             raise ValueError
@@ -571,7 +571,7 @@ TargetInfo:
         else:
             return min(primary_cut_afters)
 
-    @memoized_with_key
+    @memoized_with_args
     def around_cuts(self, each_side):
         if len(self.cut_afters) == 0:
             around_cuts = interval.Interval.empty()
@@ -581,7 +581,7 @@ TargetInfo:
 
         return around_cuts
 
-    @memoized_with_key
+    @memoized_with_args
     def not_around_cuts(self, each_side):
         whole_target = interval.Interval(0, len(self.target_sequence))
         return whole_target - self.around_cuts(each_side)

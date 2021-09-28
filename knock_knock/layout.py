@@ -1,7 +1,5 @@
 import itertools
 import re
-import html
-from collections import defaultdict
 
 import numpy as np
 import pandas as pd
@@ -15,7 +13,7 @@ from .outcome_record import Integration
 import knock_knock.outcome
 
 memoized_property = utilities.memoized_property
-memoized_with_key = utilities.memoized_with_key
+memoized_with_args = utilities.memoized_with_args
 idx = pd.IndexSlice
 
 class Categorizer:
@@ -343,7 +341,7 @@ class Layout(Categorizer):
     def whole_read(self):
         return interval.Interval(0, len(self.seq) - 1)
 
-    @memoized_with_key
+    @memoized_with_args
     def whole_read_minus_edges(self, edge_length):
         return interval.Interval(edge_length, len(self.seq) - 1 - edge_length)
 
