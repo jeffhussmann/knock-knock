@@ -203,26 +203,36 @@ class Explorer:
                     'R2 sequence: ' + als['R2'][0].get_forward_sequence(),
                 ]
 
-                layout = knock_knock.layout.NonoverlappingPairLayout(als['R1'], als['R2'], exp.target_info)
+                if self.by_outcome:
+                    layout = knock_knock.layout.NonoverlappingPairLayout(als['R1'], als['R2'], exp.target_info)
             else:
                 read_details = [
                     'query name: ' + als[0].query_name,
                     'sequence: ' + als[0].get_forward_sequence(),
                 ]
 
-                layout = exp.categorizer(als, exp.target_info, mode=exp.layout_mode)
+                if self.by_outcome:
+                    layout = exp.categorizer(als, exp.target_info, mode=exp.layout_mode, error_corrected=exp.has_UMIs)
 
-            layout.categorize()
+            if self.by_outcome:
+                layout.categorize()
 
-            read_details = read_details[:1] + [
-                'category: ' + layout.category,
-                'subcategory: ' + layout.subcategory,
-                'details: ' + layout.details,
-            ] + read_details[1:]
+                inferred_amplicon_length = layout.inferred_amplicon_length
 
-            if self.non_widgets['alignments_to_show'].value == 'relevant':
-                als = layout.relevant_alignments
-            elif self.non_widgets['alignments_to_show'].value == 'parsimonious':
+                read_details = read_details[:1] + [
+                    'category: ' + layout.category,
+                    'subcategory: ' + layout.subcategory,
+                    'details: ' + layout.details,
+                ] + read_details[1:]
+
+                if self.non_widgets['alignments_to_show'].value == 'relevant':
+                    als = layout.relevant_alignments
+
+            else:
+                inferred_amplicon_length = None
+
+
+            if self.non_widgets['alignments_to_show'].value == 'parsimonious':
                 plot_kwargs['parsimonious'] = True
 
             plot_kwargs['centered_on_primers'] = False
@@ -244,7 +254,7 @@ class Explorer:
 
             diagram = knock_knock.visualize.ReadDiagram(als,
                                                         exp.target_info,
-                                                        inferred_amplicon_length=layout.inferred_amplicon_length,
+                                                        inferred_amplicon_length=inferred_amplicon_length,
                                                         title='',
                                                         **plot_kwargs,
                                                        )

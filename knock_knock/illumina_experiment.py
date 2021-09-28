@@ -52,15 +52,14 @@ class IlluminaExperiment(Experiment):
             'R2_no_overlap',
         ]
 
-        self.length_plot_smooth_window = 0
-
         self.trim_from_R1 = self.description.get('trim_from_R1', 0)
         self.trim_from_R2 = self.description.get('trim_from_R2', 0)
 
         self.diagram_kwargs.update(dict(draw_sequence=True,
                                         max_qual=41,
                                         center_on_primers=True,
-                                        ))
+                                        ),
+                                  )
 
     def __repr__(self):
         return f'IlluminaExperiment: batch={self.batch}, sample_name={self.sample_name}, base_dir={self.base_dir}'
@@ -280,7 +279,7 @@ class IlluminaExperiment(Experiment):
 
                     stitched_fh.write(str(stitched))
 
-    def generate_length_range_figures(self, outcome=None, num_examples=1):
+    def generate_length_range_figures(self, specific_outcome=None, num_examples=1):
         def extract_length(als):
             if isinstance(als, dict):
                 pair_layout = layout_module.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
@@ -300,17 +299,17 @@ class IlluminaExperiment(Experiment):
 
         by_length = defaultdict(lambda: utilities.ReservoirSampler(num_examples))
 
-        al_groups = self.alignment_groups(outcome=outcome)
-        no_overlap_al_groups = self.no_overlap_alignment_groups(outcome=outcome)
+        al_groups = self.alignment_groups(outcome=specific_outcome)
+        no_overlap_al_groups = self.no_overlap_alignment_groups(outcome=specific_outcome)
 
         for name, als in chain(al_groups, no_overlap_al_groups):
             length = extract_length(als)
             by_length[length].add((name, als))
 
-        if outcome is None:
+        if specific_outcome is None:
             fns = self.fns
         else:
-            fns = self.outcome_fns(outcome)
+            fns = self.outcome_fns(specific_outcome)
 
         fig_dir = fns['length_ranges_dir']
             
@@ -318,8 +317,8 @@ class IlluminaExperiment(Experiment):
             shutil.rmtree(str(fig_dir))
         fig_dir.mkdir()
 
-        if outcome is not None:
-            description = ': '.join(outcome)
+        if specific_outcome is not None:
+            description = ': '.join(specific_outcome)
         else:
             description = 'Generating length-specific diagrams'
 

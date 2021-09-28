@@ -7,7 +7,6 @@ import pandas as pd
 import hits.visualize
 from hits import utilities, interval
 
-from knock_knock import svg, visualize
 from knock_knock.experiment import Experiment, ensure_list
 
 memoized_property = hits.utilities.memoized_property
@@ -63,13 +62,13 @@ class PacbioExperiment(Experiment):
 
         return pd.DataFrame(ranges, columns=['start', 'end'])
 
-    def generate_length_range_figures(self, outcome=None, num_examples=1):
+    def generate_length_range_figures(self, specific_outcome=None, num_examples=1):
         by_length_range = defaultdict(lambda: utilities.ReservoirSampler(num_examples))
-        length_ranges = [interval.Interval(row['start'], row['end']) for _, row in self.length_ranges(outcome).iterrows()]
+        length_ranges = [interval.Interval(row['start'], row['end']) for _, row in self.length_ranges(specific_outcome).iterrows()]
 
         fn_key = 'bam_by_name'
 
-        al_groups = self.alignment_groups(outcome=outcome, fn_key=fn_key)
+        al_groups = self.alignment_groups(outcome=specific_outcome, fn_key=fn_key)
         for name, group in al_groups:
             length = group[0].query_length
 
@@ -85,10 +84,10 @@ class PacbioExperiment(Experiment):
                     if length in length_range:
                         by_length_range[length_range.start, length_range.end].add((name, group))
 
-        if outcome is None:
+        if specific_outcome is None:
             fns = self.fns
         else:
-            fns = self.outcome_fns(outcome)
+            fns = self.outcome_fns(specific_outcome)
 
         fig_dir = fns['length_ranges_dir']
             
@@ -96,8 +95,8 @@ class PacbioExperiment(Experiment):
             shutil.rmtree(str(fig_dir))
         fig_dir.mkdir()
 
-        if outcome is not None:
-            description = ': '.join(outcome)
+        if specific_outcome is not None:
+            description = ': '.join(specific_outcome)
         else:
             description = 'Generating length-specific diagrams'
 

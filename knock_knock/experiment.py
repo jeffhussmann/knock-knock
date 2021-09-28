@@ -139,6 +139,10 @@ class Experiment:
         # count_index_levels are level names for index on outcome counts.
         self.count_index_levels = ['category', 'subcategory', 'details']
 
+        self.length_plot_smooth_window = 0
+
+        self.has_UMIs = False
+
     @memoized_property
     def length_to_store_unknown(self):
         return int(self.max_relevant_length * 1.05)
@@ -283,7 +287,11 @@ class Experiment:
         return np.loadtxt(self.fns['lengths'], dtype=int)
     
     def generate_read_lengths(self):
-        lengths = sum(self.outcome_stratified_lengths.values())
+        if len(self.outcome_stratified_lengths) == 0:
+            lengths = []
+        else:
+            lengths = sum(self.outcome_stratified_lengths.values())
+
         np.savetxt(self.fns['lengths'], lengths, '%d')
 
     def generate_outcome_counts(self):
@@ -537,6 +545,7 @@ class Experiment:
     @memoized_property
     def outcome_counts(self):
         fn = self.fns['outcome_counts']
+
         if fn.exists() and fn.stat().st_size > 0:
             counts = pd.read_csv(fn,
                                  index_col=tuple(range(len(self.count_index_levels))),
@@ -883,11 +892,14 @@ class Experiment:
                 outcome = self.final_Outcome.from_line(line)
                 yield outcome
 
-    def outcome_metadata(self):
+    def outcome_metadata(self, outcome_fn_keys=None):
         ''' Extract metadata lines from all outcome files. '''
+        if outcome_fn_keys is None:
+            outcome_fn_keys = self.outcome_fn_keys
+
         all_metadata_lines = []
 
-        for key in self.outcome_fn_keys:
+        for key in outcome_fn_keys:
             fn = self.fns[key]
             if fn.exists():
                 metadata_lines = []
@@ -900,7 +912,6 @@ class Experiment:
                 all_metadata_lines.append((key, metadata_lines))
 
         return all_metadata_lines
-
 
     @memoized_property
     def outcome_stratified_lengths(self):
@@ -953,6 +964,18 @@ class Experiment:
         # Factored out here so that same colors can be used in svgs.
         color_order = sorted(self.categories_by_frequency, key=self.outcome_highest_points.get, reverse=True)
         return {outcome: f'C{i % 10}' for i, outcome in enumerate(color_order)}
+
+    @memoized_property
+    def expected_lengths(self):
+        ti = self.target_info
+
+        expected_lengths = {
+            'expected\nWT': ti.amplicon_length,
+        }
+        if ti.clean_HDR_length is not None:
+            expected_lengths['expected\nHDR'] = ti.clean_HDR_length
+
+        return expected_lengths
 
     def plot_outcome_stratified_lengths(self, x_lims=None, min_total_to_label=0.1, zoom_factor=0.1):
         outcome_lengths = self.outcome_stratified_lengths
@@ -1078,12 +1101,6 @@ class Experiment:
                     sanitized_string = self.categorizer.outcome_to_sanitized_string(outcome)
                     line.set_gid(f'outcome_{sanitized_string}')
 
-            expected_lengths = {
-                'expected\nWT': ti.amplicon_length,
-            }
-            if ti.clean_HDR_length is not None:
-                expected_lengths['expected\nHDR'] = ti.clean_HDR_length
-
             ax.set_ylim(0, y_max * 1.05)
             y_maxes.append(y_max)
 
@@ -1105,7 +1122,7 @@ class Experiment:
             ax.set_ylabel('Percentage of reads', size=12)
             ax.set_xlabel('amplicon length', size=12)
 
-            for name, length in expected_lengths.items():
+            for name, length in self.expected_lengths.items():
                 if panel_i == 0:
                     ax.axvline(length, color='black', alpha=0.2)
 
@@ -1306,7 +1323,10 @@ Esc when done to deactivate the category.'''
         categories = sorted(self.categories_by_frequency)
         description = 'Generating outcome-specific length range diagrams'
         for category in self.progress(categories, desc=description):
-            self.generate_length_range_figures(outcome=category)
+            self.generate_length_range_figures(specific_outcome=category)
+
+    def generate_outcome_browser(self, min_total_to_label=0.1):
+        svg.decorate_outcome_browser(self, min_total_to_label=min_total_to_label)
 
     def generate_figures(self):
         lengths_fig = self.length_distribution_figure()
@@ -1314,7 +1334,7 @@ Esc when done to deactivate the category.'''
 
         self.generate_all_outcome_length_range_figures()
         self.generate_all_outcome_example_figures()
-        svg.decorate_outcome_browser(self)
+        self.generate_outcome_browser()
 
     def example_diagrams(self, outcome, num_examples):
         al_groups = self.alignment_groups(outcome=outcome)
@@ -1393,7 +1413,7 @@ p {{
         categories = sorted(set(c for c, s in self.categories_by_frequency))
         for outcome in self.progress(categories, desc='Making diagrams for grouped categories'):
             self.generate_outcome_example_figures(outcome=outcome, num_examples=num_examples, **kwargs)
-            
+
     def explore(self, by_outcome=True, **kwargs):
         explorer = explore.SingleExperimentExplorer(self, by_outcome, **kwargs)
         return explorer.layout
@@ -1413,10 +1433,12 @@ p {{
     def extract_donor_microhomology_lengths(self):
         MH_lengths = defaultdict(lambda: np.zeros(10000, int))
 
-        for line in self.fns['outcome_list'].open():
-            outcome = self.final_Outcome.from_line(line)
-
+        for outcome in self.outcome_iter():
             category_and_sides = []
+
+            if outcome.details == 'n/a':
+                # no_overlap categorization doesn't record integration details
+                continue
 
             if outcome.category == 'incomplete HDR':
                 if outcome.subcategory == "5' HDR, 3' imperfect":
@@ -1546,14 +1568,20 @@ def get_exp_class(platform):
     elif platform == 'pacbio':
         from knock_knock.pacbio_experiment import PacbioExperiment
         exp_class = PacbioExperiment
+    elif platform == 'length_bias':
+        from knock_knock.length_bias_experiment import LengthBiasExperiment
+        exp_class = LengthBiasExperiment
     else:
         exp_class = Experiment
 
     return exp_class
 
-def get_all_experiments(base_dir, conditions=None, as_dictionary=True, progress=None):
+def get_all_experiments(base_dir, conditions=None, as_dictionary=True, progress=None, groups_to_exclude=None):
     if conditions is None:
         conditions = {}
+
+    if groups_to_exclude is None:
+        groups_to_exclude = set()
 
     def check_conditions(exp):
         for k, v in conditions.items():
@@ -1603,7 +1631,7 @@ def get_all_experiments(base_dir, conditions=None, as_dictionary=True, progress=
             exp = exp_class(base_dir, batch, name, description=description, progress=progress)
             exps.append(exp)
 
-    filtered = [exp for exp in exps if check_conditions(exp)]
+    filtered = [exp for exp in exps if check_conditions(exp) and exp.batch not in groups_to_exclude]
     if len(filtered) == 0:
         raise ValueError('No experiments met conditions')
 
