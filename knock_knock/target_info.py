@@ -250,7 +250,7 @@ TargetInfo:
         locations = self.mapped_protospacer_locations(sgRNA, index_name)
         
         if len(locations) > 1:
-            raise ValueError(locations)
+            location = None
         else:
             location = locations.pop()
 
@@ -261,8 +261,12 @@ TargetInfo:
         if self.genome_source is None:
             return None
         else:
-            rname, pos, strand = self.mapped_protospacer_location(self.genome_source)
-            return f'{self.genome_source}_{rname}'
+            location = self.mapped_protospacer_location(self.genome_source)
+            if location is None:
+                return None
+            else:
+                rname, pos, strand = location
+                return f'{self.genome_source}_{rname}'
 
     def convert_genomic_alignment_to_target_coordinates(self, al):
         try:
