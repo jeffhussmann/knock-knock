@@ -368,6 +368,8 @@ TargetInfo:
                         donor_HA = (self.donor, self.homology_arms[side]['donor'].attribute['ID'])
                         features_to_show.add(donor_HA)
 
+            features_to_show.update(set(self.PAM_features))
+
             return features_to_show
 
     @memoized_property
