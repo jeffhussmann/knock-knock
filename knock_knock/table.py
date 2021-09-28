@@ -19,8 +19,18 @@ totals_all_row_label = (' ', 'Total reads')
 
 totals_relevant_row_label = (' ', 'Total relevant reads')
 
-def load_counts(base_dir, conditions=None, exclude_malformed=False, exclude_empty=True, sort_samples=True):
-    exps = experiment.get_all_experiments(base_dir, conditions)
+def load_counts(base_dir,
+                conditions=None,
+                exclude_malformed=False,
+                exclude_empty=True,
+                sort_samples=True,
+                groups_to_exclude=None,
+               ):
+
+    if groups_to_exclude is None:
+        groups_to_exclude = set()
+
+    exps = experiment.get_all_experiments(base_dir, conditions, groups_to_exclude=groups_to_exclude)
 
     counts = {}
     no_outcomes = []
@@ -38,14 +48,15 @@ def load_counts(base_dir, conditions=None, exclude_malformed=False, exclude_empt
     df = pd.DataFrame(counts).fillna(0)
 
     # Sort order for outcomes is defined in the relevant layout module.
-    categorizers = {exp.categorizer for exp in exps.values()}
+    full_indexes = {tuple(exp.categorizer.full_index()) for exp in exps.values()}
     
-    if len(categorizers) > 1:
+    if len(full_indexes) > 1:
+        print(full_indexes)
         raise ValueError('Can\'t make table for experiments with inconsistent layout modules.')
     
-    categorizer = categorizers.pop()
+    full_index = full_indexes.pop()
     
-    df = df.reindex(categorizer.full_index(), fill_value=0)
+    df = df.reindex(full_index, fill_value=0)
 
     if exclude_malformed:
         df = df.drop(['malformed layout', 'nonspecific amplification', 'bad sequence'], axis='index', level=0, errors='ignore')
