@@ -573,7 +573,7 @@ def build_target_info(base_dir, info, all_index_locations,
         fh.write(str(read))
         
     # Align the protospacer to the reference genome.
-    mapping_tools.map_STAR(fastq_fn, STAR_index, STAR_prefix, mode='guide_alignment', bam_fn=bam_fn, sort=False)
+    mapping_tools.map_STAR(fastq_fn, STAR_index, STAR_prefix, mode='guide_alignment', bam_fn=bam_fn)
 
     with pysam.AlignmentFile(bam_fn) as bam_fh:
         perfect_als = [al for al in bam_fh if not al.is_unmapped and sam.total_edit_distance(al) == 0]
