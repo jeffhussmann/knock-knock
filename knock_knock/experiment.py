@@ -125,10 +125,14 @@ class Experiment:
         self.max_qual = 93
         
         index_names = self.description.get('supplemental_indices')
+
         if index_names is None:
-            self.supplemental_index_names = []
-        else:
-            self.supplemental_index_names = index_names.split(';')
+            index_names = []
+
+        if isinstance(index_names, str):
+            index_names = index_names.split(';')
+
+        self.supplemental_index_names = index_names
 
         self.diagram_kwargs = dict(
             features_to_show=self.target_info.features_to_show,

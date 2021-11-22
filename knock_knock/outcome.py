@@ -56,7 +56,7 @@ class DeletionOutcome(Outcome):
             else:
                 directionality = 'ambiguous'
         
-        elif ti.effector.name == 'Cpf1':
+        elif ti.effector.name in ['Cpf1', 'AsCas12a']:
             start = min(self.deletion.starts_ats)
             end = max(self.deletion.ends_ats)
             first_nick, second_nick = sorted(ti.cut_afters.values())

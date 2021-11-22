@@ -309,11 +309,19 @@ TargetInfo:
 
         override_colors = {
             ('pooled_vector', 'sgRNA-5'): 'tab:green',
-            ('pooled_vector', 'SpCas9 target 1'): 'tab:green',
+            ('pAX198', 'SpCas9 target 1'): 'tab:green',
+
             ('pooled_vector', 'sgRNA-3'): 'tab:orange',
+            ('pAX198', 'SpCas9 target 2'): 'tab:orange',
+
             ('pooled_vector', 'sgRNA-2'): 'tab:blue',
+            ('pAX198', 'SpCas9 target 3'): 'tab:blue',
+
             ('pooled_vector', 'sgRNA-7'): 'tab:red',
+            ('pAX198', 'SpCas9 target 4'): 'tab:red',
+
             ('pooled_vector', 'sgRNA-Cpf1'): 'tab:brown',
+            ('pAX198', 'AsCas12a target'): 'tab:brown',
         }
 
         for name, color in override_colors.items():
