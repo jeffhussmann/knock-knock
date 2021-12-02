@@ -12,7 +12,7 @@ for fn in targets_dir.glob('*.csv'):
 
 setup(
     name='knock_knock',
-    version='0.3.3',
+    version='0.3.4',
     url='https://pypi.org/projects/knock-knock',
 
     author='Jeff Hussmann',
@@ -24,7 +24,9 @@ setup(
 
     package_data={
         'knock_knock': [
-            'modal_template.tpl',
+            'table_template/table.html.j2',
+            'table_template/conf.json',
+            'logo_v2.png',
         ] + test_fns,
     },
 
@@ -37,7 +39,7 @@ setup(
         'biopython>=1.78',
         'ipywidgets>=7.1.2',
         'matplotlib>=2.1.2',
-        'nbconvert>=5.3.1',
+        'nbconvert>=6.0.7',
         'nbformat>=4.4.0',
         'numpy>=1.14.2',
         'pandas>=0.22.0',

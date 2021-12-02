@@ -1,0 +1,74 @@
+{%- extends 'lab/index.html.j2' -%}
+
+{%- block header -%}
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{nb.metadata['title']}}</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
+<script src="{{ resources.require_js_url }}"></script>
+
+{{ resources.include_css("static/index.css") }}
+{{ resources.include_css("static/theme-light.css") }}
+
+<link rel = "stylesheet" type = "text/css" href = "https://cdn.jupyter.org/notebook/5.4.0/style/style.min.css" />
+
+<style type="text/css">
+
+.popover {
+    max-width: 100%;
+}
+
+.hover {
+    background: #cccccc !important;
+}
+
+</style>
+
+</head>
+{%- endblock header -%}
+
+{% block body_footer %}
+
+<script>
+    $(document).ready(function(){
+        // activate the bootstrap popovers
+        $('[data-toggle="popover"]').popover();
+        
+        // make the level-0 index color on hover
+        // based on https://codepen.io/chriscoyier/pen/wLGDz
+        $("td, th").hover(function() {
+            if ($(this).parent().has('th[rowspan]').length == 0) {
+                $(this)
+                    .parent()
+                    .prevAll('tr:has(th[rowspan]):first')
+                    .find('th[rowspan]')
+                    .addClass("hover");
+            } 
+        }, function() { 
+            $(this)
+                .parent()
+                .prevAll('tr:has(th[rowspan]):first')
+                .find('th[rowspan]')
+                .removeClass("hover");
+        });
+
+        // Make links to outcome browser htmls.
+        $(".row_heading.level1").html(function() {
+            contents = $( this ).text();
+            new_name = contents.split("/")[1];
+            {% if nb.metadata['include_images'] %}
+            return "<a href='" + contents + "/outcome_browser.html' target='_blank'>" + new_name + "</a>";
+            {% else %}
+            return new_name;
+            {% endif %}
+        });
+    });
+</script>
+
+</body>
+{%- endblock body_footer %}

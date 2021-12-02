@@ -570,7 +570,7 @@ class Experiment:
         if self.outcome_counts is None:
             return None
         else:
-            return self.outcome_counts.sum(level=['category', 'subcategory'])
+            return self.outcome_counts.groupby(level=['category', 'subcategory']).sum()
 
     @memoized_property
     def categories_by_frequency(self):

@@ -145,6 +145,7 @@ def fig_to_png_URI(fig):
 
 link_template = '''\
 <a 
+    id="{id}"
     data-toggle="popover" 
     data-trigger="hover"
     data-html="true"
@@ -238,7 +239,7 @@ def make_table(base_dir,
         level_0[0] = totals_row_label[1]
         df.columns = df.columns.set_levels(level_0, level=0)
 
-        df = df.sum(axis=1, level=0)
+        df = df.groupby(axis=1, level=0, sort=False).sum()
 
     exps = experiment.get_all_experiments(base_dir, conditions=conditions, as_dictionary=True)
 
@@ -253,7 +254,7 @@ def make_table(base_dir,
             fraction = val / totals[(exp_group, exp_name)]
 
             if outcome == totals_row_label or outcome == totals_row_label_collapsed:
-                text = '{:,}'.format(val)
+                text = f'{val:,}'
 
                 if include_images:
                     hover_image_fn = exp.fns['lengths_figure']
@@ -304,7 +305,8 @@ def make_table(base_dir,
 
                     modal_div, modal_id = modal_maker.make_outcome()
 
-                    link = link_template.format(text=text,
+                    link = link_template.format(id=f'{exp_group}_{exp_name}_{outcome}',
+                                                text=text,
                                                 modal_id=modal_id,
                                                 iframe_URL=relative_path,
                                                 URI=hover_URI,
@@ -353,50 +355,61 @@ def make_table(base_dir,
     return styled
 
 def generate_html(base_dir, fn, conditions=None, show_details=True, include_images=True, sort_samples=True):
+    fn = Path(fn)
     logo_fn = Path(os.path.realpath(__file__)).parent / 'logo_v2.png'
     logo_URI, logo_width, logo_height = fn_to_URI(logo_fn)
 
     nb = nbf.new_notebook()
 
     documentation_cell_contents = f'''\
-<a target="_blank" href="https://github.com/jeffhussmann/knock-knock" rel="nofollow"><img width={logo_width} height={logo_height} src={logo_URI} alt="knock-knock" align="left"></a>
+<a href="https://github.com/jeffhussmann/knock-knock" target="_blank"><img width={logo_width} height={logo_height} src={logo_URI} alt="knock-knock" align="left"></a>
 <br clear="all">
 
-knock-knock is a tool for exploring, categorizing, and quantifying the full spectrum of sequence outcomes produced by CRISPR knock-in experiments.
+knock-knock is a tool for exploring, categorizing, and quantifying the sequence outcomes produced by genome editing experiments.
 
 <a href="https://github.com/jeffhussmann/knock-knock/blob/master/docs/visualization.md#interactive-exploration-of-outcomes" target="_blank">How to use this table</a>
 
 <a href="https://github.com/jeffhussmann/knock-knock/blob/master/docs/visualization.md" target="_blank">How to interpret read diagrams</a>
 '''
+    documentation_cell = nbf.new_markdown_cell(documentation_cell_contents)
 
-    table_cell_contents = f'''\
-import knock_knock.table
+    table = make_table(base_dir,
+                       conditions,
+                       show_details=show_details,
+                       include_images=include_images,
+                       sort_samples=sort_samples,
+                      )
 
-conditions = {conditions}
-knock_knock.table.make_table('{base_dir}',
-                             conditions,
-                             show_details={show_details},
-                             include_images={include_images},
-                             sort_samples={sort_samples},
-                            )
-'''
-    
+    table_cell = nbf.new_code_cell('',
+                                   outputs=[
+                                       nbf.nbbase.NotebookNode(
+                                           output_type='display_data',
+                                           metadata=nbf.nbbase.NotebookNode(),
+                                           data={
+                                               'text/html': table._repr_html_(),
+                                           },
+                                       ),
+                                   ],
+                                  )
+
     nb['cells'] = [
-        nbf.new_markdown_cell(documentation_cell_contents),
-        nbf.new_code_cell(table_cell_contents),
+        documentation_cell,
+        table_cell,
     ]
 
     nb['metadata'] = {
-        'title': str(fn.name),
+        'title': fn.stem,
         'include_images': include_images,
     }
 
-    exporter = nbconvert.HTMLExporter(exclude_input=True, exclude_output_prompt=True)
-    template_path = Path(os.path.realpath(__file__)).parent / 'modal_template.tpl'
-    exporter.template_file = str(template_path)
-
-    ep = nbconvert.preprocessors.ExecutePreprocessor(timeout=600, kernel_name='python3')
-    ep.preprocess(nb, {})
+    # Note: with nbconvert==6.3.0, can't call the template file 'index.html.j2'
+    # or it will silently fail to use to the template, possible related to
+    # https://github.com/jupyter/nbconvert/issues/1558.
+    template_path = Path(os.path.realpath(__file__)).parent / 'table_template' / 'table.html.j2'
+    exporter = nbconvert.HTMLExporter(exclude_input=True,
+                                      exclude_output_prompt=True,
+                                      template_file=str(template_path),
+                                     )
 
     body, resources = exporter.from_notebook_node(nb)
     with open(fn, 'w') as fh:
