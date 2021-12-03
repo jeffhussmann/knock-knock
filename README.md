@@ -21,6 +21,7 @@ If installing with `pip`, non-Python dependencies need to be installed separatel
 - `minimap2` (2.16)
 - `samtools` (1.9)
 - `STAR` (2.7.1)
+- `GNU parallel` (20190522)
 
 
 ## About
@@ -119,7 +120,7 @@ PROJECT_DIR/indices/hg38/
     └── hg38.mmi
 ```
 
-Alternatively, if reference genomes and indices already exist (e.g. in another projects directory), a YAML file `PROJECT_DIR/index_locations.yaml` that lists paths can be provided. 
+Alternatively, if reference genomes and indices already exist (e.g. in another project's directory), a YAML file `PROJECT_DIR/index_locations.yaml` that lists paths can be provided. 
 
 ### Specifying targets
 
