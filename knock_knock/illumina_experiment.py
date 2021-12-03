@@ -172,10 +172,8 @@ class IlluminaExperiment(Experiment):
             R1_fn_key = 'bam_by_name'
             R2_fn_key = 'bam_by_name'
 
-        saved_verbosity = pysam.set_verbosity(0)
         R1_groups = self.alignment_groups(outcome=outcome, fn_key=R1_fn_key, read_type=R1_read_type)
         R2_groups = self.alignment_groups(outcome=outcome, fn_key=R2_fn_key, read_type=R2_read_type)
-        pysam.set_verbosity(saved_verbosity)
 
         group_pairs = zip(R1_groups, R2_groups)
 
@@ -217,8 +215,10 @@ class IlluminaExperiment(Experiment):
         bam_fhs = {}
 
         with ExitStack() as stack:
+            saved_verbosity = pysam.set_verbosity(0)
             full_bam_fns = {which: self.fns_by_read_type['bam_by_name'][f'{which}_no_overlap'] for which in ['R1', 'R2']}
             full_bam_fhs = {which: stack.enter_context(pysam.AlignmentFile(full_bam_fns[which])) for which in ['R1', 'R2']}
+            pysam.set_verbosity(saved_verbosity)
         
             for outcome, qnames in outcomes.items():
                 outcome_fns = self.outcome_fns(outcome)
