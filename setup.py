@@ -12,7 +12,7 @@ for fn in targets_dir.glob('*.csv'):
 
 setup(
     name='knock_knock',
-    version='0.3.5',
+    version='0.3.6',
     url='https://pypi.org/projects/knock-knock',
 
     author='Jeff Hussmann',
@@ -37,7 +37,7 @@ setup(
     ],
 
     install_requires=[
-        'bokeh>=0.12.14',
+        'bokeh>=2.4.2',
         'biopython>=1.78',
         'ipywidgets>=7.1.2',
         'matplotlib>=2.1.2',
@@ -52,12 +52,11 @@ setup(
         'tqdm>=4.31.1',
     ],
 
-    python_requires='>=3.6',
+    python_requires='>=3.7',
 
     classifiers=[
         'Programming Language :: Python',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
     ],
 )
