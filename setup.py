@@ -12,11 +12,13 @@ for fn in targets_dir.glob('*.csv'):
 
 setup(
     name='knock_knock',
-    version='0.3.4',
+    version='0.3.5',
     url='https://pypi.org/projects/knock-knock',
 
     author='Jeff Hussmann',
     author_email='jeff.hussmann@gmail.com',
+
+    description='Exploring, categorizing, and quantifying the sequence outcomes produced by genome editing experiments',
 
     packages=[
         'knock_knock',
@@ -46,7 +48,7 @@ setup(
         'Pillow>=5.0.0',
         'pysam>=0.14',
         'PyYAML>=3.12',
-        'hits>=0.1',
+        'hits>=0.3.2',
         'tqdm>=4.31.1',
     ],
 

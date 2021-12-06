@@ -1,6 +1,6 @@
 # knock-knock 
 
-`knock-knock` is a tool for exploring, categorizing, and quantifying the sequence outcomes produced by CRISPR knock-in experiments.
+`knock-knock` is a tool for exploring, categorizing, and quantifying the sequence outcomes produced by genome editing experiments.
 ![](docs/example.png)
 
 ## Installation ![](https://img.shields.io/pypi/pyversions/knock-knock.svg) [![](https://badge.fury.io/py/knock-knock.svg)](https://badge.fury.io/py/knock-knock) [![install with bioconda](https://img.shields.io/conda/vn/bioconda/knock-knock)](http://bioconda.github.io/recipes/knock-knock/README.html)
