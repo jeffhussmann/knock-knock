@@ -180,7 +180,7 @@ class Layout(Categorizer):
         ),
     ]
 
-    def __init__(self, alignments, target_info, mode='illumina'):
+    def __init__(self, alignments, target_info, error_corrected=False, mode='illumina'):
         self.mode = mode
 
         if mode == 'illumina':
@@ -189,6 +189,8 @@ class Layout(Categorizer):
             self.max_indel_allowed_in_donor = 3
 
         self.target_info = target_info
+
+        self.error_corrected = error_corrected
 
         self.original_alignments = [al for al in alignments if not al.is_unmapped]
         self.unmapped_alignments = [al for al in alignments if al.is_unmapped]
