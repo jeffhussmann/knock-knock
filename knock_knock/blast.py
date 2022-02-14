@@ -1,3 +1,4 @@
+import shlex
 import subprocess
 import tempfile
 from pathlib import Path
@@ -12,6 +13,12 @@ SOFT_CLIP = sam.BAM_CSOFT_CLIP
 def blast(ref_fn, reads, bam_fn, bam_by_name_fn, max_insertion_length=None):
     with tempfile.TemporaryDirectory(suffix='_blast') as temp_dir:
         temp_dir_path = Path(temp_dir)
+
+        if isinstance(ref_fn, dict):
+            # Make a temporary ref file.
+            temp_ref_fn = temp_dir_path / 'refs.fasta'
+            fasta.write_dict(ref_fn, temp_ref_fn)
+            ref_fn = temp_ref_fn
 
         reads_fasta_fn = temp_dir_path / 'reads.fasta'
 
@@ -58,7 +65,7 @@ def blast(ref_fn, reads, bam_fn, bam_by_name_fn, max_insertion_length=None):
                           )
         except subprocess.CalledProcessError as e:
             print(f'blastn command returned code {e.returncode}')
-            print(f'full command was:\n\n{0}\n'.format(' '.join(blast_command)))
+            print(f'full command was:\n\n{shlex.join(blast_command)}\n')
             print(f'stdout from blastn was:\n\n{e.stdout.decode()}\n')
             print(f'stderr from blastn was:\n\n{e.stderr.decode()}\n')
             raise
