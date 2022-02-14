@@ -18,7 +18,7 @@ from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
 from hits import fastq, mapping_tools, sam, genomes, utilities, sw
-from knock_knock import target_info
+from knock_knock import target_info, pegRNAs
 
 def design_amplicon_primers_from_csv(base_dir, genome='hg19'):
     base_dir = Path(base_dir)
@@ -197,7 +197,7 @@ def design_amplicon_primers(base_dir, info, genome):
 
     return best_candidate
 
-def identify_homology_arms(donor_seq, donor_type, target_seq, cut_after, colors, required_match_length=15):
+def identify_homology_arms(donor_seq, donor_type, target_seq, cut_after, required_match_length=15):
     header = pysam.AlignmentHeader.from_references(['donor', 'target'], [len(donor_seq), len(target_seq)])
     mapper = sw.SeedAndExtender(donor_seq.encode(), 8, header, 'donor')
     
@@ -331,7 +331,7 @@ def identify_homology_arms(donor_seq, donor_type, target_seq, cut_after, colors,
                     id=feature_name,
                     type='misc_feature',
                     qualifiers={'label': feature_name,
-                                'ApEinfo_fwdcolor': colors[feature_name],
+                                'ApEinfo_fwdcolor': feature_colors[feature_name],
                                 },
                 )
         for feature_name in donor_starts
@@ -342,7 +342,7 @@ def identify_homology_arms(donor_seq, donor_type, target_seq, cut_after, colors,
                     id=feature_name,
                     type='misc_feature',
                     qualifiers={'label': feature_name,
-                                'ApEinfo_fwdcolor': colors[feature_name],
+                                'ApEinfo_fwdcolor': feature_colors[feature_name],
                                 },
                     )
         for feature_name in target_starts
@@ -356,7 +356,7 @@ def identify_homology_arms(donor_seq, donor_type, target_seq, cut_after, colors,
 
     return HA_info
 
-def identify_pegRNA_homology_arms(donor_seq, target_seq, cut_after, protospacer_seq, colors):
+def identify_pegRNA_homology_arms(donor_seq, target_seq, cut_after, protospacer_seq):
     donor_as_read = fastq.Read('donor', donor_seq, fastq.encode_sanger([40]*len(donor_seq)))
         
     sw_kwargs = dict(
@@ -417,7 +417,7 @@ def identify_pegRNA_homology_arms(donor_seq, target_seq, cut_after, protospacer_
                    id=key,
                    type='misc_feature',
                    qualifiers={'label': key,
-                               'ApEinfo_fwdcolor': colors[key],
+                               'ApEinfo_fwdcolor': feature_colors[key],
                               },
                   )
         for key in donor_starts
@@ -431,14 +431,14 @@ def identify_pegRNA_homology_arms(donor_seq, target_seq, cut_after, protospacer_
                    id='protospacer',
                    type='misc_feature',
                    qualifiers={'label': 'protospacer',
-                               'ApEinfo_fwdcolor': colors['protospacer'],
+                               'ApEinfo_fwdcolor': feature_colors['protospacer'],
                               },
                   ),
         SeqFeature(location=FeatureLocation(protospacer_end, donor_starts['HA_RT'], strand=1),
                    id='scaffold',
                    type='misc_feature',
                    qualifiers={'label': 'scaffold',
-                               'ApEinfo_fwdcolor': colors['scaffold'],
+                               'ApEinfo_fwdcolor': feature_colors['scaffold'],
                               },
                   ),
     ])
@@ -448,7 +448,7 @@ def identify_pegRNA_homology_arms(donor_seq, target_seq, cut_after, protospacer_
                    id=key,
                    type='misc_feature',
                    qualifiers={'label': key,
-                               'ApEinfo_fwdcolor': colors[key],
+                               'ApEinfo_fwdcolor': feature_colors[key],
                               },
                   )
         for key in HA_als
@@ -481,18 +481,41 @@ def identify_pegRNA_homology_arms(donor_seq, target_seq, cut_after, protospacer_
 
     return HA_info
 
+feature_colors = {
+    'HA_1': '#c7b0e3',
+    'HA_RT': '#c7b0e3',
+    'RTT': '#c7b0e3',
+    'HA_2': '#85dae9',
+    'HA_PBS': '#85dae9',
+    'PBS': '#85dae9',
+    'forward_primer': '#75C6A9',
+    'reverse_primer': '#9eafd2',
+    'sgRNA': '#c6c9d1',
+    'donor_specific': '#b1ff67',
+    'PCR_adapter_1': '#F8D3A9',
+    'PCR_adapter_2': '#D59687',
+    'protospacer': '#ff9ccd',
+    'scaffold': '#b7e6d7',
+}
+
 def build_target_info(base_dir, info, all_index_locations,
                       defer_HA_identification=False,
                       offtargets=False,
                      ):
-    ''' info should have keys:
-            sgRNA_sequence
-            amplicon_primers
-        optional keys:
-            donor_sequence
-            nonhomologous_donor_sequence
-            extra_sequences
-            effector
+    ''' 
+    Attempts to identify the genomic location where an sgRNA sequence
+    is flanked by amplicon primers.
+    
+    info should have keys:
+        genome
+        sgRNA_sequence
+        amplicon_primers
+    optional keys:
+        pegRNAs
+        donor_sequence
+        nonhomologous_donor_sequence
+        extra_sequences
+        effector
     '''
     genome = info['genome']
     if info['genome'] not in all_index_locations:
@@ -538,6 +561,16 @@ def build_target_info(base_dir, info, all_index_locations,
     else:
         has_nh_donor = True
 
+    if 'effector' in info:
+        effector_type = info['effector']
+    else:
+        if donor_type == 'pegRNA':
+            effector_type = 'SpCas9H840A'
+        else:
+            effector_type = 'SpCas9'
+
+    effector = target_info.effectors[effector_type]
+
     target_dir = base_dir / 'targets' / name
     target_dir.mkdir(parents=True, exist_ok=True)
     
@@ -558,12 +591,6 @@ def build_target_info(base_dir, info, all_index_locations,
 
     STAR_index = index_locations['STAR']
 
-    gb_fns = {
-        'target': target_dir / f'{target_name}.gb',
-        'donor': target_dir / f'{donor_name}.gb',
-        'nh_donor': target_dir / f'{nh_donor_name}.gb',
-    }
-
     # Make a fastq file with a single read containing the protospacer sequence.
     protospacer_name, protospacer_seq = protospacer
     
@@ -574,10 +601,21 @@ def build_target_info(base_dir, info, all_index_locations,
         
     # Align the protospacer to the reference genome.
     mapping_tools.map_STAR(fastq_fn, STAR_index, STAR_prefix, mode='guide_alignment', bam_fn=bam_fn)
-
+    
     with pysam.AlignmentFile(bam_fn) as bam_fh:
-        perfect_als = [al for al in bam_fh if not al.is_unmapped and sam.total_edit_distance(al) == 0]
-        imperfect_als = [al for al in bam_fh if not al.is_unmapped]
+        perfect_als = []
+        imperfect_als = []
+        for al in bam_fh:
+            if not al.is_unmapped:
+                if sam.total_edit_distance(al) == 0:
+                    perfect_als.append(al)
+                else:
+                    # Consider alignments with mismatching first base (presumably due to prepended G) perfect.
+                    nonmatching_ps = {true_read_i for (true_read_i, read_b, _, ref_b, _) in sam.aligned_tuples(al) if read_b != ref_b}
+                    if nonmatching_ps == {0}:
+                        perfect_als.append(al)
+                    else:
+                        imperfect_als.append(al)
     
     region_fetcher = genomes.build_region_fetcher(index_locations['fasta'])
     
@@ -593,9 +631,18 @@ def build_target_info(base_dir, info, all_index_locations,
         if sam.get_strand(al) == '+':
             ps_seq = protospacer_seq
             ps_strand = 1
+
+            if ps_seq not in full_around:
+                # Initial base mismatches.
+                ps_seq = ps_seq[1:]
+
         else:
             ps_seq = utilities.reverse_complement(protospacer_seq)
             ps_strand  = -1
+
+            if ps_seq not in full_around:
+                # Initial base mismatches.
+                ps_seq = ps_seq[:-1]
 
         ps_start = full_around.index(ps_seq)
 
@@ -619,16 +666,6 @@ def build_target_info(base_dir, info, all_index_locations,
 
             ps_start = full_around.index(ps_seq)
             protospacer_locations.append((other_protospacer_name, ps_seq, ps_start, ps_strand))
-
-        if 'effector' in info:
-            effector_type = info['effector']
-        else:
-            if donor_type == 'pegRNA':
-                effector_type = 'SpCas9H840A'
-            else:
-                effector_type = 'SpCas9'
-
-        effector = target_info.effectors[effector_type]
 
         for ps_name, ps_seq, ps_start, ps_strand in protospacer_locations:
             PAM_pattern = effector.PAM_pattern
@@ -696,35 +733,20 @@ def build_target_info(base_dir, info, all_index_locations,
 
         leftmost_location = FeatureLocation(leftmost_start - offset, leftmost_start - offset + len(leftmost_primer), strand=1)
         rightmost_location = FeatureLocation(rightmost_start - offset, rightmost_start - offset + len(rightmost_primer), strand=-1)
-
-        colors = {
-            'HA_1': '#c7b0e3',
-            'HA_RT': '#c7b0e3',
-            'HA_2': '#85dae9',
-            'HA_PBS': '#85dae9',
-            'forward_primer': '#75C6A9',
-            'reverse_primer': '#9eafd2',
-            'sgRNA': '#c6c9d1',
-            'donor_specific': '#b1ff67',
-            'PCR_adapter_1': '#F8D3A9',
-            'PCR_adapter_2': '#D59687',
-            'protospacer': '#ff9ccd',
-            'scaffold': '#b7e6d7',
-        }
         
         target_features = [
             SeqFeature(location=leftmost_location,
                        id=leftmost_primer_name,
                        type='misc_feature',
                        qualifiers={'label': leftmost_primer_name,
-                                   'ApEinfo_fwdcolor': colors[leftmost_primer_name],
+                                   'ApEinfo_fwdcolor': feature_colors[leftmost_primer_name],
                                   },
                       ),
             SeqFeature(location=rightmost_location,
                        id=rightmost_primer_name,
                        type='misc_feature',
                        qualifiers={'label': rightmost_primer_name,
-                                   'ApEinfo_fwdcolor': colors[rightmost_primer_name],
+                                   'ApEinfo_fwdcolor': feature_colors[rightmost_primer_name],
                                   },
                       ),
         ]
@@ -738,17 +760,19 @@ def build_target_info(base_dir, info, all_index_locations,
 
         target_features.extend([
             SeqFeature(location=start_location,
-                        id='sequencing_start',
-                        type='misc_feature',
-                        qualifiers={'label': 'sequencing_start',
-                                    },
-                        ),
+                       id='sequencing_start',
+                       type='misc_feature',
+                       qualifiers={
+                           'label': 'sequencing_start',
+                       },
+                      ),
             SeqFeature(location=start_location,
-                        id='anchor',
-                        type='misc_feature',
-                        qualifiers={'label': 'anchor',
-                                    },
-                        ),
+                       id='anchor',
+                       type='misc_feature',
+                       qualifiers={
+                           'label': 'anchor',
+                       },
+                      ),
         ])
 
         sgRNA_features = []
@@ -756,12 +780,15 @@ def build_target_info(base_dir, info, all_index_locations,
             sgRNA_feature = SeqFeature(location=FeatureLocation(ps_start - offset, ps_start - offset + len(ps_seq), strand=ps_strand),
                                        id=f'sgRNA_{ps_name}',
                                        type=f'sgRNA_{effector.name}',
-                                       qualifiers={'label': f'sgRNA_{ps_name}',
-                                                   'ApEinfo_fwdcolor': colors['sgRNA'],
-                                                   },
-                                       )
+                                       qualifiers={
+                                           'label': f'sgRNA_{ps_name}',
+                                           'ApEinfo_fwdcolor': feature_colors['sgRNA'],
+                                       },
+                                      )
             target_features.append(sgRNA_feature)
             sgRNA_features.append(sgRNA_feature)
+
+        results['sgRNA_features'] = sgRNA_features
 
         results['gb_Records'] = {}
 
@@ -780,9 +807,9 @@ def build_target_info(base_dir, info, all_index_locations,
                     cut_after = sgRNA_feature.location.start - 1 - cut_after_offset - 1
 
                 if donor_type == 'pegRNA':
-                    HA_info = identify_pegRNA_homology_arms(donor_seq, target_seq, cut_after, protospacer_seq, colors)
+                    HA_info = identify_pegRNA_homology_arms(donor_seq, target_seq, cut_after, protospacer_seq)
                 else:
-                    HA_info = identify_homology_arms(donor_seq, donor_type, target_seq, cut_after, colors)
+                    HA_info = identify_homology_arms(donor_seq, donor_type, target_seq, cut_after)
 
                 if 'failed' in HA_info:
                     results['failed'] = HA_info['failed']
@@ -797,17 +824,60 @@ def build_target_info(base_dir, info, all_index_locations,
                 donor_features = []
 
             donor_Record = SeqRecord(donor_Seq, name=donor_name, features=donor_features, annotations={'molecule_type': 'DNA'})
-            results['gb_Records']['donor'] = donor_Record
+            results['gb_Records'][donor_name] = donor_Record
+
+        if info.get('pegRNAs') is not None:
+            convert_strand = {
+                '+': 1,
+                '-': -1,
+            }
+
+            for pegRNA_name, pegRNA_components in info['pegRNAs']:
+                pegRNA_features, new_target_features = pegRNAs.infer_features(pegRNA_name, pegRNA_components, target_name, target_seq, effector)
+
+                pegRNA_SeqFeatures = [
+                    SeqFeature(id=feature_name,
+                               location=FeatureLocation(feature.start, feature.end + 1, strand=convert_strand[feature.strand]),
+                               type='misc_feature',
+                               qualifiers={
+                                   'label': feature_name,
+                                   'ApEinfo_fwdcolor': feature.attribute['color'],
+                               },
+                              )
+                    for (_, feature_name), feature in pegRNA_features.items()
+                ]
+
+                target_SeqFeatures = [
+                    SeqFeature(location=FeatureLocation(feature.start, feature.end + 1, strand=convert_strand[feature.strand]),
+                               id=feature_name,
+                               type='misc_feature',
+                               qualifiers={
+                                   'label': feature_name,
+                                   'ApEinfo_fwdcolor': feature.attribute['color'],
+                               },
+                              )
+                    for (_, feature_name), feature in new_target_features.items()
+                ]
+                target_features.extend(target_SeqFeatures)
+                
+                pegRNA_Seq = Seq(pegRNA_components['full_sequence'])
+                pegRNA_Record = SeqRecord(pegRNA_Seq,
+                                          name=pegRNA_name,
+                                          features=pegRNA_SeqFeatures,
+                                          annotations={'molecule_type': 'DNA'},
+                                         )
+    
+                results['gb_Records'][pegRNA_name] = pegRNA_Record
             
-        target_Seq = Seq(target_seq)
-        target_Record = SeqRecord(target_Seq, name=target_name, features=target_features, annotations={'molecule_type': 'DNA'})
-        results['gb_Records']['target'] = target_Record
-        
         if has_nh_donor:
             nh_donor_Seq = Seq(nh_donor_seq)
             nh_donor_Record = SeqRecord(nh_donor_Seq, name=nh_donor_name, annotations={'molecule_type': 'DNA'})
-            results['gb_Records']['nh_donor'] = nh_donor_Record
+            results['gb_Records'][nh_donor_name] = nh_donor_Record
 
+        target_Seq = Seq(target_seq)
+        target_Record = SeqRecord(target_Seq, name=target_name, features=target_features, annotations={'molecule_type': 'DNA'})
+        results['gb_Records'][target_name] = target_Record
+        
         return results
     
     good_candidates = []
@@ -823,6 +893,7 @@ def build_target_info(base_dir, info, all_index_locations,
     if len(good_candidates) == 0:
         if len(bad_candidates) == 0:
             print(f'Error building {name}: no perfect matches to sgRNA {protospacer} found in {genome}')
+            print(perfect_als)
             print(imperfect_als)
             return 
 
@@ -848,15 +919,16 @@ def build_target_info(base_dir, info, all_index_locations,
         warnings.filterwarnings('ignore', category=BiopythonWarning)
 
         for which_seq, Record in best_candidate['gb_Records'].items(): 
+            gb_fn = target_dir / f'{which_seq}.gb'
             try:
-                Bio.SeqIO.write(Record, gb_fns[which_seq], 'genbank')
+                Bio.SeqIO.write(Record, gb_fn, 'genbank')
             except ValueError:
                 # locus line too long, can't write genbank file with BioPython
                 old_name = Record.name
 
                 truncated_name = f'{Record.name[:11]}_{truncated_name_i}'
                 Record.name = truncated_name
-                Bio.SeqIO.write(Record, gb_fns[which_seq], 'genbank')
+                Bio.SeqIO.write(Record, gb_fn, 'genbank')
 
                 Record.name = old_name
 
@@ -864,16 +936,12 @@ def build_target_info(base_dir, info, all_index_locations,
 
     manifest_fn = target_dir / 'manifest.yaml'
 
-    sources = [target_name]
-    if has_donor:
-        sources.append(donor_name)
-
-    extra_Records = []
     if info.get('extra_sequences') is not None:
         for extra_seq_name, extra_seq in info['extra_sequences']:
-            sources.append(extra_seq_name)
+            Record = SeqRecord(extra_seq, name=extra_seq_name, annotations={'molecule_type': 'DNA'})
+            best_candidate['gb_Records'][extra_seq_name] = Record
 
-            extra_Records.append(SeqRecord(extra_seq, name=extra_seq_name), annotations={'molecule_type': 'DNA'})
+    sources = sorted(best_candidate['gb_Records'])
         
     manifest = {
         'sources': sources,
@@ -893,71 +961,75 @@ def build_target_info(base_dir, info, all_index_locations,
         [target_name, 'reverse_primer'],
     ]
 
+    manifest['features_to_show'].extend([[target_name, feature.id] for feature in best_candidate['sgRNA_features']])
+
+    if info.get('pegRNAs') is not None:
+        manifest['pegRNAs'] = []
+        for pegRNA_name, _ in info.get('pegRNAs'):
+            
+            manifest['pegRNAs'].append(pegRNA_name)
+
+            manifest['features_to_show'].extend([
+                [pegRNA_name, 'scaffold'],
+                [pegRNA_name, 'protospacer'],
+                [pegRNA_name, 'RTT'],
+                [pegRNA_name, 'PBS'],
+            ])
+
     if has_donor:
-        if donor_type == 'pegRNA':
-            manifest['features_to_show'].extend([
-                [donor_name, 'scaffold'],
-                [donor_name, 'protospacer'],
-                [donor_name, 'HA_RT'],
-                [donor_name, 'HA_PBS'],
-                [target_name, 'HA_RT'],
-                [target_name, 'HA_PBS'],
-            ])
-        else:
-            manifest['features_to_show'].extend([
-                [donor_name, 'HA_1'],
-                [donor_name, 'HA_2'],
-                [donor_name, 'donor_specific'],
-                [donor_name, 'PCR_adapter_1'],
-                [donor_name, 'PCR_adapter_2'],
-                [target_name, 'HA_1'],
-                [target_name, 'HA_2'],
-            ])
+        manifest['features_to_show'].extend([
+            [donor_name, 'HA_1'],
+            [donor_name, 'HA_2'],
+            [donor_name, 'donor_specific'],
+            [donor_name, 'PCR_adapter_1'],
+            [donor_name, 'PCR_adapter_2'],
+            [target_name, 'HA_1'],
+            [target_name, 'HA_2'],
+        ])
 
     manifest['genome_source'] = genome
 
     manifest_fn.write_text(yaml.dump(manifest, default_flow_style=False))
-        
-    gb_records = list(best_candidate['gb_Records'].values()) + extra_Records
+
+    if info.get('pegRNAs') is not None:
+        # Make pegRNA components file within target dir.
+        # ti necessary here just to get file name.
+        ti = target_info.TargetInfo(base_dir, name)
+        pegRNAs_df = load_pegRNAs(base_dir, process=False)
+        pegRNA_names = [pegRNA_name for pegRNA_name, components in sorted(info['pegRNAs']) ]
+        pegRNAs_df.loc[pegRNA_names].to_csv(ti.fns['pegRNAs'])
+
+        # Don't supply pegRNAs as genbank records.
+        gb_records = [
+            record for name, record in best_candidate['gb_Records'].items()
+            if name not in pegRNA_names
+        ]
+
+    else:
+        gb_records = list(best_candidate['gb_Records'].values())
+
     ti = target_info.TargetInfo(base_dir, name, gb_records=gb_records)
-    ti.make_references()
+
     ti.make_protospacer_fastas()
     ti.map_protospacers(genome)
+
     ti.identify_degenerate_indels()
 
     shutil.rmtree(protospacer_dir)
 
-def load_pegRNAs(base_dir):
+def load_pegRNAs(base_dir, process=True):
+    '''
+    If process == False, just pass along the DataFrame for subsetting.
+    '''
     base_dir = Path(base_dir)
     csv_fn = base_dir / 'targets' / 'pegRNAs.csv'
 
     if not csv_fn.exists():
         return None
+    else:
+        return pegRNAs.read_csv(csv_fn, process=process)
 
-    df = pd.read_csv(csv_fn, index_col='name')
-
-    component_order = ['protospacer', 'scaffold', 'extension']
-
-    donor_sequences = []
-    for _, row in df.iterrows():
-        donor_sequence = ''.join([row[component] for component in component_order])
-        donor_sequences.append(donor_sequence)
-
-    df['donor_sequence'] = donor_sequences
-    df['donor_type'] = 'pegRNA'
-
-    return df[['donor_sequence', 'donor_type']]
-
-def build_target_infos_from_csv(base_dir, offtargets=False, defer_HA_identification=False):
-    base_dir = Path(base_dir)
-    csv_fn = base_dir / 'targets' / 'targets.csv'
-
-    indices = target_info.locate_supplemental_indices(base_dir)
-
-    targets_df = pd.read_csv(csv_fn, comment='#', index_col='name').replace({np.nan: None})
-
-    # Fill in values for sequences that are specified by name.
-
+def build_component_registry(base_dir):
     registry = {}
 
     sgRNA_fn = base_dir / 'targets' / 'sgRNAs.csv'
@@ -982,23 +1054,27 @@ def build_target_infos_from_csv(base_dir, offtargets=False, defer_HA_identificat
 
     donors_fn = base_dir / 'targets' / 'donors.csv'
 
-    all_donors = []
     if donors_fn.exists():
         donors = pd.read_csv(donors_fn, index_col='name')
-        all_donors.append(donors)
-
-    pegRNAs = load_pegRNAs(base_dir)
-    if pegRNAs is not None:
-        all_donors.append(pegRNAs)
-
-    if len(all_donors) > 0:
-        all_donors = pd.concat(all_donors)
-
-        registry['donor_sequence'] = all_donors['donor_sequence']
-        registry['donor_type'] = all_donors['donor_type']
+        registry['donor_sequence'] = donors['donor_sequence']
+        registry['donor_type'] = donors['donor_type']
     else:
         registry['donor_sequence'] = {}
         registry['donor_type'] = {}
+
+    registry['pegRNAs'] = load_pegRNAs(base_dir)
+
+    return registry
+
+def build_target_infos_from_csv(base_dir, offtargets=False, defer_HA_identification=False):
+    base_dir = Path(base_dir)
+    csv_fn = base_dir / 'targets' / 'targets.csv'
+
+    indices = target_info.locate_supplemental_indices(base_dir)
+
+    targets_df = pd.read_csv(csv_fn, comment='#', index_col='name').replace({np.nan: None})
+
+    registry = build_component_registry(base_dir)
 
     def lookup(row, column_to_lookup, registry_column, validate_sequence=True, multiple_lookups=False):
         value_to_lookup = row.get(column_to_lookup)
@@ -1044,6 +1120,7 @@ def build_target_infos_from_csv(base_dir, offtargets=False, defer_HA_identificat
             'name': target_name,
             'donor_sequence': lookup(row, 'donor_sequence', 'donor_sequence'),
             'sgRNA_sequence': lookup(row, 'sgRNA_sequence', 'sgRNA_sequence', multiple_lookups=True),
+            'pegRNAs': lookup(row, 'pegRNAs', 'pegRNAs', multiple_lookups=True, validate_sequence=False),
             'extra_sequences': lookup(row, 'extra_sequences', 'extra_sequence', multiple_lookups=True),
             'amplicon_primers': lookup(row, 'amplicon_primers', 'amplicon_primers'),
             'nonhomologous_donor_sequence': lookup(row, 'nonhomologous_donor_sequence', 'donor_sequence'),
@@ -1053,6 +1130,12 @@ def build_target_infos_from_csv(base_dir, offtargets=False, defer_HA_identificat
 
         if 'effector' in row:
             info['effector'] = row['effector']
+
+        if info['sgRNA_sequence'] is None:
+            info['sgRNA_sequence'] = []
+
+        for pegRNA_name, pegRNA_components in info['pegRNAs']:
+            info['sgRNA_sequence'].append((pegRNA_name, pegRNA_components['protospacer']))
 
         print(f'Building {target_name}...')
         build_target_info(base_dir, info, indices,

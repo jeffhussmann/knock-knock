@@ -11,8 +11,10 @@ import numpy as np
 import Bio.SeqIO
 import Bio.SeqUtils
 
-from hits import fasta, gff, utilities, mapping_tools, interval, sam, sw, genomes
 import hits.visualize
+from hits import fasta, gff, utilities, mapping_tools, interval, sam, sw, genomes
+
+import knock_knock.pegRNAs
 
 memoized_property = utilities.memoized_property
 memoized_with_args = utilities.memoized_with_args
@@ -43,6 +45,7 @@ class TargetInfo():
                  donor=None,
                  nonhomologous_donor=None,
                  sgRNA=None,
+                 pegRNAs=None,
                  primer_names=None,
                  sequencing_start_feature_name='sequencing_start',
                  supplemental_indices=None,
@@ -50,10 +53,30 @@ class TargetInfo():
                  infer_homology_arms=False,
                  target=None,
                 ):
-        self.name = name
-        self.base_dir = base_dir
-        self.dir = Path(base_dir) / 'targets' / name
 
+        self.name = name
+
+        self.base_dir = Path(base_dir)
+        self.targets_dir = self.base_dir / 'targets'
+        self.dir = self.targets_dir / name
+
+        self.fns = {
+            'ref_fasta': self.dir / 'refs.fasta',
+            'ref_gff': self.dir / 'refs.gff',
+
+            'pegRNAs': self.dir / 'pegRNAs.csv',
+
+            'protospacer_fasta': self.dir / 'protospacers.fasta',
+            'protospacer_STAR_prefix_template': self.dir / 'protospacers_{}.',
+            'protospacer_bam_template': self.dir / 'protospacers_{}.bam',
+
+            'bowtie2_index': self.dir / 'refs',
+            'STAR_index_dir': self.dir / 'STAR_index',
+
+            'degenerate_insertions': self.dir / 'degenerate_insertions.txt',
+            'degenerate_deletions': self.dir / 'degenerate_deletions.txt',
+        }
+        
         manifest_fn = self.dir / 'manifest.yaml'
         with manifest_fn.open() as manifest_fh:
             self.manifest = yaml.safe_load(manifest_fh)
@@ -67,6 +90,15 @@ class TargetInfo():
 
         self.manual_features_to_show = self.manifest.get('features_to_show')
 
+        if pegRNAs is None:
+            self.pegRNA_names = self.manifest.get('pegRNAs')
+        else:
+            # pegRNAs may be a semi-colon separated string.
+            if isinstance(pegRNAs, str):
+                pegRNAs = pegRNAs.split(';')
+
+            self.pegRNA_names = pegRNAs
+
         if donor is None:
             self.donor = self.manifest.get('donor')
         else:
@@ -79,6 +111,15 @@ class TargetInfo():
         else:
             self.nonhomologous_donor = nonhomologous_donor
 
+        if primer_names is None:
+            primer_names = self.manifest.get('primer_names')
+        else:
+            # primer_names may be a semi-colon separated string.
+            if isinstance(primer_names, str):
+                primer_names = primer_names.split(';')
+
+        self.primer_names = primer_names
+
         self.donor_specific = self.manifest.get('donor_specific', 'GFP11') 
         if supplemental_indices is None:
             supplemental_indices = {}
@@ -90,33 +131,17 @@ class TargetInfo():
 
         self.default_HAs = self.manifest.get('default_HAs')
 
-        self.fns = {
-            'ref_fasta': self.dir / 'refs.fasta',
-            'ref_gff': self.dir / 'refs.gff',
-
-            'protospacer_fasta': self.dir / 'protospacers.fasta',
-            'protospacer_STAR_prefix_template': self.dir / 'protospacers_{}.',
-            'protospacer_bam_template': self.dir / 'protospacers_{}.bam',
-
-            'bowtie2_index': self.dir / 'refs',
-            'STAR_index_dir': self.dir / 'STAR_index',
-
-            'degenerate_insertions': self.dir / 'degenerate_insertions.txt',
-            'degenerate_deletions': self.dir / 'degenerate_deletions.txt',
-        }
-        
-        # primer_names may be a semi-colon separated string.
-        if isinstance(primer_names, str):
-            primer_names = primer_names.split(';')
-
-        self.primer_names = primer_names
-
         self.sequencing_start_feature_name = sequencing_start_feature_name
 
         self.sgRNA = sgRNA
 
         if self.gb_records is not None:
             self.make_references()
+
+        # infer_pegRNA_features requires many things already be setup,
+        # so do this last.
+        if self.pegRNA_names is not None:
+            self.infer_pegRNA_features()
 
     def __repr__(self):
         return f'''\
@@ -161,6 +186,16 @@ TargetInfo:
             sgRNAs = [self.sgRNA]
 
         return sgRNAs
+
+    @memoized_property
+    def pegRNA_components(self):
+        if self.pegRNA_names is None:
+            pegRNA_components = None
+        else:
+            all_components = knock_knock.pegRNAs.read_csv(self.fns['pegRNAs'])
+            pegRNA_components = {name: all_components[name] for name in self.pegRNA_names}
+
+        return pegRNA_components
 
     def make_references(self):
         ''' Generate fasta and gff files from genbank inputs. '''
@@ -242,10 +277,7 @@ TargetInfo:
     
     @memoized_with_args
     def mapped_protospacer_location(self, index_name):
-        if len(self.sgRNAs) > 1:
-            raise ValueError
-        else:
-            sgRNA = self.sgRNAs[0]
+        sgRNA = self.primary_sgRNA
 
         locations = self.mapped_protospacer_locations(sgRNA, index_name)
         
@@ -398,6 +430,16 @@ TargetInfo:
         else:
             seqs = {}
 
+        if self.pegRNA_components is not None:
+            for name, components in self.pegRNA_components.items():
+                seqs[name] = components['full_sequence']
+
+        return seqs
+
+    @memoized_property
+    def reference_sequence_bytes(self):
+        ''' sequences as bytes for use in alignment code that requires this '''
+        seqs = {name: seq.encode() for name, seq in self.reference_sequences.items()}
         return seqs
 
     @memoized_property
@@ -406,14 +448,16 @@ TargetInfo:
     
     @memoized_property
     def target_sequence_bytes(self):
-        return self.target_sequence.encode()
+        ''' DEPRECATED. use self.reference_sequence_bytes[self.target] '''
+        return self.reference_sequence_bytes[self.target]
     
     @memoized_property
     def donor_sequence_bytes(self):
+        ''' DEPRECATED. use self.reference_sequence_bytes[self.donor] '''
         if self.donor_sequence is None:
             return None
         else:
-            return self.donor_sequence.encode()
+            return self.reference_sequence_bytes[self.donor]
 
     @memoized_property
     def seed_and_extender(self):
@@ -423,7 +467,7 @@ TargetInfo:
         extenders = {
             'target': sw.SeedAndExtender(self.target_sequence_bytes, 20, self.header, self.target).seed_and_extend,
         }
-        if self.donor_sequence_bytes is not None:
+        if self.donor is not None:
             extenders['donor'] = sw.SeedAndExtender(self.donor_sequence_bytes, 20, self.header, self.donor).seed_and_extend
         else:
             # If there isn't a donor, always return no alignments.
@@ -454,13 +498,16 @@ TargetInfo:
         if self.sgRNA_feature is None:
             return None
         else:
-            sgRNA = self.sgRNA_feature
-            sgRNA_seq = self.target_sequence[sgRNA.start:sgRNA.end + 1]
-            if sgRNA.strand == '-':
-                sgRNA_seq = utilities.reverse_complement(sgRNA_seq)
+            return self.feature_sequence(self.target, self.primary_sgRNA)
 
-            return sgRNA_seq
+    def feature_sequence(self, seq_name, feature_name):
+        feature = self.features[seq_name, feature_name]
+        
+        seq = self.reference_sequences[feature.seqname][feature.start:feature.end + 1]
+        if feature.strand == '-':
+            seq = utilities.reverse_complement(seq)
 
+        return seq
 
     @memoized_property
     def all_sgRNA_features(self):
@@ -696,6 +743,11 @@ TargetInfo:
         return by_side
 
     @memoized_property
+    def primers_by_strand(self):
+        by_strand = {primer.strand: primer for primer in self.primers.values()}
+        return by_strand
+
+    @memoized_property
     def between_primers_interval(self):
         start = self.primers_by_side_of_target[5].end + 1
         end = self.primers_by_side_of_target[3].start - 1
@@ -711,6 +763,23 @@ TargetInfo:
             raise ValueError(self.primers)
         else:
             return sum(len(f) for name, f in self.primers.items())
+
+    @memoized_with_args
+    def ref_p_to_feature_offset(self, ref_name, feature_name):
+        feature = self.features[ref_name, feature_name]
+        
+        if feature.strand == '+':
+            ref_p_order = range(feature.start, feature.end + 1)
+        elif feature.strand == '-':
+            ref_p_order = range(feature.end, feature.start - 1, -1)
+        else:
+            raise ValueError('feature needs to be stranded')
+            
+        return {ref_p: offset for offset, ref_p in enumerate(ref_p_order)}
+
+    @memoized_with_args
+    def feature_offset_to_ref_p(self, ref_name, feature_name):
+        return utilities.reverse_dictionary(self.ref_p_to_feature_offset(ref_name, feature_name))
 
     @memoized_property
     def target_side_intervals(self):
@@ -789,8 +858,18 @@ TargetInfo:
                 side of target (5/3),
                 expected side of read (left/right),
         '''
-        if self.donor is None:
+        if self.donor is None and len(self.pegRNA_names) == 1:
+            donor = self.pegRNA_names[0]
+        else:
+            donor = self.donor
+
+        if donor is None:
             return None
+
+        ref_seqs = {
+            'target': self.reference_sequences[self.target],
+            'donor': self.reference_sequences[donor],
+         }
 
         # Load homology arms from gff features.
 
@@ -800,9 +879,10 @@ TargetInfo:
         else:
             HAs = defaultdict(dict)
 
+
             ref_name_to_source = {
                 self.target: 'target',
-                self.donor: 'donor',
+                donor: 'donor',
             }
 
             for (ref_name, feature_name), feature in self.features.items():
@@ -816,6 +896,11 @@ TargetInfo:
 
         paired_HAs = {}
 
+        if self.donor is None and len(self.pegRNA_names) == 0:
+            donor = self.pegRNA_names[0]
+        else:
+            donor = self.donor
+
         # Check if every HA name that exists on both the target and donor has the same
         # sequence on each.
         for name in HAs:
@@ -824,7 +909,7 @@ TargetInfo:
             
             seqs = {}
             for source in ['target', 'donor']:
-                ref_seq = self.reference_sequences[getattr(self, source)]
+                ref_seq = ref_seqs[source]
                 HA = HAs[name][source]
                 HA_seq = ref_seq[HA.start:HA.end + 1]
                 if HA.strand == '-':
@@ -981,26 +1066,6 @@ TargetInfo:
             return None
 
     @memoized_property
-    def fingerprints_old(self):
-        fps = {
-            self.target: [],
-            self.donor: [],
-        }
-
-        for name in self.SNP_names:
-            fs = {k: self.features[k, name] for k in (self.target, self.donor)}
-            ps = {k: (f.strand, f.start) for k, f in fs.items()}
-            bs = {k: self.reference_sequences[k][p:p + 1] for k, (strand, p) in ps.items()}
-            
-            for k in bs:
-                if fs[k].strand == '-':
-                    bs[k] = utilities.reverse_complement(bs[k])
-                
-                fps[k].append((ps[k], bs[k]))
-
-        return fps
-
-    @memoized_property
     def fingerprints(self):
         fps = {
             self.target: [],
@@ -1014,7 +1079,12 @@ TargetInfo:
 
     @memoized_property
     def SNP_names(self):
-        return sorted([name for seq_name, name in self.features if seq_name == self.donor and name.startswith('SNP')])
+        if self.donor is None and len(self.pegRNA_names) == 1:
+            donor = self.pegRNA_names[0]
+        else:
+            donor = self.donor
+
+        return sorted([name for seq_name, name in self.features if seq_name == donor and name.startswith('SNP')])
 
     @memoized_property
     def donor_SNVs_manual(self):
@@ -1023,10 +1093,15 @@ TargetInfo:
             'donor': {},
         }
 
-        if self.donor is None:
+        if self.donor is None and len(self.pegRNA_names) == 1:
+            donor = self.pegRNA_names[0]
+        else:
+            donor = self.donor
+
+        if donor is None:
             return SNVs
 
-        for key, seq_name in [('target', self.target), ('donor', self.donor)]:
+        for key, seq_name in [('target', self.target), ('donor', donor)]:
             seq = self.reference_sequences[seq_name]
             for name in self.SNP_names:
                 feature = self.features[seq_name, name]
@@ -1204,6 +1279,11 @@ TargetInfo:
         if self.donor_SNVs is None:
             return None
 
+        if self.donor is None and len(self.pegRNA_names) == 1:
+            donor = self.pegRNA_names[0]
+        else:
+            donor = self.donor
+
         SNVs = {}
 
         for SNV_name, donor_SNV_details in self.donor_SNVs['donor'].items():
@@ -1214,7 +1294,7 @@ TargetInfo:
                 # We want the forward strand base.
                 donor_base = utilities.reverse_complement(donor_base)
 
-            SNVs[self.donor, donor_SNV_details['position']] = donor_base
+            SNVs[donor, donor_SNV_details['position']] = donor_base
 
             # Confusing: we want the base that would be read on the forward
             # strand of target if it is actually the donor SNV.
@@ -1548,6 +1628,88 @@ TargetInfo:
         original_al = pysam.AlignedSegment.from_dict(al_dict, header)
 
         return organism, original_al
+
+    def infer_pegRNA_features(self):
+        for pegRNA_name in self.pegRNA_names:
+            pegRNA_features, target_features = knock_knock.pegRNAs.infer_features(pegRNA_name,
+                                                                                  self.pegRNA_components[pegRNA_name],
+                                                                                  self.target,
+                                                                                  self.target_sequence,
+                                                                                  self.effector,
+                                                                                 )
+            self.features_to_show.update({(pegRNA_name, name) for name in ['protospacer', 'scaffold', 'PBS', 'RTT']})
+            self.features.update({**pegRNA_features, **target_features})
+
+        SNV_features = knock_knock.pegRNAs.infer_SNV_features(self)
+        self.features.update(SNV_features)
+
+        if len(self.pegRNA_names) == 2:
+            self.infer_twin_prime_overlap()
+
+    def infer_twin_prime_overlap(self):
+        overlap_length, overlap_features = knock_knock.pegRNAs.infer_twin_prime_overlap(self.pegRNA_components)
+        self.features.update(overlap_features)
+        return overlap_length
+
+    @memoized_property
+    def twin_pegRNA_intended_deletion(self):
+        deletion, deletion_feature = knock_knock.pegRNAs.infer_twin_pegRNA_intended_deletion(self)
+        return deletion
+
+    @memoized_property
+    def PBS_names_by_side_of_target(self):
+        ''' Note: assumes pointing towards each other, i.e. PAM-in, 5' overhang configuration '''
+        if self.pegRNA_names is None:
+            return {}
+
+        PBS_name = knock_knock.pegRNAs.PBS_name
+        PBS_features_by_strand = {}
+        for pegRNA_name in self.pegRNA_names:
+            PBS_feature = self.features[self.target, PBS_name(pegRNA_name)]
+            if PBS_feature.strand in PBS_features_by_strand:
+                raise ValueError('pegRNAs target same strand')
+            else:
+                PBS_features_by_strand[PBS_feature.strand] = PBS_feature
+
+        if len(PBS_features_by_strand) == 2:
+            if PBS_features_by_strand['+'].start > PBS_features_by_strand['-'].end:
+                raise ValueError('pegRNAs not in PAM-in configuration')
+
+        by_side = {}
+        strand_to_side = {
+            '+': 5,
+            '-': 3,
+        }
+        for strand, side in strand_to_side.items():
+            if strand in PBS_features_by_strand:
+                by_side[side] = PBS_features_by_strand[strand].attribute['ID']
+
+        return by_side
+
+    @memoized_property
+    def PBS_names_by_side_of_read(self):
+        if self.sequencing_direction == '+':
+            read_side_to_target_side = {
+                'left': 5,
+                'right': 3,
+            }
+        else:
+            read_side_to_target_side = {
+                'right': 5,
+                'left': 3,
+            }
+
+        by_side = {}
+        for read_side, target_side in read_side_to_target_side.items():
+            PBS_name = self.PBS_names_by_side_of_target.get(target_side)
+            if PBS_name is not None:
+                by_side[read_side] = PBS_name
+
+        return by_side
+
+    @memoized_property
+    def pegRNA_names_by_side_of_read(self):
+        return {side: knock_knock.pegRNAs.extract_pegRNA_name(PBS_name) for side, PBS_name in self.PBS_names_by_side_of_read.items()}
         
 def degenerate_indel_from_string(details_string):
     kind, rest = details_string.split(':')
@@ -1605,7 +1767,7 @@ class DegenerateDeletion():
         return str(self)
     
     def __eq__(self, other):
-        return self.starts_ats == other.starts_ats and self.length == other.length
+        return other is not None and self.starts_ats == other.starts_ats and self.length == other.length
 
     def __hash__(self):
         return hash((self.starts_ats, self.length))

@@ -90,6 +90,7 @@ class Experiment:
         self.donor = self.description.get('donor')
         self.nonhomologous_donor = self.description.get('nonhomologous_donor')
         self.primer_names = self.description.get('primer_names', ['forward_primer', 'reverse_primer'])
+        self.pegRNAs = self.description.get('pegRNAs')
         self.sequencing_start_feature_name = self.description.get('sequencing_start_feature_name', None)
         self.infer_homology_arms = self.description.get('infer_homology_arms', False)
 
@@ -199,6 +200,7 @@ class Experiment:
                                     donor=self.donor,
                                     nonhomologous_donor=self.nonhomologous_donor,
                                     sgRNA=self.sgRNA,
+                                    pegRNAs=self.pegRNAs,
                                     primer_names=self.primer_names,
                                     sequencing_start_feature_name=self.sequencing_start_feature_name,
                                     supplemental_indices=self.supplemental_indices,
@@ -1575,6 +1577,12 @@ def get_exp_class(platform):
     elif platform == 'length_bias':
         from knock_knock.length_bias_experiment import LengthBiasExperiment
         exp_class = LengthBiasExperiment
+    elif platform == 'prime':
+        from repair_seq.prime_editing_experiment import PrimeEditingExperiment
+        exp_class = PrimeEditingExperiment
+    elif platform == 'twin_prime':
+        from repair_seq.prime_editing_experiment import TwinPrimeExperiment
+        exp_class = TwinPrimeExperiment
     else:
         exp_class = Experiment
 
