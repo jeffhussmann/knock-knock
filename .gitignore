@@ -10,3 +10,4 @@ knock_knock/example_data/targets/**
 *.pyc
 *.so
 *cython.c
+.nfs*
