@@ -16,7 +16,6 @@ from . import experiment
 from . import svg
 
 totals_all_row_label = (' ', 'Total reads')
-
 totals_relevant_row_label = (' ', 'Total relevant reads')
 
 def load_counts(base_dir,
@@ -25,24 +24,30 @@ def load_counts(base_dir,
                 exclude_empty=True,
                 sort_samples=True,
                 groups_to_exclude=None,
+                arrayed=False,
                ):
 
     if groups_to_exclude is None:
         groups_to_exclude = set()
 
-    exps = experiment.get_all_experiments(base_dir, conditions, groups_to_exclude=groups_to_exclude)
+    if arrayed:
+        from repair_seq import arrayed_experiment_group
+        exps = arrayed_experiment_group.get_all_experiments(base_dir, conditions=conditions) 
+
+    else:
+        exps = experiment.get_all_experiments(base_dir, conditions, groups_to_exclude=groups_to_exclude)
 
     counts = {}
     no_outcomes = []
 
-    for (group, name), exp in exps.items():
+    for name_tuple, exp in exps.items():
         if exp.category_counts is None:
-            no_outcomes.append((group, name))
+            no_outcomes.append(name_tuple)
         else:
-            counts[group, name] = exp.category_counts
+            counts[name_tuple] = exp.category_counts
 
     if no_outcomes:
-        no_outcomes_string = '\n'.join(f'\t{group}: {name}' for group, name in no_outcomes)
+        no_outcomes_string = '\n'.join(f'\t{": ".join(name_tuple)}' for name_tuple in no_outcomes)
         print(f'Warning: can\'t find outcome counts for\n{no_outcomes_string}') 
 
     df = pd.DataFrame(counts).fillna(0)
@@ -80,15 +85,15 @@ def load_counts(base_dir,
 
     return df
 
-def calculate_performance_metrics(base_dir, conditions=None):
-    full_counts = load_counts(base_dir, conditions=conditions)
-    counts = full_counts.drop([totals_all_row_label, totals_relevant_row_label], axis='index', errors='ignore').sum(level=0)
+def calculate_performance_metrics(base_dir, conditions=None, arrayed=False):
+    full_counts = load_counts(base_dir, conditions=conditions, arrayed=arrayed)
+    counts = full_counts.drop([totals_all_row_label, totals_relevant_row_label], axis='index', errors='ignore').groupby(level=0).sum()
 
     not_real_cell_categories = [
         'malformed layout',
     ]
 
-    real_cells = counts.drop(not_real_cell_categories)
+    real_cells = counts.drop(not_real_cell_categories, errors='ignore')
 
     all_edit_categories = [cat for cat in real_cells.index if cat != 'WT']
 
@@ -219,8 +224,16 @@ def make_table(base_dir,
                inline_images=False,
                show_details=True,
                sort_samples=True,
+               arrayed=False,
               ):
-    df = load_counts(base_dir, conditions=conditions, exclude_malformed=(not show_details), sort_samples=sort_samples)
+
+    df = load_counts(base_dir,
+                     conditions=conditions,
+                     exclude_malformed=(not show_details),
+                     sort_samples=sort_samples,
+                     arrayed=arrayed,
+                    )
+
     if show_details:
         totals_row_label = totals_all_row_label
     else:
@@ -232,7 +245,10 @@ def make_table(base_dir,
     df = df.T
 
     # Hack to give the html the information it needs to build links to diagram htmls
-    df.index = pd.MultiIndex.from_tuples([(g, f'{g}/{n}') for g, n in df.index.values])
+    if arrayed:
+        df.index = pd.MultiIndex.from_tuples([(b, f'{b}/{g}/{s}') for b, g, s in df.index.values])
+    else:
+        df.index = pd.MultiIndex.from_tuples([(g, f'{g}/{n}') for g, n in df.index.values])
     
     if not show_details:
         level_0 = list(df.columns.levels[0])
@@ -241,17 +257,23 @@ def make_table(base_dir,
 
         df = df.groupby(axis=1, level=0, sort=False).sum()
 
-    exps = experiment.get_all_experiments(base_dir, conditions=conditions, as_dictionary=True)
+    if arrayed:
+        from repair_seq import arrayed_experiment_group
+        exps = arrayed_experiment_group.get_all_experiments(base_dir)
+    else:
+        exps = experiment.get_all_experiments(base_dir, conditions=conditions, as_dictionary=True)
 
     modal_maker = ModalMaker()
 
-    def link_maker(val, outcome, exp_group, exp_name):
+    def link_maker(val, outcome, name_tuple_string):
+        name_tuple = tuple(name_tuple_string.split('/'))
+
         if val == 0:
             html = ''
         else:
-            exp = exps[exp_group, exp_name]
+            exp = exps[name_tuple]
             
-            fraction = val / totals[(exp_group, exp_name)]
+            fraction = val / totals[name_tuple]
 
             if outcome == totals_row_label or outcome == totals_row_label_collapsed:
                 text = f'{val:,}'
@@ -282,7 +304,7 @@ def make_table(base_dir,
                 html = link
 
             else:
-                text = '{:.2%}'.format(fraction)
+                text = f'{fraction:.2%}'
 
                 if include_images:
                     hover_image_fn = exp.outcome_fns(outcome)['first_example']
@@ -305,7 +327,7 @@ def make_table(base_dir,
 
                     modal_div, modal_id = modal_maker.make_outcome()
 
-                    link = link_template.format(id=f'{exp_group}_{exp_name}_{outcome}',
+                    link = link_template.format(id=f'{"_".join(name_tuple)}_{outcome}',
                                                 text=text,
                                                 modal_id=modal_id,
                                                 iframe_URL=relative_path,
@@ -322,10 +344,10 @@ def make_table(base_dir,
 
         return html
     
-    def bind_link_maker(exp_group, exp_name):
+    def bind_link_maker(name_tuple_string):
         bound = {}
         for outcome in df:
-            bound[outcome] = functools.partial(link_maker, outcome=outcome, exp_group=exp_group, exp_name=exp_name)
+            bound[outcome] = functools.partial(link_maker, outcome=outcome, name_tuple_string=name_tuple_string)
 
         return bound
 
@@ -336,25 +358,32 @@ def make_table(base_dir,
         dict(selector="tr:hover", props=[("background-color", "#cccccc")]),
     ]
     
-    for exp_group, group_and_name in df.index:
-        _, exp_name = group_and_name.split('/')
-        sl = pd.IndexSlice[[(exp_group, group_and_name)], :]
-        styled = styled.format(bind_link_maker(exp_group, exp_name), subset=sl)
+    for exp_group, name_tuple_string in df.index:
+        # rsplit here is future-proofing against handling ArrayedGroup/screens better.
+        sl = pd.IndexSlice[[(exp_group, name_tuple_string)], :]
+        styled = styled.format(bind_link_maker(name_tuple_string), subset=sl)
     
     styled = styled.set_properties(**{'border': '1px solid black'})
-    for exp_group, group_and_name in df.index:
-        _, exp_name = group_and_name.split('/')
-        exp = experiment.Experiment(base_dir, exp_group, exp_name)
+    for exp_group, name_tuple_string in df.index:
+        name_tuple = tuple(name_tuple_string.split('/'))
+        exp = exps[name_tuple]
         # Note: as of pandas 0.22, col needs to be in brackets here so that
         # apply is ultimately called on a df, not a series, to prevent
         # TypeError: _bar_left() got an unexpected keyword argument 'axis'
-        styled = styled.bar(subset=pd.IndexSlice[[(exp_group, group_and_name)], :], axis=1, color=exp.color)
+        styled = styled.bar(subset=pd.IndexSlice[[(exp_group, name_tuple_string)], :], axis=1, color=exp.color)
         
     styled.set_table_styles(styles)
     
     return styled
 
-def generate_html(base_dir, fn, conditions=None, show_details=True, include_images=True, sort_samples=True):
+def generate_html(base_dir, fn,
+                  conditions=None,
+                  show_details=True,
+                  include_images=True,
+                  sort_samples=True,
+                  arrayed=False,
+                 ):
+
     fn = Path(fn)
     logo_fn = Path(os.path.realpath(__file__)).parent / 'logo_v2.png'
     logo_URI, logo_width, logo_height = fn_to_URI(logo_fn)
@@ -378,6 +407,7 @@ knock-knock is a tool for exploring, categorizing, and quantifying the sequence 
                        show_details=show_details,
                        include_images=include_images,
                        sort_samples=sort_samples,
+                       arrayed=arrayed,
                       )
 
     table_cell = nbf.new_code_cell('',
@@ -419,6 +449,7 @@ def make_self_contained_zip(base_dir, conditions, table_name,
                             include_images=True,
                             include_details=True,
                             sort_samples=True,
+                            arrayed=False,
                            ):
     base_dir = Path(base_dir)
     results_dir = base_dir / 'results'
@@ -427,28 +458,42 @@ def make_self_contained_zip(base_dir, conditions, table_name,
 
     print('Generating csv table...')
     csv_fn = fn_prefix.with_suffix('.csv')
-    df = load_counts(base_dir, conditions, exclude_empty=False).T
+    df = load_counts(base_dir, conditions, exclude_empty=False, arrayed=arrayed).T
     df.to_csv(csv_fn)
     fns_to_zip.append(csv_fn)
 
     print('Generating high-level html table...')
     html_fn = fn_prefix.with_suffix('.html')
-    generate_html(base_dir, html_fn, conditions, show_details=False, include_images=include_images, sort_samples=sort_samples)
+    generate_html(base_dir, html_fn, conditions,
+                  show_details=False,
+                  include_images=include_images,
+                  sort_samples=sort_samples,
+                  arrayed=arrayed,
+                 )
     fns_to_zip.append(html_fn)
 
     if include_details:
         print('Generating detailed html table...')
         html_fn = fn_prefix.parent / (f'{fn_prefix.name}_with_details.html')
-        generate_html(base_dir, html_fn, conditions, show_details=True, include_images=include_images, sort_samples=sort_samples)
+        generate_html(base_dir, html_fn, conditions,
+                      show_details=True,
+                      include_images=include_images,
+                      sort_samples=sort_samples,
+                      arrayed=arrayed,
+                     )
         fns_to_zip.append(html_fn)
 
     print('Generating performance metrics...')
     pms_fn = fn_prefix.parent / (f'{fn_prefix.name}_performance_metrics.csv')
-    pms = calculate_performance_metrics(base_dir, conditions)
+    pms = calculate_performance_metrics(base_dir, conditions, arrayed=arrayed)
     pms.to_csv(pms_fn)
     fns_to_zip.append(pms_fn)
 
-    exps = experiment.get_all_experiments(base_dir, conditions)
+    if arrayed:
+        from repair_seq import arrayed_experiment_group
+        exps = arrayed_experiment_group.get_all_experiments(base_dir, conditions=conditions)
+    else:
+        exps = experiment.get_all_experiments(base_dir, conditions)
 
     exps_missing_files = set()
 
