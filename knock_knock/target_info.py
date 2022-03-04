@@ -1,6 +1,7 @@
 import copy
 import functools
 import operator
+import textwrap
 from pathlib import Path
 from collections import defaultdict
 
@@ -140,17 +141,18 @@ class TargetInfo():
 
         # infer_pegRNA_features requires many things already be setup,
         # so do this last.
-        if self.pegRNA_names is not None:
+        if self.pegRNA_names is not None and len(self.pegRNA_names) > 0:
             self.infer_pegRNA_features()
 
     def __repr__(self):
-        return f'''\
-TargetInfo:
-    name = {self.name}
-    base_dir = {self.base_dir}
-    target = {self.target}
-    sgRNA = {self.sgRNA}
-    donor = {self.donor}'''
+        representation = f'''\
+            TargetInfo:
+                name = {self.name}
+                base_dir = {self.base_dir}
+                target = {self.target}
+                sgRNA = {self.sgRNA}
+                donor = {self.donor}'''
+        return textwrap.dedent(representation)
 
     @memoized_property
     def header(self):
@@ -1710,6 +1712,10 @@ TargetInfo:
     @memoized_property
     def pegRNA_names_by_side_of_read(self):
         return {side: knock_knock.pegRNAs.extract_pegRNA_name(PBS_name) for side, PBS_name in self.PBS_names_by_side_of_read.items()}
+
+    @memoized_property
+    def pegRNA_names_by_side_of_target(self):
+        return {side: knock_knock.pegRNAs.extract_pegRNA_name(PBS_name) for side, PBS_name in self.PBS_names_by_side_of_target.items()}
         
 def degenerate_indel_from_string(details_string):
     kind, rest = details_string.split(':')

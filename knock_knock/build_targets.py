@@ -994,12 +994,17 @@ def build_target_info(base_dir, info, all_index_locations,
     if info.get('pegRNAs') is not None:
         # Make pegRNA components file within target dir.
         # ti necessary here just to get file name.
-        ti = target_info.TargetInfo(base_dir, name)
+        # Need to set pegRNAs=[] to prevent a circular dependence
+        # on the existence of the components file.
+        ti = target_info.TargetInfo(base_dir, name, pegRNAs=[])
         pegRNAs_df = load_pegRNAs(base_dir, process=False)
         pegRNA_names = [pegRNA_name for pegRNA_name, components in sorted(info['pegRNAs']) ]
         pegRNAs_df.loc[pegRNA_names].to_csv(ti.fns['pegRNAs'])
 
-        # Don't supply pegRNAs as genbank records.
+        # Note: for debugging convenience, genbank files are written for pegRNAs,
+        # but these are NOT supplied as genbank records to make the final TargetInfo,
+        # since relevant features are either represented by the intial decomposition into
+        # components or inferred on instantiation of the TargetInfo.
         gb_records = [
             record for name, record in best_candidate['gb_Records'].items()
             if name not in pegRNA_names

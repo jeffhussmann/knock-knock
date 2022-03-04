@@ -367,8 +367,8 @@ class Experiment:
 
             return grouped
 
-    def query_names(self):
-        for qname, als in self.alignment_groups():
+    def query_names(self, read_type=None):
+        for qname, als in self.alignment_groups(read_type=read_type):
             yield qname
     
     def generate_alignments(self, read_type=None):
@@ -394,7 +394,7 @@ class Experiment:
             bam_fn = base_bam_fn.with_suffix(suffix)
             bam_by_name_fn = base_bam_by_name_fn.with_suffix(suffix)
 
-            blast.blast(self.target_info.fns['ref_fasta'],
+            blast.blast(self.target_info.reference_sequences,
                         chunk,
                         bam_fn,
                         bam_by_name_fn,
@@ -1276,7 +1276,13 @@ Esc when done to deactivate the category.'''
 
         return fig
 
-    def alignment_groups_to_diagrams(self, alignment_groups, num_examples, relevant=True, label_layout=False, **diagram_kwargs):
+    def alignment_groups_to_diagrams(self,
+                                     alignment_groups,
+                                     num_examples,
+                                     relevant=True,
+                                     label_layout=False,
+                                     **diagram_kwargs,
+                                    ):
         subsample = utilities.reservoir_sample(alignment_groups, num_examples)
 
         if relevant:
@@ -1285,14 +1291,14 @@ Esc when done to deactivate the category.'''
 
             for qname, als in subsample:
                 if isinstance(als, dict):
-                    l = layout_module.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
+                    layout = layout_module.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
                 else:
-                    l = self.categorizer(als, self.target_info, mode=self.layout_mode)
+                    layout = self.categorizer(als, self.target_info, mode=self.layout_mode)
 
-                l.categorize()
+                layout.categorize()
                 
-                only_relevant.append(l.relevant_alignments)
-                inferred_amplicon_lengths.append(l.inferred_amplicon_length)
+                only_relevant.append(layout.relevant_alignments)
+                inferred_amplicon_lengths.append(layout.inferred_amplicon_length)
 
             subsample = only_relevant
 
@@ -1367,6 +1373,7 @@ Esc when done to deactivate the category.'''
             outcome_dir.mkdir()
 
         fn = outcome_fns['diagrams_html']
+        # TODO: this should be a jinja2 template.
         with fn.open('w') as fh:
             fh.write(f'''\
 <html>
@@ -1404,7 +1411,7 @@ p {{
                 tag = fig_to_img_tag(fig)
                 fh.write(f'{tag}\n<hr>\n')
                 
-            for i, diagram in enumerate(self.progress(diagrams, desc=description)):
+            for i, diagram in enumerate(self.progress(diagrams, desc=description, total=num_examples, leave=False)):
                 if i == 0:
                     diagram.fig.savefig(outcome_fns['first_example'], bbox_inches='tight')
 

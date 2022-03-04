@@ -81,6 +81,41 @@ class Categorizer:
             category, subcats = cls.category_order[c]
             return category
 
+    def q_to_feature_offset(self, al, feature_name):
+        ''' Returns dictionary of {true query position: offset into plus-orientation version of feature '''
+        if al is None:
+            return {}
+
+        ref_p_to_feature_offset = self.target_info.ref_p_to_feature_offset(al.reference_name, feature_name)
+        seq = self.target_info.reference_sequences[al.reference_name]
+        
+        q_to_feature_offset = {}
+        
+        for q, read_b, ref_p, ref_b, qual in sam.aligned_tuples(al, seq):
+            if q is not None and ref_p in ref_p_to_feature_offset:
+                q_to_feature_offset[q] = ref_p_to_feature_offset[ref_p]
+                
+        return q_to_feature_offset
+
+    def feature_offset_to_q(self, al, feature_name):
+        return utilities.reverse_dictionary(self.q_to_feature_offset(al, feature_name))
+
+    def share_feature(self, first_al, first_feature_name, second_al, second_feature_name):
+        '''
+        Returns True if any query position is aligned to equivalent positions in first_feature and second_feature
+        by first_al and second_al.
+        '''
+        if first_al is None or second_al is None:
+            return False
+        
+        first_q_to_offsets = self.q_to_feature_offset(first_al, first_feature_name)
+        second_q_to_offsets = self.q_to_feature_offset(second_al, second_feature_name)
+        
+        share_any = any(second_q_to_offsets.get(q) == offset for q, offset in first_q_to_offsets.items())
+        
+        return share_any
+
+
 class Layout(Categorizer):
     category_order = [
         ('WT',

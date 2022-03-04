@@ -1275,83 +1275,123 @@ class ReadDiagram():
                                      weight='bold',
                                     )
 
-            # Draw target and donor names next to diagrams.
-            label = self.label_overrides.get(ref_name, ref_name)
+        # Draw target and donor names next to diagrams.
+        label = self.label_overrides.get(ref_name, ref_name)
 
-            self.ax.annotate(label,
-                             xy=(self.label_x, ref_y),
-                             xycoords=('axes fraction', 'data'),
-                             xytext=(self.label_x_offset, 0),
-                             textcoords='offset points',
-                             color=color,
-                             ha=self.label_ha,
-                             va='center',
-                             size=self.font_sizes['ref_label'],
-                            )
+        self.ax.annotate(label,
+                            xy=(self.label_x, ref_y),
+                            xycoords=('axes fraction', 'data'),
+                            xytext=(self.label_x_offset, 0),
+                            textcoords='offset points',
+                            color=color,
+                            ha=self.label_ha,
+                            va='center',
+                            size=self.font_sizes['ref_label'],
+                        )
 
-            if ref_name == ti.target:
-                # Draw the cut site(s).
-                for cut_after_name, cut_after in ti.cut_afters.items():
-                    cut_after_x = ref_p_to_x(cut_after + 0.5)
+        if ref_name == ti.target:
+            # Draw the cut site(s).
+            for cut_after_name, cut_after in ti.cut_afters.items():
+                cut_after_x = ref_p_to_x(cut_after + 0.5)
 
-                    name, strand = cut_after_name.rsplit('_', 1)
+                name, strand = cut_after_name.rsplit('_', 1)
 
-                    cut_y_bottom = ref_y - self.feature_line_width
-                    cut_y_middle = ref_y
-                    cut_y_top = ref_y + self.feature_line_width
+                cut_y_bottom = ref_y - self.feature_line_width
+                cut_y_middle = ref_y
+                cut_y_top = ref_y + self.feature_line_width
 
-                    if strand == 'both':
-                        ys = [cut_y_bottom, cut_y_top]
-                    elif (strand == '+' and not self.flip_target) or (strand == '-' and self.flip_target):
-                        ys = [cut_y_middle, cut_y_top]
-                    elif (strand == '-' and not self.flip_target) or (strand == '+' and self.flip_target):
-                        ys = [cut_y_bottom, cut_y_middle]
-                    else:
-                        raise ValueError(strand)
+                if strand == 'both':
+                    ys = [cut_y_bottom, cut_y_top]
+                elif (strand == '+' and not self.flip_target) or (strand == '-' and self.flip_target):
+                    ys = [cut_y_middle, cut_y_top]
+                elif (strand == '-' and not self.flip_target) or (strand == '+' and self.flip_target):
+                    ys = [cut_y_bottom, cut_y_middle]
+                else:
+                    raise ValueError(strand)
 
-                    self.ax.plot([cut_after_x, cut_after_x],
-                                  ys,
-                                  '-',
-                                  linewidth=1,
-                                  color='black',
-                                  solid_capstyle='butt',
-                                  zorder=10,
+                self.ax.plot([cut_after_x, cut_after_x],
+                                ys,
+                                '-',
+                                linewidth=1,
+                                color='black',
+                                solid_capstyle='butt',
+                                zorder=10,
+                                )
+
+                color = ti.PAM_features[ti.target, f'{name}_PAM'].attribute['color']
+
+                if self.label_cut:
+                    label = self.label_overrides.get(f'{name}_cut', f'{name}_cut')
+                    self.ax.annotate(label,
+                                    xy=(cut_after_x, cut_y_bottom),
+                                    xycoords='data',
+                                    xytext=(0, 10 * self.feature_line_width / 0.005 * np.sign(ref_y)),
+                                    textcoords='offset points',
+                                    color=color,
+                                    ha='center',
+                                    va='top' if ref_y < 0 else 'bottom',
+                                    size=self.font_sizes['ref_label'],
+                                    )
+
+            if self.draw_target_sequence:
+                target_sequence = ti.reference_sequences[ti.target]
+                
+                seq_kwargs = dict(family='monospace',
+                                  size=self.font_sizes['sequence'],
+                                  ha='center',
+                                  textcoords='offset points',
+                                  va='top',
+                                  xytext=(0, -2 * self.size_multiple),
                                  )
 
-                    color = ti.PAM_features[ti.target, f'{name}_PAM'].attribute['color']
-
-                    if self.label_cut:
-                        label = self.label_overrides.get(f'{name}_cut', f'{name}_cut')
-                        self.ax.annotate(label,
-                                        xy=(cut_after_x, cut_y_bottom),
-                                        xycoords='data',
-                                        xytext=(0, 10 * self.feature_line_width / 0.005 * np.sign(ref_y)),
-                                        textcoords='offset points',
-                                        color=color,
-                                        ha='center',
-                                        va='top' if ref_y < 0 else 'bottom',
-                                        size=self.font_sizes['ref_label'],
-                                       )
-
-                if self.draw_target_sequence:
-                    target_sequence = ti.reference_sequences[ti.target]
-                    
-                    seq_kwargs = dict(family='monospace',
-                                      size=self.font_sizes['sequence'],
-                                      ha='center',
-                                      textcoords='offset points',
-                                      va='top',
-                                      xytext=(0, -2 * self.size_multiple),
-                                     )
-
-                    start = int(np.ceil(ref_start))
-                    end = int(np.floor(ref_end))
-                    for ref_p in range(start, end):
-                        x = ref_p_to_x(ref_p)
-                        b = target_sequence[ref_p]
-                        self.ax.annotate(b, xy=(x, ref_y), **seq_kwargs)
+                start = int(np.ceil(ref_start))
+                end = int(np.floor(ref_end))
+                for ref_p in range(start, end):
+                    x = ref_p_to_x(ref_p)
+                    b = target_sequence[ref_p]
+                    if self.flip_target:
+                        b = utilities.complement(b)
+                    self.ax.annotate(b, xy=(x, ref_y), **seq_kwargs)
                     
         self.ax.set_ylim(self.min_y - 0.1 * self.height, self.max_y + 0.1 * self.height)
+
+        return ref_p_to_x
+
+    def draw_target_and_donor(self):
+        if len(self.alignments) == 0:
+            return
+
+        ti = self.target_info
+        
+        if self.target_on_top:
+            target_y = self.max_y + self.target_and_donor_y_gap
+            donor_y = self.min_y - self.target_and_donor_y_gap
+        else:
+            target_y = self.min_y - self.target_and_donor_y_gap
+            donor_y = self.max_y + self.target_and_donor_y_gap
+
+        params = []
+
+        if len(self.alignment_coordinates[ti.target]) > 0:
+            #params.append((ti.target, np.mean(list(ti.cut_afters.values())), target_y, self.flip_target))
+            if ti.cut_after is None:
+                center_p = np.mean([ti.amplicon_interval.start, ti.amplicon_interval.end])
+            else:
+                center_p = ti.cut_after
+
+            params.append((ti.target, center_p, target_y, self.flip_target))
+
+        if len(self.alignment_coordinates[ti.donor]) > 0:
+            if (ti.donor, ti.donor_specific) in ti.features:
+                donor_specific_feature = ti.features[ti.donor, ti.donor_specific]
+                center_p = np.mean([donor_specific_feature.start, donor_specific_feature.end])
+            else:
+                center_p = len(ti.donor_sequence) / 2
+
+            params.append((ti.donor, center_p, donor_y, self.flip_donor))
+
+        for ref_name, center_p, ref_y, flip in params:
+            self.draw_reference(ref_name, ref_y, flip, center_p=center_p)
 
     @property
     def height(self):

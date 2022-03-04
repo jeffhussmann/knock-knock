@@ -392,6 +392,9 @@ def infer_twin_prime_overlap(pegRNA_components):
 
     return overlap_length, overlap_features
 
+def infer_prime_del_intended_deletion(ti):
+    pass
+
 def infer_twin_pegRNA_intended_deletion(ti):
     primers = ti.primers_by_side_of_read
     pegRNA_names = ti.pegRNA_names_by_side_of_read
@@ -429,36 +432,42 @@ def infer_twin_pegRNA_intended_deletion(ti):
         
     intended_seq = before_pegRNAs + from_left_pegRNA + from_right_pegRNA + after_pegRNAs
 
-    for i, (edited_b, original_b) in enumerate(zip(intended_seq, ti.wild_type_amplicon_sequence)):
-        if edited_b != original_b:
-            break
-            
-    num_matches_at_start = i
-            
-    remaining = intended_seq[num_matches_at_start + 1:]
-
-    # If the sequence following the first difference exactly
-    # matches the end of the wild type amplicon, the intended
-    # edit is a deletion.
-
-    if ti.wild_type_amplicon_sequence.endswith(remaining):
-        deletion_length = len(ti.wild_type_amplicon_sequence) - len(intended_seq)
-
-        if ti.sequencing_direction == '+':
-            deletion_start = primers['left'].start + num_matches_at_start
-            deletion_end = deletion_start + deletion_length - 1
-        else:
-            deletion_end = primers['left'].end - num_matches_at_start
-            deletion_start = deletion_end - deletion_length + 1
-
-        deletion_feature = gff.Feature.from_fields(start=deletion_start,
-                                                   end=deletion_end,
-                                                   ID=f'intended_deletion_{pegRNA_names["left"]}_{pegRNA_names["right"]}',
-                                                  )
-        deletion = target_info.DegenerateDeletion([deletion_start], deletion_length)
-        deletion = ti.expand_degenerate_indel(deletion)
-    else:
+    if len(intended_seq) >= len(ti.wild_type_amplicon_sequence):
+        # Not a deletion if it doesn't reduce length. Without this sanity check,
+        # logic below would be more complicated.
         deletion_feature = None
         deletion = None
+    else:
+        for i, (edited_b, original_b) in enumerate(zip(intended_seq, ti.wild_type_amplicon_sequence)):
+            if edited_b != original_b:
+                break
+                
+        num_matches_at_start = i
+                
+        remaining = intended_seq[num_matches_at_start + 1:]
+
+        # If the sequence following the first difference exactly
+        # matches the end of the wild type amplicon, the intended
+        # edit is a deletion.
+
+        if ti.wild_type_amplicon_sequence.endswith(remaining):
+            deletion_length = len(ti.wild_type_amplicon_sequence) - len(intended_seq)
+
+            if ti.sequencing_direction == '+':
+                deletion_start = primers['left'].start + num_matches_at_start
+                deletion_end = deletion_start + deletion_length - 1
+            else:
+                deletion_end = primers['left'].end - num_matches_at_start
+                deletion_start = deletion_end - deletion_length + 1
+
+            deletion_feature = gff.Feature.from_fields(start=deletion_start,
+                                                       end=deletion_end,
+                                                       ID=f'intended_deletion_{pegRNA_names["left"]}_{pegRNA_names["right"]}',
+                                                      )
+            deletion = target_info.DegenerateDeletion([deletion_start], deletion_length)
+            deletion = ti.expand_degenerate_indel(deletion)
+        else:
+            deletion_feature = None
+            deletion = None
 
     return deletion, deletion_feature

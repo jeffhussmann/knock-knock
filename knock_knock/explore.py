@@ -12,11 +12,13 @@ from ipywidgets import Select, Layout, Text, Button, ToggleButton, Label, HBox, 
 class Explorer:
     def __init__(self,
                  by_outcome=True,
+                 read_type=None,
                  **plot_kwargs,
                 ):
         
         self.by_outcome = by_outcome
         self.plot_kwargs = plot_kwargs
+        self.read_type = read_type
 
         self.output = ipywidgets.Output()
 
@@ -61,7 +63,7 @@ class Explorer:
             self.draw_buttons[key] = ToggleButton(value=value, description=label)
 
         toggles = [
-            ('split_at_indels', False),
+            ('split_at_indels', True),
         ]
         for key, default_value in toggles:
             value = self.plot_kwargs.pop(key, default_value)
@@ -166,7 +168,7 @@ class Explorer:
                 else:
                     qnames = exp.outcome_query_names(outcome)[:200]
             else:
-                qnames = list(islice(exp.query_names(), 200))
+                qnames = list(islice(exp.query_names(read_type=self.read_type), 200))
 
             self.widgets['read_id'].options = qnames
 
@@ -180,7 +182,7 @@ class Explorer:
         if self.by_outcome:
             als = exp.get_read_alignments(read_id, outcome=self.get_current_outcome())
         else:
-            als = exp.get_read_alignments(read_id)
+            als = exp.get_read_alignments(read_id, read_type=self.read_type)
 
         return als
 
@@ -207,8 +209,9 @@ class Explorer:
                     layout = knock_knock.layout.NonoverlappingPairLayout(als['R1'], als['R2'], exp.target_info)
             else:
                 read_details = [
-                    'query name: ' + als[0].query_name,
-                    'sequence: ' + als[0].get_forward_sequence(),
+                    f'exp name: {exp.sample_name}',
+                    f'query name: {als[0].query_name} ({read_id})',
+                    f'sequence: {als[0].get_forward_sequence()}',
                 ]
 
                 if self.by_outcome:
@@ -220,17 +223,19 @@ class Explorer:
                 inferred_amplicon_length = layout.inferred_amplicon_length
 
                 read_details = read_details[:1] + [
-                    'category: ' + layout.category,
-                    'subcategory: ' + layout.subcategory,
-                    'details: ' + layout.details,
+                    f'category: {layout.category}',
+                    f'subcategory: {layout.subcategory}',
+                    f'details: {layout.details}',
+                    f'inferred amplicon length: {inferred_amplicon_length}', 
                 ] + read_details[1:]
 
                 if self.non_widgets['alignments_to_show'].value == 'relevant':
-                    als = layout.relevant_alignments
+                    plot_kwargs['relevant'] = True
+                else:
+                    plot_kwargs['relevant'] = False
 
             else:
                 inferred_amplicon_length = None
-
 
             if self.non_widgets['alignments_to_show'].value == 'parsimonious':
                 plot_kwargs['parsimonious'] = True
@@ -252,12 +257,15 @@ class Explorer:
             for k, v in exp.diagram_kwargs.items():
                 plot_kwargs.setdefault(k, v)
 
-            diagram = knock_knock.visualize.ReadDiagram(als,
-                                                        exp.target_info,
-                                                        inferred_amplicon_length=inferred_amplicon_length,
-                                                        title='',
-                                                        **plot_kwargs,
-                                                       )
+            if self.by_outcome:
+                diagram = layout.plot(**plot_kwargs)
+            else:
+                diagram = knock_knock.visualize.ReadDiagram(als,
+                                                            exp.target_info,
+                                                            inferred_amplicon_length=inferred_amplicon_length,
+                                                            title='',
+                                                            **plot_kwargs,
+                                                           )
 
             read_details = '\n'.join(read_details)
             self.non_widgets['read_details'].value = read_details
