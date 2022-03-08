@@ -1642,21 +1642,21 @@ class TargetInfo():
             self.features_to_show.update({(pegRNA_name, name) for name in ['protospacer', 'scaffold', 'PBS', 'RTT']})
             self.features.update({**pegRNA_features, **target_features})
 
-        SNV_features = knock_knock.pegRNAs.infer_SNV_features(self)
+        SNV_features, SNVs = knock_knock.pegRNAs.infer_SNV_features(self)
+        self.pegRNA_SNVs = SNVs
         self.features.update(SNV_features)
 
         if len(self.pegRNA_names) == 2:
-            self.infer_twin_prime_overlap()
+            deletion, overlap_features, is_prime_del = knock_knock.pegRNAs.infer_twin_pegRNA_features(self)
+
+            self.twin_pegRNA_intended_deletion = deletion
+            self.features.update(overlap_features)
+            self.is_prime_del = is_prime_del
 
     def infer_twin_prime_overlap(self):
         overlap_length, overlap_features = knock_knock.pegRNAs.infer_twin_prime_overlap(self.pegRNA_components)
         self.features.update(overlap_features)
         return overlap_length
-
-    @memoized_property
-    def twin_pegRNA_intended_deletion(self):
-        deletion, deletion_feature = knock_knock.pegRNAs.infer_twin_pegRNA_intended_deletion(self)
-        return deletion
 
     @memoized_property
     def PBS_names_by_side_of_target(self):

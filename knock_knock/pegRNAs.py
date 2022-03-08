@@ -1,11 +1,13 @@
 import copy
 
+from collections import defaultdict
+
 import pandas as pd
 import pysam
 
 import Bio.SeqUtils
 
-from hits import gff, sam, sw, utilities
+from hits import gff, interval, sam, sw, utilities
 
 from knock_knock import target_info
 
@@ -63,6 +65,9 @@ def infer_features(pegRNA_name,
     protospacer = pegRNA_components['protospacer']
     pegRNA_sequence = pegRNA_components['full_sequence']
     
+    # Identify which strand of the target sequence the protospacer is
+    # present on.
+
     strands = set()
     
     if protospacer in target_sequence:
@@ -86,6 +91,8 @@ def infer_features(pegRNA_name,
         
     strand = strands.pop()
     
+    # Confirm that there is a PAM next to the protospacer in the target.    
+
     if strand == '+':
         ps_5 = target_sequence.index(protospacer)
     else:
@@ -110,6 +117,10 @@ def infer_features(pegRNA_name,
     
     if 0 not in matches:
         raise ValueError(f'bad PAM: {PAM} next to {protospacer} (strand {strand})')
+
+
+    # Identify the PBS region of the pegRNA by finding a match to
+    # the sequence of the target immediately before the nick.    
     
     header = pysam.AlignmentHeader.from_references([pegRNA_name, 'target'], [len(pegRNA_sequence), len(target_sequence)])
     # 'ref' is pegRNA and 'query' is target
@@ -141,6 +152,8 @@ def infer_features(pegRNA_name,
 
     # Restrict the PBS to not extend past the nick.
     PBS_alignment = sam.crop_al_to_query_int(PBS_alignment, before_nick_start, before_nick_end)
+
+    # Build GFF features of the pegRNA components.
 
     starts = {}
     starts['protospacer'] = 0
@@ -183,6 +196,8 @@ def infer_features(pegRNA_name,
         for name in starts
     }
 
+    # Build a GFF feature for the PBS in the target.
+
     target_PBS_start, target_PBS_end = sam.query_interval(PBS_alignment)
     target_PBS_name = f'{pegRNA_name}_PBS'
     target_PBS_feature = gff.Feature.from_fields(seqname=target_name,
@@ -209,6 +224,8 @@ def infer_SNV_features(ti):
     '''
 
     new_features = {}
+
+    SNV_positions_on_target = defaultdict(list)
                 
     for pegRNA_name in ti.pegRNA_names:
         names = {
@@ -242,14 +259,12 @@ def infer_SNV_features(ti):
         }
         ends = {}
 
-        if features['target', 'PBS'].strand == '+':
+        if strands['target'] == '+':
             starts['target', 'RTT'] = features['target', 'PBS'].end + 1
             ends['target', 'RTT'] = starts['target', 'RTT'] + len(features['pegRNA', 'RTT'])
 
             starts['target', 'scaffold'] = ends['target', 'RTT'] + 1
             ends['target', 'scaffold'] = starts['target', 'scaffold'] + len(features['pegRNA', 'scaffold'])
-
-            target_offset_sign = 1
 
         else:
             ends['target', 'RTT'] = features['target', 'PBS'].start # Note: ends is exclusive here, so no - 1
@@ -257,8 +272,6 @@ def infer_SNV_features(ti):
 
             ends['target', 'scaffold'] = starts['target', 'RTT'] # Note: ends is exclusive here, so no - 1
             starts['target', 'scaffold'] = ends['target', 'scaffold'] - len(features['pegRNA', 'scaffold'])
-
-            target_offset_sign = -1
 
         for name in ['RTT', 'scaffold']:
             seqs['target', name] = ti.target_sequence[starts['target', name]:ends['target', name]]
@@ -278,10 +291,28 @@ def infer_SNV_features(ti):
                 
         for offset in SNP_offsets:
             SNP_name = f'SNP_{names["pegRNA"]}_{offset}'
+
             positions = {
-                'target': starts['target', 'RTT'] + offset * target_offset_sign,
                 'pegRNA': starts['pegRNA', 'RTT'] - offset,
             }
+
+            if strands['target'] == '+':
+                positions['target'] = starts['target', 'RTT'] + offset
+            else:
+                positions['target'] = ends['target', 'RTT'] - offset - 1
+
+            SNV_base = ti.reference_sequences[names['pegRNA']][positions['pegRNA']]
+            # A pegRNA for a forward strand protospacer provides a SNP base that is
+            # the opposite of its given strand.
+            if strands['target'] == '+':
+                SNV_strand = '-'
+                SNV_base = utilities.reverse_complement(SNV_base)
+            else:
+                SNV_strand = '+'
+
+            SNV_positions_on_target[positions['target']].append(
+                (names['pegRNA'], positions['pegRNA'], SNV_strand, SNV_base)
+            )
 
             for seq_name in names:
                 feature = gff.Feature.from_fields(seqname=names[seq_name],
@@ -339,9 +370,196 @@ def infer_SNV_features(ti):
         HA_RTT.attribute['ID'] = HA_RTT_name
         new_features[names['pegRNA'], HA_RTT_name] = HA_RTT
 
-    return new_features
+    SNVs = defaultdict(dict)
 
-def infer_twin_prime_overlap(pegRNA_components):
+    for target_position, pegRNA_list in SNV_positions_on_target.items():
+        t = ti.reference_sequences[ti.target][target_position]
+
+        for pegRNA_name, position, strand, d in pegRNA_list:
+            name = f'SNV_{target_position}_{t}-{d}'
+
+            SNVs[ti.target][name] = {
+                'position': target_position,
+                'strand': '+',
+                'base': t,
+            }
+
+            SNVs[pegRNA_name][name] = {
+                'position': position,
+                'strand': strand,
+                'base': d,
+            }
+
+    return new_features, SNVs
+
+def infer_twin_pegRNA_features(ti):
+
+    target_seq = ti.reference_sequences[ti.target]
+    primers = ti.primers_by_side_of_target
+
+    pegRNA_names = ti.pegRNA_names_by_side_of_target
+
+    pegRNA_seqs = {side: ti.reference_sequences[ti.pegRNA_names_by_side_of_target[side]] for side in [5, 3]}
+
+    target_PBSs = {side: ti.features[ti.target, ti.PBS_names_by_side_of_target[side]] for side in [5, 3]}
+
+    pegRNA_RTTs = {side: ti.features[ti.pegRNA_names_by_side_of_target[side], 'RTT'] for side in [5, 3]}
+
+    overlap_features = {}
+    overlap_seqs = {}
+    intended_edit_seqs = {}
+
+    is_prime_del = False
+
+    through_PBS = {
+        5: target_seq[primers[5].start:target_PBSs[5].end + 1],
+        3: target_seq[target_PBSs[3].start:primers[3].end + 1]
+    }
+
+    RTed = {
+        5: utilities.reverse_complement(pegRNA_seqs[5][pegRNA_RTTs[5].start:pegRNA_RTTs[5].end + 1]),
+        3: pegRNA_seqs[3][pegRNA_RTTs[3].start:pegRNA_RTTs[3].end + 1],
+    }
+
+    target_with_RTed = {
+        5: through_PBS[5] + RTed[5],
+        3: RTed[3] + through_PBS[3],
+    }
+
+    # Align the RT'ed part of the 5' pegRNA to the target+RT'ed sequence
+    # from the 3' side.
+
+    for length in range(1, len(RTed[5]) + 1):
+        suffix = RTed[5][-length:]
+        try:
+            start = target_with_RTed[3].index(suffix)
+        except ValueError:
+            length = length - 1
+            break
+
+    # How much of the RTed sequence from 5 lines up with non-RTed sequence from 3?
+    # Answer is how much of [start, start + length - 1] overlaps with [len(RTed[3]), len(target_with_RTed[3]) - 1]
+    # If any, these pegRNAs are a prime del strategy.
+
+    non_RTed_interval = interval.Interval(start, start + length - 1) & interval.Interval(len(RTed[3]), len(target_with_RTed[3]) - 1)
+    if len(non_RTed_interval) > 0:
+        is_prime_del = True
+
+    # How much of the RTed sequence from 5 lines up with RTed sequence from 3?
+    # Since the lined up part begins at index 'start' in target_with_RTed[3], the answer
+    # is how much of [start, start + length - 1] overlaps with [0, len(RTed[3]) - 1]
+
+    overlap_interval = interval.Interval(start, start + length - 1) & interval.Interval(0, len(RTed[3]) - 1)
+
+    if len(overlap_interval) > 0:
+        overlap_seqs[5] = target_with_RTed[3][overlap_interval.start:overlap_interval.end + 1]
+        overlap_interval_on_pegRNA = interval.Interval(pegRNA_RTTs[3].start + overlap_interval.start, pegRNA_RTTs[3].start + overlap_interval.end)
+
+        overlap_feature = gff.Feature.from_fields(seqname=pegRNA_names[3],
+                                                  feature='overlap',
+                                                  start=overlap_interval_on_pegRNA.start,
+                                                  end=overlap_interval_on_pegRNA.end,
+                                                  strand='+',
+                                                  attribute_string=gff.make_attribute_string({
+                                                      'ID': 'overlap',
+                                                      'color': default_feature_colors['overlap'],
+                                                      'short_name': 'overlap',
+                                                  }),
+                                                 )
+
+        overlap_features[pegRNA_names[3], 'overlap'] = overlap_feature
+
+    else:
+        overlap_seqs[5] = ''
+
+    intended_edit_seqs[5] = target_with_RTed[5][:-length] + target_with_RTed[3][start:]
+
+
+    # Align the RT'ed part of the 3' pegRNA to the target+RT'ed sequence
+    # from the 5' side.
+
+    for length in range(1, len(RTed[3]) + 1):
+        prefix = RTed[3][:length]
+        try:
+            start = target_with_RTed[5].index(prefix)
+        except ValueError:
+            length = length - 1
+            break
+
+    # How much of the RTed sequence from 3 lines up with non-RTed sequence from 5?
+    # Answer is how much of [start, start + length - 1] overlaps with [0, len(through_PBS[5]) - 1]
+    # If any, these pegRNAs are a prime del strategy.
+
+    non_RTed_interval = interval.Interval(start, start + length - 1) & interval.Interval(0, len(through_PBS[5]) - 1)
+    if len(non_RTed_interval) > 0:
+        is_prime_del = True
+
+    # How much of the RTed sequence from 3 lines up with RTed sequence from 5?
+    # Since the lined up part begins at index 'start' in target_with_RTed[5], the answer
+    # is how much of [start, start + length - 1] overlaps with [len(through_PBS[5]), len(target_with_RTed[5]) - 1]
+
+    overlap_interval = interval.Interval(start, start + length - 1) & interval.Interval(len(through_PBS[5]), len(target_with_RTed[5]) - 1)
+
+    if len(overlap_interval) > 0:
+        overlap_seqs[3] = target_with_RTed[5][overlap_interval.start:overlap_interval.end + 1]
+
+        overlap_interval_on_pegRNA = interval.Interval(pegRNA_RTTs[5].start + (len(target_with_RTed[5]) - 1 - overlap_interval.end),
+                                                       pegRNA_RTTs[5].start + (len(target_with_RTed[5]) - 1 - overlap_interval.start),
+                                                      )
+
+        overlap_feature = gff.Feature.from_fields(seqname=pegRNA_names[5],
+                                                  feature='overlap',
+                                                  start=overlap_interval_on_pegRNA.start,
+                                                  end=overlap_interval_on_pegRNA.end,
+                                                  strand='-',
+                                                  attribute_string=gff.make_attribute_string({
+                                                      'ID': 'overlap',
+                                                      'color': default_feature_colors['overlap'],
+                                                      'short_name': 'overlap',
+                                                  }),
+                                                 )
+
+
+        overlap_features[pegRNA_names[5], 'overlap'] = overlap_feature
+
+    else:
+        overlap_seqs[3] = ''
+
+    intended_edit_seqs[3] = target_with_RTed[5][:start + length] + target_with_RTed[3][length:]
+
+    if overlap_seqs[5] != overlap_seqs[3]:
+        raise ValueError('inconsistent overlaps inferred')
+
+    if intended_edit_seqs[5] != intended_edit_seqs[3]:
+        raise ValueError('inconsistent intended edits inferred')
+    else:
+        intended_edit_seq = intended_edit_seqs[5]
+
+    # Check if the intended edit is a deletion.
+
+    unedited_seq = target_seq[primers[5].start:primers[3].end + 1]
+
+    deletion = None
+
+    if len(intended_edit_seq) < len(unedited_seq):
+        for num_matches_at_start, (intended_b, edited_b) in enumerate(zip(unedited_seq, intended_edit_seq)):
+            if intended_b != edited_b:
+                break
+
+        # If the sequence following the first difference exactly
+        # matches the end of the wild type amplicon, the intended
+        # edit is a deletion.
+        if unedited_seq.endswith(intended_edit_seq[num_matches_at_start + 1:]):
+            deletion_length = len(unedited_seq) - len(intended_edit_seq)
+
+            deletion_start = primers[5].start + num_matches_at_start
+
+            deletion = target_info.DegenerateDeletion([deletion_start], deletion_length)
+            deletion = ti.expand_degenerate_indel(deletion)
+            
+    return deletion, overlap_features, is_prime_del
+
+def infer_twin_prime_overlap_old(pegRNA_components):
     '''
     Identify the stretch of exactly matching sequence at the 3'
     ends of the reverse transcription products of two pegRNAs used
@@ -392,10 +610,7 @@ def infer_twin_prime_overlap(pegRNA_components):
 
     return overlap_length, overlap_features
 
-def infer_prime_del_intended_deletion(ti):
-    pass
-
-def infer_twin_pegRNA_intended_deletion(ti):
+def infer_twin_pegRNA_intended_deletion_old(ti):
     primers = ti.primers_by_side_of_read
     pegRNA_names = ti.pegRNA_names_by_side_of_read
 
