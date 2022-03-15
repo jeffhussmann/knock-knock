@@ -1637,14 +1637,12 @@ class TargetInfo():
                                                                                   self.pegRNA_components[pegRNA_name],
                                                                                   self.target,
                                                                                   self.target_sequence,
-                                                                                  self.effector,
                                                                                  )
-            self.features_to_show.update({(pegRNA_name, name) for name in ['protospacer', 'scaffold', 'PBS', 'RTT']})
             self.features.update({**pegRNA_features, **target_features})
 
-        SNV_features, SNVs = knock_knock.pegRNAs.infer_SNV_features(self)
+        edit_features, SNVs = knock_knock.pegRNAs.infer_edit_features(self)
         self.pegRNA_SNVs = SNVs
-        self.features.update(SNV_features)
+        self.features.update(edit_features)
 
         if len(self.pegRNA_names) == 2:
             deletion, overlap_features, is_prime_del = knock_knock.pegRNAs.infer_twin_pegRNA_features(self)
@@ -1652,6 +1650,11 @@ class TargetInfo():
             self.twin_pegRNA_intended_deletion = deletion
             self.features.update(overlap_features)
             self.is_prime_del = is_prime_del
+
+        # Referencing self.features_to_show locks in some memoized properties,
+        # so do it after all pegRNA have been processed above.
+        for pegRNA_name in self.pegRNA_names:
+            self.features_to_show.update({(pegRNA_name, name) for name in ['protospacer', 'scaffold', 'PBS', 'RTT']})
 
     def infer_twin_prime_overlap(self):
         overlap_length, overlap_features = knock_knock.pegRNAs.infer_twin_prime_overlap(self.pegRNA_components)
