@@ -135,11 +135,6 @@ class Experiment:
 
         self.supplemental_index_names = index_names
 
-        self.diagram_kwargs = dict(
-            features_to_show=self.target_info.features_to_show,
-            ref_centric=True,
-            center_on_primers=True,
-        )
 
         # count_index_levels are level names for index on outcome counts.
         self.count_index_levels = ['category', 'subcategory', 'details']
@@ -147,6 +142,15 @@ class Experiment:
         self.length_plot_smooth_window = 0
 
         self.has_UMIs = False
+
+    @memoized_property
+    def diagram_kwargs(self):
+        diagram_kwargs = dict(
+            features_to_show=self.target_info.features_to_show,
+            ref_centric=True,
+            center_on_primers=True,
+        )
+        return diagram_kwargs
 
     @memoized_property
     def length_to_store_unknown(self):
