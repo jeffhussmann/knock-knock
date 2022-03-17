@@ -28,6 +28,61 @@ class Effector():
         # cut_after_offset is relative to the 5'-most nt of the PAM
         self.cut_after_offset = cut_after_offset
 
+    def __repr__(self):
+        return f"{type(self).__name__}('{self.name}', '{self.PAM_pattern}', {self.PAM_side}, {self.cut_after_offset})"
+
+    def PAM_slice(self, protospacer_feature):
+        before_slice = slice(protospacer_feature.start - len(self.PAM_pattern), protospacer_feature.start)
+        after_slice = slice(protospacer_feature.end + 1, protospacer_feature.end + 1 + len(self.PAM_pattern))
+
+        if (protospacer_feature.strand == '+' and self.PAM_side == 5) or (protospacer_feature.strand == '-' and self.PAM_side == 3):
+            PAM_slice = before_slice
+        else:
+            PAM_slice = after_slice
+
+        return PAM_slice
+
+    def PAM_matches_pattern(self, protospacer_feature, target_sequence):
+        PAM_seq = target_sequence[self.PAM_slice(protospacer_feature)].upper()
+        if protospacer_feature.strand == '-':
+            PAM_seq = utilities.reverse_complement(PAM_seq)
+
+        pattern, *matches = Bio.SeqUtils.nt_search(PAM_seq, self.PAM_pattern) 
+
+        return 0 in matches
+
+    def cut_afters(self, protospacer_feature):
+        ''' Returns a dictionary of {strand: position after which nick is made} '''
+
+        if protospacer_feature.strand == '+':
+            offset_strand_order = '+-'
+        else:
+            offset_strand_order = '-+'
+
+        if len(set(self.cut_after_offset)) == 1:
+            # Blunt DSB
+            offsets = list(set(self.cut_after_offset))
+            strands = ['both']
+        else:
+            offsets = [offset for offset in self.cut_after_offset if offset is not None]
+            strands = [strand for strand, offset in zip(offset_strand_order, self.cut_after_offset) if offset is not None]
+
+        cut_afters = {}
+        PAM_slice = self.PAM_slice(protospacer_feature)
+
+        for offset, strand in zip(offsets, strands):
+            if protospacer_feature.strand == '+':
+                PAM_5 = PAM_slice.start
+                cut_after = PAM_5 + offset
+            else:
+                PAM_5 = PAM_slice.stop - 1
+                # -1 extra because cut_after is on the other side of the cut
+                cut_after = PAM_5 - offset - 1
+            
+            cut_afters[strand] = cut_after
+
+        return cut_afters
+
 effectors = {
     'SpCas9': Effector('SpCas9', 'NGG', 3, (-4, -4)),
     'SpCas9H840A': Effector('SpCas9H840A', 'NGG', 3, (-4, None)),
@@ -139,18 +194,13 @@ class TargetInfo():
         if self.gb_records is not None:
             self.make_references()
 
-        # infer_pegRNA_features requires many things already be setup,
-        # so do this last.
-        if self.pegRNA_names is not None and len(self.pegRNA_names) > 0:
-            self.infer_pegRNA_features()
-
     def __repr__(self):
         representation = f'''\
             TargetInfo:
                 name = {self.name}
                 base_dir = {self.base_dir}
                 target = {self.target}
-                sgRNA = {self.sgRNA}
+                sgRNAs = {','.join(self.sgRNAs)}
                 donor = {self.donor}'''
         return textwrap.dedent(representation)
 
@@ -180,12 +230,20 @@ class TargetInfo():
 
     @memoized_property
     def sgRNAs(self):
-        if self.sgRNA is None:
-            sgRNAs = sorted(n for t, n in self.all_sgRNA_features)
-        elif isinstance(self.sgRNA, list):
-            sgRNAs = self.sgRNA
+        ''' Names of all features representing protospacers at which cutting was expected to occur '''
+        sgRNAs = []
+
+        if self.pegRNA_names is not None:
+            for pegRNA_name in self.pegRNA_names:
+                sgRNAs.append(knock_knock.pegRNAs.protospacer_name(pegRNA_name))
         else:
-            sgRNAs = [self.sgRNA]
+            if self.sgRNA is None:
+                sgRNAs.extend(sorted(n for t, n in self.all_sgRNA_features))
+
+        if isinstance(self.sgRNA, list):
+            sgRNAs.extend(self.sgRNA)
+        elif self.sgRNA is not None:
+            sgRNAs.append(self.sgRNA)
 
         return sgRNAs
 
@@ -338,6 +396,32 @@ class TargetInfo():
             if 'ID' in f.attribute
         }
 
+        if self.pegRNA_names is not None:
+            for pegRNA_name in self.pegRNA_names:
+                pegRNA_features, target_features = knock_knock.pegRNAs.infer_features(pegRNA_name,
+                                                                                      self.pegRNA_components[pegRNA_name],
+                                                                                      self.target,
+                                                                                      self.target_sequence,
+                                                                                     )
+                features.update({**pegRNA_features, **target_features})
+
+            edit_features, _ = knock_knock.pegRNAs.infer_edit_features(self.pegRNA_names,
+                                                                       self.target,
+                                                                       features,
+                                                                       self.reference_sequences,
+                                                                      )
+
+            features.update(edit_features)
+
+            if len(self.pegRNA_names) == 2:
+                _, overlap_features, _ = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
+                                                                                        self.target,
+                                                                                        features,
+                                                                                        self.reference_sequences,
+                                                                                       )
+
+                features.update(overlap_features)
+
         # Override colors of protospacers in pooled screening vector
         # to ensure consistency.
 
@@ -382,7 +466,7 @@ class TargetInfo():
     @memoized_property
     def features_to_show(self):
         if self.manual_features_to_show is not None:
-            return {tuple(f) for f in self.manual_features_to_show}
+            features_to_show = {tuple(f) for f in self.manual_features_to_show}
         else:
             features_to_show = set()
 
@@ -400,13 +484,10 @@ class TargetInfo():
                 features_to_show.add((self.target, sgRNA_name))
 
             for side in [5, 3]:
-                try:
-                    primer = (self.target, self.primers_by_side_of_target[side].attribute['ID'])
-                    features_to_show.add(primer)
-                except KeyError:
-                    pass
+                primer = (self.target, self.primers_by_side_of_target[side].attribute['ID'])
+                features_to_show.add(primer)
 
-                if self.homology_arms is not None:
+                if self.homology_arms is not None and self.pegRNA_names is None:
                     target_HA = (self.target, self.homology_arms[side]['target'].attribute['ID'])
                     features_to_show.add(target_HA)
 
@@ -416,7 +497,20 @@ class TargetInfo():
 
             features_to_show.update(set(self.PAM_features))
 
-            return features_to_show
+        if self.pegRNA_names is not None:
+            if len(self.pegRNA_programmed_insertions) > 0:
+                for insertion in self.pegRNA_programmed_insertions:
+                    features_to_show.add((insertion.seqname, insertion.attribute['ID']))
+
+                for pegRNA_name in self.pegRNA_names:
+                    for name in ['protospacer', 'scaffold', 'PBS', f'HA_RT_{pegRNA_name}']:
+                        features_to_show.add((pegRNA_name, name))
+
+            else:
+                for pegRNA_name in self.pegRNA_names:
+                    features_to_show.update({(pegRNA_name, name) for name in ['protospacer', 'scaffold', 'PBS', 'RTT']})
+
+        return features_to_show
 
     @memoized_property
     def sequencing_start(self):
@@ -470,7 +564,7 @@ class TargetInfo():
             'target': sw.SeedAndExtender(self.target_sequence_bytes, 20, self.header, self.target).seed_and_extend,
         }
         if self.donor is not None:
-            extenders['donor'] = sw.SeedAndExtender(self.donor_sequence_bytes, 20, self.header, self.donor).seed_and_extend
+            extenders['donor'] = sw.SeedAndExtender(self.reference_sequence_bytes[self.donor], 20, self.header, self.donor).seed_and_extend
         else:
             # If there isn't a donor, always return no alignments.
             extenders['donor'] = fake_extender
@@ -504,12 +598,7 @@ class TargetInfo():
 
     def feature_sequence(self, seq_name, feature_name):
         feature = self.features[seq_name, feature_name]
-        
-        seq = self.reference_sequences[feature.seqname][feature.start:feature.end + 1]
-        if feature.strand == '-':
-            seq = utilities.reverse_complement(seq)
-
-        return seq
+        return feature.sequence(self.reference_sequences)
 
     @memoized_property
     def all_sgRNA_features(self):
@@ -535,22 +624,10 @@ class TargetInfo():
         for name, sgRNA in self.sgRNA_features.items():
             effector = effectors[sgRNA.attribute['effector']]
 
-            before_slice = slice(sgRNA.start - len(effector.PAM_pattern), sgRNA.start)
-            after_slice = slice(sgRNA.end + 1, sgRNA.end + 1 + len(effector.PAM_pattern))
+            PAM_slices[name] = effector.PAM_slice(sgRNA)
 
-            if (sgRNA.strand == '+' and effector.PAM_side == 5) or (sgRNA.strand == '-' and effector.PAM_side == 3):
-                PAM_slice = before_slice
-            else:
-                PAM_slice = after_slice
-
-            PAM_slices[name] = PAM_slice
-
-            PAM_seq = self.target_sequence[PAM_slice].upper()
-            if sgRNA.strand == '-':
-                PAM_seq = utilities.reverse_complement(PAM_seq)
-            pattern, *matches = Bio.SeqUtils.nt_search(PAM_seq, effector.PAM_pattern) 
-            if 0 not in matches:
-                print(f'Warning: {name}: {PAM_seq} doesn\'t match {pattern} PAM')
+            if not effector.PAM_matches_pattern(sgRNA, self.target_sequence):
+                print(f'Warning: {name} PAM doesn\'t match {effector.PAM_pattern}')
 
         return PAM_slices
 
@@ -560,15 +637,10 @@ class TargetInfo():
 
         for name, sl in self.PAM_slices.items():
             PAM_name = f'{name}_PAM'
-            PAM_feature = gff.Feature.from_fields(self.target,
-                                                  '.',
-                                                  'PAM',
-                                                  sl.start,
-                                                  sl.stop - 1,
-                                                  '.',
-                                                  '.',
-                                                  '.',
-                                                  '.',
+            PAM_feature = gff.Feature.from_fields(seqname=self.target,
+                                                  feature='PAM',
+                                                  start=sl.start,
+                                                  end=sl.stop - 1,
                                                  )
 
             sgRNA = self.features[self.target, name]
@@ -611,29 +683,8 @@ class TargetInfo():
         for name, sgRNA in self.sgRNA_features.items():
             effector = effectors[sgRNA.attribute['effector']]
 
-            if sgRNA.strand == '+':
-                offset_strand_order = '+-'
-            else:
-                offset_strand_order = '-+'
-
-            if len(set(effector.cut_after_offset)) == 1:
-                # Blunt DSB
-                offsets = list(set(effector.cut_after_offset))
-                strand_suffixes = ['_both']
-            else:
-                offsets = [offset for offset in effector.cut_after_offset if offset is not None]
-                strand_suffixes = [f'_{strand}' for strand, offset in zip(offset_strand_order, effector.cut_after_offset) if offset is not None]
-
-            for offset, strand_suffix in zip(offsets, strand_suffixes):
-                if sgRNA.strand == '+':
-                    PAM_5 = self.PAM_slices[name].start
-                    cut_after = PAM_5 + offset
-                else:
-                    PAM_5 = self.PAM_slices[name].stop - 1
-                    # -1 extra because cut_after is on the other side of the cut
-                    cut_after = PAM_5 - offset - 1
-                
-                cut_afters[name + strand_suffix] = cut_after
+            for strand, cut_after in effector.cut_afters(sgRNA).items():
+                cut_afters[f'{name}_{strand}'] = cut_after
 
         return cut_afters
     
@@ -881,7 +932,6 @@ class TargetInfo():
         else:
             HAs = defaultdict(dict)
 
-
             ref_name_to_source = {
                 self.target: 'target',
                 donor: 'donor',
@@ -1030,12 +1080,12 @@ class TargetInfo():
     @memoized_property
     def donor_HA_intervals(self):
         ''' DisjointIntervals of the regions of the donor covered by homology arms '''
-        return hits.interval.Interval.from_feature(self.homology_arms[5]['donor']) | hits.interval.Interval.from_feature(self.homology_arms[3]['donor'])
+        return interval.Interval.from_feature(self.homology_arms[5]['donor']) | interval.Interval.from_feature(self.homology_arms[3]['donor'])
 
     @memoized_property
     def donor_specific_intervals(self):
         ''' DisjointIntervals of the regions of the donor NOT covered by homology arms '''
-        return hits.interval.Interval(0, len(self.donor_sequence) - 1) - self.donor_HA_intervals
+        return interval.Interval(0, len(self.donor_sequence) - 1) - self.donor_HA_intervals
 
     @memoized_property
     def amplicon_interval(self):
@@ -1124,7 +1174,7 @@ class TargetInfo():
     @memoized_property
     def best_donor_target_alignment(self):
         donor_bytes = {
-            False: self.donor_sequence_bytes,
+            False: self.reference_sequence_bytes[self.donor],
         }
         donor_bytes[True] = utilities.reverse_complement(donor_bytes[False])
         
@@ -1150,7 +1200,7 @@ class TargetInfo():
         }
         
         donor_bytes = {
-            False: self.donor_sequence_bytes,
+            False: self.reference_sequence_bytes[self.donor],
         }
         donor_bytes[True] = utilities.reverse_complement(donor_bytes[False])
         
@@ -1631,63 +1681,15 @@ class TargetInfo():
 
         return organism, original_al
 
-    def infer_pegRNA_features(self):
-        for pegRNA_name in self.pegRNA_names:
-            pegRNA_features, target_features = knock_knock.pegRNAs.infer_features(pegRNA_name,
-                                                                                  self.pegRNA_components[pegRNA_name],
-                                                                                  self.target,
-                                                                                  self.target_sequence,
-                                                                                 )
-            self.features.update({**pegRNA_features, **target_features})
-
-        edit_features, SNVs = knock_knock.pegRNAs.infer_edit_features(self)
-        self.pegRNA_SNVs = SNVs
-        self.features.update(edit_features)
-
-        if len(self.pegRNA_names) == 2:
-            deletion, overlap_features, is_prime_del = knock_knock.pegRNAs.infer_twin_pegRNA_features(self)
-
-            self.twin_pegRNA_intended_deletion = deletion
-            self.features.update(overlap_features)
-            self.is_prime_del = is_prime_del
-
-        # Referencing self.features_to_show locks in some memoized properties,
-        # so do it after all pegRNA have been processed above.
-        for pegRNA_name in self.pegRNA_names:
-            self.features_to_show.update({(pegRNA_name, name) for name in ['protospacer', 'scaffold', 'PBS', 'RTT']})
-
-    def infer_twin_prime_overlap(self):
-        overlap_length, overlap_features = knock_knock.pegRNAs.infer_twin_prime_overlap(self.pegRNA_components)
-        self.features.update(overlap_features)
-        return overlap_length
-
     @memoized_property
     def PBS_names_by_side_of_target(self):
-        ''' Note: assumes pointing towards each other, i.e. PAM-in, 5' overhang configuration '''
         if self.pegRNA_names is None:
-            return {}
-
-        PBS_name = knock_knock.pegRNAs.PBS_name
-        PBS_features_by_strand = {}
-        for pegRNA_name in self.pegRNA_names:
-            PBS_feature = self.features[self.target, PBS_name(pegRNA_name)]
-            if PBS_feature.strand in PBS_features_by_strand:
-                raise ValueError('pegRNAs target same strand')
-            else:
-                PBS_features_by_strand[PBS_feature.strand] = PBS_feature
-
-        if len(PBS_features_by_strand) == 2:
-            if PBS_features_by_strand['+'].start > PBS_features_by_strand['-'].end:
-                raise ValueError('pegRNAs not in PAM-in configuration')
-
-        by_side = {}
-        strand_to_side = {
-            '+': 5,
-            '-': 3,
-        }
-        for strand, side in strand_to_side.items():
-            if strand in PBS_features_by_strand:
-                by_side[side] = PBS_features_by_strand[strand].attribute['ID']
+            by_side = {}
+        else:
+            by_side = knock_knock.pegRNAs.PBS_names_by_side_of_target(self.pegRNA_names,
+                                                                      self.target,
+                                                                      self.features,
+                                                                     )
 
         return by_side
 
@@ -1720,6 +1722,58 @@ class TargetInfo():
     def pegRNA_names_by_side_of_target(self):
         return {side: knock_knock.pegRNAs.extract_pegRNA_name(PBS_name) for side, PBS_name in self.PBS_names_by_side_of_target.items()}
         
+    @memoized_property
+    def twin_pegRNA_intended_deletion(self):
+        if len(self.pegRNA_names) == 2:
+            deletion, _, _ = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
+                                                                            self.target,
+                                                                            self.features,
+                                                                            self.reference_sequences,
+                                                                           )
+            deletion = self.expand_degenerate_indel(deletion)
+        else:
+            deletion = None
+
+        return deletion
+
+    @memoized_property
+    def is_prime_del(self):
+        if self.pegRNA_names is not None and len(self.pegRNA_names) == 2:
+            _, _, is_prime_del = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
+                                                                                self.target,
+                                                                                self.features,
+                                                                                self.reference_sequences,
+                                                                               )
+        else:
+            is_prime_del = False
+
+        return is_prime_del
+
+    @memoized_property
+    def pegRNA_SNVs(self):
+        if self.pegRNA_names is not None and len(self.pegRNA_names) > 0:
+            _, SNVs = knock_knock.pegRNAs.infer_edit_features(self.pegRNA_names,
+                                                              self.target,
+                                                              self.features,
+                                                              self.reference_sequences,
+                                                             )
+        else:
+            SNVs = None
+
+        return SNVs
+
+    @memoized_property
+    def pegRNA_programmed_insertions(self):
+        insertions = []
+
+        if self.pegRNA_names is not None:
+            for pegRNA_name in self.pegRNA_names:
+                feature_name = f'insertion_{pegRNA_name}'
+                if (pegRNA_name, feature_name) in self.features:
+                    insertions.append(self.features[pegRNA_name, feature_name])
+
+        return insertions
+
 def degenerate_indel_from_string(details_string):
     kind, rest = details_string.split(':')
 

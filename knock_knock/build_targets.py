@@ -833,7 +833,7 @@ def build_target_info(base_dir, info, all_index_locations,
             }
 
             for pegRNA_name, pegRNA_components in info['pegRNAs']:
-                pegRNA_features, new_target_features = pegRNAs.infer_features(pegRNA_name, pegRNA_components, target_name, target_seq, effector)
+                pegRNA_features, new_target_features = pegRNAs.infer_features(pegRNA_name, pegRNA_components, target_name, target_seq)
 
                 pegRNA_SeqFeatures = [
                     SeqFeature(id=feature_name,
@@ -1136,11 +1136,19 @@ def build_target_infos_from_csv(base_dir, offtargets=False, defer_HA_identificat
         if 'effector' in row:
             info['effector'] = row['effector']
 
+
         if info['sgRNA_sequence'] is None:
             info['sgRNA_sequence'] = []
 
-        for pegRNA_name, pegRNA_components in info['pegRNAs']:
-            info['sgRNA_sequence'].append((pegRNA_name, pegRNA_components['protospacer']))
+        if info['pegRNAs'] is not None:
+            for pegRNA_name, pegRNA_components in info['pegRNAs']:
+                info['sgRNA_sequence'].append((pegRNA_name, pegRNA_components['protospacer']))
+
+            pegRNA_effectors = {components['effector'] for name, components in info['pegRNAs']}
+            if len(pegRNA_effectors) > 1:
+                raise ValueError('pegRNAs with different effectors', info['pegRNAs'])
+            elif len(pegRNA_effectors) == 1:
+                info['effector'] = list(pegRNA_effectors)[0]
 
         print(f'Building {target_name}...')
         build_target_info(base_dir, info, indices,

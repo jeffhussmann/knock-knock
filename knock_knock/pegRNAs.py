@@ -5,8 +5,6 @@ from collections import defaultdict
 import pandas as pd
 import pysam
 
-import Bio.SeqUtils
-
 from hits import gff, interval, sam, sw, utilities
 
 from knock_knock import target_info
@@ -39,6 +37,7 @@ default_feature_colors = {
     'scaffold': '#b7e6d7',
     'overlap': '#9EAFD2',
     'extension': '#777777',
+    'insertion': '#b1ff67',
 }
 
 def PBS_name(pegRNA_name):
@@ -102,26 +101,23 @@ def infer_features(pegRNA_name,
 
     protospacer_end = protospacer_start + len(protospacer) - 1
 
-    PAM_pattern = effector.PAM_pattern
+    target_protospacer_name = protospacer_name(pegRNA_name)
+    target_protospacer_feature = gff.Feature.from_fields(seqname=target_name,
+                                                         start=protospacer_start,
+                                                         end=protospacer_end,
+                                                         strand=strand,
+                                                         feature='sgRNA', 
+                                                         attribute_string=gff.make_attribute_string({
+                                                             'ID': target_protospacer_name,
+                                                             'color': default_feature_colors['protospacer'],
+                                                             'effector': effector.name,
+                                                         }),
+                                                        )
 
-    # Note: implicitly assumes effector.PAM_side == 3.
-    if strand == '+':
-        PAM_slice = slice(protospacer_end + 1, protospacer_end + 1 + len(PAM_pattern))
-        PAM_transform = utilities.identity
-        cut_after = PAM_slice.start + effector.cut_after_offset[0]
-        
-    else:
-        PAM_slice = slice(protospacer_start - len(PAM_pattern), protospacer_start)
-        PAM_transform = utilities.reverse_complement
-        # cut_after calculation is confusing. See similiar code in knock_knock.target_info.TargetInfo.cut_afters
-        cut_after = PAM_slice.stop - 1 - effector.cut_after_offset[0] - 1
+    cut_after = effector.cut_afters(target_protospacer_feature)[strand]
 
-    PAM = PAM_transform(target_sequence[PAM_slice])
-    pattern, *matches = Bio.SeqUtils.nt_search(PAM, PAM_pattern)
-    
-    if 0 not in matches:
-        raise ValueError(f'bad PAM: {PAM} next to {protospacer} (strand {strand})')
-
+    if not effector.PAM_matches_pattern(target_protospacer_feature, target_sequence):
+        raise ValueError(f'bad PAM next to {target_protospacer_name} (strand {strand})')
 
     # Identify the PBS region of the pegRNA by finding a match to
     # the sequence of the target immediately before the nick.    
@@ -200,7 +196,7 @@ def infer_features(pegRNA_name,
         for name in starts
     }
 
-    # Build features for the PBS and protospacer on the target.
+    # Build PBS feature on the target.
 
     target_PBS_start, target_PBS_end = sam.query_interval(PBS_alignment)
     target_PBS_name = PBS_name(pegRNA_name)
@@ -215,19 +211,6 @@ def infer_features(pegRNA_name,
                                                  }),
                                                 )
 
-    target_protospacer_name = protospacer_name(pegRNA_name)
-    target_protospacer_feature = gff.Feature.from_fields(seqname=target_name,
-                                                         start=protospacer_start,
-                                                         end=protospacer_end,
-                                                         strand=strand,
-                                                         feature='sgRNA', 
-                                                         attribute_string=gff.make_attribute_string({
-                                                             'ID': target_protospacer_name,
-                                                             'color': default_feature_colors['protospacer'],
-                                                             'effector': effector.name,
-                                                         }),
-                                                        )
-
     target_features = {
         (target_name, target_PBS_name): target_PBS_feature,
         (target_name, target_protospacer_name): target_protospacer_feature,
@@ -235,27 +218,36 @@ def infer_features(pegRNA_name,
     
     return pegRNA_features, target_features
 
-def infer_edit_features(ti):
-    ''' Compatibility with code initially designed for HDR screens wants
+def infer_edit_features(pegRNA_names,
+                        target_name,
+                        existing_features,
+                        reference_sequences,
+                       ):
+    ''' Requires features to already include results from infer_features.
+    
+    Compatibility with code initially designed for HDR screens wants
     pegRNAs to be annotated with 'homology arms' and 'SNPs'.
     One HA is the PBS, the other is the RT, and SNPs are features.
     '''
+
+    target_sequence = reference_sequences[target_name]
 
     new_features = {}
 
     SNV_positions_on_target = defaultdict(list)
                 
-    for pegRNA_name in ti.pegRNA_names:
+    for pegRNA_name in pegRNA_names:
         names = {
-            'target': ti.target,
+            'target': target_name,
             'pegRNA': pegRNA_name,
         }
 
         features = {
-            ('target', 'PBS'): ti.features[ti.target, PBS_name(names['pegRNA'])],
-            ('pegRNA', 'PBS'): ti.features[names['pegRNA'], 'PBS'],
-            ('pegRNA', 'RTT'): ti.features[names['pegRNA'], 'RTT'],
-            ('pegRNA', 'scaffold'): ti.features[names['pegRNA'], 'scaffold'],
+            ('target', 'PBS'): existing_features[names['target'], PBS_name(names['pegRNA'])],
+            ('target', 'protospacer'): existing_features[names['target'], protospacer_name(names['pegRNA'])],
+            ('pegRNA', 'PBS'): existing_features[names['pegRNA'], 'PBS'],
+            ('pegRNA', 'RTT'): existing_features[names['pegRNA'], 'RTT'],
+            ('pegRNA', 'scaffold'): existing_features[names['pegRNA'], 'scaffold'],
         }
 
         strands = {
@@ -264,11 +256,11 @@ def infer_edit_features(ti):
         }
 
         seqs = {
-            ('pegRNA', name): ti.feature_sequence(names['pegRNA'], name)
+            ('pegRNA', name): features['pegRNA', name].sequence(reference_sequences)
             for name in ['RTT', 'scaffold']
         }
 
-        # ti.feature_sequence uses strand to RC, so RTT will be RC'ed but not scaffold.
+        # feature sequence lookup uses strand to RC, so RTT will be RC'ed but not scaffold.
         if features['pegRNA', 'scaffold'].strand == '+':
             seqs['pegRNA', 'scaffold'] = utilities.reverse_complement(seqs['pegRNA', 'scaffold'])
 
@@ -292,7 +284,7 @@ def infer_edit_features(ti):
             starts['target', 'scaffold'] = ends['target', 'scaffold'] - len(features['pegRNA', 'scaffold'])
 
         for name in ['RTT', 'scaffold']:
-            seqs['target', name] = ti.target_sequence[starts['target', name]:ends['target', name]]
+            seqs['target', name] = target_sequence[starts['target', name]:ends['target', name]]
             if features['target', 'PBS'].strand == '-':
                 seqs['target', name] = utilities.reverse_complement(seqs['target', name])
 
@@ -304,17 +296,20 @@ def infer_edit_features(ti):
 
         # Determine if this pegRNA programs an insertion.
 
-        pegRNA_seq = ti.reference_sequences[pegRNA_name]
+        pegRNA_seq = reference_sequences[pegRNA_name]
 
-        pegRNA_RTT = ti.features[pegRNA_name, 'RTT']
+        pegRNA_RTT = existing_features[pegRNA_name, 'RTT']
 
         is_programmed_insertion = False
 
-        if features['target', 'PBS'].strand == '+':
-            RTed = seqs['pegRNA', 'RTT']
-            cut_after = ti.cut_afters[f'{protospacer_name(pegRNA_name)}_+']
+        protospacer = features['target', 'protospacer']
+        effector = target_info.effectors[protospacer.attribute['effector']]
+        cut_after = effector.cut_afters(protospacer)[protospacer.strand]
 
-            target_after_nick = ti.target_sequence[cut_after + 1:]
+        if protospacer.strand == '+':
+            RTed = seqs['pegRNA', 'RTT']
+
+            target_after_nick = target_sequence[cut_after + 1:]
 
             for i in range(len(RTed) - 10):
                 possible_match = RTed[i:]
@@ -332,9 +327,8 @@ def infer_edit_features(ti):
                 
         else:
             RTed = utilities.reverse_complement(seqs['pegRNA', 'RTT'])
-            cut_after = ti.cut_afters[f'{protospacer_name(pegRNA_name)}_-']
 
-            target_before_nick = ti.target_sequence[:cut_after + 1]
+            target_before_nick = target_sequence[:cut_after + 1]
 
             for i in range(len(RTed) - 10):
                 possible_match = RTed[:len(RTed) - i]
@@ -355,7 +349,7 @@ def infer_edit_features(ti):
             ends['pegRNA', 'HA_RT'] = starts['pegRNA', 'HA_RT'] + len(possible_match) - 1
             
             insertion_length = len(RTed) - len(possible_match)
-            starts['pegRNA', 'insertion'] = ends['target', 'HA_RT'] + 1
+            starts['pegRNA', 'insertion'] = ends['pegRNA', 'HA_RT'] + 1
             ends['pegRNA', 'insertion'] = starts['pegRNA', 'insertion'] + insertion_length - 1
             
             insertion_name = f'insertion_{pegRNA_name}'
@@ -365,6 +359,7 @@ def infer_edit_features(ti):
                                                 strand='-',
                                                 ID=insertion_name,
                                                 )
+            insertion.attribute['color'] = default_feature_colors['insertion']
             new_features[names['pegRNA'], insertion_name] = insertion
         else:
             starts['pegRNA', 'HA_RT'] = pegRNA_RTT.start
@@ -385,7 +380,7 @@ def infer_edit_features(ti):
                     else:
                         positions['target'] = ends['target', 'RTT'] - offset - 1
 
-                    SNV_base = ti.reference_sequences[names['pegRNA']][positions['pegRNA']]
+                    SNV_base = reference_sequences[names['pegRNA']][positions['pegRNA']]
                     # A pegRNA for a forward strand protospacer provides a SNP base that is
                     # the opposite of its given strand.
                     if strands['target'] == '+':
@@ -400,11 +395,11 @@ def infer_edit_features(ti):
 
                     for seq_name in names:
                         feature = gff.Feature.from_fields(seqname=names[seq_name],
-                                                        start=positions[seq_name],
-                                                        end=positions[seq_name],
-                                                        strand=strands[seq_name],
-                                                        ID=SNP_name,
-                                                        )
+                                                          start=positions[seq_name],
+                                                          end=positions[seq_name],
+                                                          strand=strands[seq_name],
+                                                          ID=SNP_name,
+                                                         )
                     
                         new_features[names[seq_name], SNP_name] = feature
 
@@ -437,19 +432,20 @@ def infer_edit_features(ti):
 
         HA_PBS = copy.deepcopy(features['target', 'PBS'])
         HA_PBS.attribute['ID'] = HA_PBS_name
-        new_features[ti.target, HA_PBS_name] = HA_PBS
+        new_features[target_name, HA_PBS_name] = HA_PBS
 
         HA_PBS = copy.deepcopy(features['pegRNA', 'PBS'])
         HA_PBS.attribute['ID'] = HA_PBS_name
         new_features[names['pegRNA'], HA_PBS_name] = HA_PBS
 
-        HA_RT = gff.Feature.from_fields(seqname=ti.target,
+        HA_RT = gff.Feature.from_fields(seqname=target_name,
                                         start=starts['target', 'HA_RT'],
                                         end=ends['target', 'HA_RT'],
                                         strand=HA_PBS.strand,
                                         ID=HA_RT_name,
                                        )
-        new_features[ti.target, HA_RT_name] = HA_RT
+        HA_RT.attribute['color'] = default_feature_colors['RTT']
+        new_features[target_name, HA_RT_name] = HA_RT
 
         HA_RT = gff.Feature.from_fields(seqname=names['pegRNA'],
                                         start=starts['pegRNA', 'HA_RT'],
@@ -457,17 +453,18 @@ def infer_edit_features(ti):
                                         strand='-',
                                         ID=HA_RT_name,
                                        )
+        HA_RT.attribute['color'] = default_feature_colors['RTT']
         new_features[names['pegRNA'], HA_RT_name] = HA_RT
 
     SNVs = defaultdict(dict)
 
     for target_position, pegRNA_list in SNV_positions_on_target.items():
-        t = ti.reference_sequences[ti.target][target_position]
+        t = target_sequence[target_position]
 
         for pegRNA_name, position, strand, d in pegRNA_list:
             name = f'SNV_{target_position}_{t}-{d}'
 
-            SNVs[ti.target][name] = {
+            SNVs[target_name][name] = {
                 'position': target_position,
                 'strand': '+',
                 'base': t,
@@ -481,19 +478,59 @@ def infer_edit_features(ti):
 
     return new_features, SNVs
 
+def PBS_names_by_side_of_target(pegRNA_names,
+                                target_name,
+                                existing_features,
+                               ):
+    PBS_features_by_strand = {}
 
-def infer_twin_pegRNA_features(ti):
+    for pegRNA_name in pegRNA_names:
+        PBS_feature = existing_features[target_name, PBS_name(pegRNA_name)]
+        if PBS_feature.strand in PBS_features_by_strand:
+            raise ValueError('pegRNAs target same strand')
+        else:
+            PBS_features_by_strand[PBS_feature.strand] = PBS_feature
 
-    target_seq = ti.reference_sequences[ti.target]
-    primers = ti.primers_by_side_of_target
+    if len(PBS_features_by_strand) == 2:
+        if PBS_features_by_strand['+'].start > PBS_features_by_strand['-'].end:
+            raise ValueError('pegRNAs not in PAM-in configuration')
 
-    pegRNA_names = ti.pegRNA_names_by_side_of_target
+    by_side = {}
 
-    pegRNA_seqs = {side: ti.reference_sequences[ti.pegRNA_names_by_side_of_target[side]] for side in [5, 3]}
+    strand_to_side = {
+        '+': 5,
+        '-': 3,
+    }
 
-    target_PBSs = {side: ti.features[ti.target, ti.PBS_names_by_side_of_target[side]] for side in [5, 3]}
+    for strand, side in strand_to_side.items():
+        if strand in PBS_features_by_strand:
+            by_side[side] = PBS_features_by_strand[strand].attribute['ID']
 
-    pegRNA_RTTs = {side: ti.features[ti.pegRNA_names_by_side_of_target[side], 'RTT'] for side in [5, 3]}
+    return by_side
+
+def pegRNA_names_by_side_of_target(pegRNA_names,
+                                   target_name,
+                                   existing_features,
+                                  ):
+    PBS_names = PBS_names_by_side_of_target(pegRNA_names, target_name, existing_features)
+    return {side: extract_pegRNA_name(PBS_name) for side, PBS_name in PBS_names.items()}
+
+def infer_twin_pegRNA_features(pegRNA_names,
+                               target_name,
+                               existing_features,
+                               reference_sequences,
+                              ):
+
+    target_seq = reference_sequences[target_name]
+
+    PBS_names_by_side = PBS_names_by_side_of_target(pegRNA_names, target_name, existing_features)
+    pegRNA_names_by_side = pegRNA_names_by_side_of_target(pegRNA_names, target_name, existing_features)
+
+    pegRNA_seqs = {side: reference_sequences[pegRNA_names_by_side[side]] for side in [5, 3]}
+
+    target_PBSs = {side: existing_features[target_name, PBS_names_by_side[side]] for side in [5, 3]}
+
+    pegRNA_RTTs = {side: existing_features[pegRNA_names_by_side[side], 'RTT'] for side in [5, 3]}
 
     overlap_features = {}
     overlap_seqs = {}
@@ -502,8 +539,8 @@ def infer_twin_pegRNA_features(ti):
     is_prime_del = False
 
     through_PBS = {
-        5: target_seq[primers[5].start:target_PBSs[5].end + 1],
-        3: target_seq[target_PBSs[3].start:primers[3].end + 1]
+        5: target_seq[:target_PBSs[5].end + 1],
+        3: target_seq[target_PBSs[3].start:]
     }
 
     RTed = {
@@ -545,7 +582,7 @@ def infer_twin_pegRNA_features(ti):
         overlap_seqs[5] = target_with_RTed[3][overlap_interval.start:overlap_interval.end + 1]
         overlap_interval_on_pegRNA = interval.Interval(pegRNA_RTTs[3].start + overlap_interval.start, pegRNA_RTTs[3].start + overlap_interval.end)
 
-        overlap_feature = gff.Feature.from_fields(seqname=pegRNA_names[3],
+        overlap_feature = gff.Feature.from_fields(seqname=pegRNA_names_by_side[3],
                                                   feature='overlap',
                                                   start=overlap_interval_on_pegRNA.start,
                                                   end=overlap_interval_on_pegRNA.end,
@@ -557,7 +594,7 @@ def infer_twin_pegRNA_features(ti):
                                                   }),
                                                  )
 
-        overlap_features[pegRNA_names[3], 'overlap'] = overlap_feature
+        overlap_features[pegRNA_names_by_side[3], 'overlap'] = overlap_feature
 
     else:
         overlap_seqs[5] = ''
@@ -597,7 +634,7 @@ def infer_twin_pegRNA_features(ti):
                                                        pegRNA_RTTs[5].start + (len(target_with_RTed[5]) - 1 - overlap_interval.start),
                                                       )
 
-        overlap_feature = gff.Feature.from_fields(seqname=pegRNA_names[5],
+        overlap_feature = gff.Feature.from_fields(seqname=pegRNA_names_by_side[5],
                                                   feature='overlap',
                                                   start=overlap_interval_on_pegRNA.start,
                                                   end=overlap_interval_on_pegRNA.end,
@@ -610,7 +647,7 @@ def infer_twin_pegRNA_features(ti):
                                                  )
 
 
-        overlap_features[pegRNA_names[5], 'overlap'] = overlap_feature
+        overlap_features[pegRNA_names_by_side[5], 'overlap'] = overlap_feature
 
     else:
         overlap_seqs[3] = ''
@@ -627,7 +664,7 @@ def infer_twin_pegRNA_features(ti):
 
     # Check if the intended edit is a deletion.
 
-    unedited_seq = target_seq[primers[5].start:primers[3].end + 1]
+    unedited_seq = target_seq
 
     deletion = None
 
@@ -642,9 +679,8 @@ def infer_twin_pegRNA_features(ti):
         if unedited_seq.endswith(intended_edit_seq[num_matches_at_start + 1:]):
             deletion_length = len(unedited_seq) - len(intended_edit_seq)
 
-            deletion_start = primers[5].start + num_matches_at_start
+            deletion_start = num_matches_at_start
 
             deletion = target_info.DegenerateDeletion([deletion_start], deletion_length)
-            deletion = ti.expand_degenerate_indel(deletion)
             
     return deletion, overlap_features, is_prime_del
