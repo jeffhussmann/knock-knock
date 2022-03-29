@@ -160,8 +160,18 @@ class IlluminaExperiment(Experiment):
 
     def alignment_groups(self, fn_key='bam_by_name', outcome=None, read_type=None):
         overlap_al_groups = super().alignment_groups(fn_key, outcome, read_type)
-        no_overlap_al_groups = self.no_overlap_alignment_groups(outcome)
-        return chain(overlap_al_groups, no_overlap_al_groups)
+        to_chain = [overlap_al_groups]
+
+        if isinstance(outcome, str):
+            # Note: this is confusing, but outcomes that are categories will get the 
+            # no-overlap als included by the calls to self.alignment_groups for each
+            # relevant (category, subcategory) pair.
+            pass
+        else:
+            no_overlap_al_groups = self.no_overlap_alignment_groups(outcome)
+            to_chain.append(no_overlap_al_groups)
+
+        return chain(*to_chain)
     
     def categorize_no_overlap_outcomes(self, max_reads=None):
         outcomes = defaultdict(list)
@@ -194,11 +204,10 @@ class IlluminaExperiment(Experiment):
         qname_to_outcome = {}
         bam_fhs = {}
 
+        saved_verbosity = pysam.set_verbosity(0)
         with ExitStack() as stack:
-            saved_verbosity = pysam.set_verbosity(0)
             full_bam_fns = {which: self.fns_by_read_type['bam_by_name'][f'{which}_no_overlap'] for which in ['R1', 'R2']}
             full_bam_fhs = {which: stack.enter_context(pysam.AlignmentFile(full_bam_fns[which])) for which in ['R1', 'R2']}
-            pysam.set_verbosity(saved_verbosity)
         
             for outcome, qnames in outcomes.items():
                 outcome_fns = self.outcome_fns(outcome)
@@ -217,6 +226,7 @@ class IlluminaExperiment(Experiment):
                     if al.query_name in qname_to_outcome:
                         outcome = qname_to_outcome[al.query_name]
                         bam_fhs[outcome, which].write(al)
+        pysam.set_verbosity(saved_verbosity)
 
     def stitch_read_pairs(self):
         before_R1 = adapters.primers[self.sequencing_primers]['R1']
@@ -258,42 +268,6 @@ class IlluminaExperiment(Experiment):
                     stitched = stitched[self.trim_from_R1:len(stitched) - self.trim_from_R2]
 
                     stitched_fh.write(str(stitched))
-
-    def generate_length_range_figures(self, specific_outcome=None, num_examples=1):
-        by_length = defaultdict(lambda: utilities.ReservoirSampler(num_examples))
-
-        al_groups = self.alignment_groups(outcome=specific_outcome)
-
-        for name, als in al_groups:
-            length = self.qname_to_inferred_length[name]
-            if length == -1:
-                length = self.length_to_store_unknown
-            by_length[length].add((name, als))
-
-        if specific_outcome is None:
-            fns = self.fns
-        else:
-            fns = self.outcome_fns(specific_outcome)
-
-        fig_dir = fns['length_ranges_dir']
-            
-        if fig_dir.is_dir():
-            shutil.rmtree(str(fig_dir))
-        fig_dir.mkdir()
-
-        if specific_outcome is not None:
-            description = ': '.join(specific_outcome)
-        else:
-            description = 'Generating length-specific diagrams'
-
-        items = self.progress(by_length.items(), desc=description, total=len(by_length))
-
-        for length, sampler in items:
-            als = sampler.sample
-            diagrams = self.alignment_groups_to_diagrams(als, num_examples=num_examples, **self.diagram_kwargs)
-            im = hits.visualize.make_stacked_Image([d.fig for d in diagrams])
-            fn = fns['length_range_figure'](length, length)
-            im.save(fn)
 
     def preprocess(self):
         self.stitch_read_pairs()

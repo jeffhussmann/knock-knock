@@ -20,6 +20,7 @@ import bokeh.palettes
 import pysam
 import yaml
 
+import hits.visualize
 from hits import sam, fastq, utilities, mapping_tools
 from hits.utilities import memoized_property
 
@@ -1307,7 +1308,7 @@ class Experiment:
         if relevant:
             only_relevant = []
 
-            for qname, als in subsample:
+            for i, (qname, als) in enumerate(subsample):
                 if isinstance(als, dict):
                     layout = layout_module.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
                 else:
@@ -1342,7 +1343,43 @@ class Experiment:
                 raise
                 
             yield d
+
+    def generate_length_range_figures(self, specific_outcome=None, num_examples=1):
+        by_length = defaultdict(lambda: utilities.ReservoirSampler(num_examples))
+
+        al_groups = self.alignment_groups(outcome=specific_outcome)
+
+        for name, als in al_groups:
+            length = self.qname_to_inferred_length[name]
+            if length == -1:
+                length = self.length_to_store_unknown
+            by_length[length].add((name, als))
+
+        if specific_outcome is None:
+            fns = self.fns
+        else:
+            fns = self.outcome_fns(specific_outcome)
+
+        fig_dir = fns['length_ranges_dir']
             
+        if fig_dir.is_dir():
+            shutil.rmtree(str(fig_dir))
+        fig_dir.mkdir()
+
+        if specific_outcome is not None:
+            description = ': '.join(specific_outcome)
+        else:
+            description = 'Generating length-specific diagrams'
+
+        items = self.progress(by_length.items(), desc=description, total=len(by_length))
+
+        for length, sampler in items:
+            als = sampler.sample
+            diagrams = self.alignment_groups_to_diagrams(als, num_examples=num_examples, **self.diagram_kwargs)
+            im = hits.visualize.make_stacked_Image([d.fig for d in diagrams])
+            fn = fns['length_range_figure'](length, length)
+            im.save(fn)
+
     def generate_all_outcome_length_range_figures(self):
         categories = sorted(self.categories_by_frequency)
         description = 'Generating outcome-specific length range diagrams'
