@@ -14,7 +14,7 @@ from knock_knock import layout as layout_module
 
 import hits.visualize
 from hits import adapters, fastq, sw, utilities
-from hits.utilities import memoized_property, group_by
+from hits.utilities import memoized_property
 
 class IlluminaExperiment(Experiment):
     def __init__(self, *args, **kwargs):
@@ -61,9 +61,6 @@ class IlluminaExperiment(Experiment):
                                         ),
                                   )
 
-    def __repr__(self):
-        return f'IlluminaExperiment: batch={self.batch}, sample_name={self.sample_name}, base_dir={self.base_dir}'
-
     @property
     def preprocessed_read_type(self):
         return 'stitched'
@@ -101,46 +98,24 @@ class IlluminaExperiment(Experiment):
 
     def get_read_layout(self, read_id, fn_key='bam_by_name', outcome=None, read_type=None):
         if read_id in self.no_overlap_qnames:
-            als = self.get_no_overlap_read_alignments(read_id, outcome=outcome)
+            als = self.get_read_alignments(read_id, outcome=outcome)
             layout = layout_module.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
             return layout
         else:
             return super().get_read_layout(read_id, fn_key=fn_key, outcome=outcome, read_type=read_type)
 
-    def get_read_alignments(self, read_id, fn_key='bam_by_name', outcome=None, read_type=None):
-        if read_type is None:
-            if read_id in self.no_overlap_qnames:
-                als = self.get_no_overlap_read_alignments(read_id, outcome=outcome)
-            else:
-                als = super().get_read_alignments(read_id, fn_key=fn_key, outcome=outcome, read_type=self.default_read_type)
-        else:
-            als = super().get_read_alignments(read_id, fn_key=fn_key, outcome=outcome, read_type=read_type)
-            
-        return als
-
-    def get_no_overlap_read_alignments(self, read_id, outcome=None):
-        als = {}
-
-        for which in ['R1', 'R2']:
-            als[which] = self.get_read_alignments(read_id, fn_key='bam_by_name', outcome=outcome, read_type=f'{which}_no_overlap')
-
-        return als
-
     def get_read_diagram(self, qname, outcome=None, relevant=True, read_type=None, **kwargs):
         if qname in self.no_overlap_qnames:
-            als = self.get_no_overlap_read_alignments(qname, outcome=outcome)
+            als = self.get_read_alignments(qname, outcome=outcome)
 
             if relevant:
                 layout = layout_module.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
                 layout.categorize()
                 to_plot = layout.relevant_alignments
-                length = layout.inferred_amplicon_length
-                if length == -1:
-                    length = self.length_to_store_unknown
-                kwargs['inferred_amplicon_length'] = length
             else:
                 to_plot = als
 
+            kwargs['inferred_amplicon_length'] = self.qname_to_inferred_length[qname]
             for k, v in self.diagram_kwargs.items():
                 kwargs.setdefault(k, v)
 
@@ -172,8 +147,8 @@ class IlluminaExperiment(Experiment):
             R1_fn_key = 'bam_by_name'
             R2_fn_key = 'bam_by_name'
 
-        R1_groups = self.alignment_groups(outcome=outcome, fn_key=R1_fn_key, read_type=R1_read_type)
-        R2_groups = self.alignment_groups(outcome=outcome, fn_key=R2_fn_key, read_type=R2_read_type)
+        R1_groups = super().alignment_groups(outcome=outcome, fn_key=R1_fn_key, read_type=R1_read_type)
+        R2_groups = super().alignment_groups(outcome=outcome, fn_key=R2_fn_key, read_type=R2_read_type)
 
         group_pairs = zip(R1_groups, R2_groups)
 
@@ -182,6 +157,11 @@ class IlluminaExperiment(Experiment):
                 raise ValueError(R1_name, R2_name)
             else:
                 yield R1_name, {'R1': R1_als, 'R2': R2_als}
+
+    def alignment_groups(self, fn_key='bam_by_name', outcome=None, read_type=None):
+        overlap_al_groups = super().alignment_groups(fn_key, outcome, read_type)
+        no_overlap_al_groups = self.no_overlap_alignment_groups(outcome)
+        return chain(overlap_al_groups, no_overlap_al_groups)
     
     def categorize_no_overlap_outcomes(self, max_reads=None):
         outcomes = defaultdict(list)
@@ -280,30 +260,14 @@ class IlluminaExperiment(Experiment):
                     stitched_fh.write(str(stitched))
 
     def generate_length_range_figures(self, specific_outcome=None, num_examples=1):
-        def extract_length(als):
-            if isinstance(als, dict):
-                pair_layout = layout_module.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
-                pair_layout.categorize()
-                length = pair_layout.inferred_amplicon_length
-            else:
-                length = als[0].query_length
-                
-            if length == -1:
-                converted = self.length_to_store_unknown
-            elif length > self.max_relevant_length:
-                converted = self.max_relevant_length
-            else:
-                converted = length
-            
-            return converted
-
         by_length = defaultdict(lambda: utilities.ReservoirSampler(num_examples))
 
         al_groups = self.alignment_groups(outcome=specific_outcome)
-        no_overlap_al_groups = self.no_overlap_alignment_groups(outcome=specific_outcome)
 
-        for name, als in chain(al_groups, no_overlap_al_groups):
-            length = extract_length(als)
+        for name, als in al_groups:
+            length = self.qname_to_inferred_length[name]
+            if length == -1:
+                length = self.length_to_store_unknown
             by_length[length].add((name, als))
 
         if specific_outcome is None:
@@ -359,6 +323,10 @@ class IlluminaExperiment(Experiment):
             
             elif stage == 'visualize':
                 self.generate_figures()
+
+            else:
+                raise ValueError(f'invalid stage: {stage}')
+
         except:
             print(self.group, self.sample_name)
             raise

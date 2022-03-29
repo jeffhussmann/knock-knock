@@ -7,10 +7,11 @@ import heapq
 import shutil
 import sys
 
-from pathlib import Path
-from itertools import islice, chain
 from collections import defaultdict, Counter
 from contextlib import ExitStack
+from itertools import islice, chain
+from pathlib import Path
+from textwrap import dedent
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -55,6 +56,7 @@ def ensure_list(possibly_list):
         definitely_list = possibly_list
     else:
         definitely_list = [possibly_list]
+
     return definitely_list
 
 class Experiment:
@@ -142,6 +144,9 @@ class Experiment:
         self.length_plot_smooth_window = 0
 
         self.has_UMIs = False
+
+    def __repr__(self):
+        return f'{self.__class__.__name__}: batch={self.batch}, sample_name={self.sample_name}, base_dir={self.base_dir}'
 
     @memoized_property
     def diagram_kwargs(self):
@@ -636,6 +641,10 @@ class Experiment:
                 description = f'Categorizing {read_type} reads'
 
             for name, als in self.progress(alignment_groups, desc=description):
+                if isinstance(als, dict):
+                    # Leave non-overlapping Illumina reads to be handled separately.
+                    continue
+
                 try:
                     layout = self.categorizer(als, self.target_info, mode=self.layout_mode)
                     layout.categorize()
@@ -655,10 +664,11 @@ class Experiment:
         qname_to_outcome = {}
         bam_fhs = {}
 
-        full_bam_fn = self.fns_by_read_type[fn_key][read_type]
 
         saved_verbosity = pysam.set_verbosity(0)
-        with pysam.AlignmentFile(full_bam_fn) as full_bam_fh:
+        with ExitStack() as stack:
+            full_bam_fn = self.fns_by_read_type[fn_key][read_type]
+            full_bam_fh = stack.enter_context(pysam.AlignmentFile(full_bam_fn))
         
             for outcome, qnames in outcomes.items():
                 outcome_fns = self.outcome_fns(outcome)
@@ -671,21 +681,18 @@ class Experiment:
                 outcome_fns['dir'].mkdir()
 
                 bam_fn = outcome_fns['bam_by_name'][read_type]
-                bam_fhs[outcome] = pysam.AlignmentFile(bam_fn, 'wb', template=full_bam_fh)
+                bam_fhs[outcome] = stack.enter_context(pysam.AlignmentFile(bam_fn, 'wb', template=full_bam_fh))
                 
-                with outcome_fns['query_names'].open('w') as fh:
-                    for qname in qnames:
-                        qname_to_outcome[qname] = outcome
-                        fh.write(qname + '\n')
+                fh = stack.enter_context(outcome_fns['query_names'].open('w'))
+                for qname in qnames:
+                    qname_to_outcome[qname] = outcome
+                    fh.write(qname + '\n')
             
             for al in full_bam_fh:
                 if al.query_name in qname_to_outcome:
                     outcome = qname_to_outcome[al.query_name]
                     bam_fhs[outcome].write(al)
         pysam.set_verbosity(saved_verbosity)
-
-        for outcome, fh in bam_fhs.items():
-            fh.close()
 
     def get_read_alignments(self, read_id, fn_key='bam_by_name', outcome=None, read_type=None):
         if read_type is None:
@@ -950,6 +957,14 @@ class Experiment:
             outcome_length_arrays[outcome] = array
 
         return outcome_length_arrays
+
+    @memoized_property
+    def qname_to_inferred_length(self):
+        qname_to_inferred_length = {}
+        for outcome in self.outcome_iter():
+            qname_to_inferred_length[outcome.query_name] = outcome.inferred_amplicon_length
+
+        return qname_to_inferred_length
 
     @memoized_property
     def total_reads(self):
@@ -1256,13 +1271,13 @@ class Experiment:
                                 )
         top_ax.add_patch(help_box)
 
-        legend_message = '''\
-Click the colored line next to an outcome category
-in the legend to activate that category. Once
-activated, hovering the cursor over the plot will
-show an example diagram of the activated category
-of the length that the cursor is over. Press
-Esc when done to deactivate the category.'''
+        legend_message = dedent('''\
+            Click the colored line next to an outcome category
+            in the legend to activate that category. Once
+            activated, hovering the cursor over the plot will
+            show an example diagram of the activated category
+            of the length that the cursor is over. Press
+            Esc when done to deactivate the category.''')
 
         top_ax.annotate(legend_message,
                         xy=(1, 0.95),
@@ -1291,7 +1306,6 @@ Esc when done to deactivate the category.'''
 
         if relevant:
             only_relevant = []
-            inferred_amplicon_lengths = []
 
             for qname, als in subsample:
                 if isinstance(als, dict):
@@ -1301,32 +1315,26 @@ Esc when done to deactivate the category.'''
 
                 layout.categorize()
                 
-                only_relevant.append(layout.relevant_alignments)
-                inferred_amplicon_lengths.append(layout.inferred_amplicon_length)
+                only_relevant.append((qname, layout.relevant_alignments))
 
             subsample = only_relevant
 
-        else:
-            inferred_amplicon_lengths = [None]*len(subsample)
-        
         kwargs = dict(
             label_layout=label_layout,
             title='',
         )
         kwargs.update(diagram_kwargs)
         
-        for als, inferred_amplicon_length in zip(subsample, inferred_amplicon_lengths):
+        for qname, als in subsample:
+            length = self.qname_to_inferred_length[qname]
+            length = None
+
             if isinstance(als, dict):
-                # Draw qualities for non-overlapping pairs.
-                draw_qualities = False
                 kwargs['read_label'] = 'sequencing read pair'
-            else:
-                draw_qualities = False
 
             try:
                 d = visualize.ReadDiagram(als, self.target_info,
-                                          draw_qualities=draw_qualities,
-                                          inferred_amplicon_length=inferred_amplicon_length,
+                                          inferred_amplicon_length=length,
                                           **kwargs,
                                          )
             except:
@@ -1379,34 +1387,34 @@ Esc when done to deactivate the category.'''
         fn = outcome_fns['diagrams_html']
         # TODO: this should be a jinja2 template.
         with fn.open('w') as fh:
-            fh.write(f'''\
-<html>
-<head>
-<title>{description}</title>
-<style>
-h2 {{
-  text-align: center;
-}}
+            fh.write(dedent(f'''\
+                <html>
+                <head>
+                <title>{description}</title>
+                <style>
+                h2 {{
+                text-align: center;
+                }}
 
-p {{
-  text-align: center;
-  font-family: monospace;
-}}
+                p {{
+                text-align: center;
+                font-family: monospace;
+                }}
 
-.center {{
-  display: block;
-  margin-left: auto;
-  margin-right: auto;
-  max-height: 100%;
-  max-width: 100%;
-  height: auto;
-  width: auto;
-}}
+                .center {{
+                display: block;
+                margin-left: auto;
+                margin-right: auto;
+                max-height: 100%;
+                max-width: 100%;
+                height: auto;
+                width: auto;
+                }}
 
-</style>
-</head>
-<body>
-''')
+                </style>
+                </head>
+                <body>
+                '''))
             fh.write(f'<h2>{self.batch}: {self.sample_name}</h1>\n')
             fh.write(f'<h2>{description}</h2>\n')
             
@@ -1424,7 +1432,8 @@ p {{
                 fh.write(f'{tag}\n')
 
     def generate_all_outcome_example_figures(self, num_examples=10, **kwargs):
-        for outcome in self.progress(self.categories_by_frequency, desc='Making diagrams for detailed subcategories'):
+        subcategories = sorted(self.categories_by_frequency)
+        for outcome in self.progress(subcategories, desc='Making diagrams for detailed subcategories'):
             self.generate_outcome_example_figures(outcome=outcome, num_examples=num_examples, **kwargs)
         
         categories = sorted(set(c for c, s in self.categories_by_frequency))

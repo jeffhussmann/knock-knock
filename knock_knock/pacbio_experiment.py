@@ -38,9 +38,6 @@ class PacbioExperiment(Experiment):
         self.diagram_kwargs.update(draw_sequence=False,
                                   )
 
-    def __repr__(self):
-        return f'PacbioExperiment: batch={self.batch}, sample_name={self.sample_name}, base_dir={self.base_dir}'
-
     @memoized_property
     def max_relevant_length(self):
         auto_length = int((self.target_info.amplicon_length * 2.5 // 1000 + 1)) * 1000

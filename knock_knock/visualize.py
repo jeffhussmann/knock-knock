@@ -276,7 +276,12 @@ class ReadDiagram():
         if self.R2_alignments is not None:
             self.R1_query_length = self.query_length
             self.R2_query_length = self.R2_alignments[0].query_length
-            self.total_query_length = self.inferred_amplicon_length
+
+            if self.inferred_amplicon_length is None or self.inferred_amplicon_length == -1:
+                self.total_query_length = self.R1_query_length + self.R2_query_length + 20
+            else:
+                self.total_query_length = self.inferred_amplicon_length
+
             self.R2_query_start = self.total_query_length - self.R2_query_length
         else:
             self.total_query_length = self.query_length
