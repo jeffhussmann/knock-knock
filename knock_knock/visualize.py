@@ -15,6 +15,20 @@ from . import layout as layout_module
 
 memoized_property = utilities.memoized_property
 
+def adjust_edges(xs):
+    # Expand by 0.5 on both sides. Since whole numbers correspond to the center
+    # of nts, this has the effect of including the entire nt for nts on the edge.
+    xs = list(xs)
+
+    if xs[0] < xs[1]:
+        xs[0] -= 0.5
+        xs[1] += 0.5
+    else:
+        xs[0] += 0.5
+        xs[1] -= 0.5
+
+    return xs
+
 class ReadDiagram():
     def __init__(self, 
                  alignments,
@@ -69,6 +83,7 @@ class ReadDiagram():
                  inferred_amplicon_length=None,
                  manual_anchors=None,
                  manual_fade=None,
+                 refs_to_draw=None,
                  **kwargs,
                 ):
 
@@ -108,6 +123,17 @@ class ReadDiagram():
         self.manual_fade = manual_fade
         self.label_differences = label_differences
         self.draw_arrowheads = kwargs.get('draw_arrowheads', True)
+        self.refs_to_draw = refs_to_draw
+
+        self.target_info = target_info
+
+        if self.refs_to_draw is None:
+            self.refs_to_draw = set()
+        
+        if len(self.refs_to_draw) == 0 and self.ref_centric:
+            self.refs_to_draw.add(self.target_info.target)
+            if self.target_info.donor is not None:
+                self.refs_to_draw.add(self.target_info.donor)
 
         if invisible_alignments is None:
             invisible_alignments = []
@@ -116,8 +142,6 @@ class ReadDiagram():
         if manual_anchors is None:
             manual_anchors = {}
         self.manual_anchors = manual_anchors
-
-        self.target_info = target_info
 
         # If query_interval is initially None, will be set
         # to whole query after alignments are cleaned up.
@@ -138,8 +162,13 @@ class ReadDiagram():
 
             if split_at_indels:
                 all_split_als = []
+
+                refs_to_split = [self.target_info.target, self.target_info.donor]
+                if self.target_info.pegRNA_names is not None:
+                    refs_to_split.extend(self.target_info.pegRNA_names)
+
                 for al in als:
-                    if al.reference_name in [self.target_info.target, self.target_info.donor]:
+                    if al.reference_name in refs_to_split:
                         split_als = layout_module.comprehensively_split_alignment(al, self.target_info, 'illumina', 1, 1)
 
                         target_seq_bytes = self.target_info.reference_sequences[al.reference_name].encode()
@@ -393,6 +422,7 @@ class ReadDiagram():
             features_to_show.extend([(self.target_info.target, f_name) for f_name in self.target_info.sgRNA_features])
 
         features = {k: v for k, v in all_features.items() if k in features_to_show and k not in self.features_to_hide}
+
         return features
 
     def draw_read_arrows(self):
@@ -507,7 +537,8 @@ class ReadDiagram():
             color = self.ref_name_to_color[ref_name]
 
             average_y = (offset  + 0.5 * (len(ref_alignments) - 1)) * self.gap_between_als
-            if (not self.ref_centric) or ref_name not in (self.target_info.target, self.target_info.donor):
+
+            if (not self.ref_centric) or ref_name not in self.refs_to_draw:
 
                 label = self.label_overrides.get(ref_name, ref_name)
 
@@ -660,7 +691,7 @@ class ReadDiagram():
                                         va='bottom',
                                         size=6,
                                         alpha=1 * alpha_multiplier,
-                                    )
+                                       )
 
                     elif kind == 'insertion':
                         starts_at, ends_at = info
@@ -669,6 +700,7 @@ class ReadDiagram():
 
                         min_height = 0.0015
                         height = min_height * min(length**0.5, 3)
+
                         if length > 1:
                             ax.annotate(str(length),
                                         xy=(centered_at, y - height),
@@ -678,7 +710,8 @@ class ReadDiagram():
                                         va='top',
                                         size=6,
                                         alpha=1 * alpha_multiplier,
-                                    )
+                                       )
+
                         indel_xs = [starts_at - 0.5, centered_at, ends_at + 0.5]
                         indel_ys = [y, y - height, y]
 
@@ -880,7 +913,7 @@ class ReadDiagram():
             if self.label_layout:
                 layout = layout_module.Layout(self.alignments, self.target_info)
                 cat, subcat, details = layout.categorize()
-                title = '{}\n{}, {}, {}'.format(self.query_name, cat, subcat, details)
+                title = f'{self.query_name}\n{cat}, {subcat}, {details}'
             else:
                 title = self.query_name
         else:
@@ -990,272 +1023,236 @@ class ReadDiagram():
             
         return self.fig
 
-    def draw_target_and_donor(self):
-        if len(self.alignments) == 0:
-            return
-
-        def adjust_edges(xs):
-            xs = list(xs)
-
-            if xs[0] < xs[1]:
-                xs[0] -= 0.5
-                xs[1] += 0.5
-            else:
-                xs[0] += 0.5
-                xs[1] -= 0.5
-
-            return xs
-
+    def draw_reference(self, ref_name, ref_y, flip, label_features=True, center_p=None):
         ti = self.target_info
-        
-        if self.target_on_top:
-            target_y = self.max_y + self.target_and_donor_y_gap
-            donor_y = self.min_y - self.target_and_donor_y_gap
+
+        color = self.ref_name_to_color[ref_name]
+
+        # To establish a mapping between reference position and x coordinate,
+        # pick anchor points on the ref and read that will line up with each other. 
+        if ref_name in self.manual_anchors:
+            anchor_read, anchor_ref = self.manual_anchors[ref_name]
+
+        # Default to lining up the left edge vertically with the reference position
+        # it is mapped to if there is only one alignment to this reference, or
+        # if there are two but they might just a single alignment split across R1
+        # and R2.
+        elif (self.force_left_aligned or 
+              (len(self.alignment_coordinates[ref_name]) == 1) or 
+              (len(self.alignment_coordinates[ref_name]) == 2 and ref_name == ti.donor and self.R2_alignments is not None) 
+             ):
+            xs, ps, y, strand, parsimony_multiplier = self.alignment_coordinates[ref_name][0]
+
+            anchor_ref = ps[0]
+
+            if (strand == '+' and not flip) or (strand == '-' and flip):
+                anchor_read = xs[0]
+            else:
+                anchor_read = xs[1]
+
+        elif self.force_right_aligned:
+            xs, ps, y, strand, parsimony_multiplier = self.alignment_coordinates[ref_name][-1]
+
+            anchor_ref = ps[-1]
+
+            if (strand == '+' and not flip) or (strand == '-' and flip):
+                anchor_read = xs[1]
+            else:
+                anchor_read = xs[0]
+
         else:
-            target_y = self.min_y - self.target_and_donor_y_gap
-            donor_y = self.max_y + self.target_and_donor_y_gap
-
-        params = []
-
-        if len(self.alignment_coordinates[ti.target]) > 0:
-            #params.append((ti.target, np.mean(list(ti.cut_afters.values())), target_y, self.flip_target))
-            if ti.cut_after is None:
-                center = np.mean([ti.amplicon_interval.start, ti.amplicon_interval.end])
+            if self.inferred_amplicon_length is not None and self.inferred_amplicon_length != -1:
+                relevant_length = self.inferred_amplicon_length
             else:
-                center = ti.cut_after
+                relevant_length = self.query_length
 
-            params.append((ti.target, center, target_y, self.flip_target))
-
-        if len(self.alignment_coordinates[ti.donor]) > 0:
-            if (ti.donor, ti.donor_specific) in ti.features:
-                donor_specific_feature = ti.features[ti.donor, ti.donor_specific]
-                middle = np.mean([donor_specific_feature.start, donor_specific_feature.end])
-            else:
-                middle = len(ti.donor_sequence) / 2
-
-            params.append((ti.donor, middle, donor_y, self.flip_donor))
-
-        for ref_name, center_p, ref_y, flip in params:
-            color = self.ref_name_to_color[ref_name]
-
-            # To establish a mapping between reference position and x coordinate,
-            # pick anchor points on the ref and read that will line up with each other. 
-            if ref_name in self.manual_anchors:
-                anchor_read, anchor_ref = self.manual_anchors[ref_name]
-
-            # Default to lining up the left edge vertically with the reference position
-            # it is mapped to if there is only one alignment to this reference, or
-            # if there are two but they might just a single alignment split across R1
-            # and R2.
-            elif (self.force_left_aligned or 
-                  (len(self.alignment_coordinates[ref_name]) == 1) or 
-                  (len(self.alignment_coordinates[ref_name]) == 2 and ref_name == ti.donor and self.R2_alignments is not None) 
-                 ):
-                xs, ps, y, strand, parsimony_multiplier = self.alignment_coordinates[ref_name][0]
-
-                anchor_ref = ps[0]
-
-                if (strand == '+' and not flip) or (strand == '-' and flip):
-                    anchor_read = xs[0]
-                else:
-                    anchor_read = xs[1]
-
-            elif self.force_right_aligned:
-                xs, ps, y, strand, parsimony_multiplier = self.alignment_coordinates[ref_name][-1]
-
-                anchor_ref = ps[-1]
-
-                if (strand == '+' and not flip) or (strand == '-' and flip):
-                    anchor_read = xs[1]
-                else:
-                    anchor_read = xs[0]
-
-            elif ref_name == ti.target and self.center_on_primers:
-                if self.inferred_amplicon_length is not None:
-                    relevant_length = self.inferred_amplicon_length
-                else:
-                    relevant_length = self.query_length
-
+            if ref_name == ti.target and self.center_on_primers:
                 if self.flip_target:
                     anchor_ref = ti.amplicon_interval.end - (len(ti.amplicon_interval) - relevant_length) / 2
                 else:
                     anchor_ref = ti.amplicon_interval.start + (len(ti.amplicon_interval) - relevant_length) / 2
 
-                xs, ps, y, strand, parsimony_multiplier = self.alignment_coordinates[ref_name][0]
+                leftmost_coordinates = self.alignment_coordinates[ref_name][0]
+                xs, ps, y, strand, parsimony_multiplier = leftmost_coordinates
+
                 if (strand == '+' and not flip) or (strand == '-' and flip):
                     anchor_read = xs[0]
                 else:
                     anchor_read = xs[1]
 
             else:
+                if center_p is None:
+                    center_p = len(ti.reference_sequences[ref_name]) // 2
+
                 anchor_ref = center_p
 
-                anchor_read = self.total_query_length // 2
+                anchor_read = relevant_length // 2
 
-            # With these anchors picked, define the mapping and its inverse.
-            if flip:
-                ref_p_to_x = lambda p: anchor_read - (p - anchor_ref)
-                x_to_ref_p = lambda x: (anchor_read - x) + anchor_ref
+        # With these anchors picked, define the mapping and its inverse.
+        if flip:
+            ref_p_to_x = lambda p: anchor_read - (p - anchor_ref)
+            x_to_ref_p = lambda x: (anchor_read - x) + anchor_ref
+        else:
+            ref_p_to_x = lambda p: (p - anchor_ref) + anchor_read
+            x_to_ref_p = lambda x: (x - anchor_read) + anchor_ref
+
+        ref_edge = len(ti.reference_sequences[ref_name]) - 1
+
+        # ref_start and ref_end are the smallest and largest ref positions
+        # that get plottted. Initially, set these to the inverse image of
+        # the edges of the current x lims.
+        if flip:
+            left, right = self.max_x, self.min_x
+        else:
+            left, right = self.min_x, self.max_x
+
+        ref_start = max(0, x_to_ref_p(left))
+        ref_end = min(ref_edge, x_to_ref_p(right))
+
+        ref_al_min = np.inf
+        ref_al_max = -np.inf
+
+        for xs, ps, y, strand, parsimony_multiplier in self.alignment_coordinates[ref_name]:
+            ref_xs = [ref_p_to_x(p) for p in ps]
+            ref_al_min = min(ref_al_min, min(ps))
+            ref_al_max = max(ref_al_max, max(ps))
+
+            xs = adjust_edges(xs)
+            ref_xs = adjust_edges(ref_xs)
+
+            parallelogram_alpha = 0.05 * parsimony_multiplier
+            # Shade parallelograms between alignments and reference.
+            if ref_y < 0:
+                ref_border_y = ref_y + self.ref_line_width
             else:
-                ref_p_to_x = lambda p: (p - anchor_ref) + anchor_read
-                x_to_ref_p = lambda x: (x - anchor_read) + anchor_ref
+                ref_border_y = ref_y - self.ref_line_width
 
-            ref_edge = len(ti.reference_sequences[ref_name]) - 1
+            self.ax.fill_betweenx([y, ref_border_y], [xs[0], ref_xs[0]], [xs[1], ref_xs[1]],
+                                    color=color,
+                                    alpha=parallelogram_alpha,
+                                    )
 
-            # ref_start and ref_end are the smallest and largest ref positions
-            # that get plottted. Initially, set these to the inverse image of
-            # the edges of the current x lims.
-            if flip:
-                left, right = self.max_x, self.min_x
+            # Draw lines connecting alignment edges to reference.
+            for x, ref_x in zip(xs, ref_xs):
+                self.ax.plot([x, ref_x], [y, ref_border_y], color=color, alpha=0.3 * parsimony_multiplier, clip_on=False)
+
+        if self.center_on_primers:
+            ref_al_min = min(ref_al_min, ti.amplicon_interval.start)
+            ref_al_max = max(ref_al_max, ti.amplicon_interval.end)
+
+        self.min_y = min(self.min_y, ref_y)
+        self.max_y = max(self.max_y, ref_y)
+
+        if ref_al_min <= ref_start:
+            ref_start = max(0, ref_al_min - 10)
+
+        if ref_al_max >= ref_end:
+            ref_end = min(ref_edge, ref_al_max + 10)
+
+        if ref_name == ti.donor and ref_edge < 3000:
+            ref_end = ref_edge
+
+        if ref_name == ti.target:
+            fade_left = True
+            fade_right = True
+        else:
+            fade_left = (ref_start > 0)
+            fade_right = (ref_end < ref_edge)
+
+        new_left = ref_p_to_x(ref_start)
+        new_right = ref_p_to_x(ref_end)
+
+        leftmost_aligned_x = ref_p_to_x(ref_al_min)
+        rightmost_aligned_x = ref_p_to_x(ref_al_max)
+
+        if flip:
+            new_left, new_right = new_right, new_left
+            leftmost_aligned_x, rightmost_aligned_x = rightmost_aligned_x, leftmost_aligned_x
+
+        if self.manual_x_lims is not None:
+            self.min_x, self.max_x = self.manual_x_lims
+        else:
+            self.min_x = min(self.min_x, new_left)
+            self.max_x = max(self.max_x, new_right)
+
+        # If an alignment goes right up to the edge, don't fade.
+        if leftmost_aligned_x <= self.min_x + 0.05 * (self.max_x - self.min_x):
+            fade_left = False
+
+        if rightmost_aligned_x >= self.min_x + 0.95 * (self.max_x - self.min_x):
+            fade_right = False
+
+        # If a plasmid donor is being drawn, fade.
+        #if ref_name == ti.donor and ti.donor_type == 'plasmid':
+        #    fade_left = True
+        #    fade_right = True
+
+        self.ax.set_xlim(self.min_x, self.max_x)
+
+        # Draw the actual reference.
+        if ref_name == ti.target:
+            # Always extend the target all the way to the edges.
+            ref_xs = [self.min_x, self.max_x]
+        else:
+            ref_xs = adjust_edges([ref_p_to_x(ref_start), ref_p_to_x(ref_end)])
+
+        rgba = matplotlib.colors.to_rgba(color)
+        image = np.expand_dims(np.array([rgba]*1000), 0)
+
+        if self.manual_fade is not None:
+            fade_left = self.manual_fade[ref_name]
+            fade_right = self.manual_fade[ref_name]
+
+        if fade_left:
+            left_alpha = 0
+        else:
+            left_alpha = 1
+
+        if fade_right:
+            right_alpha = 0
+        else:
+            right_alpha = 1
+
+        image[:, :, 3] = np.concatenate([np.linspace(left_alpha, 1, 100),
+                                            [1] * 800,
+                                            np.linspace(1, right_alpha, 100),
+                                        ])
+
+        self.ax.imshow(image,
+                        extent=(ref_xs[0], ref_xs[1], ref_y - self.ref_line_width, ref_y + self.ref_line_width),
+                        aspect='auto',
+                        interpolation='none',
+                        zorder=3,
+                        )
+
+        # Draw features.
+
+        for feature_reference, feature_name in self.features:
+            if feature_reference != ref_name:
+                continue
+
+            feature = self.features[feature_reference, feature_name]
+            if feature_name in self.color_overrides:
+                feature_color = self.color_overrides[feature_name]
             else:
-                left, right = self.min_x, self.max_x
+                feature_color = feature.attribute.get('color', 'grey')
 
-            ref_start = max(0, x_to_ref_p(left))
-            ref_end = min(ref_edge, x_to_ref_p(right))
+            xs = adjust_edges([ref_p_to_x(p) for p in [feature.start, feature.end]])
+                
+            start = ref_y + np.sign(ref_y) * self.ref_line_width
+            end = start + np.sign(ref_y) * self.feature_line_width
 
-            ref_al_min = np.inf
-            ref_al_max = -np.inf
+            bottom = min(start, end)
+            top = max(start, end)
+            self.min_y = min(bottom, self.min_y)
+            self.max_y = max(top, self.max_y)
 
-            for xs, ps, y, strand, parsimony_multiplier in self.alignment_coordinates[ref_name]:
-                ref_xs = [ref_p_to_x(p) for p in ps]
-                ref_al_min = min(ref_al_min, min(ps))
-                ref_al_max = max(ref_al_max, max(ps))
+            # + 0.5 in this check to account for adjust_edges
+            if min(xs) >= self.min_x and max(xs) <= self.max_x + 0.5:
+                final_feature_color = hits.visualize.apply_alpha(feature_color, alpha=0.7, multiplicative=True)
+                self.ax.fill_between(xs, [start] * 2, [end] * 2, color=final_feature_color, edgecolor='none')
 
-                xs = adjust_edges(xs)
-                ref_xs = adjust_edges(ref_xs)
-
-                parallelogram_alpha = 0.05 * parsimony_multiplier
-                # Shade parallelograms between alignments and reference.
-                if ref_y < 0:
-                    ref_border_y = ref_y + self.ref_line_width
-                else:
-                    ref_border_y = ref_y - self.ref_line_width
-
-                self.ax.fill_betweenx([y, ref_border_y], [xs[0], ref_xs[0]], [xs[1], ref_xs[1]],
-                                      color=color,
-                                      alpha=parallelogram_alpha,
-                                     )
-
-                # Draw lines connecting alignment edges to reference.
-                for x, ref_x in zip(xs, ref_xs):
-                    self.ax.plot([x, ref_x], [y, ref_border_y], color=color, alpha=0.3 * parsimony_multiplier, clip_on=False)
-
-            if self.center_on_primers:
-                ref_al_min = min(ref_al_min, ti.amplicon_interval.start)
-                ref_al_max = max(ref_al_max, ti.amplicon_interval.end)
-
-            self.min_y = min(self.min_y, ref_y)
-            self.max_y = max(self.max_y, ref_y)
-
-            if ref_al_min <= ref_start:
-                ref_start = max(0, ref_al_min - 10)
-
-            if ref_al_max >= ref_end:
-                ref_end = min(ref_edge, ref_al_max + 10)
-
-            if ref_name == ti.donor and ref_edge < 3000:
-                ref_end = ref_edge
-
-            if ref_name == ti.target:
-                fade_left = True
-                fade_right = True
-            else:
-                fade_left = (ref_start > 0)
-                fade_right = (ref_end < ref_edge)
-
-            new_left = ref_p_to_x(ref_start)
-            new_right = ref_p_to_x(ref_end)
-
-            leftmost_aligned_x = ref_p_to_x(ref_al_min)
-            rightmost_aligned_x = ref_p_to_x(ref_al_max)
-
-            if flip:
-                new_left, new_right = new_right, new_left
-                leftmost_aligned_x, rightmost_aligned_x = rightmost_aligned_x, leftmost_aligned_x
-
-            if self.manual_x_lims is not None:
-                self.min_x, self.max_x = self.manual_x_lims
-            else:
-                self.min_x = min(self.min_x, new_left)
-                self.max_x = max(self.max_x, new_right)
-
-            # If an alignment goes right up to the edge, don't fade.
-            if leftmost_aligned_x <= self.min_x + 0.05 * (self.max_x - self.min_x):
-                fade_left = False
-
-            if rightmost_aligned_x >= self.min_x + 0.95 * (self.max_x - self.min_x):
-                fade_right = False
-
-            # If a plasmid donor is being drawn, fade.
-            #if ref_name == ti.donor and ti.donor_type == 'plasmid':
-            #    fade_left = True
-            #    fade_right = True
-
-            self.ax.set_xlim(self.min_x, self.max_x)
-
-            # Draw the actual reference.
-            if ref_name == ti.target:
-                # Always extend the target all the way to the edges.
-                ref_xs = [self.min_x, self.max_x]
-            else:
-                ref_xs = adjust_edges([ref_p_to_x(ref_start), ref_p_to_x(ref_end)])
-
-            rgba = matplotlib.colors.to_rgba(color)
-            image = np.expand_dims(np.array([rgba]*1000), 0)
-
-            if self.manual_fade is not None:
-                fade_left = self.manual_fade[ref_name]
-                fade_right = self.manual_fade[ref_name]
-
-            if fade_left:
-                left_alpha = 0
-            else:
-                left_alpha = 1
-
-            if fade_right:
-                right_alpha = 0
-            else:
-                right_alpha = 1
-
-            image[:, :, 3] = np.concatenate([np.linspace(left_alpha, 1, 100),
-                                             [1] * 800,
-                                             np.linspace(1, right_alpha, 100),
-                                            ])
-
-            self.ax.imshow(image,
-                           extent=(ref_xs[0], ref_xs[1], ref_y - self.ref_line_width, ref_y + self.ref_line_width),
-                           aspect='auto',
-                           interpolation='none',
-                           zorder=3,
-                          )
-
-            # Draw features.
-
-            for feature_reference, feature_name in self.features:
-                if feature_reference != ref_name:
-                    continue
-
-                feature = self.features[feature_reference, feature_name]
-                if feature_name in self.color_overrides:
-                    feature_color = self.color_overrides[feature_name]
-                else:
-                    feature_color = feature.attribute.get('color', 'grey')
-
-                xs = adjust_edges([ref_p_to_x(p) for p in [feature.start, feature.end]])
-                    
-                start = ref_y + np.sign(ref_y) * self.ref_line_width
-                end = start + np.sign(ref_y) * self.feature_line_width
-
-                bottom = min(start, end)
-                top = max(start, end)
-                self.min_y = min(bottom, self.min_y)
-                self.max_y = max(top, self.max_y)
-
-                # + 0.5 in this check to account for adjust_edges
-                if min(xs) >= self.min_x and max(xs) <= self.max_x + 0.5:
-                    final_feature_color = hits.visualize.apply_alpha(feature_color, alpha=0.7, multiplicative=True)
-                    self.ax.fill_between(xs, [start] * 2, [end] * 2, color=final_feature_color, edgecolor='none')
-
+                if label_features:
                     name = feature.attribute['ID']
                     label = self.label_overrides.get(name, name)
 
@@ -1284,14 +1281,14 @@ class ReadDiagram():
         label = self.label_overrides.get(ref_name, ref_name)
 
         self.ax.annotate(label,
-                            xy=(self.label_x, ref_y),
-                            xycoords=('axes fraction', 'data'),
-                            xytext=(self.label_x_offset, 0),
-                            textcoords='offset points',
-                            color=color,
-                            ha=self.label_ha,
-                            va='center',
-                            size=self.font_sizes['ref_label'],
+                         xy=(self.label_x, ref_y),
+                         xycoords=('axes fraction', 'data'),
+                         xytext=(self.label_x_offset, 0),
+                         textcoords='offset points',
+                         color=color,
+                         ha=self.label_ha,
+                         va='center',
+                         size=self.font_sizes['ref_label'],
                         )
 
         if ref_name == ti.target:
@@ -1328,14 +1325,14 @@ class ReadDiagram():
                 if self.label_cut:
                     label = self.label_overrides.get(f'{name}_cut', f'{name}_cut')
                     self.ax.annotate(label,
-                                    xy=(cut_after_x, cut_y_bottom),
-                                    xycoords='data',
-                                    xytext=(0, 10 * self.feature_line_width / 0.005 * np.sign(ref_y)),
-                                    textcoords='offset points',
-                                    color=color,
-                                    ha='center',
-                                    va='top' if ref_y < 0 else 'bottom',
-                                    size=self.font_sizes['ref_label'],
+                                     xy=(cut_after_x, cut_y_bottom),
+                                     xycoords='data',
+                                     xytext=(0, 10 * self.feature_line_width / 0.005 * np.sign(ref_y)),
+                                     textcoords='offset points',
+                                     color=color,
+                                     ha='center',
+                                     va='top' if ref_y < 0 else 'bottom',
+                                     size=self.font_sizes['ref_label'],
                                     )
 
             if self.draw_target_sequence:
