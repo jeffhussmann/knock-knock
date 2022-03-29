@@ -1578,6 +1578,38 @@ def get_combined_sample_sheet(base_dir):
 
     return combined
 
+def process_experiment_stage(base_dir,
+                             batch_name,
+                             sample_name,
+                             stage,
+                             progress=None,
+                             print_timestamps=False,
+                            ):
+    sample_sheet = load_sample_sheet(base_dir, batch_name)
+
+    if sample_sheet is None:
+        print(f'Error: {batch_name} not found in {base_dir}')
+        sys.exit(1)
+    elif sample_name not in sample_sheet:
+        print(f'Error: {sample_name} not found in {batch_name} sample sheet')
+        sys.exit(1)
+    else:
+        description = sample_sheet[sample_name]
+
+    exp_class = get_exp_class(description.get('platform'))
+    exp = exp_class(base_dir, batch_name, sample_name, description=description, progress=progress)
+
+    if print_timestamps:
+        print(f'{utilities.current_time_string()} Started {batch_name}: {sample_name} {stage}')
+
+    exp.process(stage)
+
+    if print_timestamps:
+        print(f'{utilities.current_time_string()} Finished {batch_name}: {sample_name} {stage}')
+
+
+    
+
 def get_exp_class(platform):
     if platform == 'illumina':
         from knock_knock.illumina_experiment import IlluminaExperiment

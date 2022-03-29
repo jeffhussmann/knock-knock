@@ -1,29 +1,23 @@
-#!/usr/bin/env python3.6
+#!/usr/bin/env python3
 
 import argparse
-import datetime
+import multiprocessing
+import os
+import shutil
 import subprocess
 import sys
-import os
+import textwrap
 from pathlib import Path
 
 import yaml
 import tqdm
 
 import knock_knock
-
-citation = '''
-Hera Canaj, Jeffrey A. Hussmann, Han Li, Kyle A. Beckman, Leeanne Goodrich,
-Nathan H. Cho, Yucheng J. Li, Daniel A Santos, Aaron McGeever, Edna M Stewart,
-Veronica Pessino, Mohammad A Mandegar, Cindy Huang, Li Gan, Barbara Panning,
-Bo Huang, Jonathan S. Weissman and Manuel D. Leonetti.  "Deep profiling reveals
-the complexity of integration outcomes in CRISPR knock-in experiments."
-https://www.biorxiv.org/content/10.1101/841098v1 (2019).
-'''
+import knock_knock.build_targets
+import knock_knock.experiment
+import knock_knock.table
 
 def check_blastn(require_precise_version=False):
-    no_blastn = False
-
     try:
         output = subprocess.check_output(['blastn', '-version'])
         if require_precise_version and b'2.7.1' not in output:
@@ -33,141 +27,100 @@ def check_blastn(require_precise_version=False):
         print('blastn is required and couldn\'t be found')
         sys.exit(0)
 
-def check_parallel():
-    no_parallel = False
-
-    try:
-        output = subprocess.check_output(['parallel', '--version'])
-        if not output.startswith(b'GNU parallel'):
-            no_parallel = True
-    except:
-        no_parallel = True
-
-    if no_parallel:
-        print('GNU parallel is required and couldn\'t be found')
-        sys.exit(0)
-
 def parallel(args):
-    from knock_knock import experiment
-
-    check_parallel()
+    check_blastn()
 
     if args.group:
         args.conditions['batch'] = args.group
 
-    exps = experiment.get_all_experiments(args.project_directory, args.conditions)
+    exps = knock_knock.experiment.get_all_experiments(args.project_directory, args.conditions)
 
     if len(exps) == 0:
         print('No experiments satify conditions:')
         print(args.conditions)
-        sys.exit(0)
-
-    if args.show_progress_bars:
-        possibly_progress = ['--bar']
-    else:
-        possibly_progress = []
-
-    parallel_command = [
-        'parallel',
-        '--will-cite',
-        '-n', '4', 
-    ] + possibly_progress + [
-        '--max-procs', str(args.max_procs),
-        'knock-knock',
-        'process',
-        str(args.project_directory),
-        ':::',
-    ]
-
-    arg_tuples = [(batch, sample_name, '--stages', args.stages) for batch, sample_name in exps]
-    for t in sorted(arg_tuples):
-        parallel_command.extend(t)
-
-    env = os.environ
-    env['OPENBLAS_NUM_THREADS'] = '1'
-
-    completed_process = subprocess.run(parallel_command, env=env)
-    if completed_process.returncode != 0:
-        print('error in parallel')
         sys.exit(1)
+
+    def process_stage(stage):
+        with multiprocessing.Pool(processes=args.max_procs, maxtasksperchild=1) as process_pool:
+            arg_tuples = []
+
+            for _, exp in exps.items():
+                arg_tuple = (exp.base_dir, exp.batch, exp.sample_name, stage, args.progress, True)
+                arg_tuples.append(arg_tuple)
+
+            process_pool.starmap(knock_knock.experiment.process_experiment_stage, arg_tuples)
+
+    stages = args.stages.split(',')
+    for stage in stages:
+        process_stage(stage)
 
 def process(args):
-    from knock_knock import experiment
-
     check_blastn()
-
-    sample_sheet = experiment.load_sample_sheet(args.project_directory, args.group)
-
-    if sample_sheet is None:
-        print(f'Error: {args.group} not found in {args.project_directory}')
-        sys.exit(1)
-    elif args.sample not in sample_sheet:
-        print(f'Error: {args.sample} not found in {args.group} sample sheet')
-        sys.exit(1)
-    else:
-        description = sample_sheet[args.sample]
-
-    exp_class = experiment.get_exp_class(description.get('platform'))
-    exp = exp_class(args.project_directory, args.group, args.sample, description=description, progress=args.progress)
 
     stages = args.stages.split(',')
 
-    def timestamp():
-        return f'{datetime.datetime.now():%Y-%m-%d %H:%M:%S}'
-
     for stage in stages:
-        print(f'{timestamp()} Started {exp.batch}: {exp.sample_name} {stage}')
-        exp.process(stage)
-        print(f'{timestamp()} Finished {exp.batch}: {exp.sample_name} {stage}')
+        knock_knock.experiment.process_experiment_stage(args.project_directory,
+                                                        args.group,
+                                                        args.sample,
+                                                        stage,
+                                                        progress=args.progress,
+                                                        print_timestamps=True,
+                                                       )
 
 def make_tables(args):
-    from knock_knock import experiment, table
-
     results_dir = args.project_directory / 'results'
 
     if args.group:
-        groups = [args.group]
+        groups = args.group.split(',')
+
+        conditions = {'batch': groups}
+
+        knock_knock.table.make_self_contained_zip(args.project_directory,
+                                                  conditions,
+                                                  args.title,
+                                                  sort_samples=not args.unsorted,
+                                                  arrayed=args.arrayed,
+                                                 )
     else:
-        groups = experiment.get_all_batches(args.project_directory)
+        groups = knock_knock.experiment.get_all_batches(args.project_directory)
 
         results_dir = args.project_directory / 'results'
         csv_fn = (results_dir / 'all_groups').with_suffix('.csv')
-        df = table.load_counts(args.project_directory, exclude_empty=False).T
+        df = knock_knock.table.load_counts(args.project_directory, exclude_empty=False, arrayed=args.arrayed).T
         df.to_csv(csv_fn)
 
-    for group in groups:
-        print(group)
+        for group in groups:
+            print(group)
 
-        conditions = {'batch': group}
+            conditions = {'batch': group}
 
-        table.make_self_contained_zip(args.project_directory, conditions, group, sort_samples=not args.unsorted)
+            knock_knock.table.make_self_contained_zip(args.project_directory,
+                                                      conditions,
+                                                      group,
+                                                      sort_samples=not args.unsorted,
+                                                      arrayed=args.arrayed,
+                                                     )
 
 def build_targets(args):
-    from knock_knock import build_targets
-    build_targets.build_target_infos_from_csv(args.project_directory,
-                                              offtargets=args.offtargets,
-                                              defer_HA_identification=args.defer_HA_identification,
-                                             )
+    knock_knock.build_targets.build_target_infos_from_csv(args.project_directory,
+                                                          offtargets=args.offtargets,
+                                                          defer_HA_identification=args.defer_HA_identification,
+                                                         )
 
 def build_manual_target(args):
-    from knock_knock import build_targets
-    build_targets.build_manual_target(args.project_directory, args.target_name)
+    knock_knock.build_targets.build_manual_target(args.project_directory, args.target_name)
 
 def design_primers(args):
-    from knock_knock import build_targets
-    build_targets.design_amplicon_primers_from_csv(args.project_directory, args.genome)
+    knock_knock.build_targets.design_amplicon_primers_from_csv(args.project_directory, args.genome)
 
 def build_indices(args):
-    from knock_knock import build_targets
-    build_targets.download_genome_and_build_indices(args.project_directory,
-                                                    args.genome_name,
-                                                    args.num_threads
-                                                   )
+    knock_knock.build_targets.download_genome_and_build_indices(args.project_directory,
+                                                                args.genome_name,
+                                                                args.num_threads
+                                                               )
 
 def install_example_data(args):
-    import os
-    import shutil
-
     package_dir = Path(os.path.realpath(knock_knock.__file__)).parent
     subdirs_to_copy = ['data', 'targets']
     for subdir in subdirs_to_copy:
@@ -176,14 +129,22 @@ def install_example_data(args):
 
         if dest.exists():
             print(f'Can\'t install to {args.project_directory}, {dest} already exists')
-            sys.exit(0)
+            sys.exit(1)
 
         shutil.copytree(str(src), str(dest))
 
     print(f'Example data installed in {args.project_directory}')
 
 def print_citation(args):
-    print(citation)
+    citation = '''
+        Hera Canaj, Jeffrey A. Hussmann, Han Li, Kyle A. Beckman, Leeanne Goodrich,
+        Nathan H. Cho, Yucheng J. Li, Daniel A Santos, Aaron McGeever, Edna M Stewart,
+        Veronica Pessino, Mohammad A Mandegar, Cindy Huang, Li Gan, Barbara Panning,
+        Bo Huang, Jonathan S. Weissman and Manuel D. Leonetti.  "Deep profiling reveals
+        the complexity of integration outcomes in CRISPR knock-in experiments."
+        https://www.biorxiv.org/content/10.1101/841098v1 (2019).
+    '''
+    print(textwrap.dedent(citation))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='knock-knock')
@@ -210,13 +171,15 @@ if __name__ == '__main__':
     parser_parallel.add_argument('--group', help='if specified, the single group name to process; if not specified, all groups will be processed')
     parser_parallel.add_argument('--conditions', type=yaml.safe_load, default={}, help='if specified, conditions that samples must satisfy to be processed, given as yaml; if not specified, all samples will be processed')
     parser_parallel.add_argument('--stages', default='preprocess,align,categorize,visualize')
-    parser_parallel.add_argument('--show_progress_bars', action='store_true')
+    parser_parallel.add_argument('--progress', const=tqdm.tqdm, action='store_const', help='show progress bars')
     parser_parallel.set_defaults(func=parallel)
 
     parser_table = subparsers.add_parser('table', help='generate tables of outcome frequencies')
     add_project_directory_arg(parser_table)
-    parser_table.add_argument('--group', help='if specified, the single group name to generate tables for; if not specified, all groups will be generated')
+    parser_table.add_argument('--group', help='if specified, a comma-separated list groups to include; if not specified, all groups will be generated')
+    parser_table.add_argument('--title', default='knock_knock_table', help='if specified, a title for output files')
     parser_table.add_argument('--unsorted', action='store_true', help='don\'t sort samples')
+    parser_table.add_argument('--arrayed', action='store_true', help='samples are organized as arrayed_experiment_groups')
     parser_table.set_defaults(func=make_tables)
 
     parser_targets = subparsers.add_parser('build-targets', help='build annotations of target locii')
