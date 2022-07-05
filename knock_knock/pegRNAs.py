@@ -1,4 +1,5 @@
 import copy
+import logging
 
 from collections import defaultdict
 
@@ -143,11 +144,14 @@ def infer_features(pegRNA_name,
     alignments = mapper.seed_and_extend(target_bytes, seed_start, seed_start + seed_length, pegRNA_name)
     
     valid_alignments = [al for al in alignments if sam.get_strand(al) != strand]
+    valid_alignments = sorted(valid_alignments, key=lambda al: al.reference_start, reverse=True)
     
     if len(valid_alignments) != 1:
         seed_sequence = target_bytes[seed_start:seed_start + seed_length]
-        raise ValueError(f'{pegRNA_name}: not exactly one valid PBS location for {seed_sequence} ({len(valid_alignments)})')
+        starts = [al.reference_start for al in valid_alignments]
+        logging.warning(f'{pegRNA_name}: not exactly one valid PBS location for {seed_sequence} {starts}')
         
+    # Pick the rightmost (i.e. closest to 3' end) if there are multiple.
     PBS_alignment = valid_alignments[0]
 
     # Restrict the PBS to not extend past the nick.
@@ -430,13 +434,11 @@ def infer_edit_features(pegRNA_names,
         HA_PBS_name = f'HA_PBS_{names["pegRNA"]}'
         HA_RT_name = f'HA_RT_{names["pegRNA"]}'
 
+        # Make target HA features.
+
         HA_PBS = copy.deepcopy(features['target', 'PBS'])
         HA_PBS.attribute['ID'] = HA_PBS_name
         new_features[target_name, HA_PBS_name] = HA_PBS
-
-        HA_PBS = copy.deepcopy(features['pegRNA', 'PBS'])
-        HA_PBS.attribute['ID'] = HA_PBS_name
-        new_features[names['pegRNA'], HA_PBS_name] = HA_PBS
 
         HA_RT = gff.Feature.from_fields(seqname=target_name,
                                         start=starts['target', 'HA_RT'],
@@ -446,6 +448,12 @@ def infer_edit_features(pegRNA_names,
                                        )
         HA_RT.attribute['color'] = default_feature_colors['RTT']
         new_features[target_name, HA_RT_name] = HA_RT
+
+        # Make pegRNA HA features.
+
+        HA_PBS = copy.deepcopy(features['pegRNA', 'PBS'])
+        HA_PBS.attribute['ID'] = HA_PBS_name
+        new_features[names['pegRNA'], HA_PBS_name] = HA_PBS
 
         HA_RT = gff.Feature.from_fields(seqname=names['pegRNA'],
                                         start=starts['pegRNA', 'HA_RT'],
