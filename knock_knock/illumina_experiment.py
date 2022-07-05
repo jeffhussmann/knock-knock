@@ -1,5 +1,4 @@
 import gzip
-import shutil
 import sys
 from itertools import chain, islice
 
@@ -12,8 +11,7 @@ from knock_knock.experiment import Experiment, ensure_list
 from knock_knock import visualize
 from knock_knock import layout as layout_module
 
-import hits.visualize
-from hits import adapters, fastq, sw, utilities
+from hits import adapters, fastq, sam, sw, utilities
 from hits.utilities import memoized_property
 
 class IlluminaExperiment(Experiment):
@@ -202,31 +200,32 @@ class IlluminaExperiment(Experiment):
         # alignments for these qnames.
 
         qname_to_outcome = {}
-        bam_fhs = {}
+        full_bam_fns = {which: self.fns_by_read_type['bam_by_name'][f'{which}_no_overlap'] for which in ['R1', 'R2']}
 
-        saved_verbosity = pysam.set_verbosity(0)
-        with ExitStack() as stack:
-            full_bam_fns = {which: self.fns_by_read_type['bam_by_name'][f'{which}_no_overlap'] for which in ['R1', 'R2']}
-            full_bam_fhs = {which: stack.enter_context(pysam.AlignmentFile(full_bam_fns[which])) for which in ['R1', 'R2']}
-        
-            for outcome, qnames in outcomes.items():
-                outcome_fns = self.outcome_fns(outcome)
-                outcome_fns['dir'].mkdir(exist_ok=True)
-                for which in ['R1', 'R2']:
-                    bam_fn = outcome_fns['bam_by_name'][f'{which}_no_overlap']
-                    bam_fhs[outcome, which] = stack.enter_context(pysam.AlignmentFile(bam_fn, 'wb', template=full_bam_fhs[which]))
-                
-                fh = stack.enter_context(outcome_fns['no_overlap_query_names'].open('w'))
+        header = sam.get_header(full_bam_fns['R1'])
+        alignment_sorters = sam.multiple_AlignmentSorters(header, by_name=True)
+
+        for outcome, qnames in outcomes.items():
+            outcome_fns = self.outcome_fns(outcome)
+            outcome_fns['dir'].mkdir(exist_ok=True)
+
+            for which in ['R1', 'R2']:
+                alignment_sorters[outcome, which] = outcome_fns['bam_by_name'][f'{which}_no_overlap']
+            
+            with outcome_fns['no_overlap_query_names'].open('w') as fh:
                 for qname in qnames:
                     qname_to_outcome[qname] = outcome
                     fh.write(qname + '\n')
-            
+        
+        with alignment_sorters:
+            saved_verbosity = pysam.set_verbosity(0)
             for which in ['R1', 'R2']:
-                for al in full_bam_fhs[which]:
-                    if al.query_name in qname_to_outcome:
-                        outcome = qname_to_outcome[al.query_name]
-                        bam_fhs[outcome, which].write(al)
-        pysam.set_verbosity(saved_verbosity)
+                with pysam.AlignmentFile(full_bam_fns[which]) as full_bam_fh:
+                    for al in full_bam_fh:
+                        if al.query_name in qname_to_outcome:
+                            outcome = qname_to_outcome[al.query_name]
+                            alignment_sorters[outcome, which].write(al)
+            pysam.set_verbosity(saved_verbosity)
 
     def stitch_read_pairs(self):
         before_R1 = adapters.primers[self.sequencing_primers]['R1']

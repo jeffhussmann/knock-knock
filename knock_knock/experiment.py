@@ -4,6 +4,7 @@ if 'inline' not in matplotlib.get_backend():
 
 import datetime
 import heapq
+import logging
 import shutil
 import sys
 
@@ -137,7 +138,6 @@ class Experiment:
             index_names = index_names.split(';')
 
         self.supplemental_index_names = index_names
-
 
         # count_index_levels are level names for index on outcome counts.
         self.count_index_levels = ['category', 'subcategory', 'details']
@@ -291,7 +291,7 @@ class Experiment:
                 missing_file = True
 
         if missing_file:
-            print(f'Warning: {self.group}, {self.sample_name} {read_type} not found')
+            logging.warning(f'Warning: {self.group}, {self.sample_name} {read_type} not found')
             reads = []
         else:
             reads = fastq.reads(fn_source, up_to_space=True)
@@ -562,7 +562,7 @@ class Experiment:
     def outcome_counts(self):
         fn = self.fns['outcome_counts']
 
-        if fn.exists() and fn.stat().st_size > 0:
+        try:
             counts = pd.read_csv(fn,
                                  index_col=tuple(range(len(self.count_index_levels))),
                                  header=None,
@@ -572,7 +572,7 @@ class Experiment:
                                  comment='#',
                                 )
             counts.index.names = self.count_index_levels
-        else:
+        except (FileNotFoundError, pd.errors.EmptyDataError):
             counts = None
 
         return counts
@@ -663,37 +663,37 @@ class Experiment:
         # alignments for these qnames.
 
         qname_to_outcome = {}
-        bam_fhs = {}
 
+        full_bam_fn = self.fns_by_read_type[fn_key][read_type]
+        header = sam.get_header(full_bam_fn)
 
-        saved_verbosity = pysam.set_verbosity(0)
-        with ExitStack() as stack:
-            full_bam_fn = self.fns_by_read_type[fn_key][read_type]
-            full_bam_fh = stack.enter_context(pysam.AlignmentFile(full_bam_fn))
-        
-            for outcome, qnames in outcomes.items():
-                outcome_fns = self.outcome_fns(outcome)
+        alignment_sorters = sam.multiple_AlignmentSorters(header, by_name=True)
 
-                # This shouldn't be necessary due to rmtree of parent directory above
-                # but empirically sometimes is.
-                if outcome_fns['dir'].is_dir():
-                    shutil.rmtree(str(outcome_fns['dir']))
+        for outcome, qnames in outcomes.items():
+            outcome_fns = self.outcome_fns(outcome)
 
-                outcome_fns['dir'].mkdir()
+            # This shouldn't be necessary due to rmtree of parent directory above
+            # but empirically sometimes is.
+            if outcome_fns['dir'].is_dir():
+                shutil.rmtree(str(outcome_fns['dir']))
 
-                bam_fn = outcome_fns['bam_by_name'][read_type]
-                bam_fhs[outcome] = stack.enter_context(pysam.AlignmentFile(bam_fn, 'wb', template=full_bam_fh))
-                
-                fh = stack.enter_context(outcome_fns['query_names'].open('w'))
+            outcome_fns['dir'].mkdir()
+
+            alignment_sorters[outcome] = outcome_fns['bam_by_name'][read_type]
+            
+            with outcome_fns['query_names'].open('w') as fh:
                 for qname in qnames:
                     qname_to_outcome[qname] = outcome
                     fh.write(qname + '\n')
-            
-            for al in full_bam_fh:
-                if al.query_name in qname_to_outcome:
-                    outcome = qname_to_outcome[al.query_name]
-                    bam_fhs[outcome].write(al)
-        pysam.set_verbosity(saved_verbosity)
+        
+        with alignment_sorters:
+            saved_verbosity = pysam.set_verbosity(0)
+            with pysam.AlignmentFile(full_bam_fn) as full_bam_fh:
+                for al in full_bam_fh:
+                    if al.query_name in qname_to_outcome:
+                        outcome = qname_to_outcome[al.query_name]
+                        alignment_sorters[outcome].write(al)
+            pysam.set_verbosity(saved_verbosity)
 
     def get_read_alignments(self, read_id, fn_key='bam_by_name', outcome=None, read_type=None):
         if read_type is None:
@@ -1308,7 +1308,7 @@ class Experiment:
         if relevant:
             only_relevant = []
 
-            for i, (qname, als) in enumerate(subsample):
+            for qname, als in subsample:
                 if isinstance(als, dict):
                     layout = layout_module.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
                 else:
@@ -1652,9 +1652,6 @@ def process_experiment_stage(base_dir,
 
     if print_timestamps:
         print(f'{utilities.current_time_string()} Finished {batch_name}: {sample_name} {stage}')
-
-
-    
 
 def get_exp_class(platform):
     if platform == 'illumina':
