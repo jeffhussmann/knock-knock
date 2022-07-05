@@ -4,6 +4,7 @@ import io
 import os
 import zipfile
 
+from collections import defaultdict
 from pathlib import Path
 
 import pandas as pd
@@ -445,7 +446,9 @@ knock-knock is a tool for exploring, categorizing, and quantifying the sequence 
     with open(fn, 'w') as fh:
         fh.write(body)
 
-def make_self_contained_zip(base_dir, conditions, table_name,
+def make_self_contained_zip(base_dir,
+                            conditions,
+                            table_name,
                             include_images=True,
                             include_details=True,
                             sort_samples=True,
@@ -495,13 +498,13 @@ def make_self_contained_zip(base_dir, conditions, table_name,
     else:
         exps = experiment.get_all_experiments(base_dir, conditions)
 
-    exps_missing_files = set()
+    exps_missing_files = defaultdict(list)
 
     if include_images:
         for exp in exps.values():
             def add_fn(fn):
                 if not fn.exists():
-                    exps_missing_files.add((exp.group, exp.sample_name))
+                    exps_missing_files[exp.group, exp.sample_name].append(fn)
                 else:
                     if fn.is_dir():
                         for child_fn in fn.iterdir():
@@ -525,10 +528,12 @@ def make_self_contained_zip(base_dir, conditions, table_name,
                 add_fn(outcome_fns['diagrams_html'])
                 add_fn(outcome_fns['first_example'])
 
-    if exps_missing_files:
+    if len(exps_missing_files) > 0:
         print(f'Warning: {len(exps_missing_files)} experiment(s) are missing output files:')
         for group, exp_name in sorted(exps_missing_files):
             print(f'\t{group} {exp_name}')
+            for fn in exps_missing_files[group, exp_name]:
+                print(f'\t\t{fn}')
 
     zip_fn = fn_prefix.with_suffix('.zip')
     archive_base = Path(fn_prefix.name)
