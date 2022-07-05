@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import logging
 import multiprocessing
 import os
 import shutil
@@ -22,10 +23,10 @@ def check_blastn(require_precise_version=False):
         output = subprocess.check_output(['blastn', '-version'])
         if require_precise_version and b'2.7.1' not in output:
             print('blastn 2.7.1 is required and couldn\'t be found')
-            sys.exit(0)
+            sys.exit(1)
     except:
         print('blastn is required and couldn\'t be found')
-        sys.exit(0)
+        sys.exit(1)
 
 def parallel(args):
     check_blastn()
@@ -91,7 +92,7 @@ def make_tables(args):
         df.to_csv(csv_fn)
 
         for group in groups:
-            print(group)
+            logging.info(f'Making {group}')
 
             conditions = {'batch': group}
 
@@ -133,7 +134,7 @@ def install_example_data(args):
 
         shutil.copytree(str(src), str(dest))
 
-    print(f'Example data installed in {args.project_directory}')
+    logging.info(f'Example data installed in {args.project_directory}')
 
 def print_citation(args):
     citation = '''
@@ -147,6 +148,11 @@ def print_citation(args):
     print(textwrap.dedent(citation))
 
 if __name__ == '__main__':
+    logging.basicConfig(format='%(asctime)s: %(message)s',
+                        datefmt='%y-%m-%d %H:%M:%S',
+                        level=logging.INFO,
+                       )
+
     parser = argparse.ArgumentParser(prog='knock-knock')
 
     parser.add_argument('--version', action='version', version=knock_knock.__version__)

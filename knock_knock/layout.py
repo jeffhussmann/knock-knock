@@ -112,7 +112,7 @@ class Categorizer:
         second_q_to_offsets = self.q_to_feature_offset(second_al, second_feature_name)
         
         share_any = any(second_q_to_offsets.get(q) == offset for q, offset in first_q_to_offsets.items())
-        
+
         return share_any
 
 
@@ -246,6 +246,7 @@ class Layout(Categorizer):
             length = len(self.seq)
 
         self.inferred_amplicon_length = length
+        self.categorized = False
 
     @memoized_property
     def target_alignments(self):
