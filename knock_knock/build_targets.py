@@ -1,7 +1,9 @@
+import logging
 import shutil
 import subprocess
 import sys
 import warnings
+
 from urllib.parse import urlparse
 from pathlib import Path
 
@@ -27,7 +29,7 @@ def design_amplicon_primers_from_csv(base_dir, genome='hg19'):
     index_locations = target_info.locate_supplemental_indices(base_dir)
     if genome not in index_locations:
         print(f'Error: can\'t locate indices for {genome}')
-        sys.exit(0)
+        sys.exit(1)
 
     df = pd.read_csv(csv_fn).replace({np.nan: None})
 
@@ -35,7 +37,7 @@ def design_amplicon_primers_from_csv(base_dir, genome='hg19'):
 
     for _, row in df.iterrows():
         name = row['name']
-        print(f'Designing {name}...')
+        logging.info(f'Designing {name}...')
         best_candidate = design_amplicon_primers(base_dir, row, genome)
         if best_candidate is not None:
             amplicon_primer_info[name] = {
@@ -520,7 +522,7 @@ def build_target_info(base_dir, info, all_index_locations,
     genome = info['genome']
     if info['genome'] not in all_index_locations:
         print(f'Error: can\'t locate indices for {genome}')
-        sys.exit(0)
+        sys.exit(1)
     else:
         index_locations = all_index_locations[genome]
 
@@ -568,6 +570,11 @@ def build_target_info(base_dir, info, all_index_locations,
             effector_type = 'SpCas9H840A'
         else:
             effector_type = 'SpCas9'
+
+    if info.get('pegRNAs') is not None:
+        pegRNA_names = [pegRNA_name for pegRNA_name, components in sorted(info['pegRNAs']) ]
+    else:
+        pegRNA_names = []
 
     effector = target_info.effectors[effector_type]
 
@@ -777,6 +784,9 @@ def build_target_info(base_dir, info, all_index_locations,
 
         sgRNA_features = []
         for sgRNA_i, (ps_name, ps_seq, ps_start, ps_strand) in enumerate(protospacer_locations):
+            if ps_name in pegRNA_names:
+                continue
+
             sgRNA_feature = SeqFeature(location=FeatureLocation(ps_start - offset, ps_start - offset + len(ps_seq), strand=ps_strand),
                                        id=f'sgRNA_{ps_name}',
                                        type=f'sgRNA_{effector.name}',
@@ -835,31 +845,23 @@ def build_target_info(base_dir, info, all_index_locations,
             for pegRNA_name, pegRNA_components in info['pegRNAs']:
                 pegRNA_features, new_target_features = pegRNAs.infer_features(pegRNA_name, pegRNA_components, target_name, target_seq)
 
-                pegRNA_SeqFeatures = [
-                    SeqFeature(id=feature_name,
-                               location=FeatureLocation(feature.start, feature.end + 1, strand=convert_strand[feature.strand]),
-                               type='misc_feature',
-                               qualifiers={
-                                   'label': feature_name,
-                                   'ApEinfo_fwdcolor': feature.attribute['color'],
-                               },
-                              )
-                    for (_, feature_name), feature in pegRNA_features.items()
-                ]
+                try:
+                    pegRNA_SeqFeatures = [
+                        SeqFeature(id=feature_name,
+                                location=FeatureLocation(feature.start, feature.end + 1, strand=convert_strand[feature.strand]),
+                                type='misc_feature',
+                                qualifiers={
+                                    'label': feature_name,
+                                    'ApEinfo_fwdcolor': feature.attribute['color'],
+                                },
+                                )
+                        for (_, feature_name), feature in pegRNA_features.items()
+                    ]
+                except:
+                    for name, val in pegRNA_features.items():
+                        print(name, val)
+                    raise
 
-                target_SeqFeatures = [
-                    SeqFeature(location=FeatureLocation(feature.start, feature.end + 1, strand=convert_strand[feature.strand]),
-                               id=feature_name,
-                               type='misc_feature',
-                               qualifiers={
-                                   'label': feature_name,
-                                   'ApEinfo_fwdcolor': feature.attribute['color'],
-                               },
-                              )
-                    for (_, feature_name), feature in new_target_features.items()
-                ]
-                target_features.extend(target_SeqFeatures)
-                
                 pegRNA_Seq = Seq(pegRNA_components['full_sequence'])
                 pegRNA_Record = SeqRecord(pegRNA_Seq,
                                           name=pegRNA_name,
@@ -877,7 +879,17 @@ def build_target_info(base_dir, info, all_index_locations,
         target_Seq = Seq(target_seq)
         target_Record = SeqRecord(target_Seq, name=target_name, features=target_features, annotations={'molecule_type': 'DNA'})
         results['gb_Records'][target_name] = target_Record
-        
+
+        if info.get('pegRNAs') is not None:
+            # Note: for debugging convenience, genbank files are written for pegRNAs,
+            # but these are NOT supplied as genbank records to make the final TargetInfo,
+            # since relevant features are either represented by the intial decomposition into
+            # components or inferred on instantiation of the TargetInfo.
+            non_pegRNA_records = {name: record for name, record in results['gb_Records'].items() if name not in pegRNA_names}
+            results['gb_Records_for_manifest'] = non_pegRNA_records
+        else:
+            results['gb_Records_for_manifest'] = results['gb_Records']
+
         return results
     
     good_candidates = []
@@ -941,7 +953,7 @@ def build_target_info(base_dir, info, all_index_locations,
             Record = SeqRecord(extra_seq, name=extra_seq_name, annotations={'molecule_type': 'DNA'})
             best_candidate['gb_Records'][extra_seq_name] = Record
 
-    sources = sorted(best_candidate['gb_Records'])
+    sources = sorted(best_candidate['gb_Records_for_manifest'])
         
     manifest = {
         'sources': sources,
@@ -960,21 +972,6 @@ def build_target_info(base_dir, info, all_index_locations,
         [target_name, 'forward_primer'],
         [target_name, 'reverse_primer'],
     ]
-
-    manifest['features_to_show'].extend([[target_name, feature.id] for feature in best_candidate['sgRNA_features']])
-
-    if info.get('pegRNAs') is not None:
-        manifest['pegRNAs'] = []
-        for pegRNA_name, _ in info.get('pegRNAs'):
-            
-            manifest['pegRNAs'].append(pegRNA_name)
-
-            manifest['features_to_show'].extend([
-                [pegRNA_name, 'scaffold'],
-                [pegRNA_name, 'protospacer'],
-                [pegRNA_name, 'RTT'],
-                [pegRNA_name, 'PBS'],
-            ])
 
     if has_donor:
         manifest['features_to_show'].extend([
@@ -998,20 +995,9 @@ def build_target_info(base_dir, info, all_index_locations,
         # on the existence of the components file.
         ti = target_info.TargetInfo(base_dir, name, pegRNAs=[])
         pegRNAs_df = load_pegRNAs(base_dir, process=False)
-        pegRNA_names = [pegRNA_name for pegRNA_name, components in sorted(info['pegRNAs']) ]
         pegRNAs_df.loc[pegRNA_names].to_csv(ti.fns['pegRNAs'])
 
-        # Note: for debugging convenience, genbank files are written for pegRNAs,
-        # but these are NOT supplied as genbank records to make the final TargetInfo,
-        # since relevant features are either represented by the intial decomposition into
-        # components or inferred on instantiation of the TargetInfo.
-        gb_records = [
-            record for name, record in best_candidate['gb_Records'].items()
-            if name not in pegRNA_names
-        ]
-
-    else:
-        gb_records = list(best_candidate['gb_Records'].values())
+    gb_records = list(best_candidate['gb_Records_for_manifest'].values())
 
     ti = target_info.TargetInfo(base_dir, name, gb_records=gb_records)
 
@@ -1111,7 +1097,7 @@ def build_target_infos_from_csv(base_dir, offtargets=False, defer_HA_identificat
                 if invalid_chars:
                     print(possible_error_message)
                     print(f'Valid sequence characters are {valid_chars}; {seq} contains {invalid_chars}')
-                    sys.exit(0)
+                    sys.exit(1)
 
             looked_up.append((value_name, seq))
 
@@ -1136,12 +1122,16 @@ def build_target_infos_from_csv(base_dir, offtargets=False, defer_HA_identificat
         if 'effector' in row:
             info['effector'] = row['effector']
 
-
         if info['sgRNA_sequence'] is None:
             info['sgRNA_sequence'] = []
 
         if info['pegRNAs'] is not None:
             for pegRNA_name, pegRNA_components in info['pegRNAs']:
+                if pegRNA_name is None:
+                    # Because of how lookup works, pegRNA_components will hold value of 
+                    # name that wasn't found.
+                    raise ValueError(f'{pegRNA_components} not found')
+
                 info['sgRNA_sequence'].append((pegRNA_name, pegRNA_components['protospacer']))
 
             pegRNA_effectors = {components['effector'] for name, components in info['pegRNAs']}
@@ -1150,7 +1140,7 @@ def build_target_infos_from_csv(base_dir, offtargets=False, defer_HA_identificat
             elif len(pegRNA_effectors) == 1:
                 info['effector'] = list(pegRNA_effectors)[0]
 
-        print(f'Building {target_name}...')
+        logging.info(f'Building {target_name}...')
         build_target_info(base_dir, info, indices,
                           offtargets=offtargets,
                           defer_HA_identification=defer_HA_identification,
@@ -1159,7 +1149,7 @@ def build_target_infos_from_csv(base_dir, offtargets=False, defer_HA_identificat
 def build_indices(base_dir, name, num_threads=1):
     base_dir = Path(base_dir)
 
-    print(f'Building indices for {name}')
+    logging.info(f'Building indices for {name}')
     fasta_dir = base_dir / 'indices' / name / 'fasta'
 
     fasta_fns = genomes.get_all_fasta_file_names(fasta_dir)
@@ -1168,17 +1158,17 @@ def build_indices(base_dir, name, num_threads=1):
     elif len(fasta_fns) > 1:
         raise ValueError(f'Can only build minimap2 index from a single fasta file')
 
-    print('Indexing fastas...')
+    logging.info('Indexing fastas...')
     genomes.make_fais(fasta_dir)
 
     fasta_fn = fasta_fns[0]
 
-    print('Building STAR index...')
+    logging.info('Building STAR index...')
     STAR_dir = base_dir / 'indices' / name / 'STAR'
     STAR_dir.mkdir(exist_ok=True)
     mapping_tools.build_STAR_index([fasta_fn], STAR_dir, num_threads=num_threads, RAM_limit=int(4e10))
 
-    print('Building minimap2 index...')
+    logging.info('Building minimap2 index...')
     minimap2_dir = base_dir / 'indices' / name / 'minimap2'
     minimap2_dir.mkdir(exist_ok=True)
     minimap2_index_fn = minimap2_dir / f'{name}.mmi'
@@ -1187,21 +1177,24 @@ def build_indices(base_dir, name, num_threads=1):
 def download_genome_and_build_indices(base_dir, genome_name, num_threads=8):
     urls = {
         'hg38': 'http://hgdownload.cse.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz',
+        'hg19': 'http://hgdownload.cse.ucsc.edu/goldenPath/hg19/bigZips/hg19.fa.gz',
+        'bosTau7': 'http://hgdownload.cse.ucsc.edu/goldenPath/bosTau7/bigZips/bosTau7.fa.gz',
         'mm10': 'ftp://ftp.ensembl.org/pub/release-98/fasta/mus_musculus/dna/Mus_musculus.GRCm38.dna.toplevel.fa.gz',
         'e_coli': 'ftp://ftp.ensemblgenomes.org/pub/bacteria/release-44/fasta/bacteria_0_collection/escherichia_coli_str_k_12_substr_mg1655/dna/Escherichia_coli_str_k_12_substr_mg1655.ASM584v2.dna.chromosome.Chromosome.fa.gz',
     }
 
     if genome_name not in urls:
-        print(f'No URL known for {genome_name}. Options are:')
+        print(f'No URL known for {genome_name}.')
+        print('Valid options are:')
         for gn in sorted(urls):
             print(f'\t- {gn}')
-        sys.exit(0)
+        sys.exit(1)
 
     base_dir = Path(base_dir)
     genome_dir = base_dir / 'indices' / genome_name
     fasta_dir = genome_dir / 'fasta'
 
-    print(f'Downloading {genome_name}...')
+    logging.info(f'Downloading {genome_name}...')
 
     wget_command = [
         'wget',
@@ -1211,7 +1204,7 @@ def download_genome_and_build_indices(base_dir, genome_name, num_threads=8):
     ]
     subprocess.run(wget_command, check=True)
 
-    print('Uncompressing...')
+    logging.info('Uncompressing...')
 
     file_name = Path(urlparse(urls[genome_name]).path).name
 
