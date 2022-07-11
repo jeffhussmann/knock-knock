@@ -831,6 +831,8 @@ class ReadDiagram():
 
                     if feature_name in self.color_overrides:
                         feature_color = self.color_overrides[feature_name]
+                    elif (feature_reference, feature_name) in self.color_overrides:
+                        feature_color = self.color_overrides[feature_reference, feature_name]
                     else:
                         feature_color = feature.attribute.get('color', 'grey')
                     
@@ -1234,6 +1236,8 @@ class ReadDiagram():
             feature = self.features[feature_reference, feature_name]
             if feature_name in self.color_overrides:
                 feature_color = self.color_overrides[feature_name]
+            elif (feature_reference, feature_name) in self.color_overrides:
+                feature_color = self.color_overrides[feature_reference, feature_name]
             else:
                 feature_color = feature.attribute.get('color', 'grey')
 
