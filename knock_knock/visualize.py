@@ -284,6 +284,7 @@ class ReadDiagram():
         
         if color_overrides is None:
             color_overrides = {}
+
         self.color_overrides = color_overrides
         self.title = title
         self.ax = ax
@@ -1025,7 +1026,11 @@ class ReadDiagram():
             
         return self.fig
 
-    def draw_reference(self, ref_name, ref_y, flip, label_features=True, center_p=None):
+    def draw_reference(self, ref_name, ref_y, flip,
+                       label_features=True,
+                       center_p=None,
+                       visible=True,
+                      ):
         ti = self.target_info
 
         color = self.ref_name_to_color[ref_name]
@@ -1130,13 +1135,19 @@ class ReadDiagram():
                 ref_border_y = ref_y - self.ref_line_width
 
             self.ax.fill_betweenx([y, ref_border_y], [xs[0], ref_xs[0]], [xs[1], ref_xs[1]],
-                                    color=color,
-                                    alpha=parallelogram_alpha,
-                                    )
+                                  color=color,
+                                  alpha=parallelogram_alpha,
+                                  visible=visible,
+                                 )
 
             # Draw lines connecting alignment edges to reference.
             for x, ref_x in zip(xs, ref_xs):
-                self.ax.plot([x, ref_x], [y, ref_border_y], color=color, alpha=0.3 * parsimony_multiplier, clip_on=False)
+                self.ax.plot([x, ref_x], [y, ref_border_y],
+                             color=color,
+                             alpha=0.3 * parsimony_multiplier,
+                             clip_on=False,
+                             visible=visible,
+                            )
 
         if self.center_on_primers:
             ref_al_min = min(ref_al_min, ti.amplicon_interval.start)
@@ -1216,16 +1227,18 @@ class ReadDiagram():
             right_alpha = 1
 
         image[:, :, 3] = np.concatenate([np.linspace(left_alpha, 1, 100),
-                                            [1] * 800,
-                                            np.linspace(1, right_alpha, 100),
-                                        ])
+                                         [1] * 800,
+                                         np.linspace(1, right_alpha, 100),
+                                        ],
+                                       )
 
         self.ax.imshow(image,
-                        extent=(ref_xs[0], ref_xs[1], ref_y - self.ref_line_width, ref_y + self.ref_line_width),
-                        aspect='auto',
-                        interpolation='none',
-                        zorder=3,
-                        )
+                       extent=(ref_xs[0], ref_xs[1], ref_y - self.ref_line_width, ref_y + self.ref_line_width),
+                       aspect='auto',
+                       interpolation='none',
+                       zorder=3,
+                       visible=visible,
+                      )
 
         # Draw features.
 
@@ -1254,7 +1267,11 @@ class ReadDiagram():
             # + 0.5 in this check to account for adjust_edges
             if min(xs) >= self.min_x and max(xs) <= self.max_x + 0.5:
                 final_feature_color = hits.visualize.apply_alpha(feature_color, alpha=0.7, multiplicative=True)
-                self.ax.fill_between(xs, [start] * 2, [end] * 2, color=final_feature_color, edgecolor='none')
+                self.ax.fill_between(xs, [start] * 2, [end] * 2,
+                                     color=final_feature_color,
+                                     edgecolor='none',
+                                     visible=visible,
+                                    )
 
                 if label_features:
                     name = feature.attribute['ID']
@@ -1279,6 +1296,7 @@ class ReadDiagram():
                                      color=feature_color,
                                      size=self.font_sizes['feature_label'],
                                      weight='bold',
+                                     visible=visible,
                                     )
 
         # Draw target and donor names next to diagrams.
@@ -1293,6 +1311,7 @@ class ReadDiagram():
                          ha=self.label_ha,
                          va='center',
                          size=self.font_sizes['ref_label'],
+                         visible=visible,
                         )
 
         if ref_name == ti.target:
@@ -1316,13 +1335,14 @@ class ReadDiagram():
                     raise ValueError(strand)
 
                 self.ax.plot([cut_after_x, cut_after_x],
-                                ys,
-                                '-',
-                                linewidth=1,
-                                color='black',
-                                solid_capstyle='butt',
-                                zorder=10,
-                                )
+                             ys,
+                             '-',
+                             linewidth=1,
+                             color='black',
+                             solid_capstyle='butt',
+                             zorder=10,
+                             visible=visible,
+                            )
 
                 color = ti.PAM_features[ti.target, f'{name}_PAM'].attribute['color']
 
@@ -1348,6 +1368,7 @@ class ReadDiagram():
                                   textcoords='offset points',
                                   va='top',
                                   xytext=(0, -2 * self.size_multiple),
+                                  visible=visible,
                                  )
 
                 start = int(np.ceil(ref_start))
