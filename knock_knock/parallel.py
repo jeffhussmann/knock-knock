@@ -14,6 +14,10 @@ def setup_logging_then_call(queue, func, args):
 
     logger.setLevel(logging.DEBUG)
 
+    # Suppress excessive logging by plotting modules.
+    logging.getLogger('matplotlib').setLevel(logging.WARNING)
+    logging.getLogger('PIL').setLevel(logging.WARNING)
+
     existing_handlers = list(logger.handlers)
 
     for handler in existing_handlers:
