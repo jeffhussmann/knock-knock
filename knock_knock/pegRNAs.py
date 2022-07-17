@@ -39,6 +39,7 @@ default_feature_colors = {
     'overlap': '#9EAFD2',
     'extension': '#777777',
     'insertion': '#b1ff67',
+    'deletion': 'darkgrey',
 }
 
 def PBS_name(pegRNA_name):
@@ -297,15 +298,21 @@ def infer_edit_features(pegRNA_names,
         if features['pegRNA', 'RTT'].strand != '-':
             raise ValueError(str(features['pegRNA', 'RTT']))
 
-
-        # Determine if this pegRNA programs an insertion.
+        # Determine if this pegRNA programs an insertion or deletion.
+        # For an insertion, some suffix of the RT'ed sequence
+        # should exactly match the target sequence immediately 
+        # after the nick.
+        # For a deletion, the entire RT'ed sequence should exactly
+        # match the target sequence somewhere downstream of the nick.
+        # (These assumptions may need to be relaxed.)
 
         pegRNA_seq = reference_sequences[pegRNA_name]
 
         pegRNA_RTT = existing_features[pegRNA_name, 'RTT']
 
         is_programmed_insertion = False
-
+        is_programmed_deletion = False
+                
         protospacer = features['target', 'protospacer']
         effector = target_info.effectors[protospacer.attribute['effector']]
         cut_after = effector.cut_afters(protospacer)[protospacer.strand]
@@ -315,16 +322,25 @@ def infer_edit_features(pegRNA_names,
 
             target_after_nick = target_sequence[cut_after + 1:]
 
-            for i in range(len(RTed) - 10):
+            # Start at 1 to insist on non-empty insertion.
+            for i in range(1, len(RTed) - 10):
                 possible_match = RTed[i:]
                 if target_after_nick.startswith(possible_match):
                     is_programmed_insertion = True
                     break
 
+            # Start at 1 to insist on non-empty deletion.
+            if RTed in target_after_nick[1:]:
+                is_programmed_deletion = True
+
             if is_programmed_insertion:
                 starts['target', 'HA_RT'] = cut_after + 1
                 ends['target', 'HA_RT'] = starts['target', 'HA_RT'] + len(possible_match) - 1
-                
+            elif is_programmed_deletion:
+                deletion_start = cut_after + 1
+                deletion_length = target_after_nick.index(RTed)
+                starts['target', 'HA_RT'] = cut_after + 1 + deletion_length
+                ends['target', 'HA_RT'] = starts['target', 'HA_RT'] + len(RTed) - 1
             else:
                 starts['target', 'HA_RT'] = cut_after + 1
                 ends['target', 'HA_RT'] = starts['target', 'HA_RT'] + len(RTed) - 1
@@ -334,20 +350,35 @@ def infer_edit_features(pegRNA_names,
 
             target_before_nick = target_sequence[:cut_after + 1]
 
-            for i in range(len(RTed) - 10):
+            # Start at 1 to insist on non-empty insertion.
+            for i in range(1, len(RTed) - 10):
                 possible_match = RTed[:len(RTed) - i]
                 if target_before_nick.endswith(possible_match):
                     is_programmed_insertion = True
                     break
 
+            # Only go up to -1 to insist on non-empty deletion.
+            if RTed in target_before_nick[:-1]:
+                is_programmed_deletion = True
+
             if is_programmed_insertion:
                 ends['target', 'HA_RT'] = cut_after
                 starts['target', 'HA_RT'] = ends['target', 'HA_RT'] - len(possible_match) + 1
-                
+            elif is_programmed_deletion:
+                # Note: this is untested.
+                deletion_start = target_before_nick.index(RTed) + len(RTed)
+                deletion_length = cut_after - deletion_start + 1
+                ends['target', 'HA_RT'] = deletion_start - 1
+                starts['target', 'HA_RT'] = ends['target', 'HA_RT'] - len(RTed) + 1
             else:
                 ends['target', 'HA_RT'] = cut_after
                 starts['target', 'HA_RT'] = ends['target', 'HA_RT'] - len(RTed) + 1
-                
+
+        if is_programmed_insertion and is_programmed_deletion:
+            raise ValueError('pegRNA programs both insertion and deletion')
+
+        deletion = None
+
         if is_programmed_insertion:
             starts['pegRNA', 'HA_RT'] = features['pegRNA', 'RTT'].start
             ends['pegRNA', 'HA_RT'] = starts['pegRNA', 'HA_RT'] + len(possible_match) - 1
@@ -362,14 +393,34 @@ def infer_edit_features(pegRNA_names,
                                                 end=ends['pegRNA', 'insertion'],
                                                 strand='-',
                                                 ID=insertion_name,
-                                                )
+                                               )
             insertion.attribute['color'] = default_feature_colors['insertion']
             new_features[names['pegRNA'], insertion_name] = insertion
+
+        elif is_programmed_deletion:
+            starts['pegRNA', 'HA_RT'] = pegRNA_RTT.start
+            ends['pegRNA', 'HA_RT'] = starts['pegRNA', 'HA_RT'] + len(RTed) - 1
+
+            starts['target', 'deletion'] = deletion_start
+            ends['target', 'deletion'] = deletion_start + deletion_length - 1
+
+            deletion = target_info.DegenerateDeletion([deletion_start], deletion_length)
+
+            deletion_name = f'deletion_{pegRNA_name}'
+            deletion_feature = gff.Feature.from_fields(seqname=names['target'],
+                                                       start=starts['target', 'deletion'],
+                                                       end=ends['target', 'deletion'],
+                                                       strand='+',
+                                                       ID=deletion_name,
+                                                      )
+            deletion_feature.attribute['color'] = default_feature_colors['deletion']
+            new_features[names['target'], deletion_name] = deletion_feature
+
         else:
             starts['pegRNA', 'HA_RT'] = pegRNA_RTT.start
             ends['pegRNA', 'HA_RT'] = starts['pegRNA', 'HA_RT'] + len(RTed) - 1
                     
-            # If a programmed insertion wasn't found, annotate SNVs.
+            # If neither a programmed insertion nor deletion was found, annotate SNVs.
 
             for offset, (pegRNA_b, target_b) in enumerate(zip(seqs['pegRNA', 'RTT'], seqs['target', 'RTT'])):
                 if pegRNA_b != target_b:
@@ -484,7 +535,7 @@ def infer_edit_features(pegRNA_names,
                 'base': d,
             }
 
-    return new_features, SNVs
+    return new_features, SNVs, deletion
 
 def PBS_names_by_side_of_target(pegRNA_names,
                                 target_name,

@@ -447,11 +447,11 @@ class TargetInfo():
                                                                                      )
                 features.update({**pegRNA_features, **target_features})
 
-            edit_features, _ = knock_knock.pegRNAs.infer_edit_features(self.pegRNA_names,
-                                                                       self.target,
-                                                                       features,
-                                                                       self.reference_sequences,
-                                                                      )
+            edit_features, _, _ = knock_knock.pegRNAs.infer_edit_features(self.pegRNA_names,
+                                                                          self.target,
+                                                                          features,
+                                                                          self.reference_sequences,
+                                                                         )
 
             features.update(edit_features)
 
@@ -549,6 +549,10 @@ class TargetInfo():
                         features_to_show.add((pegRNA_name, name))
 
             else:
+                if len(self.pegRNA_programmed_deletions) > 0:
+                    for deletion in self.pegRNA_programmed_deletions:
+                        features_to_show.add((deletion.seqname, deletion.attribute['ID']))
+
                 for pegRNA_name in self.pegRNA_names:
                     features_to_show.update({(pegRNA_name, name) for name in ['protospacer', 'scaffold', 'PBS', 'RTT']})
 
@@ -1767,18 +1771,25 @@ class TargetInfo():
     @memoized_property
     def pegRNA_names_by_side_of_target(self):
         return {side: knock_knock.pegRNAs.extract_pegRNA_name(PBS_name) for side, PBS_name in self.PBS_names_by_side_of_target.items()}
-        
+
     @memoized_property
-    def twin_pegRNA_intended_deletion(self):
-        if self.pegRNA_names is not None and len(self.pegRNA_names) == 2:
+    def pegRNA_intended_deletion(self):
+        if self.pegRNA_names is None:
+            deletion is None
+        elif len(self.pegRNA_names) == 1:
+            _, _, deletion = knock_knock.pegRNAs.infer_edit_features(self.pegRNA_names,
+                                                                     self.target,
+                                                                     self.features,
+                                                                     self.reference_sequences,
+                                                                    )
+        elif len(self.pegRNA_names) == 2:
             deletion, _, _ = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
                                                                             self.target,
                                                                             self.features,
                                                                             self.reference_sequences,
                                                                            )
-            deletion = self.expand_degenerate_indel(deletion)
-        else:
-            deletion = None
+
+        deletion = self.expand_degenerate_indel(deletion)
 
         return deletion
 
@@ -1798,15 +1809,27 @@ class TargetInfo():
     @memoized_property
     def pegRNA_SNVs(self):
         if self.pegRNA_names is not None and len(self.pegRNA_names) > 0:
-            _, SNVs = knock_knock.pegRNAs.infer_edit_features(self.pegRNA_names,
-                                                              self.target,
-                                                              self.features,
-                                                              self.reference_sequences,
-                                                             )
+            _, SNVs, _ = knock_knock.pegRNAs.infer_edit_features(self.pegRNA_names,
+                                                                 self.target,
+                                                                 self.features,
+                                                                 self.reference_sequences,
+                                                                )
         else:
             SNVs = None
 
         return SNVs
+
+    @memoized_property
+    def pegRNA_programmed_deletions(self):
+        deletions = []
+
+        if self.pegRNA_names is not None:
+            for pegRNA_name in self.pegRNA_names:
+                feature_name = f'deletion_{pegRNA_name}'
+                if (self.target, feature_name) in self.features:
+                    deletions.append(self.features[self.target, feature_name])
+
+        return deletions
 
     @memoized_property
     def pegRNA_programmed_insertions(self):
@@ -1821,12 +1844,15 @@ class TargetInfo():
         return insertions
 
 def degenerate_indel_from_string(details_string):
-    kind, rest = details_string.split(':')
+    if details_string is None:
+        return None
+    else:
+        kind, rest = details_string.split(':')
 
-    if kind == 'D':
-        return DegenerateDeletion.from_string(details_string)
-    elif kind == 'I':
-        return DegenerateInsertion.from_string(details_string)
+        if kind == 'D':
+            return DegenerateDeletion.from_string(details_string)
+        elif kind == 'I':
+            return DegenerateInsertion.from_string(details_string)
 
 class DegenerateDeletion():
     def __init__(self, starts_ats, length):
@@ -1876,7 +1902,10 @@ class DegenerateDeletion():
         return str(self)
     
     def __eq__(self, other):
-        return other is not None and self.starts_ats == other.starts_ats and self.length == other.length
+        if type(self) != type(other):
+            return False
+        else:
+            return self.starts_ats == other.starts_ats and self.length == other.length
 
     def __hash__(self):
         return hash((self.starts_ats, self.length))
@@ -1927,7 +1956,10 @@ class DegenerateInsertion():
         return str(self)
 
     def __eq__(self, other):
-        return self.starts_afters == other.starts_afters and self.seqs == other.seqs
+        if type(self) != type(other):
+            return False
+        else:
+            return self.starts_afters == other.starts_afters and self.seqs == other.seqs
     
     def __hash__(self):
         return hash((self.starts_afters, self.seqs))
