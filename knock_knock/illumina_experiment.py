@@ -3,7 +3,6 @@ import sys
 from itertools import chain, islice
 
 from collections import defaultdict
-from contextlib import ExitStack
 
 import pysam
 
@@ -44,28 +43,38 @@ class IlluminaExperiment(Experiment):
                     if not fn.exists():
                         print(f'Warning: {self.group} {self.sample_name} specifies non-existent {fn}')
 
-        self.read_types = [
-            'stitched',
-            'R1_no_overlap',
-            'R2_no_overlap',
-        ]
+        self.paired_end = 'R2' in self.description
 
-        self.trim_from_R1 = self.description.get('trim_from_R1', 0)
-        self.trim_from_R2 = self.description.get('trim_from_R2', 0)
-
-        self.diagram_kwargs.update(dict(draw_sequence=True,
-                                        max_qual=41,
-                                        center_on_primers=True,
-                                        ),
-                                  )
+        if self.paired_end:
+            self.read_types = [
+                'stitched',
+                'stitched_by_name',
+                'nonredundant',
+                'R1_no_overlap',
+                'R2_no_overlap',
+            ]
+        else:
+            self.read_types = [
+                'trimmed',
+                'trimmed_by_name',
+                'nonredundant',
+            ]
 
     @property
     def preprocessed_read_type(self):
-        return 'stitched'
+        if self.paired_end:
+            read_type = 'stitched_by_name'
+        else:
+            read_type = 'trimmed_by_name'
+        return read_type
 
     @property
     def default_read_type(self):
-        return 'stitched'
+        if self.paired_end:
+            read_type = 'stitched_by_name'
+        else:
+            read_type = 'trimmed_by_name'
+        return read_type
 
     @property
     def read_types_to_align(self):
@@ -75,15 +84,29 @@ class IlluminaExperiment(Experiment):
             'R2_no_overlap',
         ]
 
+    @property
+    def reads(self):
+        # Standardizing names is important for sorting.
+        return fastq.reads(self.fns['R1'], standardize_names=True)
+
+    @property
+    def read_pairs(self):
+        # Standardizing names is important for sorting.
+        return fastq.read_pairs(self.fns['R1'], self.fns['R2'], standardize_names=True, up_to_space=True)
+
+    @memoized_property
+    def no_overlap_qnames(self):
+        return {r.name for r in self.reads_by_type('R1_no_overlap')}
+
     @memoized_property
     def R1_read_length(self):
         R1, R2 = next(self.read_pairs)
-        return len(R1) - self.trim_from_R1
+        return len(R1)
     
     @memoized_property
     def R2_read_length(self):
         R1, R2 = next(self.read_pairs)
-        return len(R2) - self.trim_from_R2
+        return len(R2)
 
     def check_combined_read_length(self):
         combined_read_length = self.R1_read_length + self.R2_read_length
@@ -124,15 +147,6 @@ class IlluminaExperiment(Experiment):
 
         return diagram
     
-    @property
-    def read_pairs(self):
-        read_pairs = fastq.read_pairs(self.fns['R1'], self.fns['R2'], up_to_space=True)
-        return read_pairs
-
-    @memoized_property
-    def no_overlap_qnames(self):
-        return {r.name for r in self.reads_by_type('R1_no_overlap')}
-
     def no_overlap_alignment_groups(self, outcome=None):
         R1_read_type = 'R1_no_overlap'
         R2_read_type = 'R2_no_overlap'
@@ -157,7 +171,7 @@ class IlluminaExperiment(Experiment):
                 yield R1_name, {'R1': R1_als, 'R2': R2_als}
 
     def alignment_groups(self, fn_key='bam_by_name', outcome=None, read_type=None):
-        overlap_al_groups = super().alignment_groups(fn_key, outcome, read_type)
+        overlap_al_groups = super().alignment_groups(fn_key=fn_key, outcome=outcome, read_type=read_type)
         to_chain = [overlap_al_groups]
 
         if isinstance(outcome, str):
@@ -166,8 +180,9 @@ class IlluminaExperiment(Experiment):
             # relevant (category, subcategory) pair.
             pass
         else:
-            no_overlap_al_groups = self.no_overlap_alignment_groups(outcome)
-            to_chain.append(no_overlap_al_groups)
+            if 'R1_no_overlap' in self.read_types:
+                no_overlap_al_groups = self.no_overlap_alignment_groups(outcome)
+                to_chain.append(no_overlap_al_groups)
 
         return chain(*to_chain)
     
@@ -227,9 +242,58 @@ class IlluminaExperiment(Experiment):
                             alignment_sorters[outcome, which].write(al)
             pysam.set_verbosity(saved_verbosity)
 
+    def trim_reads(self):
+        ''' Trim a (potentially variable-length) barcode from the beginning of a read
+        by searching for the expected sequence that the amplicon should begin with.
+        '''
+
+        ti = self.target_info
+
+        if ti.sequencing_direction == '+':
+            start = ti.sequencing_start.start
+            prefix = ti.target_sequence[start:start + 6]
+        else:
+            end = ti.sequencing_start.end
+            prefix = utilities.reverse_complement(ti.target_sequence[end - 5:end + 1])
+
+        prefix = prefix.upper()
+
+        trimmed_fn = self.fns_by_read_type['fastq']['trimmed']
+        with gzip.open(trimmed_fn, 'wt', compresslevel=1) as trimmed_fh:
+            for read in self.progress(self.reads, desc='Trimming reads'):
+                try:
+                    start = read.seq.index(prefix, 0, 30)
+                except ValueError:
+                    start = 0
+
+                end = adapters.trim_by_local_alignment(adapters.truseq_R2_rc, read.seq)
+                trimmed_fh.write(str(read[start:end]))
+
+    def sort_trimmed_reads(self):
+        reads = sorted(self.reads_by_type('trimmed'), key=lambda read: read.name)
+        fn = self.fns_by_read_type['fastq']['trimmed_by_name']
+        with gzip.open(fn, 'wt', compresslevel=1) as sorted_fh:
+            for read in reads:
+                sorted_fh.write(str(read))
+
     def stitch_read_pairs(self):
         before_R1 = adapters.primers[self.sequencing_primers]['R1']
         before_R2 = adapters.primers[self.sequencing_primers]['R2']
+
+        # Setup for post-stitching trimming process. 
+        match_length_required = 6
+        window_size = 30
+
+        ti = self.target_info
+
+        start = ti.primers_by_side_of_target[5].start
+        prefix = ti.target_sequence[start:start + match_length_required]
+
+        end = ti.primers_by_side_of_target[3].end
+        suffix = ti.target_sequence[end + 1 - match_length_required:end + 1]
+
+        if ti.sequencing_direction == '-':
+            prefix, suffix = utilities.reverse_complement(suffix), utilities.reverse_complement(prefix)
 
         fns = self.fns_by_read_type['fastq']
 
@@ -253,7 +317,7 @@ class IlluminaExperiment(Experiment):
 
                 stitched = sw.stitch_read_pair(R1, R2, before_R1, before_R2, indel_penalty=-1000)
 
-                if len(stitched) == self.R1_read_length + self.R2_read_length:
+                if len(stitched) == len(R1) + len(R2):
                     # No overlap was detected.
                     R1_fh.write(str(R1))
                     R2_fh.write(str(R2))
@@ -264,25 +328,61 @@ class IlluminaExperiment(Experiment):
 
                 else:
                     # Trim after stitching to leave adapters in expected place during stitching.
-                    stitched = stitched[self.trim_from_R1:len(stitched) - self.trim_from_R2]
 
-                    stitched_fh.write(str(stitched))
+                    try:
+                        start = stitched.seq.index(prefix, 0, window_size)
+                    except ValueError:
+                        start = 0
+
+                    try:
+                        min_possible_end = len(stitched) - window_size
+                        end = stitched.seq.index(suffix, min_possible_end, len(stitched)) + match_length_required
+                    except ValueError:
+                        end = len(stitched)
+
+                    trimmed = stitched[start:end]
+
+                    stitched_fh.write(str(trimmed))
+
+    def sort_stitched_reads(self):
+        reads = sorted(self.reads_by_type('stitched'), key=lambda read: read.name)
+        fn = self.fns_by_read_type['fastq']['stitched_by_name']
+        with gzip.open(fn, 'wt', compresslevel=1) as sorted_fh:
+            for read in reads:
+                sorted_fh.write(str(read))
 
     def preprocess(self):
-        self.stitch_read_pairs()
+        if self.paired_end:
+            self.stitch_read_pairs()
+            self.sort_stitched_reads()
+        else:
+            self.trim_reads()
+            self.sort_trimmed_reads()
 
-    def process(self, stage):
+    def align(self):
+        self.make_nonredundant_sequence_fastq()
+
+        for read_type in self.read_types_to_align:
+            self.generate_alignments(read_type)
+            self.generate_supplemental_alignments_with_STAR(read_type)
+            self.combine_alignments(read_type)
+
+    def categorize(self):
+        self.categorize_outcomes()
+
+        self.generate_outcome_counts()
+        self.generate_read_lengths()
+
+        self.record_sanitized_category_names()
+
+    def process_old(self, stage):
         try:
             if stage == 'preprocess':
                 self.preprocess()
 
             elif stage == 'align':
+                self.align()
                 
-                for read_type in self.read_types_to_align:
-                    self.generate_alignments(read_type)
-                    self.generate_supplemental_alignments_with_STAR(read_type)
-                    self.combine_alignments(read_type)
-
             elif stage == 'categorize':
                 self.categorize_outcomes(read_type='stitched')
                 self.categorize_no_overlap_outcomes()

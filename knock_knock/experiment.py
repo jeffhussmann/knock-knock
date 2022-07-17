@@ -81,7 +81,6 @@ class Experiment:
         self.progress = pass_along_kwargs
 
         self.base_dir = Path(base_dir)
-        self.results_dir.mkdir(exist_ok=True, parents=True)
 
         if description is None:
             description = self.load_description()
@@ -695,6 +694,25 @@ class Experiment:
                         alignment_sorters[outcome].write(al)
             pysam.set_verbosity(saved_verbosity)
 
+    def process(self, stage):
+        self.results_dir.mkdir(exist_ok=True, parents=True)
+
+        try:
+            if stage == 'preprocess':
+                self.preprocess()
+            elif stage == 'align':
+                self.align()
+            elif stage == 'categorize':
+                self.categorize()
+            elif stage == 'visualize':
+                self.visualize()
+            else:
+                raise ValueError(f'invalid stage: {stage}')
+
+        except:
+            print(self.group, self.sample_name)
+            raise
+
     def get_read_alignments(self, read_id, fn_key='bam_by_name', outcome=None, read_type=None):
         if read_type is None:
             read_type = self.default_read_type
@@ -852,13 +870,7 @@ class Experiment:
             # No need to draw legend if only showing all reads
             ax.legend(framealpha=0.5)
         
-        expected_lengths = {
-            'expected\nWT': self.target_info.amplicon_length,
-        }
-        if self.target_info.clean_HDR_length is not None:
-            expected_lengths['expected\nHDR'] = self.target_info.clean_HDR_length
-        
-        for i, (name, length) in enumerate(expected_lengths.items()):
+        for i, (name, length) in enumerate(self.expected_lengths.items()):
             y = 1 + 0.02  + 0.04 * i
             ax.axvline(length, ymin=0, ymax=y, color='black', alpha=0.4, clip_on=False)
 
@@ -996,10 +1008,10 @@ class Experiment:
         ti = self.target_info
 
         expected_lengths = {
-            'expected\nWT': ti.amplicon_length,
+            'WT': ti.amplicon_length,
         }
         if ti.clean_HDR_length is not None:
-            expected_lengths['expected\nHDR'] = ti.clean_HDR_length
+            expected_lengths['intended\nedit'] = ti.clean_HDR_length
 
         return expected_lengths
 
@@ -1010,8 +1022,6 @@ class Experiment:
             ys = list(outcome_lengths.values())[0]
             x_max = int(len(ys) * 1.005)
             x_lims = (0, x_max)
-
-        ti = self.target_info
 
         panel_groups = []
 
@@ -1048,7 +1058,13 @@ class Experiment:
             axs = [axs]
 
         ax = axs[0]
-        ax.annotate(f'{self.batch}: {self.sample_name}',
+
+        if isinstance(self.batch, tuple):
+            title = f'{": ".join(self.batch)}: {self.sample_name}'
+        else:
+            title = f'{self.batch}: {self.sample_name}'
+
+        ax.annotate(title,
                     xy=(0.5, 1), xycoords='axes fraction',
                     xytext=(0, 40), textcoords='offset points',
                     ha='center',
