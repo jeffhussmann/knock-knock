@@ -82,7 +82,11 @@ class Categorizer:
             return category
 
     def q_to_feature_offset(self, al, feature_name):
-        ''' Returns dictionary of {true query position: offset into plus-orientation version of feature '''
+        ''' Returns dictionary of 
+                {true query position: offset into feature relative to its strandedness
+                 (i.e. from the start of + stranded and from the right of - stranded)
+                }
+        '''
         if al is None:
             return {}
 
