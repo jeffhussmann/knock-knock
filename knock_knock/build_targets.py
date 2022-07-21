@@ -1026,20 +1026,20 @@ def build_component_registry(base_dir):
     sgRNA_fn = base_dir / 'targets' / 'sgRNAs.csv'
 
     if sgRNA_fn.exists():
-        registry['sgRNA_sequence'] = pd.read_csv(sgRNA_fn, index_col='name', squeeze=True)
+        registry['sgRNA_sequence'] = pd.read_csv(sgRNA_fn, index_col='name').squeeze('columns')
     else:
         registry['sgRNA_sequence'] = {}
 
     amplicon_primers_fn = base_dir / 'targets' / 'amplicon_primers.csv'
 
     if amplicon_primers_fn.exists():
-        registry['amplicon_primers'] = pd.read_csv(amplicon_primers_fn, index_col='name', squeeze=True)
+        registry['amplicon_primers'] = pd.read_csv(amplicon_primers_fn, index_col='name').squeeze('columns')
     else:
         registry['amplicon_primers'] = {}
 
     extra_sequences_fn = base_dir / 'targets' / 'extra_sequences.csv'
     if extra_sequences_fn.exists():
-        registry['extra_sequence'] = pd.read_csv(extra_sequences_fn, index_col='name', squeeze=True)
+        registry['extra_sequence'] = pd.read_csv(extra_sequences_fn, index_col='name').squeeze('columns')
     else:
         registry['extra_sequence'] = {}
 

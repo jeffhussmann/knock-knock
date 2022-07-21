@@ -565,11 +565,10 @@ class Experiment:
             counts = pd.read_csv(fn,
                                  index_col=tuple(range(len(self.count_index_levels))),
                                  header=None,
-                                 squeeze=True,
                                  na_filter=False,
                                  sep='\t',
                                  comment='#',
-                                )
+                                ).squeeze()
             counts.index.names = self.count_index_levels
         except (FileNotFoundError, pd.errors.EmptyDataError):
             counts = None
