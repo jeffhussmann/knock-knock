@@ -249,17 +249,23 @@ class IlluminaExperiment(Experiment):
 
         ti = self.target_info
 
+        primer_prefix_length = 6
+
         if ti.sequencing_direction == '+':
             start = ti.sequencing_start.start
-            prefix = ti.target_sequence[start:start + 6]
+            prefix = ti.target_sequence[start:start + primer_prefix_length]
         else:
             end = ti.sequencing_start.end
-            prefix = utilities.reverse_complement(ti.target_sequence[end - 5:end + 1])
+            prefix = utilities.reverse_complement(ti.target_sequence[end + 1 - primer_prefix_length:end + 1])
 
         prefix = prefix.upper()
 
-        trimmed_fn = self.fns_by_read_type['fastq']['trimmed']
-        with gzip.open(trimmed_fn, 'wt', compresslevel=1) as trimmed_fh:
+        fns = self.fns_by_read_type['fastq']
+        with gzip.open(fns['trimmed'], 'wt', compresslevel=1) as trimmed_fh, \
+             open(self.fns['too_short_outcome_list'], 'w') as too_short_fh:
+
+            too_short_fh.write(f'## Generated at {utilities.current_time_string()}\n')
+
             for read in self.progress(self.reads, desc='Trimming reads'):
                 try:
                     start = read.seq.index(prefix, 0, 30)
@@ -267,7 +273,14 @@ class IlluminaExperiment(Experiment):
                     start = 0
 
                 end = adapters.trim_by_local_alignment(adapters.truseq_R2_rc, read.seq)
-                trimmed_fh.write(str(read[start:end]))
+
+                trimmed = read[start:end]
+
+                if len(trimmed) == 0:
+                    outcome = self.final_Outcome(trimmed.name, len(trimmed), 'nonspecific amplification', 'primer dimer', 'n/a')
+                    too_short_fh.write(f'{outcome}\n')
+                else:
+                    trimmed_fh.write(str(trimmed))
 
     def sort_trimmed_reads(self):
         reads = sorted(self.reads_by_type('trimmed'), key=lambda read: read.name)
@@ -323,7 +336,8 @@ class IlluminaExperiment(Experiment):
                     R2_fh.write(str(R2))
 
                 elif len(stitched) <= 10:
-                    outcome = self.final_Outcome(stitched.name, len(stitched), 'malformed layout', 'too short', 'n/a')
+                    # 22.07.18: Should this check be done on the final trimmed read instead?
+                    outcome = self.final_Outcome(stitched.name, len(stitched), 'nonspecific amplification', 'primer dimer', 'n/a')
                     too_short_fh.write(f'{outcome}\n')
 
                 else:

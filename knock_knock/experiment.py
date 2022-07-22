@@ -1379,7 +1379,9 @@ class Experiment:
             
         if fig_dir.is_dir():
             shutil.rmtree(str(fig_dir))
-        fig_dir.mkdir()
+
+        # parents=True is necessary to handle 'too short' reads.
+        fig_dir.mkdir(parents=True)
 
         if specific_outcome is not None:
             description = ': '.join(specific_outcome)
@@ -1484,14 +1486,14 @@ class Experiment:
                 fh.write(f'{tag}\n')
 
     def generate_all_outcome_example_figures(self, num_examples=10, **kwargs):
-        subcategories = sorted(self.categories_by_frequency)
-        for outcome in self.progress(subcategories, desc='Making diagrams for detailed subcategories'):
-            self.generate_outcome_example_figures(outcome=outcome, num_examples=num_examples, **kwargs)
-        
         categories = sorted(set(c for c, s in self.categories_by_frequency))
         for outcome in self.progress(categories, desc='Making diagrams for grouped categories'):
             self.generate_outcome_example_figures(outcome=outcome, num_examples=num_examples, **kwargs)
 
+        subcategories = sorted(self.categories_by_frequency)
+        for outcome in self.progress(subcategories, desc='Making diagrams for detailed subcategories'):
+            self.generate_outcome_example_figures(outcome=outcome, num_examples=num_examples, **kwargs)
+        
     def explore(self, by_outcome=True, **kwargs):
         explorer = explore.SingleExperimentExplorer(self, by_outcome, **kwargs)
         return explorer.layout
