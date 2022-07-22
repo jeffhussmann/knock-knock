@@ -1,5 +1,6 @@
 import copy
 import functools
+import logging
 import operator
 import textwrap
 from pathlib import Path
@@ -142,6 +143,8 @@ class TargetInfo():
         self.target = target
 
         self.sources = self.manifest['sources']
+        # Strip any '.gb' extensions that might be present.
+        self.sources = [source[:-len('.gb')] if source.endswith('.gb') else source for source in self.sources]
         self.gb_records = gb_records
 
         self.manual_features_to_show = self.manifest.get('features_to_show')
@@ -290,6 +293,11 @@ class TargetInfo():
             
         if self.gb_records is None:
             gb_fns = [self.dir / (source + '.gb') for source in self.sources]
+
+            for fn in gb_fns:
+                if not fn.exists():
+                    logging.warning(f'{self.name}: {fn} does not exist')
+
             gb_fns = [fn for fn in gb_fns if fn.exists()]
 
             self.gb_records = []
