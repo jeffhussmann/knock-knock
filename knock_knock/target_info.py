@@ -464,13 +464,13 @@ class TargetInfo():
             features.update(edit_features)
 
             if len(self.pegRNA_names) == 2:
-                _, overlap_features, _ = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
-                                                                                        self.target,
-                                                                                        features,
-                                                                                        self.reference_sequences,
-                                                                                       )
+                results = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
+                                                                         self.target,
+                                                                         features,
+                                                                         self.reference_sequences,
+                                                                        )
 
-                features.update(overlap_features)
+                features.update(results['overlap_features'])
 
         # Override colors of protospacers in pooled screening vector
         # to ensure consistency.
@@ -1791,11 +1791,12 @@ class TargetInfo():
                                                                      self.reference_sequences,
                                                                     )
         elif len(self.pegRNA_names) == 2:
-            deletion, _, _ = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
-                                                                            self.target,
-                                                                            self.features,
-                                                                            self.reference_sequences,
-                                                                           )
+            results = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
+                                                                     self.target,
+                                                                     self.features,
+                                                                     self.reference_sequences,
+                                                                    )
+            deletion = results['deletion']
 
         deletion = self.expand_degenerate_indel(deletion)
 
@@ -1804,11 +1805,12 @@ class TargetInfo():
     @memoized_property
     def is_prime_del(self):
         if self.pegRNA_names is not None and len(self.pegRNA_names) == 2:
-            _, _, is_prime_del = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
-                                                                                self.target,
-                                                                                self.features,
-                                                                                self.reference_sequences,
-                                                                               )
+            results = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
+                                                                     self.target,
+                                                                     self.features,
+                                                                     self.reference_sequences,
+                                                                    )
+            is_prime_del = results['is_prime_del']
         else:
             is_prime_del = False
 

@@ -317,13 +317,14 @@ def infer_edit_features(pegRNA_names,
         effector = target_info.effectors[protospacer.attribute['effector']]
         cut_after = effector.cut_afters(protospacer)[protospacer.strand]
 
+        min_complementary_length_after_insertion = 8
         if protospacer.strand == '+':
             RTed = seqs['pegRNA', 'RTT']
 
             target_after_nick = target_sequence[cut_after + 1:]
 
             # Start at 1 to insist on non-empty insertion.
-            for i in range(1, len(RTed) - 10):
+            for i in range(1, len(RTed) - min_complementary_length_after_insertion):
                 possible_match = RTed[i:]
                 if target_after_nick.startswith(possible_match):
                     is_programmed_insertion = True
@@ -351,7 +352,7 @@ def infer_edit_features(pegRNA_names,
             target_before_nick = target_sequence[:cut_after + 1]
 
             # Start at 1 to insist on non-empty insertion.
-            for i in range(1, len(RTed) - 10):
+            for i in range(1, len(RTed) - min_complementary_length_after_insertion):
                 possible_match = RTed[:len(RTed) - i]
                 if target_before_nick.endswith(possible_match):
                     is_programmed_insertion = True
@@ -424,7 +425,7 @@ def infer_edit_features(pegRNA_names,
 
             for offset, (pegRNA_b, target_b) in enumerate(zip(seqs['pegRNA', 'RTT'], seqs['target', 'RTT'])):
                 if pegRNA_b != target_b:
-                    SNP_name = f'SNP_{names["pegRNA"]}_{offset}'
+                    SNP_name = f'SNP_{names["pegRNA"]}_{offset:03d}'
 
                     positions = {
                         'pegRNA': starts['pegRNA', 'RTT'] - offset,
@@ -742,4 +743,11 @@ def infer_twin_pegRNA_features(pegRNA_names,
 
             deletion = target_info.DegenerateDeletion([deletion_start], deletion_length)
             
-    return deletion, overlap_features, is_prime_del
+    results = {
+        'deletion': deletion,
+        'overlap_features': overlap_features,
+        'is_prime_del': is_prime_del,
+        'intended_edit_seq': intended_edit_seq,
+    }
+
+    return results
