@@ -240,12 +240,12 @@ class Explorer:
             if self.non_widgets['alignments_to_show'].value == 'parsimonious':
                 plot_kwargs['parsimonious'] = True
 
-            plot_kwargs['centered_on_primers'] = False
+            plot_kwargs['center_on_primers'] = False
             plot_kwargs['force_left_aligned'] = False
             plot_kwargs['force_right_aligned'] = False
 
-            if self.non_widgets['alignment_registration'].value == 'centered_on_primers':
-                plot_kwargs['centered_on_primers'] = True
+            if self.non_widgets['alignment_registration'].value == 'centered on primers':
+                plot_kwargs['center_on_primers'] = True
             elif self.non_widgets['alignment_registration'].value == 'left':
                 plot_kwargs['force_left_aligned'] = True
             elif self.non_widgets['alignment_registration'].value == 'right':
@@ -253,9 +253,6 @@ class Explorer:
 
             for k in self.draw_buttons:
                 plot_kwargs[k] = self.draw_buttons[k].value
-
-            for k, v in exp.diagram_kwargs.items():
-                plot_kwargs.setdefault(k, v)
 
             if self.by_outcome:
                 diagram = layout.plot(**plot_kwargs)

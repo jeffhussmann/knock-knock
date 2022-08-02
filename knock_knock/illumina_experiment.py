@@ -118,7 +118,7 @@ class IlluminaExperiment(Experiment):
         return self.R1_read_length + self.R2_read_length + 100
 
     def get_read_layout(self, read_id, fn_key='bam_by_name', outcome=None, read_type=None):
-        if read_id in self.no_overlap_qnames:
+        if self.paired_end and read_id in self.no_overlap_qnames:
             als = self.get_read_alignments(read_id, outcome=outcome)
             layout = layout_module.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
             return layout
@@ -126,7 +126,7 @@ class IlluminaExperiment(Experiment):
             return super().get_read_layout(read_id, fn_key=fn_key, outcome=outcome, read_type=read_type)
 
     def get_read_diagram(self, qname, outcome=None, relevant=True, read_type=None, **kwargs):
-        if qname in self.no_overlap_qnames:
+        if self.paired_end and qname in self.no_overlap_qnames:
             als = self.get_read_alignments(qname, outcome=outcome)
 
             if relevant:

@@ -42,30 +42,25 @@ class LengthBiasExperiment(PacbioExperiment):
 
         return expected_lengths
 
-    def process(self, stage):
-        try:
-            if stage == 'preprocess':
-                pass
-            elif stage == 'align':
-                for read_type in self.read_types:
-                    self.generate_alignments(read_type=read_type)
-                    self.generate_supplemental_alignments_with_minimap2(read_type=read_type)
-                    self.combine_alignments(read_type=read_type)
+    def preprocess(self):
+        pass
 
-            elif stage == 'categorize':
-                self.categorize_outcomes(read_type='CCS')
+    def align(self):
+        for read_type in self.read_types:
+            self.generate_alignments(read_type=read_type)
+            self.generate_supplemental_alignments_with_minimap2(read_type=read_type)
+            self.combine_alignments(read_type=read_type)
 
-                self.generate_outcome_counts()
-                self.generate_read_lengths()
+    def categorize(self):
+        self.categorize_outcomes(read_type='CCS')
 
-                self.record_sanitized_category_names()
+        self.generate_outcome_counts()
+        self.generate_read_lengths()
 
-            elif stage == 'visualize':
-                pass
+        self.record_sanitized_category_names()
 
-        except:
-            print(self.group, self.sample_name)
-            raise
+    def generate_figures(self):
+        pass
 
     @memoized_property
     def categorizer(exp_self):

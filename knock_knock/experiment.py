@@ -149,15 +149,6 @@ class Experiment:
         return f'{self.__class__.__name__}: batch={self.batch}, sample_name={self.sample_name}, base_dir={self.base_dir}'
 
     @memoized_property
-    def diagram_kwargs(self):
-        diagram_kwargs = dict(
-            features_to_show=self.target_info.features_to_show,
-            ref_centric=True,
-            center_on_primers=True,
-        )
-        return diagram_kwargs
-
-    @memoized_property
     def length_to_store_unknown(self):
         return int(self.max_relevant_length * 1.05)
 
@@ -568,7 +559,7 @@ class Experiment:
                                  na_filter=False,
                                  sep='\t',
                                  comment='#',
-                                ).squeeze()
+                                ).squeeze('columns')
             counts.index.names = self.count_index_levels
         except (FileNotFoundError, pd.errors.EmptyDataError):
             counts = None
@@ -703,8 +694,8 @@ class Experiment:
                 self.align()
             elif stage == 'categorize':
                 self.categorize()
-            elif stage == 'visualize':
-                self.visualize()
+            elif stage == 'generate_figures':
+                self.generate_figures()
             else:
                 raise ValueError(f'invalid stage: {stage}')
 
@@ -740,28 +731,10 @@ class Experiment:
                 return None
 
     def get_read_diagram(self, read_id, outcome=None, relevant=True, read_type=None, **kwargs):
-        fn_key = 'bam_by_name'
+        layout = self.get_read_layout(read_id, outcome=outcome, read_type=read_type)
+        layout.categorize()
 
-        als = self.get_read_alignments(read_id, fn_key=fn_key, outcome=outcome, read_type=read_type)
-        if als is None:
-            return None
-
-        if relevant:
-            layout = self.categorizer(als, self.target_info, mode=self.layout_mode)
-            layout.categorize()
-            to_plot = layout.relevant_alignments
-            inferred_amplicon_length = layout.inferred_amplicon_length
-        else:
-            to_plot = als
-            inferred_amplicon_length = None
-
-        for k, v in self.diagram_kwargs.items():
-            kwargs.setdefault(k, v)
-
-        diagram = visualize.ReadDiagram(to_plot, self.target_info,
-                                        inferred_amplicon_length=inferred_amplicon_length,
-                                        **kwargs,
-                                       )
+        diagram = layout.plot(relevant=relevant, **kwargs)
 
         return diagram
 
@@ -1392,7 +1365,7 @@ class Experiment:
 
         for length, sampler in items:
             als = sampler.sample
-            diagrams = self.alignment_groups_to_diagrams(als, num_examples=num_examples, **self.diagram_kwargs)
+            diagrams = self.alignment_groups_to_diagrams(als, num_examples=num_examples)
             im = hits.visualize.make_stacked_Image([d.fig for d in diagrams])
             fn = fns['length_range_figure'](length, length)
             im.save(fn)
@@ -1416,7 +1389,7 @@ class Experiment:
 
     def example_diagrams(self, outcome, num_examples):
         al_groups = self.alignment_groups(outcome=outcome)
-        diagrams = self.alignment_groups_to_diagrams(al_groups, num_examples=num_examples, **self.diagram_kwargs)
+        diagrams = self.alignment_groups_to_diagrams(al_groups, num_examples=num_examples)
         return diagrams
         
     def generate_outcome_example_figures(self, outcome, num_examples, **kwargs):

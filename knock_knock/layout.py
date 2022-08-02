@@ -257,10 +257,12 @@ class Layout(Categorizer):
         if self.seq is None:
             return []
 
-        primers = self.target_info.primers_by_side_of_target
-        target_seq_bytes = self.target_info.target_sequence_bytes
+        ti = self.target_info
 
-        original_als = [al for al in self.original_alignments if al.reference_name == self.target_info.target]
+        primers = ti.primers_by_side_of_target
+        target_seq_bytes = ti.reference_sequence_bytes[ti.target]
+
+        original_als = [al for al in self.original_alignments if al.reference_name == ti.target]
 
         processed_als = []
 
@@ -270,7 +272,7 @@ class Layout(Categorizer):
                 # These should typically be considered genomic insertions and caught by supplementary alignments;
                 # counting on target alignments to get them would make behavior dependent on the amount of flanking
                 # sequence included around the amplicon.
-                if not (self.target_info.amplicon_interval & sam.reference_interval(al)):
+                if not (ti.amplicon_interval & sam.reference_interval(al)):
                     continue
 
             query_interval = interval.get_covered(al)
@@ -282,7 +284,7 @@ class Layout(Categorizer):
             if extend_before or extend_after:
                 al = sw.extend_repeatedly(al, target_seq_bytes, extend_before=extend_before, extend_after=extend_after)
 
-            split_als = comprehensively_split_alignment(al, self.target_info, self.mode)
+            split_als = comprehensively_split_alignment(al, ti, self.mode)
 
             extended = [sw.extend_alignment(split_al, target_seq_bytes) for split_al in split_als]
 
@@ -932,7 +934,7 @@ class Layout(Categorizer):
                                 mismatch_penalty=-2,
                                )
 
-            als = [sw.extend_alignment(al, ti.target_sequence_bytes) for al in als]
+            als = [sw.extend_alignment(al, ti.reference_sequence_bytes[ti.target]) for al in als]
             
             gap_covers.extend(als)
 
@@ -948,7 +950,7 @@ class Layout(Categorizer):
                                     mismatch_penalty=-2,
                                 )
 
-                als = [sw.extend_alignment(al, ti.donor_sequence_bytes) for al in als]
+                als = [sw.extend_alignment(al, ti.reference_sequence_bytes[ti.donor]) for al in als]
                 
                 gap_covers.extend(als)
 

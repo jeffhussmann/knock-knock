@@ -16,13 +16,6 @@ class PairedEndExperiment:
             #'no_overlap_outcome_list',
         ]
 
-        self.diagram_kwargs.update(draw_sequence=True,
-                                   flip_target=self.target_info.sequencing_direction == '-',
-                                   highlight_SNPs=True,
-                                   center_on_primers=True,
-                                   split_at_indels=True,
-                                  )
-
         self.read_types = [
             'stitched',
             'stitched_by_name',

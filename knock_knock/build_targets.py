@@ -1146,7 +1146,7 @@ def build_target_infos_from_csv(base_dir, offtargets=False, defer_HA_identificat
                           defer_HA_identification=defer_HA_identification,
                          )
 
-def build_indices(base_dir, name, num_threads=1):
+def build_indices(base_dir, name, num_threads=1, **STAR_index_kwargs):
     base_dir = Path(base_dir)
 
     logging.info(f'Building indices for {name}')
@@ -1166,7 +1166,11 @@ def build_indices(base_dir, name, num_threads=1):
     logging.info('Building STAR index...')
     STAR_dir = base_dir / 'indices' / name / 'STAR'
     STAR_dir.mkdir(exist_ok=True)
-    mapping_tools.build_STAR_index([fasta_fn], STAR_dir, num_threads=num_threads, RAM_limit=int(4e10))
+    mapping_tools.build_STAR_index([fasta_fn], STAR_dir,
+                                   num_threads=num_threads,
+                                   RAM_limit=int(4e10),
+                                   **STAR_index_kwargs,
+                                  )
 
     logging.info('Building minimap2 index...')
     minimap2_dir = base_dir / 'indices' / name / 'minimap2'
@@ -1213,7 +1217,14 @@ def download_genome_and_build_indices(base_dir, genome_name, num_threads=8):
     ]
     subprocess.run(gunzip_command, check=True)
 
-    build_indices(base_dir, genome_name, num_threads=num_threads)
+    if genome_name == 'e_coli':
+        STAR_index_kwargs = {
+            'wonky_param': 4,
+        }
+    else:
+        STAR_index_kwargs = {}
+
+    build_indices(base_dir, genome_name, num_threads=num_threads, **STAR_index_kwargs)
 
 def build_manual_target(base_dir, target_name):
     target_dir = base_dir / 'targets' / target_name

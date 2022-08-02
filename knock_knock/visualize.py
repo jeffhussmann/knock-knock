@@ -51,7 +51,8 @@ class ReadDiagram():
                  flip_donor=False,
                  flip_target=False,
                  read_label='sequencing read',
-                 target_on_top=False,
+                 donor_below=False,
+                 manual_refs_below=None,
                  features_on_alignments=True,
                  ax=None,
                  features_to_hide=None,
@@ -90,7 +91,8 @@ class ReadDiagram():
         self.parsimonious = parsimonious
         self.emphasize_parismonious = emphasize_parsimonious
         self.ref_centric = ref_centric
-        self.target_on_top = target_on_top
+        self.donor_below = donor_below
+        self.manual_refs_below = manual_refs_below
         self.size_multiple = size_multiple
         self.draw_qualities = draw_qualities
         self.draw_mismatches = draw_mismatches
@@ -129,6 +131,9 @@ class ReadDiagram():
 
         if self.refs_to_draw is None:
             self.refs_to_draw = set()
+
+        if self.manual_refs_below is None:
+            self.manual_refs_below = []
         
         if len(self.refs_to_draw) == 0 and self.ref_centric:
             self.refs_to_draw.add(self.target_info.target)
@@ -381,11 +386,28 @@ class ReadDiagram():
         self.feature_label_size = 10
         
         self.ref_name_to_color = defaultdict(lambda: default_color)
-        self.ref_name_to_color[self.target_info.target] = 'C0'
-        self.ref_name_to_color[self.target_info.donor] = 'C1'
+
+        unused_colors = {f'C{i}' for i in range(10)} - set(self.color_overrides.values())
+
+        def assign_ref_color(ref_name):
+            if ref_name in self.color_overrides:
+                color = self.color_overrides[ref_name]
+            elif len(unused_colors) > 0:
+                color = min(unused_colors)
+                unused_colors.remove(color)
+            else:
+                color = 'black'
+
+            self.ref_name_to_color[ref_name] = color
+
+        assign_ref_color(self.target_info.target)
+
+        if self.target_info.donor is not None:
+            assign_ref_color(self.target_info.donor)
+
         other_names = [n for n in self.target_info.reference_sequences if n not in [self.target_info.target, self.target_info.donor]]
-        for i, name in enumerate(other_names):
-            self.ref_name_to_color[name] = f'C{i % 8 + 2}'
+        for name in other_names:
+            assign_ref_color(name)
         
         for name, color in self.color_overrides.items():
             self.ref_name_to_color[name] = color
@@ -422,9 +444,26 @@ class ReadDiagram():
 
             features_to_show.extend([(self.target_info.target, f_name) for f_name in self.target_info.sgRNA_features])
 
-        features = {k: v for k, v in all_features.items() if k in features_to_show and k not in self.features_to_hide}
+        features = {k: v for k, v in all_features.items()
+                    if k in features_to_show
+                    and k not in self.features_to_hide
+                   }
 
         return features
+
+    def get_feature_color(self, feature_reference, feature_name):
+        feature = self.features[feature_reference, feature_name]
+
+        if feature_name in self.color_overrides:
+            color = self.color_overrides[feature_name]
+        elif (feature_reference, feature_name) in self.color_overrides:
+            color = self.color_overrides[feature_reference, feature_name]
+        else:
+            color = feature.attribute.get('color')
+            if color is None:
+                color = self.default_color
+
+        return color
 
     def draw_read_arrows(self):
         ''' Draw black arrows that represent the sequencing read or read pair. '''
@@ -487,7 +526,7 @@ class ReadDiagram():
         else:
             x_offset = 0
 
-        # Ensure that target and donor are at the bottom followed by other references.
+        # Ensure that target and donor are closest to the read, followed by other references.
         reference_order = [self.target_info.target, self.target_info.donor]
         other_refs = sorted(set(al.reference_name for al in alignments if al.reference_name not in reference_order))
         reference_order += other_refs
@@ -495,12 +534,16 @@ class ReadDiagram():
         by_reference_name = defaultdict(list)
         for al in sorted(alignments, key=lambda al: (reference_order.index(al.reference_name), sam.query_interval(al))):
             by_reference_name[al.reference_name].append(al)
+
+        # Prevent further population of defaultdict.
+        by_reference_name = dict(by_reference_name)
         
         if self.ref_centric:
-            if self.target_on_top:
-                rnames_below = [self.target_info.donor]
-            else:
-                rnames_below = [self.target_info.target]
+            rnames_below = [self.target_info.target]
+            if self.donor_below:
+                rnames_below.append(self.target_info.donor)
+
+            rnames_below += self.manual_refs_below
 
             initial_offset = self.initial_alignment_y_offset
 
@@ -512,7 +555,7 @@ class ReadDiagram():
 
         offsets = {}
         for names, sign in [(rnames_below, -1), (rnames_above, 1)]:
-            block_sizes = [initial_offset] + [len(by_reference_name[n]) + 1 for n in names]
+            block_sizes = [initial_offset] + [len(by_reference_name.get(n, [])) + 1 for n in names]
             cumulative_block_sizes = np.cumsum(block_sizes)
             starts = sign * cumulative_block_sizes
             for name, start in zip(names, starts):
@@ -829,13 +872,7 @@ class ReadDiagram():
                         continue
 
                     feature = self.features[feature_reference, feature_name]
-
-                    if feature_name in self.color_overrides:
-                        feature_color = self.color_overrides[feature_name]
-                    elif (feature_reference, feature_name) in self.color_overrides:
-                        feature_color = self.color_overrides[feature_reference, feature_name]
-                    else:
-                        feature_color = feature.attribute.get('color', 'grey')
+                    feature_color = self.get_feature_color(feature_reference, feature_name)
                     
                     qs = [q for q, r in q_to_r.items() if feature.start <= r <= feature.end]
                     if not qs:
@@ -865,7 +902,7 @@ class ReadDiagram():
                                             textcoords='offset points',
                                             size=6,
                                             va=va,
-                                        )
+                                           )
                         
                         if query_extent[1] - query_extent[0] > 18 or feature.attribute['ID'] == self.target_info.sgRNA:
                             label = feature.attribute['ID']
@@ -992,7 +1029,7 @@ class ReadDiagram():
                                     alpha=0.4,
                                     size=10,
                                     weight='bold',
-                                )
+                                   )
                         
         if self.draw_sequence:
             seq = self.alignments[0].get_forward_sequence()
@@ -1028,12 +1065,13 @@ class ReadDiagram():
 
     def draw_reference(self, ref_name, ref_y, flip,
                        label_features=True,
-                       center_p=None,
                        visible=True,
                       ):
         ti = self.target_info
 
         color = self.ref_name_to_color[ref_name]
+
+        alignment_coordinates = self.alignment_coordinates[ref_name]
 
         # To establish a mapping between reference position and x coordinate,
         # pick anchor points on the ref and read that will line up with each other. 
@@ -1042,13 +1080,13 @@ class ReadDiagram():
 
         # Default to lining up the left edge vertically with the reference position
         # it is mapped to if there is only one alignment to this reference, or
-        # if there are two but they might just a single alignment split across R1
+        # if there are two but they might just be a single alignment split across R1
         # and R2.
         elif (self.force_left_aligned or 
-              (len(self.alignment_coordinates[ref_name]) == 1) or 
-              (len(self.alignment_coordinates[ref_name]) == 2 and ref_name == ti.donor and self.R2_alignments is not None) 
+              (len(alignment_coordinates) == 1) or 
+              (len(alignment_coordinates) == 2 and ref_name == ti.donor and self.R2_alignments is not None) 
              ):
-            xs, ps, y, strand, parsimony_multiplier = self.alignment_coordinates[ref_name][0]
+            xs, ps, y, strand, parsimony_multiplier = alignment_coordinates[0]
 
             anchor_ref = ps[0]
 
@@ -1058,7 +1096,7 @@ class ReadDiagram():
                 anchor_read = xs[1]
 
         elif self.force_right_aligned:
-            xs, ps, y, strand, parsimony_multiplier = self.alignment_coordinates[ref_name][-1]
+            xs, ps, y, strand, parsimony_multiplier = alignment_coordinates[-1]
 
             anchor_ref = ps[-1]
 
@@ -1079,7 +1117,7 @@ class ReadDiagram():
                 else:
                     anchor_ref = ti.amplicon_interval.start + (len(ti.amplicon_interval) - relevant_length) / 2
 
-                leftmost_coordinates = self.alignment_coordinates[ref_name][0]
+                leftmost_coordinates = alignment_coordinates[0]
                 xs, ps, y, strand, parsimony_multiplier = leftmost_coordinates
 
                 if (strand == '+' and not flip) or (strand == '-' and flip):
@@ -1087,13 +1125,19 @@ class ReadDiagram():
                 else:
                     anchor_read = xs[1]
 
+            elif len(alignment_coordinates) > 0:
+                # Line up the longest alignment.
+                longest_coordinates = max(alignment_coordinates, key=lambda t: abs(t[1][1] - t[1][0]))
+                xs, ps, y, strand, parsimony_multiplier = longest_coordinates
+                anchor_ref = ps[0]
+                if (strand == '+' and not flip) or (strand == '-' and flip):
+                    anchor_read = xs[0]
+                else:
+                    anchor_read = xs[1]
+
             else:
-                if center_p is None:
-                    center_p = len(ti.reference_sequences[ref_name]) // 2
-
-                anchor_ref = center_p
-
                 anchor_read = relevant_length // 2
+                anchor_ref = len(ti.reference_sequences[ref_name]) // 2
 
         # With these anchors picked, define the mapping and its inverse.
         if flip:
@@ -1119,7 +1163,7 @@ class ReadDiagram():
         ref_al_min = np.inf
         ref_al_max = -np.inf
 
-        for xs, ps, y, strand, parsimony_multiplier in self.alignment_coordinates[ref_name]:
+        for xs, ps, y, strand, parsimony_multiplier in alignment_coordinates:
             ref_xs = [ref_p_to_x(p) for p in ps]
             ref_al_min = min(ref_al_min, min(ps))
             ref_al_max = max(ref_al_max, max(ps))
@@ -1149,7 +1193,7 @@ class ReadDiagram():
                              visible=visible,
                             )
 
-        if self.center_on_primers:
+        if ref_name == ti.target and self.center_on_primers:
             ref_al_min = min(ref_al_min, ti.amplicon_interval.start)
             ref_al_max = max(ref_al_max, ti.amplicon_interval.end)
 
@@ -1161,9 +1205,6 @@ class ReadDiagram():
 
         if ref_al_max >= ref_end:
             ref_end = min(ref_edge, ref_al_max + 10)
-
-        if ref_name == ti.donor and ref_edge < 3000:
-            ref_end = ref_edge
 
         if ref_name == ti.target:
             fade_left = True
@@ -1194,11 +1235,6 @@ class ReadDiagram():
 
         if rightmost_aligned_x >= self.min_x + 0.95 * (self.max_x - self.min_x):
             fade_right = False
-
-        # If a plasmid donor is being drawn, fade.
-        #if ref_name == ti.donor and ti.donor_type == 'plasmid':
-        #    fade_left = True
-        #    fade_right = True
 
         self.ax.set_xlim(self.min_x, self.max_x)
 
@@ -1247,12 +1283,7 @@ class ReadDiagram():
                 continue
 
             feature = self.features[feature_reference, feature_name]
-            if feature_name in self.color_overrides:
-                feature_color = self.color_overrides[feature_name]
-            elif (feature_reference, feature_name) in self.color_overrides:
-                feature_color = self.color_overrides[feature_reference, feature_name]
-            else:
-                feature_color = feature.attribute.get('color', 'grey')
+            feature_color = self.get_feature_color(feature_reference, feature_name)
 
             xs = adjust_edges([ref_p_to_x(p) for p in [feature.start, feature.end]])
                 
@@ -1390,35 +1421,23 @@ class ReadDiagram():
 
         ti = self.target_info
         
-        if self.target_on_top:
-            target_y = self.max_y + self.target_and_donor_y_gap
-            donor_y = self.min_y - self.target_and_donor_y_gap
+        target_y = self.min_y - self.target_and_donor_y_gap
+
+        if self.donor_below:
+            donor_y = target_y - self.target_and_donor_y_gap
         else:
-            target_y = self.min_y - self.target_and_donor_y_gap
             donor_y = self.max_y + self.target_and_donor_y_gap
 
         params = []
 
         if len(self.alignment_coordinates[ti.target]) > 0:
-            #params.append((ti.target, np.mean(list(ti.cut_afters.values())), target_y, self.flip_target))
-            if ti.cut_after is None:
-                center_p = np.mean([ti.amplicon_interval.start, ti.amplicon_interval.end])
-            else:
-                center_p = ti.cut_after
-
-            params.append((ti.target, center_p, target_y, self.flip_target))
+            params.append((ti.target, target_y, self.flip_target))
 
         if len(self.alignment_coordinates[ti.donor]) > 0:
-            if (ti.donor, ti.donor_specific) in ti.features:
-                donor_specific_feature = ti.features[ti.donor, ti.donor_specific]
-                center_p = np.mean([donor_specific_feature.start, donor_specific_feature.end])
-            else:
-                center_p = len(ti.donor_sequence) / 2
+            params.append((ti.donor, donor_y, self.flip_donor))
 
-            params.append((ti.donor, center_p, donor_y, self.flip_donor))
-
-        for ref_name, center_p, ref_y, flip in params:
-            self.draw_reference(ref_name, ref_y, flip, center_p=center_p)
+        for ref_name, ref_y, flip in params:
+            self.draw_reference(ref_name, ref_y, flip)
 
     @property
     def height(self):

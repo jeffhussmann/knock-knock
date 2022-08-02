@@ -35,9 +35,6 @@ class PacbioExperiment(Experiment):
 
         self.length_plot_smooth_window = self.description.get('length_plot_smooth_window', 7)
 
-        self.diagram_kwargs.update(draw_sequence=False,
-                                  )
-
     @memoized_property
     def max_relevant_length(self):
         auto_length = int((self.target_info.amplicon_length * 2.5 // 1000 + 1)) * 1000
@@ -102,34 +99,24 @@ class PacbioExperiment(Experiment):
         for (start, end), sampler in items:
             diagrams = self.alignment_groups_to_diagrams(sampler.sample,
                                                          num_examples=num_examples,
-                                                         **self.diagram_kwargs,
                                                         )
             im = hits.visualize.make_stacked_Image([d.fig for d in diagrams])
             fn = fns['length_range_figure'](start, end)
             im.save(fn)
-    
-    def process(self, stage):
-        try:
-            if stage == 'preprocess':
-                pass
-            elif stage == 'align':
-                for read_type in self.read_types:
-                    self.generate_alignments(read_type=read_type)
-                    self.generate_supplemental_alignments_with_minimap2(read_type=read_type)
-                    self.combine_alignments(read_type=read_type)
 
-            elif stage == 'categorize':
-                self.categorize_outcomes(read_type='CCS')
+    def preprocess(self):
+        pass
 
-                self.generate_outcome_counts()
-                self.generate_read_lengths()
+    def align(self):
+        for read_type in self.read_types:
+            self.generate_alignments(read_type=read_type)
+            self.generate_supplemental_alignments_with_minimap2(read_type=read_type)
+            self.combine_alignments(read_type=read_type)
 
-                self.extract_donor_microhomology_lengths()
+    def categorize(self):
+        self.categorize_outcomes(read_type='CCS')
 
-                self.record_sanitized_category_names()
+        self.generate_outcome_counts()
+        self.generate_read_lengths()
 
-            elif stage == 'visualize':
-                self.generate_figures()
-        except:
-            print(self.group, self.sample_name)
-            raise
+        self.record_sanitized_category_names()

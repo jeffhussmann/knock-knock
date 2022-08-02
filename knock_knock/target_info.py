@@ -232,7 +232,13 @@ class TargetInfo():
 
     @memoized_property
     def header(self):
-        return sam.header_from_fasta(self.fns['ref_fasta'])
+        ref_seqs = sorted(self.reference_sequences.items())
+        names = [name for name, seq in ref_seqs]
+        lengths = [len(seq) for name, seq in ref_seqs]
+
+        header = pysam.AlignmentHeader.from_references(names, lengths)
+
+        return header
 
     @memoized_property
     def primary_sgRNA(self):
@@ -601,25 +607,12 @@ class TargetInfo():
         return self.reference_sequences[self.target]
     
     @memoized_property
-    def target_sequence_bytes(self):
-        ''' DEPRECATED. use self.reference_sequence_bytes[self.target] '''
-        return self.reference_sequence_bytes[self.target]
-    
-    @memoized_property
-    def donor_sequence_bytes(self):
-        ''' DEPRECATED. use self.reference_sequence_bytes[self.donor] '''
-        if self.donor_sequence is None:
-            return None
-        else:
-            return self.reference_sequence_bytes[self.donor]
-
-    @memoized_property
     def seed_and_extender(self):
         def fake_extender(*args):
             return [] 
 
         extenders = {
-            'target': sw.SeedAndExtender(self.target_sequence_bytes, 20, self.header, self.target).seed_and_extend,
+            'target': sw.SeedAndExtender(self.reference_sequence_bytes[self.target], 20, self.header, self.target).seed_and_extend,
         }
         if self.donor is not None:
             extenders['donor'] = sw.SeedAndExtender(self.reference_sequence_bytes[self.donor], 20, self.header, self.donor).seed_and_extend
@@ -845,11 +838,13 @@ class TargetInfo():
                 'left': self.primers_by_side_of_target[5],
                 'right': self.primers_by_side_of_target[3],
             }
-        else:
+        elif self.sequencing_direction == '-':
             by_side = {
                 'left': self.primers_by_side_of_target[3],
                 'right': self.primers_by_side_of_target[5],
             }
+        else:
+            raise ValueError(self.sequencing_direction)
 
         return by_side
 
@@ -1239,7 +1234,7 @@ class TargetInfo():
         }
         donor_bytes[True] = utilities.reverse_complement(donor_bytes[False])
         
-        target_bytes = self.target_sequence_bytes
+        target_bytes = self.reference_sequence_bytes[self.target]
         
         candidates = []
         for is_reverse_complement in [False, True]:
@@ -1265,7 +1260,7 @@ class TargetInfo():
         }
         donor_bytes[True] = utilities.reverse_complement(donor_bytes[False])
         
-        target_bytes = self.target_sequence_bytes
+        target_bytes = self.reference_sequence_bytes[self.target]
             
         num_mismatches, offset, is_reverse_complement = self.best_donor_target_alignment
 
@@ -1783,13 +1778,15 @@ class TargetInfo():
     @memoized_property
     def pegRNA_intended_deletion(self):
         if self.pegRNA_names is None:
-            deletion is None
+            deletion = None
+
         elif len(self.pegRNA_names) == 1:
             _, _, deletion = knock_knock.pegRNAs.infer_edit_features(self.pegRNA_names,
                                                                      self.target,
                                                                      self.features,
                                                                      self.reference_sequences,
                                                                     )
+
         elif len(self.pegRNA_names) == 2:
             results = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
                                                                      self.target,
