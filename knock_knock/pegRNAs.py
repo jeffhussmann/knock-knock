@@ -145,14 +145,20 @@ def infer_features(pegRNA_name,
     alignments = mapper.seed_and_extend(target_bytes, seed_start, seed_start + seed_length, pegRNA_name)
     
     valid_alignments = [al for al in alignments if sam.get_strand(al) != strand]
-    valid_alignments = sorted(valid_alignments, key=lambda al: al.reference_start, reverse=True)
-    
+
+    def priority_key(al):
+        # Prioritize longer matches, then matches closer to the 3' end.
+        return (al.query_alignment_length, al.reference_start)
+
+    valid_alignments = sorted(valid_alignments, key=priority_key, reverse=True)
+
     if len(valid_alignments) != 1:
         seed_sequence = target_bytes[seed_start:seed_start + seed_length]
         starts = [al.reference_start for al in valid_alignments]
-        logging.warning(f'{pegRNA_name}: not exactly one valid PBS location for {seed_sequence} {starts}')
+        warning_message = [f'{pegRNA_name}: not exactly one valid PBS alignment for {seed_sequence}'] + \
+        [f'\tlength: {al.query_alignment_length}, start in pegRNA: {al.reference_start}, start in target: {al.query_alignment_start}' for al in valid_alignments]
+        logging.warning('\n'.join(warning_message))
         
-    # Pick the rightmost (i.e. closest to 3' end) if there are multiple.
     PBS_alignment = valid_alignments[0]
 
     # Restrict the PBS to not extend past the nick.
