@@ -57,6 +57,7 @@ class ReadDiagram():
                  ax=None,
                  features_to_hide=None,
                  features_to_show=None,
+                 feature_heights=None,
                  refs_to_hide=None,
                  draw_edge_numbers=True,
                  hide_non_target_alignments=False,
@@ -176,8 +177,8 @@ class ReadDiagram():
                     if al.reference_name in refs_to_split:
                         split_als = layout_module.comprehensively_split_alignment(al, self.target_info, 'illumina', 1, 1)
 
-                        target_seq_bytes = self.target_info.reference_sequences[al.reference_name].encode()
-                        extended = [sw.extend_alignment(al, target_seq_bytes) for al in split_als]
+                        seq_bytes = self.target_info.reference_sequence_bytes[al.reference_name]
+                        extended = [sw.extend_alignment(al, seq_bytes) for al in split_als]
                         all_split_als.extend(extended)
 
                     else:
@@ -295,11 +296,14 @@ class ReadDiagram():
         self.ax = ax
 
         if features_to_hide is None:
-            self.features_to_hide = set()
-        else:
-            self.features_to_hide = features_to_hide
+            features_to_hide = set()
+        self.features_to_hide = features_to_hide
         
         self.features_to_show = features_to_show
+
+        if feature_heights is None:
+            feature_heights = {}
+        self.feature_heights = feature_heights
         
         if len(self.alignments) > 0:
             self.query_length = self.alignments[0].query_length
@@ -409,9 +413,6 @@ class ReadDiagram():
         for name in other_names:
             assign_ref_color(name)
         
-        for name, color in self.color_overrides.items():
-            self.ref_name_to_color[name] = color
-
         if self.target_info.reference_name_in_genome_source is not None:
             self.ref_name_to_color[self.target_info.reference_name_in_genome_source] = self.ref_name_to_color[self.target_info.target]
 
@@ -464,6 +465,16 @@ class ReadDiagram():
                 color = self.default_color
 
         return color
+
+    def get_feature_height(self, feature_reference, feature_name):
+        if feature_name in self.feature_heights:
+            height = self.feature_heights[feature_name]
+        elif (feature_reference, feature_name) in self.feature_heights:
+            height = self.feature_heights[feature_reference, feature_name]
+        else:
+            height = 1
+
+        return height
 
     def draw_read_arrows(self):
         ''' Draw black arrows that represent the sequencing read or read pair. '''
@@ -825,7 +836,12 @@ class ReadDiagram():
                 }
 
                 if self.highlight_SNPs:
-                    if ref_name == self.target_info.donor:
+                    if self.target_info.donor is not None:
+                        donor_name = self.target_info.donor
+                    elif self.target_info.pegRNA_names is not None and len(self.target_info.pegRNA_names) == 1:
+                        donor_name = self.target_info.pegRNA_names[0]
+
+                    if ref_name == donor_name:
                         SNVs = self.target_info.donor_SNVs['donor']
                     elif ref_name == self.target_info.target:
                         SNVs = self.target_info.donor_SNVs['target']
@@ -975,7 +991,7 @@ class ReadDiagram():
             
         # Set how far tick labels should be from axes
         if self.draw_sequence:
-            ax.tick_params(length=0, pad=self.font_sizes['sequence'] * 1.5)
+            ax.tick_params(length=0, pad=self.font_sizes['sequence'] * 2)
         else:
             ax.tick_params(pad=2)
 
@@ -1284,21 +1300,30 @@ class ReadDiagram():
 
             feature = self.features[feature_reference, feature_name]
             feature_color = self.get_feature_color(feature_reference, feature_name)
+            feature_height = self.get_feature_height(feature_reference, feature_name)
 
             xs = adjust_edges([ref_p_to_x(p) for p in [feature.start, feature.end]])
                 
             start = ref_y + np.sign(ref_y) * self.ref_line_width
-            end = start + np.sign(ref_y) * self.feature_line_width
+            end = start + np.sign(ref_y) * self.feature_line_width * feature_height
 
             bottom = min(start, end)
             top = max(start, end)
             self.min_y = min(bottom, self.min_y)
             self.max_y = max(top, self.max_y)
 
-            # + 0.5 in this check to account for adjust_edges
-            if min(xs) >= self.min_x and max(xs) <= self.max_x + 0.5:
+            plot_interval = interval.Interval(self.min_x, self.max_x)
+
+            left = max(min(xs), self.min_x)
+            right = min(max(xs), self.max_x)
+            feature_interval = interval.Interval(min(xs), max(xs))
+
+            if interval.are_overlapping(plot_interval, feature_interval):
+                left = max(min(xs), self.min_x)
+                right = min(max(xs), self.max_x)
+
                 final_feature_color = hits.visualize.apply_alpha(feature_color, alpha=0.7, multiplicative=True)
-                self.ax.fill_between(xs, [start] * 2, [end] * 2,
+                self.ax.fill_between([left, right], [start] * 2, [end] * 2,
                                      color=final_feature_color,
                                      edgecolor='none',
                                      visible=visible,
@@ -1318,7 +1343,7 @@ class ReadDiagram():
                     y_points = 5 * self.feature_line_width / 0.005 + label_offset * (2 + self.font_sizes['feature_label'])
 
                     self.ax.annotate(label,
-                                     xy=(np.mean(xs), end),
+                                     xy=(np.mean([left, right]), end),
                                      xycoords='data',
                                      xytext=(0, y_points * np.sign(ref_y)),
                                      textcoords='offset points',
@@ -1328,6 +1353,7 @@ class ReadDiagram():
                                      size=self.font_sizes['feature_label'],
                                      weight='bold',
                                      visible=visible,
+                                     annotation_clip=False,
                                     )
 
         # Draw target and donor names next to diagrams.
