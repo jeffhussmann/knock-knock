@@ -2586,9 +2586,29 @@ def split_at_edit_clusters(al, target_info, num_edits=5, window_size=11):
 
     return split_als
 
+def crop_terminal_mismatches(al, target_info):
+    ''' Remove all consecutive mismatches from the start and end of an alignment. '''
+    covered = interval.get_covered(al)
+
+    mismatch_ps = {p for p, *rest in knock_knock.layout.get_mismatch_info(al, target_info)}
+
+    first = covered.start
+    last = covered.end
+
+    while first in mismatch_ps:
+        first += 1
+        
+    while last in mismatch_ps:
+        last -= 1
+
+    cropped_al = sam.crop_al_to_query_int(al, first, last)
+
+    return cropped_al
+
 def comprehensively_split_alignment(al, target_info, mode, ins_size_to_split_at=None, del_size_to_split_at=None):
-    # It is easier to reason about alignments if any that contain long insertions, long deletions, or clusters
-    # of many edits are split into multiple alignments.
+    ''' It is easier to reason about alignments if any that contain long insertions, long deletions, or clusters
+    of many edits are split into multiple alignments.
+    '''
 
     split_als = []
 
@@ -2602,7 +2622,8 @@ def comprehensively_split_alignment(al, target_info, mode, ins_size_to_split_at=
         for split_1 in split_at_edit_clusters(al, target_info):
             for split_2 in sam.split_at_deletions(split_1, del_size_to_split_at):
                 for split_3 in sam.split_at_large_insertions(split_2, ins_size_to_split_at):
-                    split_als.append(split_3)
+                    cropped_al = crop_terminal_mismatches(split_3, target_info)
+                    split_als.append(cropped_al)
 
     elif mode == 'pacbio':
         # Empirically, for Pacbio data, it is hard to find a threshold for number of edits within a window that
