@@ -144,7 +144,12 @@ def infer_features(pegRNA_name,
 
     alignments = mapper.seed_and_extend(target_bytes, seed_start, seed_start + seed_length, pegRNA_name)
     
-    valid_alignments = [al for al in alignments if sam.get_strand(al) != strand]
+    extension_ref_p_start = len(pegRNA_components['protospacer'] + pegRNA_components['scaffold'])
+    extension_ref_interval = interval.Interval(extension_ref_p_start, len(pegRNA_sequence) - 1)
+    def overlaps_extension(al):
+        return interval.get_covered_on_ref(al) & extension_ref_interval
+
+    valid_alignments = [al for al in alignments if sam.get_strand(al) != strand and overlaps_extension(al)]
 
     def priority_key(al):
         # Prioritize longer matches, then matches closer to the 3' end.
@@ -318,7 +323,7 @@ def infer_edit_features(pegRNA_names,
 
         is_programmed_insertion = False
         is_programmed_deletion = False
-                
+
         protospacer = features['target', 'protospacer']
         effector = target_info.effectors[protospacer.attribute['effector']]
         cut_after = effector.cut_afters(protospacer)[protospacer.strand]
@@ -598,7 +603,7 @@ def infer_twin_pegRNA_features(pegRNA_names,
 
     pegRNA_RTTs = {side: existing_features[pegRNA_names_by_side[side], 'RTT'] for side in [5, 3]}
 
-    overlap_features = {}
+    new_features = {}
     overlap_seqs = {}
     intended_edit_seqs = {}
 
@@ -660,7 +665,7 @@ def infer_twin_pegRNA_features(pegRNA_names,
                                                   }),
                                                  )
 
-        overlap_features[pegRNA_names_by_side[3], 'overlap'] = overlap_feature
+        new_features[pegRNA_names_by_side[3], 'overlap'] = overlap_feature
 
     else:
         overlap_seqs[5] = ''
@@ -713,7 +718,7 @@ def infer_twin_pegRNA_features(pegRNA_names,
                                                  )
 
 
-        overlap_features[pegRNA_names_by_side[5], 'overlap'] = overlap_feature
+        new_features[pegRNA_names_by_side[5], 'overlap'] = overlap_feature
 
     else:
         overlap_seqs[3] = ''
@@ -748,10 +753,21 @@ def infer_twin_pegRNA_features(pegRNA_names,
             deletion_start = num_matches_at_start
 
             deletion = target_info.DegenerateDeletion([deletion_start], deletion_length)
+
+            deletion_name = f'deletion_{pegRNA_names[0]}_{pegRNA_names[1]}'
+            deletion_feature = gff.Feature.from_fields(seqname=target_name,
+                                                       start=deletion_start,
+                                                       end=deletion_start + deletion_length - 1,
+                                                       strand='+',
+                                                       ID=deletion_name,
+                                                      )
+            deletion_feature.attribute['color'] = default_feature_colors['deletion']
+
+            new_features[target_name, deletion_name] = deletion_feature
             
     results = {
         'deletion': deletion,
-        'overlap_features': overlap_features,
+        'new_features': new_features,
         'is_prime_del': is_prime_del,
         'intended_edit_seq': intended_edit_seq,
     }
