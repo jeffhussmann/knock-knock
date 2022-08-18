@@ -119,6 +119,156 @@ class Categorizer:
 
         return share_any
 
+    def are_mutually_extending_from_shared_feature(self,
+                                                   left_al, left_feature_name,
+                                                   right_al, right_feature_name,
+                                                  ):
+        ti = self.target_info
+        
+        results = None
+
+        if self.share_feature(left_al, left_feature_name, right_al, right_feature_name):
+            switch_results = sam.find_best_query_switch_after(left_al,
+                                                              right_al,
+                                                              ti.reference_sequences[left_al.reference_name],
+                                                              ti.reference_sequences[right_al.reference_name],
+                                                              min,
+                                                             )
+                                                        
+            # Does an optimal switch point occur somewhere in the shared feature?
+
+            switch_interval = interval.Interval(min(switch_results['best_switch_points']), max(switch_results['best_switch_points']))
+            
+            left_qs = self.q_to_feature_offset(left_al, left_feature_name)
+            left_feature_interval = interval.Interval(min(left_qs), max(left_qs))                    
+
+            right_qs = self.q_to_feature_offset(right_al, right_feature_name)
+            right_feature_interval = interval.Interval(min(right_qs), max(right_qs))                    
+
+            switch_in_shared = switch_interval & left_feature_interval
+
+            if switch_in_shared:
+                # If as much query as possible is attributed to the right al, does the remaining left al
+                # still explain part of the read to the left of the overlapping feature?
+
+                cropped_left_al = sam.crop_al_to_query_int(left_al, 0, switch_interval.start)
+                left_of_feature = interval.Interval(0, left_feature_interval.start - 1)
+                left_contributes_past_overlap = interval.get_covered(cropped_left_al) & left_of_feature
+
+                if left_contributes_past_overlap:
+                    cropped_left_al = sam.crop_al_to_query_int(left_al, 0, switch_interval.end)
+                
+                    # Similarly, if as much query as possible is attributed to the left al, does the remaining right al
+                    # still explain part of the read to the right of the overlapping feature?
+
+                    cropped_right_al = sam.crop_al_to_query_int(right_al, switch_interval.end + 1, self.whole_read.end)
+                    right_of_feature = interval.Interval(right_feature_interval.end + 1, self.whole_read.end)
+                    right_contributes_past_overlap = interval.get_covered(cropped_right_al) & right_of_feature
+
+                    overlap_reaches_read_end = right_of_feature.is_empty
+
+                    if right_contributes_past_overlap or overlap_reaches_read_end:
+                        cropped_right_al = sam.crop_al_to_query_int(right_al, switch_interval.start + 1, len(self.seq))
+
+                        if right_contributes_past_overlap:
+                            status = 'definite'
+                        else:
+                            status = 'reaches end'
+
+                        results = {
+                            'status': status,
+                            'alignments': {
+                                'left': left_al,
+                                'right': right_al,
+                            },
+                            'cropped_alignments': {
+                                'left': cropped_left_al,
+                                'right': cropped_right_al,
+                            },
+                        }
+
+        return results
+
+    def extend_alignment_from_shared_feature(self,
+                                             alignment_to_extend,
+                                             feature_name_in_alignment,
+                                             ref_to_search,
+                                             feature_name_in_ref,
+                                            ):
+        ''' Generates the longest perfectly extended alignment to ref_to_search
+        that pairs feature_name_in_alignment in alignment_to_extend with feature_name_in_ref.
+        Motivation: if a potential transition occurs close to the end of a read or otherwise
+        only involves a small amount of sequence past the transition, initial alignment
+        generation may fail to identify a potentially relevant alignment.
+        ''' 
+
+        ti = self.target_info
+
+        feature_in_alignment = ti.features[alignment_to_extend.reference_name, feature_name_in_alignment]
+        feature_al = sam.crop_al_to_feature(alignment_to_extend, feature_in_alignment)
+
+        # Only extend if the alignment cleanly covers the whole feature.
+        covers_whole_feature = sam.feature_overlap_length(feature_al, feature_in_alignment) == len(feature_in_alignment)
+
+        if covers_whole_feature and not sam.contains_indel(feature_al):
+            # Create a new alignment covering the feature on ref_to_search,
+            # which will then be used as input to sw.extend_alignment.
+            # This needs three things:
+            #   - the query interval to be covered, which will be converted
+            #     into lengths to soft clip before and after the alignment.
+            #   - the reference interval to be covered, which will have its
+            #     left-most value put into reference_start.
+            #   - whether or not the alignment is reversed, which will be
+            #     reflected in the relevant flag and by flipped seq, qual,
+            #     and cigar.
+
+            # Get the query interval covered.
+            al_q_to_feature_offset = self.q_to_feature_offset(alignment_to_extend, feature_name_in_alignment)
+            query_interval = interval.Interval(min(al_q_to_feature_offset), max(al_q_to_feature_offset))
+
+            # Get the ref interval covered.
+            feature_in_ref = ti.features[ref_to_search, feature_name_in_ref]
+            ref_interval = interval.Interval(feature_in_ref.start, feature_in_ref.end)
+
+            # Figure out the strand.
+            if feature_in_ref.strand == feature_in_alignment.strand:
+                is_reverse = alignment_to_extend.is_reverse
+            else:
+                is_reverse = not alignment_to_extend.is_reverse
+
+            al = pysam.AlignedSegment(ti.header)
+
+            al.query_sequence = self.seq
+            al.query_qualities = self.qual
+
+            soft_clip_before = query_interval.start
+            soft_clip_after = len(self.seq) - 1 - query_interval.end
+
+            al.cigar = [
+                (sam.BAM_CSOFT_CLIP, soft_clip_before),
+                (sam.BAM_CMATCH, feature_al.query_alignment_length),
+                (sam.BAM_CSOFT_CLIP, soft_clip_after),
+            ]
+
+            if is_reverse:
+                # Need to extract query_qualities before overwriting query_sequence.
+                flipped_query_qualities = al.query_qualities[::-1]
+                al.query_sequence = utilities.reverse_complement(al.query_sequence)
+                al.query_qualities = flipped_query_qualities
+                al.is_reverse = True
+                al.cigar = al.cigar[::-1]
+
+            al.reference_name = ref_to_search
+            al.query_name = self.read.name
+            al.next_reference_id = -1
+
+            al.reference_start = ref_interval.start
+
+            extended_al = sw.extend_alignment(al, ti.reference_sequence_bytes[ref_to_search])
+        else:
+            extended_al = None
+
+        return extended_al
 
 class Layout(Categorizer):
     category_order = [
