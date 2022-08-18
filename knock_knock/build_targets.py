@@ -667,7 +667,7 @@ def build_target_info(base_dir, info, all_index_locations,
             else:
                 ps_seq =  utilities.reverse_complement(other_protospacer_seq)
                 if ps_seq not in full_around:
-                    results['failed'] = f'protospacer {other_protospacer_seq} not present near protospacer {protospacer_seq}'
+                    results['failed'] = f'protospacer {other_protospacer_name}: {other_protospacer_seq} not present near protospacer {protospacer_seq}'
                     return results
                 ps_strand = -1
 
@@ -788,10 +788,10 @@ def build_target_info(base_dir, info, all_index_locations,
                 continue
 
             sgRNA_feature = SeqFeature(location=FeatureLocation(ps_start - offset, ps_start - offset + len(ps_seq), strand=ps_strand),
-                                       id=f'sgRNA_{ps_name}',
+                                       id=ps_name,
                                        type=f'sgRNA_{effector.name}',
                                        qualifiers={
-                                           'label': f'sgRNA_{ps_name}',
+                                           'label': ps_name,
                                            'ApEinfo_fwdcolor': feature_colors['sgRNA'],
                                        },
                                       )
@@ -800,7 +800,7 @@ def build_target_info(base_dir, info, all_index_locations,
 
         results['sgRNA_features'] = sgRNA_features
 
-        results['gb_Records'] = {}
+        results['gb_records'] = {}
 
         if has_donor:
             if not defer_HA_identification:
@@ -833,8 +833,8 @@ def build_target_info(base_dir, info, all_index_locations,
                 donor_Seq = Seq(donor_seq)
                 donor_features = []
 
-            donor_Record = SeqRecord(donor_Seq, name=donor_name, features=donor_features, annotations={'molecule_type': 'DNA'})
-            results['gb_Records'][donor_name] = donor_Record
+            donor_record = SeqRecord(donor_Seq, name=donor_name, features=donor_features, annotations={'molecule_type': 'DNA'})
+            results['gb_records'][donor_name] = donor_record
 
         if info.get('pegRNAs') is not None:
             convert_strand = {
@@ -863,32 +863,32 @@ def build_target_info(base_dir, info, all_index_locations,
                     raise
 
                 pegRNA_Seq = Seq(pegRNA_components['full_sequence'])
-                pegRNA_Record = SeqRecord(pegRNA_Seq,
+                pegRNA_record = SeqRecord(pegRNA_Seq,
                                           name=pegRNA_name,
                                           features=pegRNA_SeqFeatures,
                                           annotations={'molecule_type': 'DNA'},
                                          )
     
-                results['gb_Records'][pegRNA_name] = pegRNA_Record
+                results['gb_records'][pegRNA_name] = pegRNA_record
             
         if has_nh_donor:
             nh_donor_Seq = Seq(nh_donor_seq)
-            nh_donor_Record = SeqRecord(nh_donor_Seq, name=nh_donor_name, annotations={'molecule_type': 'DNA'})
-            results['gb_Records'][nh_donor_name] = nh_donor_Record
+            nh_donor_record = SeqRecord(nh_donor_Seq, name=nh_donor_name, annotations={'molecule_type': 'DNA'})
+            results['gb_records'][nh_donor_name] = nh_donor_record
 
         target_Seq = Seq(target_seq)
-        target_Record = SeqRecord(target_Seq, name=target_name, features=target_features, annotations={'molecule_type': 'DNA'})
-        results['gb_Records'][target_name] = target_Record
+        target_record = SeqRecord(target_Seq, name=target_name, features=target_features, annotations={'molecule_type': 'DNA'})
+        results['gb_records'][target_name] = target_record
 
         if info.get('pegRNAs') is not None:
             # Note: for debugging convenience, genbank files are written for pegRNAs,
             # but these are NOT supplied as genbank records to make the final TargetInfo,
             # since relevant features are either represented by the intial decomposition into
             # components or inferred on instantiation of the TargetInfo.
-            non_pegRNA_records = {name: record for name, record in results['gb_Records'].items() if name not in pegRNA_names}
-            results['gb_Records_for_manifest'] = non_pegRNA_records
+            non_pegRNA_records = {name: record for name, record in results['gb_records'].items() if name not in pegRNA_names}
+            results['gb_records_for_manifest'] = non_pegRNA_records
         else:
-            results['gb_Records_for_manifest'] = results['gb_Records']
+            results['gb_records_for_manifest'] = results['gb_records']
 
         return results
     
@@ -930,19 +930,19 @@ def build_target_info(base_dir, info, all_index_locations,
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', category=BiopythonWarning)
 
-        for which_seq, Record in best_candidate['gb_Records'].items(): 
+        for which_seq, record in best_candidate['gb_records'].items(): 
             gb_fn = target_dir / f'{which_seq}.gb'
             try:
-                Bio.SeqIO.write(Record, gb_fn, 'genbank')
+                Bio.SeqIO.write(record, gb_fn, 'genbank')
             except ValueError:
                 # locus line too long, can't write genbank file with BioPython
-                old_name = Record.name
+                old_name = record.name
 
-                truncated_name = f'{Record.name[:11]}_{truncated_name_i}'
-                Record.name = truncated_name
-                Bio.SeqIO.write(Record, gb_fn, 'genbank')
+                truncated_name = f'{record.name[:11]}_{truncated_name_i}'
+                record.name = truncated_name
+                Bio.SeqIO.write(record, gb_fn, 'genbank')
 
-                Record.name = old_name
+                record.name = old_name
 
                 truncated_name_i += 1
 
@@ -950,10 +950,20 @@ def build_target_info(base_dir, info, all_index_locations,
 
     if info.get('extra_sequences') is not None:
         for extra_seq_name, extra_seq in info['extra_sequences']:
-            Record = SeqRecord(extra_seq, name=extra_seq_name, annotations={'molecule_type': 'DNA'})
-            best_candidate['gb_Records'][extra_seq_name] = Record
+            record = SeqRecord(extra_seq, name=extra_seq_name, annotations={'molecule_type': 'DNA'})
+            best_candidate['gb_records_for_manifest'][extra_seq_name] = record
 
-    sources = sorted(best_candidate['gb_Records_for_manifest'])
+    if info.get('extra_genbanks') is not None:
+        for gb_fn in info['extra_genbanks']:
+            full_gb_fn = base_dir / 'targets' / gb_fn
+
+            if not full_gb_fn.exists():
+                raise ValueError(f'{full_gb_fn} does not exist')
+
+            for record in Bio.SeqIO.parse(full_gb_fn, 'genbank'):
+                best_candidate['gb_records_for_manifest'][record.name] = record
+
+    sources = sorted(best_candidate['gb_records_for_manifest'])
         
     manifest = {
         'sources': sources,
@@ -997,7 +1007,7 @@ def build_target_info(base_dir, info, all_index_locations,
         pegRNAs_df = load_pegRNAs(base_dir, process=False)
         pegRNAs_df.loc[pegRNA_names].to_csv(ti.fns['pegRNAs'])
 
-    gb_records = list(best_candidate['gb_Records_for_manifest'].values())
+    gb_records = list(best_candidate['gb_records_for_manifest'].values())
 
     ti = target_info.TargetInfo(base_dir, name, gb_records=gb_records)
 
@@ -1140,7 +1150,11 @@ def build_target_infos_from_csv(base_dir, offtargets=False, defer_HA_identificat
             elif len(pegRNA_effectors) == 1:
                 info['effector'] = list(pegRNA_effectors)[0]
 
+        if 'extra_genbanks' in row:
+            info['extra_genbanks'] = row['extra_genbanks'].split(';')
+
         logging.info(f'Building {target_name}...')
+
         build_target_info(base_dir, info, indices,
                           offtargets=offtargets,
                           defer_HA_identification=defer_HA_identification,
@@ -1213,7 +1227,7 @@ def download_genome_and_build_indices(base_dir, genome_name, num_threads=8):
     file_name = Path(urlparse(urls[genome_name]).path).name
 
     gunzip_command = [
-        'gunzip',  str(fasta_dir / file_name),
+        'gunzip', '--force',  str(fasta_dir / file_name),
     ]
     subprocess.run(gunzip_command, check=True)
 
