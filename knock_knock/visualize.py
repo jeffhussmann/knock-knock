@@ -162,6 +162,7 @@ class ReadDiagram():
                 als = []
 
             als = copy.deepcopy(als)
+            als = [al for al in als if al is not None]
 
             if refs_to_hide is not None:
                 als = [al for al in als if al.reference_name not in refs_to_hide]
@@ -1310,7 +1311,7 @@ class ReadDiagram():
 
             xs = adjust_edges([ref_p_to_x(p) for p in [feature.start, feature.end]])
                 
-            start = ref_y + np.sign(ref_y) * self.ref_line_width
+            start = ref_y + np.sign(ref_y) * np.sign(feature_height) * self.ref_line_width
             end = start + np.sign(ref_y) * self.feature_line_width * feature_height
 
             bottom = min(start, end)
@@ -1347,13 +1348,14 @@ class ReadDiagram():
 
                     label_offset = self.label_offsets.get(name, 0)
                     y_points = 5 * self.feature_line_width / 0.005 + label_offset * (2 + self.font_sizes['feature_label'])
+                    y_direction = np.sign(ref_y) * np.sign(feature_height)
 
                     self.ax.annotate(label,
                                      xy=(np.mean([left, right]), end),
                                      xycoords='data',
-                                     xytext=(0, y_points * np.sign(ref_y)),
+                                     xytext=(0, y_points * y_direction),
                                      textcoords='offset points',
-                                     va='top' if ref_y < 0 else 'bottom',
+                                     va='top' if y_direction < 0 else 'bottom',
                                      ha='center',
                                      color=feature_color,
                                      size=self.font_sizes['feature_label'],
