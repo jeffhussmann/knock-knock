@@ -836,20 +836,26 @@ class ReadDiagram():
                 }
 
                 if self.highlight_SNPs:
-                    if self.target_info.donor is not None:
+                    SNVs = {}
+
+                    if self.target_info.pegRNA_names is not None:
+                        if ref_name in self.target_info.pegRNA_SNVs:
+                            SNVs = self.target_info.pegRNA_SNVs[ref_name]
+                    
+                    elif self.target_info.donor is not None:
                         donor_name = self.target_info.donor
-                    elif self.target_info.pegRNA_names is not None and len(self.target_info.pegRNA_names) == 1:
-                        donor_name = self.target_info.pegRNA_names[0]
 
-                    if ref_name == donor_name:
-                        SNVs = self.target_info.donor_SNVs['donor']
-                    elif ref_name == self.target_info.target:
-                        SNVs = self.target_info.donor_SNVs['target']
+                        if ref_name == donor_name:
+                            SNVs = self.target_info.donor_SNVs['donor']
+                        elif ref_name == self.target_info.target:
+                            SNVs = self.target_info.donor_SNVs['target']
+
+                    if len(SNVs) == 1:
+                        box_half_width = self.cross_x * 1.5
+                        box_half_height = self.cross_y * 2.5
                     else:
-                        SNVs = {}
-
-                    box_half_width = self.cross_x * 1.5
-                    box_half_height = self.cross_y * 2.5
+                        box_half_width = 0.5
+                        box_half_height = self.cross_y * 2.5
 
                     for SNV_name, SNV_info in SNVs.items():
                         SNV_r = SNV_info['position']
