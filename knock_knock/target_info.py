@@ -17,6 +17,7 @@ import hits.visualize
 from hits import fasta, gff, utilities, mapping_tools, interval, sam, sw, genomes
 
 import knock_knock.pegRNAs
+import knock_knock.integrases
 
 memoized_property = utilities.memoized_property
 memoized_with_args = utilities.memoized_with_args
@@ -308,7 +309,7 @@ class TargetInfo():
 
             self.gb_records = []
             for gb_fn in gb_fns:
-                for record in Bio.SeqIO.parse(str(gb_fn), 'genbank'):
+                for record in Bio.SeqIO.parse(gb_fn, 'genbank'):
                     self.gb_records.append(record)
 
         for gb_record in self.gb_records:
@@ -431,7 +432,11 @@ class TargetInfo():
                 # The target is in the same orientation as the reference genome,
                 # so coordinate transform is a simple offset.
                 offset = self.sgRNA_feature.start - protospacer_start
-                return {'start': al.reference_start + offset, 'end': al.reference_end + offset}
+                converted = {
+                    'start': al.reference_start + offset,
+                    'end': al.reference_end + offset,
+                    'strand': sam.get_strand(al),
+                }
             else:
                 # The target is in the opposite orientation as the reference genome,
                 # so coordinate transform is more complex.
@@ -439,7 +444,13 @@ class TargetInfo():
                     raise NotImplementedError
                 else:
                     offset = self.sgRNA_feature.end + protospacer_start
-                    return {'start': offset - al.reference_end, 'end': offset - al.reference_start}
+                    converted = {
+                        'start': offset - al.reference_end,
+                        'end': offset - al.reference_start,
+                        'strand': sam.get_opposite_strand(al),
+                    }
+
+            return converted
 
     def make_bowtie2_index(self):
         mapping_tools.build_bowtie2_index(self.fns['bowtie2_index'], [self.fns['ref_fasta']])
@@ -476,7 +487,9 @@ class TargetInfo():
                                                                          self.reference_sequences,
                                                                         )
 
-                features.update(results['overlap_features'])
+                features.update(results['new_features'])
+        
+        features.update(self.integrase_sites)
 
         # Override colors of protospacers in pooled screening vector
         # to ensure consistency.
@@ -508,6 +521,10 @@ class TargetInfo():
         return features
 
     @memoized_property
+    def integrase_sites(self):
+        return knock_knock.integrases.identify_split_recognition_sequences(self.reference_sequences)
+
+    @memoized_property
     def annotated_and_inferred_features(self):
         all_features = copy.deepcopy(self.features)
 
@@ -516,6 +533,8 @@ class TargetInfo():
             all_features.update(inferred_HA_features)
 
         all_features.update(self.PAM_features)
+
+        all_features.update(self.integrase_sites)
 
         return all_features
 
@@ -967,7 +986,10 @@ class TargetInfo():
                 side of target (5/3),
                 expected side of read (left/right),
         '''
-        if self.donor is None and self.pegRNA_names is not None and len(self.pegRNA_names) == 1:
+        if self.donor is not None and self.pegRNA_names is not None:
+            # integrase
+            donor = None
+        elif self.donor is None and self.pegRNA_names is not None and len(self.pegRNA_names) == 1:
             donor = self.pegRNA_names[0]
         else:
             donor = self.donor
@@ -1772,6 +1794,14 @@ class TargetInfo():
         return {side: knock_knock.pegRNAs.extract_pegRNA_name(PBS_name) for side, PBS_name in self.PBS_names_by_side_of_read.items()}
 
     @memoized_property
+    def pegRNA_name_to_side_of_read(self):
+        return utilities.reverse_dictionary(self.pegRNA_names_by_side_of_read)
+
+    @memoized_property
+    def pegRNA_name_to_color(self):
+        return {name: f'C{i + 2}' for i, name in enumerate(self.pegRNA_names)}
+
+    @memoized_property
     def pegRNA_names_by_side_of_target(self):
         return {side: knock_knock.pegRNAs.extract_pegRNA_name(PBS_name) for side, PBS_name in self.PBS_names_by_side_of_target.items()}
 
@@ -1831,10 +1861,15 @@ class TargetInfo():
         deletions = []
 
         if self.pegRNA_names is not None:
-            for pegRNA_name in self.pegRNA_names:
-                feature_name = f'deletion_{pegRNA_name}'
-                if (self.target, feature_name) in self.features:
-                    deletions.append(self.features[self.target, feature_name])
+            if len(self.pegRNA_names) == 1:
+                feature_name = f'deletion_{self.pegRNA_names[0]}'
+            elif len(self.pegRNA_names) == 2:
+                feature_name = f'deletion_{self.pegRNA_names[0]}_{self.pegRNA_names[1]}'
+            else:
+                raise ValueError(self.pegRNA_names)
+
+            if (self.target, feature_name) in self.features:
+                deletions.append(self.features[self.target, feature_name])
 
         return deletions
 

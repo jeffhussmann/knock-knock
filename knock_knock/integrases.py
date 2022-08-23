@@ -47,16 +47,43 @@ def identify_split_recognition_sequences(ref_seqs):
                     else:
                         continue
 
-                    match = (matches + rc_matches)[0]
+                    match_start = (matches + rc_matches)[0]
+                    match_end = match_start + len(seq) - 1
                     
                     full_name = f'{source}_{site_name}_{side}'
                     feature = hits.gff.Feature.from_fields(seqname=ref_name,
-                                                           start=match,
-                                                           end=match + len(seq) - 1,
+                                                           start=match_start,
+                                                           end=match_end,
                                                            ID=full_name,
                                                            strand=strand,
                                                           )
                     feature.attribute['color'] = colors.get((site_name, side))
+
+                    features[ref_name, full_name] = feature
+
+                    # Annotate the central dinucleotide next to the left half.
+                    if side == 'left':
+                        if strand == '+':
+                            CD_start = match_end + 1
+                        else:
+                            CD_start = match_start - 2
+                    elif side == 'right':
+                        if strand == '+':
+                            CD_start = match_start - 2
+                        else:
+                            CD_start = match_end + 1
+                    else:
+                        raise ValueError(side)
+
+                    CD_end = CD_start + 1
+
+                    full_name = f'{source}_{site_name}_CD'
+                    feature = hits.gff.Feature.from_fields(seqname=ref_name,
+                                                           start=CD_start,
+                                                           end=CD_end,
+                                                           ID=full_name,
+                                                           strand=strand,
+                                                          )
 
                     features[ref_name, full_name] = feature
 
