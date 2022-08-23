@@ -145,47 +145,55 @@ class Categorizer:
             right_qs = self.q_to_feature_offset(right_al, right_feature_name)
             right_feature_interval = interval.Interval(min(right_qs), max(right_qs))                    
 
+            # Heuristic: if an optimal switch point occurs in the shared feature,
+            # any amount of sequence past the shared feature is enough.
+            # If the optimal switch point is outside, require a longer amount. 
+            # Motivation: for replacement edits in which pegRNA sequence is similar
+            # to genomic sequence, we want to avoid identifying false positive
+            # extension alignments that are actually just genomic sequence, while
+            # still allowing the possibility of partial replacements that retain 
+            # some genomic sequence after the transition.
+
             switch_in_shared = switch_interval & left_feature_interval
 
-            if switch_in_shared:
-                # If as much query as possible is attributed to the right al, does the remaining left al
-                # still explain part of the read to the left of the overlapping feature?
+            # If as much query as possible is attributed to the right al, does the remaining left al
+            # still explain part of the read to the left of the overlapping feature?
 
-                cropped_left_al = sam.crop_al_to_query_int(left_al, 0, switch_interval.start)
-                left_of_feature = interval.Interval(0, left_feature_interval.start - 1)
-                left_contributes_past_overlap = interval.get_covered(cropped_left_al) & left_of_feature
+            cropped_left_al = sam.crop_al_to_query_int(left_al, 0, switch_interval.start)
+            left_of_feature = interval.Interval(0, left_feature_interval.start - 1)
+            left_contribution_past_overlap = interval.get_covered(cropped_left_al) & left_of_feature
 
-                if left_contributes_past_overlap:
-                    cropped_left_al = sam.crop_al_to_query_int(left_al, 0, switch_interval.end)
-                
-                    # Similarly, if as much query as possible is attributed to the left al, does the remaining right al
-                    # still explain part of the read to the right of the overlapping feature?
+            if (switch_in_shared and left_contribution_past_overlap.total_length > 0) or (left_contribution_past_overlap.total_length >=10):
+                cropped_left_al = sam.crop_al_to_query_int(left_al, 0, switch_interval.end)
+            
+                # Similarly, if as much query as possible is attributed to the left al, does the remaining right al
+                # still explain part of the read to the right of the overlapping feature?
 
-                    cropped_right_al = sam.crop_al_to_query_int(right_al, switch_interval.end + 1, self.whole_read.end)
-                    right_of_feature = interval.Interval(right_feature_interval.end + 1, self.whole_read.end)
-                    right_contributes_past_overlap = interval.get_covered(cropped_right_al) & right_of_feature
+                cropped_right_al = sam.crop_al_to_query_int(right_al, switch_interval.end + 1, self.whole_read.end)
+                right_of_feature = interval.Interval(right_feature_interval.end + 1, self.whole_read.end)
+                right_contributes_past_overlap = interval.get_covered(cropped_right_al) & right_of_feature
 
-                    overlap_reaches_read_end = right_of_feature.is_empty
+                overlap_reaches_read_end = right_of_feature.is_empty
 
-                    if right_contributes_past_overlap or overlap_reaches_read_end:
-                        cropped_right_al = sam.crop_al_to_query_int(right_al, switch_interval.start + 1, len(self.seq))
+                if right_contributes_past_overlap or overlap_reaches_read_end:
+                    cropped_right_al = sam.crop_al_to_query_int(right_al, switch_interval.start + 1, len(self.seq))
 
-                        if right_contributes_past_overlap:
-                            status = 'definite'
-                        else:
-                            status = 'reaches end'
+                    if right_contributes_past_overlap:
+                        status = 'definite'
+                    else:
+                        status = 'reaches end'
 
-                        results = {
-                            'status': status,
-                            'alignments': {
-                                'left': left_al,
-                                'right': right_al,
-                            },
-                            'cropped_alignments': {
-                                'left': cropped_left_al,
-                                'right': cropped_right_al,
-                            },
-                        }
+                    results = {
+                        'status': status,
+                        'alignments': {
+                            'left': left_al,
+                            'right': right_al,
+                        },
+                        'cropped_alignments': {
+                            'left': cropped_left_al,
+                            'right': cropped_right_al,
+                        },
+                    }
 
         return results
 
@@ -2773,7 +2781,8 @@ def comprehensively_split_alignment(al, target_info, mode, ins_size_to_split_at=
             for split_2 in sam.split_at_deletions(split_1, del_size_to_split_at):
                 for split_3 in sam.split_at_large_insertions(split_2, ins_size_to_split_at):
                     cropped_al = crop_terminal_mismatches(split_3, target_info)
-                    split_als.append(cropped_al)
+                    if cropped_al is not None:
+                        split_als.append(cropped_al)
 
     elif mode == 'pacbio':
         # Empirically, for Pacbio data, it is hard to find a threshold for number of edits within a window that
