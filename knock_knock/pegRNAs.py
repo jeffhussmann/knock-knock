@@ -672,7 +672,6 @@ def infer_twin_pegRNA_features(pegRNA_names,
 
     intended_edit_seqs[5] = target_with_RTed[5][:-length] + target_with_RTed[3][start:]
 
-
     # Align the RT'ed part of the 3' pegRNA to the target+RT'ed sequence
     # from the 5' side.
 
@@ -722,6 +721,32 @@ def infer_twin_pegRNA_features(pegRNA_names,
 
     else:
         overlap_seqs[3] = ''
+
+    if overlap_seqs[5] == '' and overlap_seqs[3] == '':
+        # prime del with no insertion won't have overlap between RTTs, but will have overlap between
+        # each PBS and the other pegRNA's RTT.
+        seq_5 = pegRNA_seqs[5]
+        seq_3_rc = utilities.reverse_complement(pegRNA_seqs[3])
+        PBS_length_3 = len(target_PBSs[3])
+        longest_match = 0
+        for l in range(PBS_length_3, len(seq_5)):
+            if seq_3_rc[:l] == seq_5[-l:]:
+                longest_match = l
+
+        if longest_match != 0:
+            for side in [5, 3]:
+                overlap_feature = gff.Feature.from_fields(seqname=pegRNA_names_by_side[side],
+                                                          feature='overlap',
+                                                          start=len(pegRNA_seqs[side]) - 1 - longest_match,
+                                                          end=len(pegRNA_seqs[side]) - 1,
+                                                          strand='+',
+                                                          attribute_string=gff.make_attribute_string({
+                                                              'ID': 'overlap',
+                                                              'color': default_feature_colors['overlap'],
+                                                              'short_name': 'overlap',
+                                                          }),
+                                                         )
+                new_features[pegRNA_names_by_side[side], 'overlap'] = overlap_feature
 
     intended_edit_seqs[3] = target_with_RTed[5][:start + length] + target_with_RTed[3][length:]
 
