@@ -156,6 +156,10 @@ class Categorizer:
 
             switch_in_shared = switch_interval & left_feature_interval
 
+            left_reaches_ref_end = left_al.reference_end == len(ti.reference_sequences[left_al.reference_name])
+            right_reaches_ref_end = right_al.reference_end == len(ti.reference_sequences[right_al.reference_name])
+            both_reach_ref_end = left_reaches_ref_end and right_reaches_ref_end
+
             # If as much query as possible is attributed to the right al, does the remaining left al
             # still explain part of the read to the left of the overlapping feature?
 
@@ -163,7 +167,7 @@ class Categorizer:
             left_of_feature = interval.Interval(0, left_feature_interval.start - 1)
             left_contribution_past_overlap = interval.get_covered(cropped_left_al) & left_of_feature
 
-            if (switch_in_shared and left_contribution_past_overlap.total_length > 0) or (left_contribution_past_overlap.total_length >=10):
+            if (switch_in_shared and left_contribution_past_overlap.total_length > 0) or (left_contribution_past_overlap.total_length >= 10) or both_reach_ref_end:
                 cropped_left_al = sam.crop_al_to_query_int(left_al, 0, switch_interval.end)
             
                 # Similarly, if as much query as possible is attributed to the left al, does the remaining right al
@@ -175,7 +179,7 @@ class Categorizer:
 
                 overlap_reaches_read_end = right_of_feature.is_empty
 
-                if right_contributes_past_overlap or overlap_reaches_read_end:
+                if right_contributes_past_overlap or overlap_reaches_read_end or both_reach_ref_end:
                     cropped_right_al = sam.crop_al_to_query_int(right_al, switch_interval.start + 1, len(self.seq))
 
                     if right_contributes_past_overlap:
@@ -1165,7 +1169,7 @@ class Layout(Categorizer):
     
     @memoized_property
     def strand(self):
-        ''' Get which strand each primer-containing alignment mapped to. '''
+        ''' Get the single strand any primer-containing alignments mapped to. '''
         strands = set(self.primer_strands.values())
 
         if None in strands:
