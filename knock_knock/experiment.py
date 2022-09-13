@@ -1136,13 +1136,14 @@ class Experiment:
             ax.set_ylabel('Percentage of reads', size=12)
             ax.set_xlabel('amplicon length', size=12)
 
-            for name, length in self.expected_lengths.items():
-                if panel_i == 0:
+            if panel_i == 0:
+                for i, (name, length) in enumerate(self.expected_lengths.items()):
                     ax.axvline(length, color='black', alpha=0.2)
 
+                    y = 1 + 0.05 * i
                     ax.annotate(name,
-                                xy=(length, 1), xycoords=('data', 'axes fraction'),
-                                xytext=(0, 5), textcoords='offset points',
+                                xy=(length, y), xycoords=('data', 'axes fraction'),
+                                xytext=(0, 1), textcoords='offset points',
                                 ha='center', va='bottom',
                                 size=10,
                                )
@@ -1376,7 +1377,7 @@ class Experiment:
         for category in self.progress(categories, desc=description):
             self.generate_length_range_figures(specific_outcome=category)
 
-    def generate_outcome_browser(self, min_total_to_label=0.1):
+    def generate_outcome_browser(self, min_total_to_label=0.01):
         svg.decorate_outcome_browser(self, min_total_to_label=min_total_to_label)
 
     def generate_figures(self):

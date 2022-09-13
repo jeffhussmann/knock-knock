@@ -46,7 +46,7 @@ class ReadDiagram():
                  detect_orientation=False,
                  label_layout=False,
                  highlight_SNPs=False,
-                 reverse_complement=None,
+                 reverse_complement=False,
                  label_left=False,
                  flip_donor=False,
                  flip_target=False,
@@ -664,7 +664,7 @@ class ReadDiagram():
                     else:
                         kwargs = {'ha': 'left', 'xytext': (2, 0)}
 
-                    if self.draw_edge_numbers or ref_name not in (self.target_info.target, self.target_info.donor):
+                    if self.draw_edge_numbers:
 
                         ax.annotate(f'{r:,}',
                                     xy=(final_x, y),

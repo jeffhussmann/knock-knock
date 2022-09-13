@@ -1150,7 +1150,7 @@ def build_target_infos_from_csv(base_dir, offtargets=False, defer_HA_identificat
             elif len(pegRNA_effectors) == 1:
                 info['effector'] = list(pegRNA_effectors)[0]
 
-        if 'extra_genbanks' in row:
+        if row.get('extra_genbanks') is not None:
             info['extra_genbanks'] = row['extra_genbanks'].split(';')
 
         logging.info(f'Building {target_name}...')

@@ -454,6 +454,7 @@ def make_self_contained_zip(base_dir,
                             sort_samples=True,
                             arrayed=False,
                            ):
+
     base_dir = Path(base_dir)
     results_dir = base_dir / 'results'
     fn_prefix = results_dir / table_name
@@ -515,18 +516,19 @@ def make_self_contained_zip(base_dir,
             add_fn(exp.fns['outcome_browser'])
             add_fn(exp.fns['lengths_figure'])
 
-            for outcome in exp.categories_by_frequency:
-                outcome_fns = exp.outcome_fns(outcome)
-                if include_details:
+            if exp.categories_by_frequency is not None:
+                for outcome in exp.categories_by_frequency:
+                    outcome_fns = exp.outcome_fns(outcome)
+                    if include_details:
+                        add_fn(outcome_fns['diagrams_html'])
+                        add_fn(outcome_fns['first_example'])
+                    add_fn(outcome_fns['length_ranges_dir'])
+
+                categories = set(c for c, s in exp.categories_by_frequency)
+                for category in categories:
+                    outcome_fns = exp.outcome_fns(category)
                     add_fn(outcome_fns['diagrams_html'])
                     add_fn(outcome_fns['first_example'])
-                add_fn(outcome_fns['length_ranges_dir'])
-
-            categories = set(c for c, s in exp.categories_by_frequency)
-            for category in categories:
-                outcome_fns = exp.outcome_fns(category)
-                add_fn(outcome_fns['diagrams_html'])
-                add_fn(outcome_fns['first_example'])
 
     if len(exps_missing_files) > 0:
         print(f'Warning: {len(exps_missing_files)} experiment(s) are missing output files:')

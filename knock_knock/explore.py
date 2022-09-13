@@ -52,7 +52,7 @@ class Explorer:
 
         draw_button_info = [
             ('ref_centric', True, 'target and donor'),
-            ('draw_sequence', False, 'sequence'),
+            ('draw_sequence', True, 'sequence'),
             ('draw_qualities', False, 'qualities'),
             ('draw_mismatches', True, 'mismatches'),
         ]
