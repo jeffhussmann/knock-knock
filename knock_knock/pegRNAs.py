@@ -51,6 +51,49 @@ def protospacer_name(pegRNA_name):
 def extract_pegRNA_name(PBS_name):
     return PBS_name.rsplit('_', 1)[0]
 
+def identify_protospacer_in_target(target_sequence, protospacer, effector):
+    ''' Find an occurence of protospacer on either strand of target_sequence
+    that has a PAM for effector positioned appropriately. If there is more
+    than one such occurence, raise a ValueError. 
+    Because the first nt of protospacer might be a non-matching G, first
+    look for the whole protospacer. If no match is found, look for the
+    protospacer with the first nt removed.
+    '''
+
+    def find(protospacer_suffix):
+        valid_features = []
+        for strand, ps_seq in [('+', protospacer_suffix), ('-', utilities.reverse_complement(protospacer_suffix))]:
+            # lookahead necessary in the unlikely event of partially-overlapping matches
+            protospacer_starts = [match.start() for match in re.finditer(f'(?={ps_seq})', target_sequence)]
+            
+            for protospacer_start in protospacer_starts:
+                protospacer_end = protospacer_start + len(ps_seq) - 1
+                target_protospacer_feature = gff.Feature.from_fields(start=protospacer_start,
+                                                                     end=protospacer_end,
+                                                                     strand=strand,
+                                                                     feature='sgRNA', 
+                                                                     attribute_string=gff.make_attribute_string({
+                                                                         'color': default_feature_colors['protospacer'],
+                                                                         'effector': effector.name,
+                                                                     }),
+                                                                    )
+                
+                if effector.PAM_matches_pattern(target_protospacer_feature, target_sequence):
+                    valid_features.append(target_protospacer_feature)
+
+        return valid_features
+                
+    valid_features = find(protospacer)
+
+    if len(valid_features) == 0:
+        valid_features = find(protospacer[1:])
+
+    if len(valid_features) != 1:
+        raise ValueError(f'{len(valid_features)} valid protospacer locations in target')
+    else:
+        valid_feature = valid_features[0]
+        return valid_feature    
+
 def infer_features(pegRNA_name,
                    pegRNA_components,
                    target_name,
