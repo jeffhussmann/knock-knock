@@ -1,5 +1,6 @@
 import copy
 import logging
+import re
 
 from collections import defaultdict
 
@@ -111,58 +112,14 @@ def infer_features(pegRNA_name,
     protospacer = pegRNA_components['protospacer']
     pegRNA_sequence = pegRNA_components['full_sequence']
     effector = target_info.effectors[pegRNA_components['effector']]
-    
-    # Identify which strand of the target sequence the protospacer is present on.
 
-    strands = set()
-    
-    if protospacer in target_sequence:
-        strands.add('+')
-    
-    if utilities.reverse_complement(protospacer) in target_sequence:
-        strands.add('-')
-
-    if len(strands) == 0:
-        # Initial base of protospacer might not match.
-        protospacer = protospacer[1:]
-
-        if protospacer in target_sequence:
-            strands.add('+')
-        
-        if utilities.reverse_complement(protospacer) in target_sequence:
-            strands.add('-')
-    
-    if len(strands) != 1:
-        raise ValueError(f'protospacer not present on exactly 1 strand ({len(strands)})')
-        
-    strand = strands.pop()
-    
-    # Confirm that there is a PAM next to the protospacer in the target.    
-
-    if strand == '+':
-        protospacer_start = target_sequence.index(protospacer)
-    else:
-        protospacer_start = target_sequence.index(utilities.reverse_complement(protospacer))
-
-    protospacer_end = protospacer_start + len(protospacer) - 1
-
+    target_protospacer_feature = identify_protospacer_in_target(target_sequence, protospacer, effector)
     target_protospacer_name = protospacer_name(pegRNA_name)
-    target_protospacer_feature = gff.Feature.from_fields(seqname=target_name,
-                                                         start=protospacer_start,
-                                                         end=protospacer_end,
-                                                         strand=strand,
-                                                         feature='sgRNA', 
-                                                         attribute_string=gff.make_attribute_string({
-                                                             'ID': target_protospacer_name,
-                                                             'color': default_feature_colors['protospacer'],
-                                                             'effector': effector.name,
-                                                         }),
-                                                        )
-
+    target_protospacer_feature.attribute['ID'] = target_protospacer_name
+    target_protospacer_feature.seqname = target_name
+    strand = target_protospacer_feature.strand
+    
     cut_after = effector.cut_afters(target_protospacer_feature)[strand]
-
-    if not effector.PAM_matches_pattern(target_protospacer_feature, target_sequence):
-        raise ValueError(f'bad PAM next to {target_protospacer_name} (strand {strand})')
 
     # Identify the PBS region of the pegRNA by finding a match to
     # the sequence of the target immediately before the nick.    
@@ -354,8 +311,7 @@ def infer_edit_features(pegRNA_names,
 
         # Determine if this pegRNA programs an insertion or deletion.
         # For an insertion, some suffix of the RT'ed sequence
-        # should exactly match the target sequence immediately 
-        # after the nick.
+        # should exactly match the target sequence.
         # For a deletion, the entire RT'ed sequence should exactly
         # match the target sequence somewhere downstream of the nick.
         # (These assumptions may need to be relaxed.)
@@ -372,16 +328,24 @@ def infer_edit_features(pegRNA_names,
         cut_after = effector.cut_afters(protospacer)[protospacer.strand]
 
         min_complementary_length_after_insertion = 8
+
         if protospacer.strand == '+':
             RTed = seqs['pegRNA', 'RTT']
-
             target_after_nick = target_sequence[cut_after + 1:]
 
-            # Start at 1 to insist on non-empty insertion.
-            for i in range(1, len(RTed) - min_complementary_length_after_insertion):
-                possible_match = RTed[i:]
-                if target_after_nick.startswith(possible_match):
-                    is_programmed_insertion = True
+            for initial_matching in range(len(RTed)):
+                if RTed[:initial_matching] == target_after_nick[:initial_matching]:
+                    remaining_RTed = RTed[initial_matching:]
+                    remaining_target = target_after_nick[initial_matching:]
+
+                    # Start at 1 to insist on non-empty insertion.
+                    for i in range(1, len(remaining_RTed) - min_complementary_length_after_insertion):
+                        possible_match = remaining_RTed[i:]
+                        if remaining_target.startswith(possible_match):
+                            is_programmed_insertion = True
+                            break
+
+                if is_programmed_insertion:
                     break
 
             # Start at 1 to insist on non-empty deletion.
@@ -389,7 +353,7 @@ def infer_edit_features(pegRNA_names,
                 is_programmed_deletion = True
 
             if is_programmed_insertion:
-                starts['target', 'HA_RT'] = cut_after + 1
+                starts['target', 'HA_RT'] = cut_after + initial_matching + 1
                 ends['target', 'HA_RT'] = starts['target', 'HA_RT'] + len(possible_match) - 1
             elif is_programmed_deletion:
                 deletion_start = cut_after + 1
@@ -402,14 +366,21 @@ def infer_edit_features(pegRNA_names,
                 
         else:
             RTed = utilities.reverse_complement(seqs['pegRNA', 'RTT'])
-
             target_before_nick = target_sequence[:cut_after + 1]
 
-            # Start at 1 to insist on non-empty insertion.
-            for i in range(1, len(RTed) - min_complementary_length_after_insertion):
-                possible_match = RTed[:len(RTed) - i]
-                if target_before_nick.endswith(possible_match):
-                    is_programmed_insertion = True
+            for initial_matching in range(len(RTed)):
+                if RTed[::-1][:initial_matching] == target_before_nick[::-1][:initial_matching]:
+                    remaining_RTed = RTed[:len(RTed) - initial_matching]
+                    remaining_target = target_before_nick[:len(target_before_nick) - initial_matching]
+
+                    # Start at 1 to insist on non-empty insertion.
+                    for i in range(1, len(remaining_RTed) - min_complementary_length_after_insertion):
+                        possible_match = remaining_RTed[:len(remaining_RTed) - i]
+                        if remaining_target.endswith(possible_match):
+                            is_programmed_insertion = True
+                            break
+
+                if is_programmed_insertion:
                     break
 
             # Only go up to -1 to insist on non-empty deletion.
