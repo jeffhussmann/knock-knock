@@ -1845,12 +1845,37 @@ class TargetInfo():
 
     @memoized_property
     def pegRNA_SNVs(self):
+        ''' Format:
+        {
+            target_name: {
+                SNV_name: {
+                    'position': position in target,
+                    'strand': '+',
+                    'base': base on + strand of target at position,
+                },
+                ...,
+            },
+            pegRNA_name: {
+                SNV_name: {
+                    'position': position in pegRNA,
+                    'strand': opposite of the strand of the protospacer targeted by pegRNA,
+                    'base': base on + strand of pegRNA at position, so needs to be RC'ed if strand
+                            is '-' to be compared to base of target SNV,
+                },
+                ...,
+            },
+            ...,
+        } 
+        '''
         if self.pegRNA_names is not None and len(self.pegRNA_names) > 0:
             _, SNVs, _ = knock_knock.pegRNAs.infer_edit_features(self.pegRNA_names,
                                                                  self.target,
                                                                  self.features,
                                                                  self.reference_sequences,
                                                                 )
+
+            if len(SNVs) == 0:
+                SNVs = None
         else:
             SNVs = None
 

@@ -491,11 +491,9 @@ def infer_edit_features(pegRNA_names,
                         positions['target'] = ends['target', 'RTT'] - offset - 1
 
                     SNV_base = reference_sequences[names['pegRNA']][positions['pegRNA']]
-                    # A pegRNA for a forward strand protospacer provides a SNP base that is
-                    # the opposite of its given strand.
+
                     if strands['target'] == '+':
                         SNV_strand = '-'
-                        SNV_base = utilities.reverse_complement(SNV_base)
                     else:
                         SNV_strand = '+'
 
@@ -576,7 +574,12 @@ def infer_edit_features(pegRNA_names,
         t = target_sequence[target_position]
 
         for pegRNA_name, position, strand, d in pegRNA_list:
-            name = f'SNV_{target_position}_{t}-{d}'
+            if strand == '-':
+                effective_d = utilities.reverse_complement(d)
+            else:
+                effective_d = d
+
+            name = f'SNV_{target_position}_{t}-{effective_d}'
 
             SNVs[target_name][name] = {
                 'position': target_position,
@@ -589,6 +592,10 @@ def infer_edit_features(pegRNA_names,
                 'strand': strand,
                 'base': d,
             }
+
+    # Convert from defaultdict to avoid silent failure on 
+    # key errors.
+    SNVs = dict(SNVs)
 
     return new_features, SNVs, deletion
 

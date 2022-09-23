@@ -839,7 +839,7 @@ class ReadDiagram():
                 if self.highlight_SNPs:
                     SNVs = {}
 
-                    if self.target_info.pegRNA_names is not None:
+                    if self.target_info.pegRNA_SNVs is not None:
                         if ref_name in self.target_info.pegRNA_SNVs:
                             SNVs = self.target_info.pegRNA_SNVs[ref_name]
                     
