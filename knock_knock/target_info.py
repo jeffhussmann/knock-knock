@@ -110,6 +110,7 @@ class TargetInfo():
                  gb_records=None,
                  infer_homology_arms=False,
                  target=None,
+                 min_relevant_length=None,
                 ):
 
         self.name = name
@@ -192,6 +193,8 @@ class TargetInfo():
         self.default_HAs = self.manifest.get('default_HAs')
 
         self.sequencing_start_feature_name = sequencing_start_feature_name
+
+        self.min_relevant_length = min_relevant_length
 
         if sgRNA is None:
             self.sgRNA = self.manifest.get('sgRNA')

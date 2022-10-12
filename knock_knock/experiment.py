@@ -96,6 +96,7 @@ class Experiment:
         self.pegRNAs = self.description.get('pegRNAs')
         self.sequencing_start_feature_name = self.description.get('sequencing_start_feature_name', None)
         self.infer_homology_arms = self.description.get('infer_homology_arms', False)
+        self.min_relevant_length = self.description.get('min_relevant_length', False)
 
         # When checking if an Experiment meets filtering conditions, want to be
         # able to just test description.
@@ -205,6 +206,7 @@ class Experiment:
                                     sequencing_start_feature_name=self.sequencing_start_feature_name,
                                     supplemental_indices=self.supplemental_indices,
                                     infer_homology_arms=self.infer_homology_arms,
+                                    min_relevant_length=self.min_relevant_length,
                                    )
 
         return ti
