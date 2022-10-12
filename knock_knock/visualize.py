@@ -40,7 +40,7 @@ class ReadDiagram():
                  draw_mismatches=True,
                  draw_polyA=False,
                  draw_sequence=False,
-                 draw_target_sequence=False,
+                 draw_ref_sequences=False,
                  max_qual=41,
                  process_mappings=None,
                  detect_orientation=False,
@@ -99,7 +99,7 @@ class ReadDiagram():
         self.draw_mismatches = draw_mismatches
         self.draw_polyA = draw_polyA
         self.draw_sequence = draw_sequence
-        self.draw_target_sequence = draw_target_sequence
+        self.draw_ref_sequences = draw_ref_sequences
         self.max_qual = max_qual
         self.process_mappings = process_mappings
         self.detect_orientation = detect_orientation
@@ -1173,7 +1173,7 @@ class ReadDiagram():
         ref_edge = len(ti.reference_sequences[ref_name]) - 1
 
         # ref_start and ref_end are the smallest and largest ref positions
-        # that get plottted. Initially, set these to the inverse image of
+        # that get plotted. Initially, set these to the inverse image of
         # the edges of the current x lims.
         if flip:
             left, right = self.max_x, self.min_x
@@ -1249,8 +1249,8 @@ class ReadDiagram():
         if self.manual_x_lims is not None:
             self.min_x, self.max_x = self.manual_x_lims
         else:
-            self.min_x = min(self.min_x, new_left)
-            self.max_x = max(self.max_x, new_right)
+            self.min_x = min(self.min_x, new_left - 0.5)
+            self.max_x = max(self.max_x, new_right + 0.5)
 
         # If an alignment goes right up to the edge, don't fade.
         if leftmost_aligned_x <= self.min_x + 0.05 * (self.max_x - self.min_x):
@@ -1262,11 +1262,12 @@ class ReadDiagram():
         self.ax.set_xlim(self.min_x, self.max_x)
 
         # Draw the actual reference.
+        ref_xs = adjust_edges([ref_p_to_x(ref_start), ref_p_to_x(ref_end)])
+
         if ref_name == ti.target:
             # Always extend the target all the way to the edges.
-            ref_xs = [self.min_x, self.max_x]
-        else:
-            ref_xs = adjust_edges([ref_p_to_x(ref_start), ref_p_to_x(ref_end)])
+            ref_xs[0] = min(ref_xs[0], self.min_x)
+            ref_xs[1] = max(ref_xs[1], self.max_x)
 
         rgba = matplotlib.colors.to_rgba(color)
         image = np.expand_dims(np.array([rgba]*1000), 0)
@@ -1424,26 +1425,26 @@ class ReadDiagram():
                                      size=self.font_sizes['ref_label'],
                                     )
 
-            if self.draw_target_sequence:
-                target_sequence = ti.reference_sequences[ti.target]
-                
-                seq_kwargs = dict(family='monospace',
-                                  size=self.font_sizes['sequence'],
-                                  ha='center',
-                                  textcoords='offset points',
-                                  va='top',
-                                  xytext=(0, -2 * self.size_multiple),
-                                  visible=visible,
-                                 )
+        if self.draw_ref_sequences:
+            ref_sequence = ti.reference_sequences[ref_name]
+            
+            seq_kwargs = dict(family='monospace',
+                              size=self.font_sizes['sequence'],
+                              ha='center',
+                              textcoords='offset points',
+                              va='center',
+                              xytext=(0, 0),
+                              visible=visible,
+                             )
 
-                start = int(np.ceil(ref_start))
-                end = int(np.floor(ref_end))
-                for ref_p in range(start, end):
-                    x = ref_p_to_x(ref_p)
-                    b = target_sequence[ref_p]
-                    if self.flip_target:
-                        b = utilities.complement(b)
-                    self.ax.annotate(b, xy=(x, ref_y), **seq_kwargs)
+            start = int(np.ceil(ref_start))
+            end = int(np.floor(ref_end))
+            for ref_p in range(start, end + 1):
+                x = ref_p_to_x(ref_p)
+                b = ref_sequence[ref_p]
+                if flip:
+                    b = utilities.complement(b)
+                self.ax.annotate(b, xy=(x, ref_y), **seq_kwargs)
                     
         self.ax.set_ylim(self.min_y - 0.1 * self.height, self.max_y + 0.1 * self.height)
 
