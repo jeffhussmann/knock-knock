@@ -47,7 +47,8 @@ def extract_color(description):
         try:
             num = int(color) - 1
             replicate = int(description.get('replicate', 1)) - 1
-            color = color_groups()[num][replicate]
+            color_group = color_groups()[num]
+            color = color_group[replicate % len(color_group)]
         except ValueError:
             color = 'grey'
 
@@ -316,7 +317,7 @@ class Experiment:
         for outcome in self.outcome_iter():
             counts[outcome.category, outcome.subcategory, outcome.details] += 1
 
-        counts = pd.Series(counts).sort_values(ascending=False)
+        counts = pd.Series(counts, dtype=int).sort_values(ascending=False)
         counts.to_csv(counts_fn, mode='a', sep='\t', header=False)
 
     def record_snapshot(self):

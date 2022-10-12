@@ -1,4 +1,5 @@
 import gzip
+import logging
 import sys
 from itertools import chain, islice
 
@@ -41,7 +42,7 @@ class IlluminaExperiment(Experiment):
         
                 for fn in self.fns[k]:
                     if not fn.exists():
-                        print(f'Warning: {self.group} {self.sample_name} specifies non-existent {fn}')
+                        logging.warning(f'{self.group} {self.sample_name} specifies non-existent {fn}')
 
         self.paired_end = 'R2' in self.description
 
@@ -109,13 +110,17 @@ class IlluminaExperiment(Experiment):
         return len(R2)
 
     def check_combined_read_length(self):
-        combined_read_length = self.R1_read_length + self.R2_read_length
-        if combined_read_length < self.target_info.amplicon_length:
-            print(f'Warning: {self.group} {self.name} combined read length ({combined_read_length}) less than expected amplicon length ({self.target_info.amplicon_length:,}).')
+        if self.paired_end:
+            combined_read_length = self.R1_read_length + self.R2_read_length
+            if combined_read_length < self.target_info.amplicon_length:
+                logging.warning(f'Warning: {self.group} {self.name} combined read length ({combined_read_length}) less than expected amplicon length ({self.target_info.amplicon_length:,}).')
 
     @memoized_property
     def max_relevant_length(self):
-        return self.R1_read_length + self.R2_read_length + 100
+        if self.paired_end:
+            return self.R1_read_length + self.R2_read_length + 100
+        else:
+            return 600
 
     def get_read_layout(self, read_id, fn_key='bam_by_name', outcome=None, read_type=None):
         if self.paired_end and read_id in self.no_overlap_qnames:
