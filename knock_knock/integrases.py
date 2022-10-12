@@ -38,7 +38,8 @@ def identify_split_recognition_sequences(ref_seqs):
                     pattern, *rc_matches = Bio.SeqUtils.nt_search(ref_seq, seq_rc)
 
                     if len(matches + rc_matches) > 1:
-                        raise NotImplementedError
+                        # TODO: annotate multiple.
+                        return features
 
                     if len(matches) == 1:
                         strand = '+'

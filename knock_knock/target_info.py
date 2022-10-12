@@ -472,15 +472,16 @@ class TargetInfo():
                                                                                      )
                 features.update({**pegRNA_features, **target_features})
 
-            edit_features, _, _ = knock_knock.pegRNAs.infer_edit_features(self.pegRNA_names,
-                                                                          self.target,
-                                                                          features,
-                                                                          self.reference_sequences,
-                                                                         )
+            if len(self.pegRNA_names) == 1:
+                edit_features, _, _ = knock_knock.pegRNAs.infer_edit_features(self.pegRNA_names[0],
+                                                                              self.target,
+                                                                              features,
+                                                                              self.reference_sequences,
+                                                                             )
 
-            features.update(edit_features)
+                features.update(edit_features)
 
-            if len(self.pegRNA_names) == 2:
+            elif len(self.pegRNA_names) == 2:
                 results = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
                                                                          self.target,
                                                                          features,
@@ -1208,13 +1209,13 @@ class TargetInfo():
         return fps
 
     @memoized_property
-    def SNP_names(self):
+    def SNV_names(self):
         if self.donor is None and len(self.pegRNA_names) == 1:
-            donor = self.pegRNA_names[0]
+            SNV_source = self.pegRNA_names[0]
         else:
-            donor = self.donor
+            SNV_source = self.donor
 
-        return sorted([name for seq_name, name in self.features if seq_name == donor and name.startswith('SNP')])
+        return sorted([name for seq_name, name in self.features if seq_name == SNV_source and name.startswith('SNV')])
 
     @memoized_property
     def donor_SNVs_manual(self):
@@ -1233,7 +1234,7 @@ class TargetInfo():
 
         for key, seq_name in [('target', self.target), ('donor', donor)]:
             seq = self.reference_sequences[seq_name]
-            for name in self.SNP_names:
+            for name in self.SNV_names:
                 feature = self.features[seq_name, name]
                 strand = feature.strand
                 position = feature.start
@@ -1576,6 +1577,21 @@ class TargetInfo():
 
         return edit_name
 
+    @memoized_property
+    def intended_prime_edit_type(self):
+        pegRNA_name = self.pegRNA_names[0]
+
+        if (self.target, f'deletion_{pegRNA_name}') in self.features:
+            edit_type = 'deletion'
+        elif (pegRNA_name, f'insertion_{pegRNA_name}') in self.features:
+            edit_type = 'insertion'
+        elif (pegRNA_name, f'combination_{pegRNA_name}') in self.features:
+            edit_type = 'combination'
+        else:
+            edit_type = 'SNV'
+
+        return edit_type
+
     def calculate_microhomology_lengths(self, donor_to_use='homologous', donor_strand='+'):
         def num_matches_at_edge(first, second, relevant_edge):
             ''' Count the number of identical characters at the beginning
@@ -1811,7 +1827,7 @@ class TargetInfo():
             deletion = None
 
         elif len(self.pegRNA_names) == 1:
-            _, _, deletion = knock_knock.pegRNAs.infer_edit_features(self.pegRNA_names,
+            _, _, deletion = knock_knock.pegRNAs.infer_edit_features(self.pegRNA_names[0],
                                                                      self.target,
                                                                      self.features,
                                                                      self.reference_sequences,
@@ -1867,15 +1883,21 @@ class TargetInfo():
             ...,
         } 
         '''
-        if self.pegRNA_names is not None and len(self.pegRNA_names) > 0:
-            _, SNVs, _ = knock_knock.pegRNAs.infer_edit_features(self.pegRNA_names,
-                                                                 self.target,
-                                                                 self.features,
-                                                                 self.reference_sequences,
-                                                                )
+        if self.pegRNA_names is not None:
+            if len(self.pegRNA_names) == 1:
+                _, SNVs, _ = knock_knock.pegRNAs.infer_edit_features(self.pegRNA_names[0],
+                                                                     self.target,
+                                                                     self.features,
+                                                                     self.reference_sequences,
+                                                                    )
+            elif len(self.pegRNA_names) == 2:
+                results = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
+                                                                         self.target,
+                                                                         self.features,
+                                                                         self.reference_sequences,
+                                                                        )
+                SNVs = results['SNVs']
 
-            if len(SNVs) == 0:
-                SNVs = None
         else:
             SNVs = None
 
