@@ -1,6 +1,7 @@
 import base64
 import functools
 import io
+import logging
 import os
 import zipfile
 
@@ -49,7 +50,7 @@ def load_counts(base_dir,
 
     if no_outcomes:
         no_outcomes_string = '\n'.join(f'\t{": ".join(name_tuple)}' for name_tuple in no_outcomes)
-        print(f'Warning: can\'t find outcome counts for\n{no_outcomes_string}') 
+        logging.warning(f'Warning: can\'t find outcome counts for\n{no_outcomes_string}') 
 
     df = pd.DataFrame(counts).fillna(0)
 
@@ -226,6 +227,7 @@ def make_table(base_dir,
                show_details=True,
                sort_samples=True,
                arrayed=False,
+               vmax_multiple=1,
               ):
 
     df = load_counts(base_dir,
@@ -371,10 +373,18 @@ def make_table(base_dir,
         # Note: as of pandas 0.22, col needs to be in brackets here so that
         # apply is ultimately called on a df, not a series, to prevent
         # TypeError: _bar_left() got an unexpected keyword argument 'axis'
-        styled = styled.bar(subset=pd.IndexSlice[[(exp_group, name_tuple_string)], :], axis=1, color=exp.color)
-        
+
+        subset_slice = pd.IndexSlice[[(exp_group, name_tuple_string)], :]
+
+        styled = styled.bar(subset=subset_slice,
+                            axis=1,
+                            color=exp.color,
+                            vmin=0,
+                            vmax=df.loc[exp_group, name_tuple_string].max() * vmax_multiple,
+                           )
+
     styled.set_table_styles(styles)
-    
+        
     return styled
 
 def generate_html(base_dir, fn,
@@ -383,6 +393,7 @@ def generate_html(base_dir, fn,
                   include_images=True,
                   sort_samples=True,
                   arrayed=False,
+                  vmax_multiple=1,
                  ):
 
     fn = Path(fn)
@@ -409,6 +420,7 @@ knock-knock is a tool for exploring, categorizing, and quantifying the sequence 
                        include_images=include_images,
                        sort_samples=sort_samples,
                        arrayed=arrayed,
+                       vmax_multiple=vmax_multiple,
                       )
 
     table_cell = nbf.new_code_cell('',
@@ -453,6 +465,7 @@ def make_self_contained_zip(base_dir,
                             include_details=True,
                             sort_samples=True,
                             arrayed=False,
+                            vmax_multiple=1,
                            ):
 
     base_dir = Path(base_dir)
@@ -460,34 +473,36 @@ def make_self_contained_zip(base_dir,
     fn_prefix = results_dir / table_name
     fns_to_zip = []
 
-    print('Generating csv table...')
+    logging.info('Generating csv table...')
     csv_fn = fn_prefix.with_suffix('.csv')
     df = load_counts(base_dir, conditions, exclude_empty=False, arrayed=arrayed).T
     df.to_csv(csv_fn)
     fns_to_zip.append(csv_fn)
 
-    print('Generating high-level html table...')
+    logging.info('Generating high-level html table...')
     html_fn = fn_prefix.with_suffix('.html')
     generate_html(base_dir, html_fn, conditions,
                   show_details=False,
                   include_images=include_images,
                   sort_samples=sort_samples,
                   arrayed=arrayed,
+                  vmax_multiple=vmax_multiple,
                  )
     fns_to_zip.append(html_fn)
 
     if include_details:
-        print('Generating detailed html table...')
+        logging.info('Generating detailed html table...')
         html_fn = fn_prefix.parent / (f'{fn_prefix.name}_with_details.html')
         generate_html(base_dir, html_fn, conditions,
                       show_details=True,
                       include_images=include_images,
                       sort_samples=sort_samples,
                       arrayed=arrayed,
+                      vmax_multiple=vmax_multiple,
                      )
         fns_to_zip.append(html_fn)
 
-    print('Generating performance metrics...')
+    logging.info('Generating performance metrics...')
     pms_fn = fn_prefix.parent / (f'{fn_prefix.name}_performance_metrics.csv')
     pms = calculate_performance_metrics(base_dir, conditions, arrayed=arrayed)
     pms.to_csv(pms_fn)
@@ -531,11 +546,11 @@ def make_self_contained_zip(base_dir,
                     add_fn(outcome_fns['first_example'])
 
     if len(exps_missing_files) > 0:
-        print(f'Warning: {len(exps_missing_files)} experiment(s) are missing output files:')
+        logging.warning(f'Warning: {len(exps_missing_files)} experiment(s) are missing output files:')
         for group, exp_name in sorted(exps_missing_files):
-            print(f'\t{group} {exp_name}')
+            logging.warning(f'\t{group} {exp_name}')
             for fn in exps_missing_files[group, exp_name]:
-                print(f'\t\t{fn}')
+                logging.warning(f'\t\t{fn}')
 
     zip_fn = fn_prefix.with_suffix('.zip')
     archive_base = Path(fn_prefix.name)

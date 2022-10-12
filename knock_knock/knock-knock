@@ -82,6 +82,7 @@ def make_tables(args):
                                                   args.title,
                                                   sort_samples=not args.unsorted,
                                                   arrayed=args.arrayed,
+                                                  vmax_multiple=args.vmax_multiple,
                                                  )
     else:
         groups = knock_knock.experiment.get_all_batches(args.project_directory)
@@ -101,6 +102,7 @@ def make_tables(args):
                                                       group,
                                                       sort_samples=not args.unsorted,
                                                       arrayed=args.arrayed,
+                                                      vmax_multiple=args.vmax_multiple,
                                                      )
 
 def build_targets(args):
@@ -186,6 +188,7 @@ if __name__ == '__main__':
     parser_table.add_argument('--title', default='knock_knock_table', help='if specified, a title for output files')
     parser_table.add_argument('--unsorted', action='store_true', help='don\'t sort samples')
     parser_table.add_argument('--arrayed', action='store_true', help='samples are organized as arrayed_experiment_groups')
+    parser_table.add_argument('--vmax_multiple', type=float, default=1, help='fractional value that corresponds to full horizontal bar')
     parser_table.set_defaults(func=make_tables)
 
     parser_targets = subparsers.add_parser('build-targets', help='build annotations of target locii')
