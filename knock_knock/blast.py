@@ -11,6 +11,12 @@ HARD_CLIP = sam.BAM_CHARD_CLIP
 SOFT_CLIP = sam.BAM_CSOFT_CLIP
 
 def blast(ref_fn, reads, bam_fn, bam_by_name_fn, max_insertion_length=None):
+    ''' ref_fn: either a path to a fasta file, or a dictionary of reference sequences
+        reads: either a path to a fastq/fastq.gz file, or a list of such paths, or an iterator over hits.fastq.Read objects
+        bam_fn: path to write reference coordinate-sorted alignments
+        bam_by_name_fn: path to write query name-sorted alignments
+        max_insertion_length: If not None, any alignments with insertions longer than max_insertion_length will be split into multiple alignments.
+    '''
     with tempfile.TemporaryDirectory(suffix='_blast') as temp_dir:
         temp_dir_path = Path(temp_dir)
 
