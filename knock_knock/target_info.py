@@ -88,6 +88,7 @@ class Effector():
 effectors = {
     'SpCas9': Effector('SpCas9', 'NGG', 3, (-4, -4)),
     'SpCas9H840A': Effector('SpCas9H840A', 'NGG', 3, (-4, None)),
+    'SpCas9H840A_VRQR': Effector('SpCas9H840A_VRQR', 'NGA', 3, (-4, None)),
     'SaCas9': Effector('SaCas9', 'NNGRRT', 3, (-4, -4)),
     'SaCas9H840A': Effector('SaCas9H840A', 'NNGRRT', 3, (-4, None)),
     'Cpf1': Effector('Cpf1', 'TTTN', 5, (20, 25)),
@@ -102,126 +103,84 @@ class TargetInfo():
     def __init__(self, base_dir, name,
                  donor=None,
                  nonhomologous_donor=None,
-                 sgRNA=None,
-                 pegRNAs=None,
+                 sgRNAs=None,
                  primer_names=None,
                  sequencing_start_feature_name='sequencing_start',
                  supplemental_indices=None,
                  gb_records=None,
                  infer_homology_arms=False,
-                 target=None,
                  min_relevant_length=None,
+                 feature_to_replace=None,
                 ):
-
         self.name = name
 
         self.base_dir = Path(base_dir)
         self.targets_dir = self.base_dir / 'targets'
         self.dir = self.targets_dir / name
 
-        self.fns = {
-            'ref_fasta': self.dir / 'refs.fasta',
-            'ref_gff': self.dir / 'refs.gff',
+        # If not None, feature_to_replace is a tuple (ref_name, feature_name, sequence)
+        # for which the region of ref_name covered by feature_name
+        # will be replaced with sequence (e.g. when sequence is
+        # one of a library of elements that was cloned into that site).
+        self.feature_to_replace = feature_to_replace
 
-            'pegRNAs': self.dir / 'pegRNAs.csv',
+        self.fns = {
+            'sgRNAs': self.dir / 'sgRNAs.csv',
 
             'protospacer_fasta': self.dir / 'protospacers.fasta',
             'protospacer_STAR_prefix_template': self.dir / 'protospacers_{}.',
             'protospacer_bam_template': self.dir / 'protospacers_{}.bam',
-
-            'bowtie2_index': self.dir / 'refs',
-            'STAR_index_dir': self.dir / 'STAR_index',
-
-            'degenerate_insertions': self.dir / 'degenerate_insertions.txt',
-            'degenerate_deletions': self.dir / 'degenerate_deletions.txt',
         }
         
         manifest_fn = self.dir / 'manifest.yaml'
         with manifest_fn.open() as manifest_fh:
             self.manifest = yaml.safe_load(manifest_fh)
 
-        if target is None:
-            target = self.manifest.get('target')
-        self.target = target
+        self.target = self.manifest['target']
 
-        self.sources = self.manifest['sources']
-        # Strip any '.gb' extensions that might be present.
-        self.sources = [source[:-len('.gb')] if source.endswith('.gb') else source for source in self.sources]
+        self.sources = [s[:-len('.gb')] if s.endswith('.gb') else s for s in self.manifest['sources']]
         self.gb_records = gb_records
 
-        self.manual_features_to_show = self.manifest.get('features_to_show')
+        def populate_attribute(attribute_name, value, force_list=False):
+            if value is None:
+                value = self.manifest.get(attribute_name)
 
-        if pegRNAs is None:
-            self.pegRNA_names = self.manifest.get('pegRNAs')
-        else:
-            # pegRNAs may be a semi-colon separated string.
-            if isinstance(pegRNAs, str):
-                pegRNAs = pegRNAs.split(';')
+            if force_list:
+                if isinstance(value, str):
+                    value = value.split(';')
 
-            self.pegRNA_names = pegRNAs
+            setattr(self, attribute_name, value)
 
-        if donor is None:
-            self.donor = self.manifest.get('donor')
-        else:
-            self.donor = donor
+        populate_attribute('sgRNAs', sgRNAs, force_list=True)
+        populate_attribute('primer_names', primer_names, force_list=True)
+        populate_attribute('donor', donor)
+        populate_attribute('nonhomologous_donor', nonhomologous_donor)
 
         self.donor_type = self.manifest.get('donor_type')
-
-        if nonhomologous_donor is None:
-            self.nonhomologous_donor = self.manifest.get('nonhomologous_donor')
-        else:
-            self.nonhomologous_donor = nonhomologous_donor
-
-        if primer_names is None:
-            primer_names = self.manifest.get('primer_names')
-        else:
-            # primer_names may be a semi-colon separated string.
-            if isinstance(primer_names, str):
-                primer_names = primer_names.split(';')
-
-        self.primer_names = primer_names
-
         self.donor_specific = self.manifest.get('donor_specific', 'GFP11') 
+        self.default_HAs = self.manifest.get('default_HAs')
+        self.manual_features_to_show = self.manifest.get('features_to_show')
+        self.genome_source = self.manifest.get('genome_source')
+
         if supplemental_indices is None:
             supplemental_indices = {}
         self.supplemental_indices = supplemental_indices
 
-        self.genome_source = self.manifest.get('genome_source')
-
         self.infer_homology_arms = infer_homology_arms
-
-        self.default_HAs = self.manifest.get('default_HAs')
 
         self.sequencing_start_feature_name = sequencing_start_feature_name
 
         self.min_relevant_length = min_relevant_length
 
-        if sgRNA is None:
-            self.sgRNA = self.manifest.get('sgRNA')
-        else:
-            # sgRNA may be a semi-colon separated string.
-            if isinstance(sgRNA, str):
-                sgRNA = sgRNA.split(';')
-
-            self.sgRNA = sgRNA
-
-        if self.gb_records is not None:
-            self.make_references()
-
     def __repr__(self):
         if self.pegRNA_names is not None:
-            pegRNA_sgRNAs = []
-            for pegRNA_name in self.pegRNA_names:
-                pegRNA_sgRNAs.append(knock_knock.pegRNAs.protospacer_name(pegRNA_name))
-            non_pegRNA_sgRNAs = [name for name in self.sgRNAs if name not in pegRNA_sgRNAs]
-
             representation = f'''\
                 TargetInfo:
                     name = {self.name}
                     base_dir = {self.base_dir}
                     target = {self.target}
                     pegRNAs = [{','.join(self.pegRNA_names)}]
-                    sgRNAs = [{','.join(non_pegRNA_sgRNAs)}]
+                    sgRNAs = [{','.join(self.sgRNA_names)}]
             '''
         else:
             representation = f'''\
@@ -230,7 +189,7 @@ class TargetInfo():
                     base_dir = {self.base_dir}
                     target = {self.target}
                     donor = {self.donor}
-                    sgRNAs = [{','.join(self.sgRNAs)}]
+                    sgRNAs = [{','.join(self.sgRNA_names)}]
             '''
         return textwrap.dedent(representation)
 
@@ -245,15 +204,18 @@ class TargetInfo():
         return header
 
     @memoized_property
-    def primary_sgRNA(self):
-        primary_sgRNA = self.manifest.get('primary_sgRNA')
-        if primary_sgRNA is None and len(self.sgRNAs) > 0:
-            primary_sgRNA = self.sgRNAs[0]
-        return primary_sgRNA
+    def primary_protospacer(self):
+        primary_protospacer = self.manifest.get('primary_protospacer')
+        if primary_protospacer is None and len(self.protospacer_names) > 0:
+            if len(self.pegRNA_names) > 0:
+                primary_protospacer = knock_knock.pegRNAs.protospacer_name(self.pegRNA_names[0])
+            else:
+                primary_protospacer = self.protospacer_names[0]
+        return primary_protospacer
 
     @memoized_property
     def protospacer_color(self):
-        return self.features[self.target, self.primary_sgRNA].attribute['color']
+        return self.features[self.target, self.primary_protospacer].attribute['color']
 
     @memoized_property
     def supplemental_headers(self):
@@ -265,36 +227,44 @@ class TargetInfo():
         return fetchers
 
     @memoized_property
-    def sgRNAs(self):
+    def protospacer_names(self):
         ''' Names of all features representing protospacers at which cutting was expected to occur '''
-        sgRNAs = []
-
-        if self.pegRNA_names is not None:
-            for pegRNA_name in self.pegRNA_names:
-                sgRNAs.append(knock_knock.pegRNAs.protospacer_name(pegRNA_name))
-        else:
-            if self.sgRNA is None:
-                sgRNAs.extend(sorted(n for t, n in self.all_sgRNA_features))
-
-        if isinstance(self.sgRNA, list):
-            sgRNAs.extend(self.sgRNA)
-        elif self.sgRNA is not None:
-            sgRNAs.append(self.sgRNA)
-
-        return sgRNAs
+        fs = [knock_knock.pegRNAs.protospacer_name(gRNA_name) for gRNA_name in self.sgRNA_components]
+        return fs
 
     @memoized_property
-    def pegRNA_components(self):
-        if self.pegRNA_names is None:
-            pegRNA_components = None
+    def sgRNA_components(self):
+        if self.sgRNAs is None:
+            sgRNA_components = None
         else:
-            all_components = knock_knock.pegRNAs.read_csv(self.fns['pegRNAs'])
-            pegRNA_components = {name: all_components[name] for name in self.pegRNA_names}
+            all_components = knock_knock.pegRNAs.read_csv(self.fns['sgRNAs'])
+            sgRNA_components = {name: all_components[name] for name in self.sgRNAs}
 
-        return pegRNA_components
+        return sgRNA_components
 
-    def make_references(self):
-        ''' Generate fasta and gff files from genbank inputs. '''
+    @memoized_property
+    def pegRNA_names(self):
+        ''' pegRNAs are sgRNAs that have an extension. '''
+        names = [n for n, cs in self.sgRNA_components.items() if len(cs['extension']) > 1]
+
+        if len(names) == 0:
+            names = None
+
+        return names
+
+    @memoized_property
+    def sgRNA_names(self):
+        ''' For historical reasons, sgRNA_names are sgRNAs that aren't pegRNAs. '''
+        names = [n for n, cs in self.sgRNA_components.items() if len(cs['extension']) == 0]
+
+        if len(names) == 0:
+            names = None
+
+        return names
+    
+    @memoized_property
+    def fasta_records_and_gff_features(self):
+        ''' If self.gb_records is set, these override files. '''
         fasta_fns = [self.dir / (source + '.fasta') for source in self.sources]
         fasta_fns = [fn for fn in fasta_fns if fn.exists()]
         
@@ -318,60 +288,53 @@ class TargetInfo():
         for gb_record in self.gb_records:
             fasta_record, gff_features = parse_benchling_genbank(gb_record)
 
+            if self.feature_to_replace is not None:
+                ref_name, feature_name, new_sequence = self.feature_to_replace
+                if ref_name == fasta_record.name:
+
+                    # Find the feature start and end.
+                    feature_to_replace = [f for f in gff_features if f.attribute.get('ID') == feature_name][0]
+                    existing_start = feature_to_replace.start
+                    existing_end = feature_to_replace.end
+
+                    # Splice in the new sequence.
+                    before = fasta_record.seq[:existing_start]
+                    after = fasta_record.seq[existing_end + 1:]
+
+                    fasta_record.seq = before + new_sequence + after
+
+                    change_in_length = len(new_sequence) - len(feature_to_replace)
+
+                    # Find any features whose end is past the start of the replaced feature,
+                    # and shift any of its boundaries that are past the start that by the change in length.
+
+                    for feature in gff_features:
+                        if feature.end > existing_start:
+                            feature.end += change_in_length
+                            if feature.start > existing_start:
+                                feature.start += change_in_length
+
             fasta_records.append(fasta_record)
             all_gff_features.extend(gff_features)
 
         for fasta_fn in fasta_fns:
             for fasta_record in fasta.records(fasta_fn):
                 fasta_records.append(fasta_record)
-            
-        with self.fns['ref_fasta'].open('w') as fasta_fh:
-            for record in fasta_records:
-                fasta_fh.write(str(record))
-                
-        pysam.faidx(str(self.fns['ref_fasta']))
 
-        with self.fns['ref_gff'].open('w') as gff_fh:
-            gff_fh.write('##gff-version 3\n')
-            for feature in sorted(all_gff_features):
-                # Note: all sgRNAs should have feature field format 'sgRNA_{effector}'
-                if feature.feature.startswith('sgRNA'):
-                    try:
-                        _, effector = feature.feature.split('_')
-                    except:
-                        print(self.name, feature)
-                        raise
-                    feature.feature = 'sgRNA'
-                    feature.attribute['effector'] = effector
-
-                gff_fh.write(str(feature) + '\n')
+        return fasta_records, all_gff_features
 
     def make_protospacer_fastas(self):
         ''' Protospacer locations will be used to determine if genomic alignments
         are in the vicinity of targeted sites, so want to include all possible
         pegRNA protospacers as well as explicitly annotated ones. '''
 
-        pegRNA_ps_features = {}
-
-        if self.fns['pegRNAs'].exists():
-            all_pegRNA_components = knock_knock.pegRNAs.read_csv(self.fns['pegRNAs'])
-            for pegRNA_name, components in all_pegRNA_components.items():
-                _, target_features = knock_knock.pegRNAs.infer_features(pegRNA_name,
-                                                                        all_pegRNA_components[pegRNA_name],
-                                                                        self.target,
-                                                                        self.target_sequence,
-                                                                       )
-                target_protospacer_name = knock_knock.pegRNAs.protospacer_name(pegRNA_name)
-                key = (self.target, target_protospacer_name)
-                pegRNA_ps_features[key] = target_features[key]
+        all_components = knock_knock.pegRNAs.read_csv(self.fns['sgRNAs'])
 
         with open(self.fns['protospacer_fasta'], 'w') as fh:
-            protospacers = {**self.all_sgRNA_features, **pegRNA_ps_features}
-            for (target, sgRNA_name), feature in sorted(protospacers.items()):
-                seq = self.target_sequence[feature.start:feature.end + 1]
-                if feature.strand == '-':
-                    seq = utilities.reverse_complement(seq)
-                record = fasta.Read(sgRNA_name, seq)
+            protospacers = {name: cs['protospacer'] for name, cs in all_components.items()}
+            for name, seq in sorted(protospacers.items()):
+                ps_name = knock_knock.pegRNAs.protospacer_name(name)
+                record = fasta.Read(ps_name, seq)
                 fh.write(str(record))
 
     def map_protospacers(self, index_name):
@@ -397,9 +360,9 @@ class TargetInfo():
     
     @memoized_with_args
     def mapped_protospacer_location(self, index_name):
-        sgRNA = self.primary_sgRNA
+        protospacer = self.primary_protospacer
 
-        locations = self.mapped_protospacer_locations(sgRNA, index_name)
+        locations = self.mapped_protospacer_locations(protospacer, index_name)
         
         if len(locations) > 1:
             location = None
@@ -431,10 +394,10 @@ class TargetInfo():
         if al.reference_name != protospacer_rname:
             return False
         else:
-            if self.sgRNA_feature.strand == protospacer_strand:
+            if self.protospacer_feature.strand == protospacer_strand:
                 # The target is in the same orientation as the reference genome,
                 # so coordinate transform is a simple offset.
-                offset = self.sgRNA_feature.start - protospacer_start
+                offset = self.protospacer_feature.start - protospacer_start
                 converted = {
                     'start': al.reference_start + offset,
                     'end': al.reference_end + offset,
@@ -443,10 +406,10 @@ class TargetInfo():
             else:
                 # The target is in the opposite orientation as the reference genome,
                 # so coordinate transform is more complex.
-                if self.sgRNA_feature.strand == '+':
+                if self.protospacer_feature.strand == '+':
                     raise NotImplementedError
                 else:
-                    offset = self.sgRNA_feature.end + protospacer_start
+                    offset = self.protospacer_feature.end + protospacer_start
                     converted = {
                         'start': offset - al.reference_end,
                         'end': offset - al.reference_start,
@@ -455,21 +418,16 @@ class TargetInfo():
 
             return converted
 
-    def make_bowtie2_index(self):
-        mapping_tools.build_bowtie2_index(self.fns['bowtie2_index'], [self.fns['ref_fasta']])
-    
     @memoized_property
     def features(self):
-        features = {
-            (f.seqname, f.attribute['ID']): f
-            for f in gff.get_all_features(self.fns['ref_gff'])
-            if 'ID' in f.attribute
-        }
+        fasta_records, gff_features = self.fasta_records_and_gff_features
+
+        features = {(f.seqname, f.attribute['ID']): f for f in gff_features if 'ID' in f.attribute}
 
         if self.pegRNA_names is not None:
             for pegRNA_name in self.pegRNA_names:
                 pegRNA_features, target_features = knock_knock.pegRNAs.infer_features(pegRNA_name,
-                                                                                      self.pegRNA_components[pegRNA_name],
+                                                                                      self.sgRNA_components[pegRNA_name],
                                                                                       self.target,
                                                                                       self.target_sequence,
                                                                                      )
@@ -494,6 +452,11 @@ class TargetInfo():
                 features.update(results['new_features'])
         
         features.update(self.integrase_sites)
+
+        for name, feature in {**self.protospacer_features, **self.PAM_features}.items():
+            features[self.target, name] = feature
+
+        features.update(self.inferred_HA_features)
 
         # Override colors of protospacers in pooled screening vector
         # to ensure consistency.
@@ -529,20 +492,6 @@ class TargetInfo():
         return knock_knock.integrases.identify_split_recognition_sequences(self.reference_sequences)
 
     @memoized_property
-    def annotated_and_inferred_features(self):
-        all_features = copy.deepcopy(self.features)
-
-        inferred_HA_features = self.inferred_HA_features
-        if inferred_HA_features is not None:
-            all_features.update(inferred_HA_features)
-
-        all_features.update(self.PAM_features)
-
-        all_features.update(self.integrase_sites)
-
-        return all_features
-
-    @memoized_property
     def features_to_show(self):
         if self.manual_features_to_show is not None:
             features_to_show = {tuple(f) for f in self.manual_features_to_show}
@@ -559,8 +508,8 @@ class TargetInfo():
                 (self.donor, 'PCR_adapter_2'),
             })
 
-            for sgRNA_name in self.sgRNA_features:
-                features_to_show.add((self.target, sgRNA_name))
+            for protospacer_name in self.protospacer_features:
+                features_to_show.add((self.target, protospacer_name))
 
             for side in [5, 3]:
                 primer = (self.target, self.primers_by_side_of_target[side].attribute['ID'])
@@ -608,14 +557,13 @@ class TargetInfo():
 
     @memoized_property
     def reference_sequences(self):
-        if self.fns['ref_fasta'].exists():
-            seqs = fasta.to_dict(self.fns['ref_fasta'])
-        else:
-            seqs = {}
+        fasta_records, gff_features = self.fasta_records_and_gff_features
 
-        if self.pegRNA_components is not None:
-            for name, components in self.pegRNA_components.items():
-                seqs[name] = components['full_sequence']
+        seqs = {record.name: record.seq for record in fasta_records}
+
+        if self.pegRNA_names is not None:
+            for pegRNA_name in self.pegRNA_names:
+                seqs[pegRNA_name] = self.sgRNA_components[pegRNA_name]['full_sequence']
 
         return seqs
 
@@ -625,7 +573,7 @@ class TargetInfo():
         seqs = {name: seq.encode() for name, seq in self.reference_sequences.items()}
         return seqs
 
-    @memoized_property
+    @property
     def target_sequence(self):
         return self.reference_sequences[self.target]
     
@@ -645,7 +593,7 @@ class TargetInfo():
 
         return extenders
 
-    @memoized_property
+    @property
     def donor_sequence(self):
         if self.donor is None:
             return None
@@ -653,54 +601,47 @@ class TargetInfo():
             return self.reference_sequences[self.donor]
 
     @memoized_property
-    def sgRNA_features(self):
-        return {name: self.features[self.target, name] for name in self.sgRNAs}
+    def protospacer_features(self):
+        features = {}
+        for name, components in self.sgRNA_components.items():
+            feature = knock_knock.pegRNAs.identify_protospacer_in_target(self.target_sequence,
+                                                                         components['protospacer'],
+                                                                         components['effector'],
+                                                                        )
+            ps_name = knock_knock.pegRNAs.protospacer_name(name)
+            feature.attribute['ID'] = ps_name
+            features[ps_name] = feature
+                                                                        
+        return features
     
     @memoized_property
-    def sgRNA_feature(self):
-        if self.primary_sgRNA is None:
+    def protospacer_feature(self):
+        if self.primary_protospacer is None:
             return None
         else:
-            return self.sgRNA_features[self.primary_sgRNA]
+            return self.protospacer_features[self.primary_protospacer]
 
     @memoized_property
-    def sgRNA_sequence(self):
-        if self.sgRNA_feature is None:
+    def protospacer_sequence(self):
+        if self.protospacer_feature is None:
             return None
         else:
-            return self.feature_sequence(self.target, self.primary_sgRNA)
+            return self.feature_sequence(self.target, self.primary_protospacer)
 
     def feature_sequence(self, seq_name, feature_name):
         feature = self.features[seq_name, feature_name]
         return feature.sequence(self.reference_sequences)
 
     @memoized_property
-    def all_sgRNA_features(self):
-        # Note: features are processed upstream of this to separate 'sgRNA' from name of effector
-        return {name: feature for name, feature in self.features.items() if feature.feature == 'sgRNA'}
-    
-    @memoized_property
-    def guide_slices(self):
-        guide_slices = {name: slice(sgRNA.start, sgRNA.end + 1) for name, sgRNA in self.sgRNA_features.items()}
-        return guide_slices
-    
-    @memoized_property
-    def guide_slice(self):
-        if len(self.guide_slices) > 1:
-            raise ValueError(self.guide_slices)
-        else:
-            return list(self.guide_slices.values())[0]
-    
-    @memoized_property
     def PAM_slices(self):
         PAM_slices = {}
 
-        for name, sgRNA in self.sgRNA_features.items():
-            effector = effectors[sgRNA.attribute['effector']]
+        for name, protospacer in self.protospacer_features.items():
+            effector = effectors[protospacer.attribute['effector']]
 
-            PAM_slices[name] = effector.PAM_slice(sgRNA)
+            PAM_slices[name] = effector.PAM_slice(protospacer)
 
-            if not effector.PAM_matches_pattern(sgRNA, self.target_sequence):
+            if not effector.PAM_matches_pattern(protospacer, self.target_sequence):
                 print(f'Warning: {name} PAM doesn\'t match {effector.PAM_pattern}')
 
         return PAM_slices
@@ -717,9 +658,9 @@ class TargetInfo():
                                                   end=sl.stop - 1,
                                                  )
 
-            sgRNA = self.features[self.target, name]
-            sgRNA_color = sgRNA.attribute['color']
-            PAM_color = hits.visualize.scale_darkness(sgRNA_color, 1.3)
+            protospacer = self.protospacer_features[name]
+            protospacer_color = protospacer.attribute['color']
+            PAM_color = hits.visualize.scale_darkness(protospacer_color, 1.3)
 
             PAM_feature.attribute = {
                 'ID': PAM_name,
@@ -727,21 +668,21 @@ class TargetInfo():
                 'short_name': 'PAM',
             }
 
-            PAM_features[self.target, PAM_name] = PAM_feature
+            PAM_features[PAM_name] = PAM_feature
 
         return PAM_features
                                     
     @memoized_property
     def PAM_slice(self):
-        return self.PAM_slices[self.primary_sgRNA]
+        return self.PAM_slices[self.primary_protospacer]
 
     @memoized_property
     def PAM_color(self):
-        return self.PAM_features[self.target, f'{self.primary_sgRNA}_PAM'].attribute['color']
+        return self.PAM_features[f'{self.primary_protospacer}_PAM'].attribute['color']
 
     @memoized_property
     def effector(self):
-        return effectors[self.sgRNA_feature.attribute['effector']]
+        return effectors[self.protospacer_feature.attribute['effector']]
 
     @memoized_property
     def anchor(self):
@@ -754,10 +695,10 @@ class TargetInfo():
     @memoized_property
     def cut_afters(self):
         cut_afters = {}
-        for name, sgRNA in self.sgRNA_features.items():
-            effector = effectors[sgRNA.attribute['effector']]
+        for name, protospacer in self.protospacer_features.items():
+            effector = effectors[protospacer.attribute['effector']]
 
-            for strand, cut_after in effector.cut_afters(sgRNA).items():
+            for strand, cut_after in effector.cut_afters(protospacer).items():
                 cut_afters[f'{name}_{strand}'] = cut_after
 
         return cut_afters
@@ -767,8 +708,8 @@ class TargetInfo():
         ''' when processing assumes there will be only one cut, use this '''
         primary_cut_afters = []
         for name, cut_after in self.cut_afters.items():
-            sgRNA_name = name.rsplit('_', 1)[0]
-            if sgRNA_name == self.primary_sgRNA:
+            protospacer_name = name.rsplit('_', 1)[0]
+            if protospacer_name == self.primary_protospacer:
                 primary_cut_afters.append(cut_after)
 
         if len(primary_cut_afters) == 0:
@@ -931,10 +872,10 @@ class TargetInfo():
 
     @memoized_property
     def target_side_to_PAM_side(self):
-        if self.sgRNA_feature is None:
+        if self.protospacer_feature is None:
             return None
 
-        strand = self.sgRNA_feature.strand
+        strand = self.protospacer_feature.strand
         PAM_side = self.effector.PAM_side
 
         if (strand == '+' and PAM_side == 3) or (strand == '-' and PAM_side == 5):
@@ -1380,16 +1321,15 @@ class TargetInfo():
 
     @memoized_property
     def inferred_HA_features(self):
-        if self.donor is None or not self.infer_homology_arms:
-            return None
-
-        donor_SNVs, HAs = self.inferred_donor_SNVs_and_HAs
-
         features = {}
-        
-        for HA_name in HAs:
-            features[self.target, HA_name] = HAs[HA_name]['target']
-            features[self.donor, HA_name] = HAs[HA_name]['donor']
+        if self.donor is None or not self.infer_homology_arms:
+            pass
+        else:
+            donor_SNVs, HAs = self.inferred_donor_SNVs_and_HAs
+            
+            for HA_name in HAs:
+                features[self.target, HA_name] = HAs[HA_name]['target']
+                features[self.donor, HA_name] = HAs[HA_name]['donor']
 
         return features
     
@@ -1468,26 +1408,34 @@ class TargetInfo():
     def donor_locii(self):
         return ''.join([b for _, b in self.fingerprints[self.donor]])
 
-    def identify_degenerate_indels(self, max_deletion_length=400):
+    @memoized_property
+    def degenerate_indels(self):
         degenerate_dels = defaultdict(list)
 
-        possible_starts = range(self.primers_by_side_of_target[5].start, self.primers_by_side_of_target[3].end)
+        # Indels that aren't contained in the amplicon can't be observed,
+        # so there is no need to register them.
+
+        amplicon_start = self.primers_by_side_of_target[5].start
+        amplicon_end = self.primers_by_side_of_target[3].end
+
+        possible_starts = range(amplicon_start, amplicon_end)
+
+        singleton_to_full = {}
+
         for starts_at in possible_starts:
             before = self.target_sequence[:starts_at]
-            for length in range(1, max_deletion_length):
-                if starts_at + length >= len(self.target_sequence):
-                    continue
+            for length in range(1, amplicon_end - starts_at + 1):
                 after = self.target_sequence[starts_at + length:]
                 result = before + after
                 deletion = DegenerateDeletion([starts_at], length)
                 degenerate_dels[result].append(deletion)
 
-        with self.fns['degenerate_deletions'].open('w') as fh:
-            classes = sorted(degenerate_dels.values(), key=len, reverse=True)
-            for degenerate_class in classes:
-                if len(degenerate_class) > 1:
-                    collapsed = DegenerateDeletion.collapse(degenerate_class)
-                    fh.write(f'{collapsed}\n')
+        classes = degenerate_dels.values()
+        for degenerate_class in degenerate_dels.values():
+            if len(degenerate_class) > 1:
+                collapsed = DegenerateDeletion.collapse(degenerate_class)
+                for deletion in degenerate_class:
+                    singleton_to_full[deletion] = collapsed
 
         degenerate_inss = defaultdict(list)
 
@@ -1502,30 +1450,11 @@ class TargetInfo():
                     insertion = DegenerateInsertion([starts_after], [mer])
                     degenerate_inss[result].append(insertion)
 
-        with self.fns['degenerate_insertions'].open('w') as fh:
-            classes = sorted(degenerate_inss.values(), key=len, reverse=True)
-            for degenerate_class in classes:
-                if len(degenerate_class) > 1:
-                    collapsed = DegenerateInsertion.collapse(degenerate_class)
-                    fh.write(f'{collapsed}\n')
-
-    @memoized_property
-    def degenerate_indels(self):
-        singleton_to_full = {}
-
-        with self.fns['degenerate_deletions'].open() as fh:
-            for line in fh:
-                deletion = degenerate_indel_from_string(line.strip())
-
-                for singleton in deletion.singletons():
-                    singleton_to_full[singleton] = deletion
-        
-        with self.fns['degenerate_insertions'].open() as fh:
-            for line in fh:
-                insertion = degenerate_indel_from_string(line.strip())
-
-                for singleton in insertion.singletons():
-                    singleton_to_full[singleton] = insertion
+        for degenerate_class in degenerate_inss.values():
+            if len(degenerate_class) > 1:
+                collapsed = DegenerateInsertion.collapse(degenerate_class)
+                for insertion in degenerate_class:
+                    singleton_to_full[insertion] = collapsed
 
         return singleton_to_full
 
@@ -1534,7 +1463,7 @@ class TargetInfo():
 
     def overhang_insertion(self, length, copies=1):
         ''' Return DegenerateInsertion from offset RuvC cut producing 5' overhang. '''
-        if self.sgRNA_feature.strand == '-':
+        if self.protospacer_feature.strand == '-':
             start_after = self.cut_after
             seq = self.target_sequence[self.cut_after + 1:self.cut_after + 1 + length]
         else:
@@ -1559,7 +1488,7 @@ class TargetInfo():
             target_base = SNVs['target'][SNV_name]['base']
             donor_base = SNVs['donor'][SNV_name]['base']
             
-            if strand != self.sgRNA_feature.strand:
+            if strand != self.protospacer_feature.strand:
                 raise ValueError
                 
             if strand == '+':
@@ -1744,15 +1673,15 @@ class TargetInfo():
 
     @memoized_property
     def nick_offset(self):
-        nicking_sgRNAs = [n for n in self.sgRNAs if n != self.primary_sgRNA]
+        nicking_sgRNAs = [n for n in self.protospacers if n != self.primary_protospacer]
         if len(nicking_sgRNAs) == 1:
             nicking_sgRNA = nicking_sgRNAs[0]
 
-            primary_cut_after = [v for k, v in self.cut_afters.items() if k.rsplit('_', 1)[0] == self.primary_sgRNA][0]
+            primary_cut_after = [v for k, v in self.cut_afters.items() if k.rsplit('_', 1)[0] == self.primary_protospacer][0]
 
             nick_cut_after = [v for k, v in self.cut_afters.items() if k.rsplit('_', 1)[0] == nicking_sgRNA][0]
             
-            sign_multiple = -1 if self.sgRNA_feature.strand == '-' else 1
+            sign_multiple = -1 if self.protospacer_feature.strand == '-' else 1
             offset = sign_multiple * (nick_cut_after - primary_cut_after)
         else:
             offset = 0
@@ -2151,15 +2080,11 @@ def parse_benchling_genbank(gb_record):
 
     for gb_feature in gb_record.features:
         feature = gff.Feature.from_fields(
-            gb_record.name,
-            '.',
-            gb_feature.type,
-            gb_feature.location.start,
-            gb_feature.location.end - 1,
-            '.',
-            convert_strand[gb_feature.location.strand],
-            '.',
-            '.',
+            seqname=gb_record.name,
+            feature=gb_feature.type,
+            start=gb_feature.location.start,
+            end=gb_feature.location.end - 1,
+            strand=convert_strand[gb_feature.location.strand],
         )
         attribute = {}
         for k, v in gb_feature.qualifiers.items():

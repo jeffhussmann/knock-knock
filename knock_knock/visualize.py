@@ -434,7 +434,7 @@ class ReadDiagram():
 
     @memoized_property
     def features(self):
-        all_features = self.target_info.annotated_and_inferred_features
+        all_features = self.target_info.features
 
         if self.features_to_show is not None:
             features_to_show = self.features_to_show
@@ -1410,7 +1410,7 @@ class ReadDiagram():
                              visible=visible,
                             )
 
-                color = ti.PAM_features[ti.target, f'{name}_PAM'].attribute['color']
+                color = ti.PAM_features[f'{name}_PAM'].attribute['color']
 
                 if self.label_cut:
                     label = self.label_overrides.get(f'{name}_cut', f'{name}_cut')

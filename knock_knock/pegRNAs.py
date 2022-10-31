@@ -12,7 +12,7 @@ from hits import gff, interval, sam, sw, utilities
 from knock_knock import target_info
 
 def read_csv(csv_fn, process=True):
-    df = pd.read_csv(csv_fn, index_col='name', comment='#')
+    df = pd.read_csv(csv_fn, index_col='name', comment='#').fillna('')
 
     if process:
         component_order = ['protospacer', 'scaffold', 'extension']
@@ -60,6 +60,9 @@ def identify_protospacer_in_target(target_sequence, protospacer, effector):
     look for the whole protospacer. If no match is found, look for the
     protospacer with the first nt removed.
     '''
+
+    if isinstance(effector, str):
+        effector = target_info.effectors[effector]
 
     def find(protospacer_suffix):
         valid_features = []

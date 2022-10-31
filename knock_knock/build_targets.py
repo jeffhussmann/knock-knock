@@ -441,17 +441,17 @@ def build_target_info(base_dir, info, all_index_locations,
     if 'effector' in info:
         effector_type = info['effector']
     else:
-        if donor_type == 'pegRNA':
-            effector_type = 'SpCas9H840A'
-        else:
-            effector_type = 'SpCas9'
+        effector_types = {ps_name: 'SpCas9' for ps_name, ps_seq in info['sgRNA_sequence']}
 
     if info.get('pegRNAs') is not None:
-        pegRNA_names = [pegRNA_name for pegRNA_name, components in sorted(info['pegRNAs']) ]
+        pegRNA_names = []
+        for pegRNA_name, components in sorted(info['pegRNAs']):
+            pegRNA_names.append(pegRNA_name)
+            effector_types[pegRNA_name] = components['effector']
     else:
         pegRNA_names = []
 
-    effector = target_info.effectors[effector_type]
+    effectors = {name: target_info.effectors[effector_type] for name, effector_type in effector_types.items()}
 
     target_dir = base_dir / 'targets' / name
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -550,6 +550,7 @@ def build_target_info(base_dir, info, all_index_locations,
             protospacer_locations.append((other_protospacer_name, ps_seq, ps_start, ps_strand))
 
         for ps_name, ps_seq, ps_start, ps_strand in protospacer_locations:
+            effector = effectors[ps_name]
             PAM_pattern = effector.PAM_pattern
 
             if (ps_strand == 1 and effector.PAM_side == 3) or (ps_strand == -1 and effector.PAM_side == 5):
@@ -886,8 +887,6 @@ def build_target_info(base_dir, info, all_index_locations,
     ti.make_protospacer_fastas()
     ti.map_protospacers(genome)
 
-    ti.identify_degenerate_indels()
-
     shutil.rmtree(protospacer_dir)
 
 def load_pegRNAs(base_dir, process=True):
@@ -1017,10 +1016,6 @@ def build_target_infos_from_csv(base_dir, offtargets=False, defer_HA_identificat
                 info['sgRNA_sequence'].append((pegRNA_name, pegRNA_components['protospacer']))
 
             pegRNA_effectors = {components['effector'] for name, components in info['pegRNAs']}
-            if len(pegRNA_effectors) > 1:
-                raise ValueError('pegRNAs with different effectors', info['pegRNAs'])
-            elif len(pegRNA_effectors) == 1:
-                info['effector'] = list(pegRNA_effectors)[0]
 
         if row.get('extra_genbanks') is not None:
             info['extra_genbanks'] = row['extra_genbanks'].split(';')
