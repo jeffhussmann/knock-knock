@@ -90,11 +90,10 @@ class Experiment:
 
         self.max_insertion_length = 20
 
-        self.sgRNA = self.description.get('sgRNA')
+        self.sgRNAs = self.description.get('sgRNAs')
         self.donor = self.description.get('donor')
         self.nonhomologous_donor = self.description.get('nonhomologous_donor')
         self.primer_names = self.description.get('primer_names', ['forward_primer', 'reverse_primer'])
-        self.pegRNAs = self.description.get('pegRNAs')
         self.sequencing_start_feature_name = self.description.get('sequencing_start_feature_name', None)
         self.infer_homology_arms = self.description.get('infer_homology_arms', False)
         self.min_relevant_length = self.description.get('min_relevant_length', False)
@@ -201,8 +200,7 @@ class Experiment:
                                     self.target_name,
                                     donor=self.donor,
                                     nonhomologous_donor=self.nonhomologous_donor,
-                                    sgRNA=self.sgRNA,
-                                    pegRNAs=self.pegRNAs,
+                                    sgRNAs=self.sgRNAs,
                                     primer_names=self.primer_names,
                                     sequencing_start_feature_name=self.sequencing_start_feature_name,
                                     supplemental_indices=self.supplemental_indices,
@@ -409,9 +407,8 @@ class Experiment:
 
         if len(bam_fns) == 0:
             # There weren't any reads. Make empty bam files.
-            header = sam.header_from_fasta(self.target_info.fns['ref_fasta'])
             for fn in [base_bam_fn, base_bam_by_name_fn]:
-                with pysam.AlignmentFile(fn, 'wb', header=header) as fh:
+                with pysam.AlignmentFile(fn, 'wb', header=self.target_info.header) as fh:
                     pass
 
         else:
@@ -799,7 +796,7 @@ class Experiment:
             ys = convert_to_smoothed_percentages(ys)
 
             if check_for_max:
-                max_y = max(max_y, max(ys))
+                max_y = max(max_y, max(ys, default=0.1))
 
             if self.length_plot_smooth_window == 0:
                 line_width = 1

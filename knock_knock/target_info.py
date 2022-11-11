@@ -88,6 +88,7 @@ class Effector():
 effectors = {
     'SpCas9': Effector('SpCas9', 'NGG', 3, (-4, -4)),
     'SpCas9H840A': Effector('SpCas9H840A', 'NGG', 3, (-4, None)),
+    'SpCas9N863A': Effector('SpCas9N863A', 'NGG', 3, (-4, None)),
     'SpCas9H840A_VRQR': Effector('SpCas9H840A_VRQR', 'NGA', 3, (-4, None)),
     'SaCas9': Effector('SaCas9', 'NNGRRT', 3, (-4, -4)),
     'SaCas9H840A': Effector('SaCas9H840A', 'NNGRRT', 3, (-4, None)),
@@ -101,11 +102,11 @@ effectors['SpCas9H840'] = effectors['SpCas9H840A']
 
 class TargetInfo():
     def __init__(self, base_dir, name,
+                 primer_names=None,
+                 sgRNAs=None,
                  donor=None,
                  nonhomologous_donor=None,
-                 sgRNAs=None,
-                 primer_names=None,
-                 sequencing_start_feature_name='sequencing_start',
+                 sequencing_start_feature_name=None,
                  supplemental_indices=None,
                  gb_records=None,
                  infer_homology_arms=False,
@@ -133,8 +134,7 @@ class TargetInfo():
         }
         
         manifest_fn = self.dir / 'manifest.yaml'
-        with manifest_fn.open() as manifest_fh:
-            self.manifest = yaml.safe_load(manifest_fh)
+        self.manifest = yaml.safe_load(manifest_fn.read_text())
 
         self.target = self.manifest['target']
 
@@ -155,6 +155,7 @@ class TargetInfo():
         populate_attribute('primer_names', primer_names, force_list=True)
         populate_attribute('donor', donor)
         populate_attribute('nonhomologous_donor', nonhomologous_donor)
+        populate_attribute('sequencing_start_feature_name', sequencing_start_feature_name)
 
         self.donor_type = self.manifest.get('donor_type')
         self.donor_specific = self.manifest.get('donor_specific', 'GFP11') 
@@ -168,8 +169,6 @@ class TargetInfo():
 
         self.infer_homology_arms = infer_homology_arms
 
-        self.sequencing_start_feature_name = sequencing_start_feature_name
-
         self.min_relevant_length = min_relevant_length
 
     def __repr__(self):
@@ -180,7 +179,7 @@ class TargetInfo():
                     base_dir = {self.base_dir}
                     target = {self.target}
                     pegRNAs = [{','.join(self.pegRNA_names)}]
-                    sgRNAs = [{','.join(self.sgRNA_names)}]
+                    sgRNAs = [{','.join(self.sgRNA_names) if self.sgRNA_names is not None else ''}]
             '''
         else:
             representation = f'''\
@@ -188,8 +187,8 @@ class TargetInfo():
                     name = {self.name}
                     base_dir = {self.base_dir}
                     target = {self.target}
-                    donor = {self.donor}
                     sgRNAs = [{','.join(self.sgRNA_names)}]
+                    donor = {self.donor}
             '''
         return textwrap.dedent(representation)
 
@@ -207,7 +206,7 @@ class TargetInfo():
     def primary_protospacer(self):
         primary_protospacer = self.manifest.get('primary_protospacer')
         if primary_protospacer is None and len(self.protospacer_names) > 0:
-            if len(self.pegRNA_names) > 0:
+            if self.pegRNA_names is not None and len(self.pegRNA_names) > 0:
                 primary_protospacer = knock_knock.pegRNAs.protospacer_name(self.pegRNA_names[0])
             else:
                 primary_protospacer = self.protospacer_names[0]
@@ -293,7 +292,11 @@ class TargetInfo():
                 if ref_name == fasta_record.name:
 
                     # Find the feature start and end.
-                    feature_to_replace = [f for f in gff_features if f.attribute.get('ID') == feature_name][0]
+                    feature_matches = [f for f in gff_features if f.attribute.get('ID') == feature_name]
+                    if len(feature_matches) != 1:
+                        raise ValueError(f'Expected 1 feature named "{feature_name}", found {len(feature_matches)}')
+
+                    feature_to_replace = feature_matches[0]
                     existing_start = feature_to_replace.start
                     existing_end = feature_to_replace.end
 
@@ -1511,16 +1514,19 @@ class TargetInfo():
 
     @memoized_property
     def intended_prime_edit_type(self):
-        pegRNA_name = self.pegRNA_names[0]
-
-        if (self.target, f'deletion_{pegRNA_name}') in self.features:
-            edit_type = 'deletion'
-        elif (pegRNA_name, f'insertion_{pegRNA_name}') in self.features:
-            edit_type = 'insertion'
-        elif (pegRNA_name, f'combination_{pegRNA_name}') in self.features:
-            edit_type = 'combination'
+        if self.pegRNA_names is None or len(self.pegRNA_names) == 0:
+            edit_type = None
         else:
-            edit_type = 'SNV'
+            pegRNA_name = self.pegRNA_names[0]
+
+            if (self.target, f'deletion_{pegRNA_name}') in self.features:
+                edit_type = 'deletion'
+            elif (pegRNA_name, f'insertion_{pegRNA_name}') in self.features:
+                edit_type = 'insertion'
+            elif (pegRNA_name, f'combination_{pegRNA_name}') in self.features:
+                edit_type = 'combination'
+            else:
+                edit_type = 'SNV'
 
         return edit_type
 
@@ -1673,7 +1679,7 @@ class TargetInfo():
 
     @memoized_property
     def nick_offset(self):
-        nicking_sgRNAs = [n for n in self.protospacers if n != self.primary_protospacer]
+        nicking_sgRNAs = [n for n in self.protospacer_names if n != self.primary_protospacer]
         if len(nicking_sgRNAs) == 1:
             nicking_sgRNA = nicking_sgRNAs[0]
 

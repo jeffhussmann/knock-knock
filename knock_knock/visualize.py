@@ -446,7 +446,7 @@ class ReadDiagram():
                 if 'edge' not in f_name and 'SNP' not in f_name and all_features[r_name, f_name].feature != 'sgRNA'
             ]
 
-            features_to_show.extend([(self.target_info.target, f_name) for f_name in self.target_info.sgRNA_features])
+            features_to_show.extend([(self.target_info.target, f_name) for f_name in self.target_info.protospacer_names])
 
         features = {k: v for k, v in all_features.items()
                     if k in features_to_show
