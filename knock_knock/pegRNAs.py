@@ -334,15 +334,33 @@ def infer_edit_features(pegRNA_name,
 
     found_suffix = False
 
+    flap_suffix_length_to_index = {} 
     for suffix_length in range(len(intended_flap_sequence), 0, -1):
         flap_suffix = intended_flap_sequence[len(intended_flap_sequence) - suffix_length:]
         if flap_suffix in target_downstream_of_nick:
+            flap_suffix_length_to_index[len(flap_suffix)] = target_downstream_of_nick.index(flap_suffix)
             found_suffix = True
-            break
 
     if not found_suffix:
         # Shouldn't really be possible to hit this.
         raise ValueError
+
+    max_suffix_length = max(flap_suffix_length_to_index, default=0)
+    
+    if max_suffix_length <= 6:
+        logging.warning(f'Short RTT: {max_suffix_length}')
+
+    suffix_length = max_suffix_length
+
+    if max_suffix_length <= 5:
+        # If a long enough suffix was found, it is likely to be the intended one.
+        # If not, it is possible that a slightly longer but spurious match was found somewhere
+        # further downstream. To minimize the chances of this, prioritize closer but shorter matches.
+        shorter_index = flap_suffix_length_to_index.get(max_suffix_length - 1, 1e6)
+        if shorter_index < flap_suffix_length_to_index[max_suffix_length]:
+            suffix_length = max_suffix_length - 1
+
+    flap_suffix = intended_flap_sequence[len(intended_flap_sequence) - suffix_length:]
 
     # After removing this suffix, find the longest prefix of the remaining
     # flap that matches immediately downstream of the nick.
