@@ -86,6 +86,7 @@ class ReadDiagram():
                  manual_anchors=None,
                  manual_fade=None,
                  refs_to_draw=None,
+                 parallelogram_alpha=0.05,
                  **kwargs,
                 ):
 
@@ -127,6 +128,7 @@ class ReadDiagram():
         self.label_differences = label_differences
         self.draw_arrowheads = kwargs.get('draw_arrowheads', True)
         self.refs_to_draw = refs_to_draw
+        self.parallelogram_alpha = parallelogram_alpha
 
         self.target_info = target_info
 
@@ -1194,7 +1196,6 @@ class ReadDiagram():
             xs = adjust_edges(xs)
             ref_xs = adjust_edges(ref_xs)
 
-            parallelogram_alpha = 0.05 * parsimony_multiplier
             # Shade parallelograms between alignments and reference.
             if ref_y < 0:
                 ref_border_y = ref_y + self.ref_line_width
@@ -1203,7 +1204,7 @@ class ReadDiagram():
 
             self.ax.fill_betweenx([y, ref_border_y], [xs[0], ref_xs[0]], [xs[1], ref_xs[1]],
                                   color=color,
-                                  alpha=parallelogram_alpha,
+                                  alpha=self.parallelogram_alpha * parsimony_multiplier,
                                   visible=visible,
                                  )
 
