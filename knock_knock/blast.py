@@ -1,3 +1,4 @@
+import contextlib
 import shlex
 import subprocess
 import tempfile
@@ -10,14 +11,21 @@ from hits import sam, fasta, fastq
 HARD_CLIP = sam.BAM_CHARD_CLIP
 SOFT_CLIP = sam.BAM_CSOFT_CLIP
 
-def blast(ref_fn, reads, bam_fn, bam_by_name_fn, max_insertion_length=None):
+def blast(ref_fn,
+          reads,
+          bam_fn=None,
+          bam_by_name_fn=None,
+          max_insertion_length=None,
+          manual_temp_dir=None,
+          return_alignments=False,
+         ):
     ''' ref_fn: either a path to a fasta file, or a dictionary of reference sequences
         reads: either a path to a fastq/fastq.gz file, or a list of such paths, or an iterator over hits.fastq.Read objects
         bam_fn: path to write reference coordinate-sorted alignments
         bam_by_name_fn: path to write query name-sorted alignments
         max_insertion_length: If not None, any alignments with insertions longer than max_insertion_length will be split into multiple alignments.
     '''
-    with tempfile.TemporaryDirectory(suffix='_blast') as temp_dir:
+    with tempfile.TemporaryDirectory(suffix='_blast', dir=manual_temp_dir) as temp_dir:
         temp_dir_path = Path(temp_dir)
 
         if isinstance(ref_fn, dict):
@@ -35,7 +43,10 @@ def blast(ref_fn, reads, bam_fn, bam_by_name_fn, max_insertion_length=None):
             '-': {},
         }
 
-        if isinstance(reads, (str, Path, list)):
+        if isinstance(reads, list) and isinstance(reads[0], fastq.Read):
+            # Need to exempt lists of Reads from being passed to fastq.reads below
+            pass
+        elif isinstance(reads, (str, Path, list)):
             reads = fastq.reads(reads, up_to_space=True)
 
         with reads_fasta_fn.open('w') as fasta_fh:
@@ -81,7 +92,7 @@ def blast(ref_fn, reads, bam_fn, bam_by_name_fn, max_insertion_length=None):
             read = fastq_dict[strand][al.query_name]
 
             al.query_sequence = read.seq
-            al.query_qualities = fastq.decode_sanger(read.qual)
+            al.query_qualities = read.query_qualities
 
             al.cigar = [(SOFT_CLIP if k == HARD_CLIP else k, l) for k, l in al.cigar]
     
@@ -90,7 +101,7 @@ def blast(ref_fn, reads, bam_fn, bam_by_name_fn, max_insertion_length=None):
             unal.query_name = read.name
             unal.is_unmapped = True
             unal.query_sequence = read.seq
-            unal.query_qualities = fastq.decode_sanger(read.qual)
+            unal.query_qualities = read.query_qualities
             return unal
 
         try:
@@ -102,8 +113,17 @@ def blast(ref_fn, reads, bam_fn, bam_by_name_fn, max_insertion_length=None):
             pysam.AlignmentFile(str(sam_fn), 'wb', header=header).close()
             sam_fh = pysam.AlignmentFile(str(sam_fn))
 
-        sorter = sam.AlignmentSorter(bam_fn, header)
-        by_name_sorter = sam.AlignmentSorter(bam_by_name_fn, header, by_name=True)
+        if bam_fn is not None:
+            sorter = sam.AlignmentSorter(bam_fn, header)
+        else:
+            sorter = contextlib.nullcontext()
+
+        if bam_by_name_fn is not None:
+            by_name_sorter = sam.AlignmentSorter(bam_by_name_fn, header, by_name=True)
+        else:
+            by_name_sorter = contextlib.nullcontext()
+
+        alignments = []
 
         with sorter, by_name_sorter:
             aligned_names = set()
@@ -114,15 +134,24 @@ def blast(ref_fn, reads, bam_fn, bam_by_name_fn, max_insertion_length=None):
 
                 if max_insertion_length is not None:
                     split_als = sam.split_at_large_insertions(al, max_insertion_length + 1)
-
-                    for split_al in split_als:
-                        sorter.write(split_al)
-                        by_name_sorter.write(split_al)
                 else:
-                    sorter.write(al)
-                    by_name_sorter.write(al)
+                    split_als = [al]
+
+                for split_al in split_als:
+                    if bam_fn is not None:
+                        sorter.write(split_al)
+                    if bam_by_name_fn is not None:
+                        by_name_sorter.write(split_al)
+
+                    if return_alignments:
+                        alignments.append(split_al)
 
             for name in fastq_dict['+']:
                 if name not in aligned_names:
                     unal = make_unaligned(fastq_dict['+'][name])
-                    by_name_sorter.write(unal)
+                    if bam_by_name_fn is not None:
+                        by_name_sorter.write(unal)
+                    if return_alignments:
+                        alignments.append(unal)
+
+        return alignments
