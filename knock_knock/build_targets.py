@@ -522,6 +522,21 @@ def build_target_info(base_dir, info, all_index_locations,
                              )
     gb_records[target_name] = target_record
 
+    if info.get('extra_sequences') is not None:
+        for extra_seq_name, extra_seq in info['extra_sequences']:
+            record = SeqRecord(extra_seq, name=extra_seq_name, annotations={'molecule_type': 'DNA'})
+            gb_records[extra_seq_name] = record
+
+    if info.get('extra_genbanks') is not None:
+        for gb_fn in info['extra_genbanks']:
+            full_gb_fn = base_dir / 'targets' / gb_fn
+
+            if not full_gb_fn.exists():
+                raise ValueError(f'{full_gb_fn} does not exist')
+
+            for record in Bio.SeqIO.parse(full_gb_fn, 'genbank'):
+                gb_records[record.name] = record
+
     if len(sgRNAs_with_extensions) > 0:
         # Note: for debugging convenience, genbank files are written for pegRNAs,
         # but these are NOT supplied as genbank records to make the final TargetInfo,
@@ -554,21 +569,6 @@ def build_target_info(base_dir, info, all_index_locations,
                 truncated_name_i += 1
 
     manifest_fn = target_dir / 'manifest.yaml'
-
-    if info.get('extra_sequences') is not None:
-        for extra_seq_name, extra_seq in info['extra_sequences']:
-            record = SeqRecord(extra_seq, name=extra_seq_name, annotations={'molecule_type': 'DNA'})
-            gb_records_for_manifest[extra_seq_name] = record
-
-    if info.get('extra_genbanks') is not None:
-        for gb_fn in info['extra_genbanks']:
-            full_gb_fn = base_dir / 'targets' / gb_fn
-
-            if not full_gb_fn.exists():
-                raise ValueError(f'{full_gb_fn} does not exist')
-
-            for record in Bio.SeqIO.parse(full_gb_fn, 'genbank'):
-                gb_records_for_manifest[record.name] = record
 
     sources = sorted(gb_records_for_manifest)
         
