@@ -378,7 +378,7 @@ def build_target_info(base_dir, info, all_index_locations,
         '-': -1,
     }
 
-    target_sequence = region_fetcher(ref_name, amplicon_start - final_window_around, amplicon_end + final_window_around)
+    target_sequence = region_fetcher(ref_name, amplicon_start - final_window_around, amplicon_end + final_window_around).upper()
     
     left_primer_location = FeatureLocation(genomic_coords_to_target_coords(left_al.reference_start),
                                            genomic_coords_to_target_coords(left_al.reference_end),
