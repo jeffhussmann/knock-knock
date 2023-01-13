@@ -67,8 +67,7 @@ def identify_protospacer_in_target(target_sequence, protospacer, effector):
     def find(protospacer_suffix):
         valid_features = []
         for strand, ps_seq in [('+', protospacer_suffix), ('-', utilities.reverse_complement(protospacer_suffix))]:
-            # lookahead necessary in the unlikely event of partially-overlapping matches
-            protospacer_starts = [match.start() for match in re.finditer(f'(?={ps_seq})', target_sequence)]
+            protospacer_starts = utilities.find_all_substring_starts(target_sequence, ps_seq)
             
             for protospacer_start in protospacer_starts:
                 protospacer_end = protospacer_start + len(ps_seq) - 1
@@ -93,7 +92,6 @@ def identify_protospacer_in_target(target_sequence, protospacer, effector):
         valid_features = find(protospacer[1:])
 
     if len(valid_features) != 1:
-        print(target_sequence, protospacer, effector)
         raise ValueError(f'{len(valid_features)} valid protospacer locations in target')
     else:
         valid_feature = valid_features[0]
@@ -676,9 +674,11 @@ def infer_twin_pegRNA_features(pegRNA_names,
 
     for length in range(1, len(RTed[5]) + 1):
         suffix = RTed[5][-length:]
-        try:
-            start = target_with_RTed[3].index(suffix)
-        except ValueError:
+        starts = utilities.find_all_substring_starts(target_with_RTed[3], suffix)
+        if len(starts) > 0:
+            # If there are multiple matches, prioritize the one closest to the start.
+            start = starts[0]
+        else:
             length = length - 1
             break
 
@@ -724,9 +724,11 @@ def infer_twin_pegRNA_features(pegRNA_names,
 
     for length in range(1, len(RTed[3]) + 1):
         prefix = RTed[3][:length]
-        try:
-            start = target_with_RTed[5].index(prefix)
-        except ValueError:
+        starts = utilities.find_all_substring_starts(target_with_RTed[5], prefix)
+        if len(starts) > 0:
+            # If there are multiple matches, prioritize the one closest to the end.
+            start = starts[-1]
+        else:
             length = length - 1
             break
 
@@ -872,7 +874,7 @@ def infer_twin_pegRNA_features(pegRNA_names,
                     pegRNA_name = pegRNA_names_by_side[5]
 
                     # Note: convention on pegRNA base strandedness is a constant source
-                    # of confusiion.
+                    # of confusion.
                     pegRNA_base_effective = utilities.reverse_complement(pegRNAs_b)
 
                     SNVs[pegRNA_name][SNV_name] = {
