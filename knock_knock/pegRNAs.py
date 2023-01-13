@@ -443,12 +443,18 @@ def infer_edit_features(pegRNA_name,
         new_features[names['pegRNA'], combination_name] = combination
 
     elif edit_type == 'deletion':
+        deletion_length = len(remaining_target)
+
+        # prefix_length is how much sequence at the beginning of
+        # the RTT pairs up with target immediately adjacent to the 
+        # PBS.
+
         if strands['target'] == '+':
             deletion_start = cut_after + 1 + prefix_length
         else:
-            deletion_start = cut_after - prefix_length
-
-        deletion_length = len(remaining_target)
+            # Note '+ 1' here. cut_after - prefix_length is the last position
+            # deleted, and last is length - 1 away from the first.
+            deletion_start = cut_after - prefix_length - deletion_length + 1
 
         starts['target', 'deletion'] = deletion_start
         ends['target', 'deletion'] = deletion_start + deletion_length - 1
