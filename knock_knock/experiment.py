@@ -93,8 +93,8 @@ class Experiment:
         self.sgRNAs = self.description.get('sgRNAs')
         self.donor = self.description.get('donor')
         self.nonhomologous_donor = self.description.get('nonhomologous_donor')
-        self.primer_names = self.description.get('primer_names', ['forward_primer', 'reverse_primer'])
-        self.sequencing_start_feature_name = self.description.get('sequencing_start_feature_name', None)
+        self.primer_names = self.description.get('primer_names')
+        self.sequencing_start_feature_name = self.description.get('sequencing_start_feature_name')
         self.infer_homology_arms = self.description.get('infer_homology_arms', False)
         self.min_relevant_length = self.description.get('min_relevant_length', False)
 
@@ -282,7 +282,7 @@ class Experiment:
                 missing_file = True
 
         if missing_file:
-            logging.warning(f'Warning: {self.group}, {self.sample_name} {read_type} not found')
+            logging.warning(f'{self.group}, {self.sample_name} {read_type} not found')
             reads = []
         else:
             reads = fastq.reads(fn_source, up_to_space=True)
@@ -400,7 +400,7 @@ class Experiment:
                         bam_fn,
                         bam_by_name_fn,
                         max_insertion_length=self.max_insertion_length,
-                    )
+                       )
 
             bam_fns.append(bam_fn)
             bam_by_name_fns.append(bam_by_name_fn)
