@@ -17,6 +17,22 @@ memoized_with_args = utilities.memoized_with_args
 idx = pd.IndexSlice
 
 class Categorizer:
+    def __init__(self, alignments, target_info, **kwargs):
+        self.alignments = alignments
+        self.target_info = target_info
+
+        alignment = alignments[0]
+        self.name = alignment.query_name
+        self.query_name = self.name
+        self.seq = sam.get_original_seq(alignment)
+        self.qual = sam.get_original_qual(alignment)
+
+        self.read = sam.mapping_to_Read(alignment)
+
+    @memoized_property
+    def whole_read(self):
+        return interval.Interval(0, len(self.seq) - 1)
+
     @classmethod
     def full_index(cls):
         full_index = []
@@ -46,15 +62,13 @@ class Categorizer:
                         cls.subcategories()[category].index(subcategory),
                        )
             except:
-                print(category, subcategory)
-                raise
+                raise ValueError(category, subcategory)
         else:
             category = outcome
             try:
                 return cls.categories().index(category)
             except:
-                print(category)
-                raise
+                raise ValueError(category)
 
     @classmethod
     def outcome_to_sanitized_string(cls, outcome):
@@ -81,7 +95,7 @@ class Categorizer:
             category, subcats = cls.category_order[c]
             return category
 
-    def q_to_feature_offset(self, al, feature_name):
+    def q_to_feature_offset(self, al, feature_name, target_info=None):
         ''' Returns dictionary of 
                 {true query position: offset into feature relative to its strandedness
                  (i.e. from the start of + stranded and from the right of - stranded)
@@ -90,8 +104,14 @@ class Categorizer:
         if al is None:
             return {}
 
-        ref_p_to_feature_offset = self.target_info.ref_p_to_feature_offset(al.reference_name, feature_name)
-        seq = self.target_info.reference_sequences[al.reference_name]
+        if target_info is None:
+            target_info = self.target_info
+
+        if (al.reference_name, feature_name) not in target_info.features:
+            return {}
+
+        ref_p_to_feature_offset = target_info.ref_p_to_feature_offset(al.reference_name, feature_name)
+        seq = target_info.reference_sequences[al.reference_name]
         
         q_to_feature_offset = {}
         
@@ -101,8 +121,16 @@ class Categorizer:
                 
         return q_to_feature_offset
 
-    def feature_offset_to_q(self, al, feature_name):
-        return utilities.reverse_dictionary(self.q_to_feature_offset(al, feature_name))
+    def feature_offset_to_q(self, al, feature_name, target_info=None):
+        return utilities.reverse_dictionary(self.q_to_feature_offset(al, feature_name, target_info=target_info))
+
+    def feature_interval(self, al, feature_name, target_info=None):
+        ''' Returns the query interval aligned to feature_name by al. '''
+        qs = self.q_to_feature_offset(al, feature_name, target_info=target_info)
+        if len(qs) == 0:
+            return interval.Interval.empty()
+        else:
+            return interval.Interval(min(qs), max(qs))
 
     def share_feature(self, first_al, first_feature_name, second_al, second_feature_name):
         '''
@@ -542,10 +570,6 @@ class Layout(Categorizer):
         extra_ref_names = {n for n in ti.reference_sequences if n not in [ti.target, ti.donor]}
         als = [al for al in self.original_alignments if al.reference_name in extra_ref_names]
         return als
-
-    @memoized_property
-    def whole_read(self):
-        return interval.Interval(0, len(self.seq) - 1)
 
     @memoized_with_args
     def whole_read_minus_edges(self, edge_length):
@@ -1626,7 +1650,7 @@ class Layout(Categorizer):
         for side in [5, 3]:
             primer_al = self.primer_alignments[side]
             donor_al = self.closest_donor_alignment_to_edge[side]
-            overlap = junction_microhomology(self.target_info, primer_al, donor_al)
+            overlap = junction_microhomology(self.target_info.reference_sequences, primer_al, donor_al)
             short_gap[side] = overlap > -10
 
         is_blunt = {side: reaches_end[side] and short_gap[side] for side in [5, 3]}
@@ -2228,7 +2252,7 @@ class Layout(Categorizer):
         else:
             donor_al = None
             
-        MH_nts = {side: junction_microhomology(self.target_info, self.primer_alignments[side], donor_al) for side in [5, 3]}
+        MH_nts = {side: junction_microhomology(self.target_info.reference_sequences, self.primer_alignments[side], donor_al) for side in [5, 3]}
 
         return MH_nts
 
@@ -2239,7 +2263,7 @@ class Layout(Categorizer):
         else:
             nh_al = None
 
-        MH_nts = {side: junction_microhomology(self.target_info, self.primer_alignments[side], nh_al) for side in [5, 3]}
+        MH_nts = {side: junction_microhomology(self.target_info.reference_sequences, self.primer_alignments[side], nh_al) for side in [5, 3]}
 
         return MH_nts
 
@@ -2628,18 +2652,18 @@ def max_indel_nearby(alignment, ref_pos, window):
     max_ins = max_ins_nearby(alignment, ref_pos, window)
     return max(max_del, max_ins)
 
-def get_mismatch_info(alignment, target_info):
+def get_mismatch_info(alignment, reference_sequences):
     mismatches = []
 
     tuples = []
-    if target_info.reference_sequences.get(alignment.reference_name) is None:
+    if reference_sequences.get(alignment.reference_name) is None:
         for read_p, ref_p, ref_b in alignment.get_aligned_pairs(with_seq=True):
             if read_p != None and ref_p != None:
                 read_b = alignment.query_sequence[read_p]
                 tuples.append((read_p, read_b, ref_p, ref_b))
 
     else:
-        reference = target_info.reference_sequences[alignment.reference_name]
+        reference = reference_sequences[alignment.reference_name]
         for read_p, ref_p in alignment.get_aligned_pairs():
             if read_p != None and ref_p != None:
                 read_b = alignment.query_sequence[read_p]
@@ -2686,29 +2710,37 @@ def get_indel_info(alignment):
 
     return indels
 
-def split_at_edit_clusters(al, target_info, num_edits=5, window_size=11):
-    ''' Identify read locations at which there are at least num_edits edits in a windows_size nt window. 
-    Excise outwards from any such location until reaching a stretch of 5 exact matches.
-    Remove the excised region, producing new cropped alignments.
-    '''
-    split_als = []
-    
+def edit_positions(al, reference_sequences, use_deletion_length=False):
     bad_read_ps = np.zeros(al.query_length)
     
-    for read_p, *rest in get_mismatch_info(al, target_info):
+    for read_p, *rest in get_mismatch_info(al, reference_sequences):
         bad_read_ps[read_p] += 1
         
     for indel_type, indel_info in get_indel_info(al):
         if indel_type == 'deletion':
             centered_at, length = indel_info
             for offset in [-0.5, 0.5]:
-                bad_read_ps[int(centered_at + offset)] += 1
+                if use_deletion_length:
+                    to_add = length / 2
+                else:
+                    to_add = 1
+                bad_read_ps[int(centered_at + offset)] += to_add
         elif indel_type == 'insertion':
             starts_at, ends_at = indel_info
             # TODO: double-check possible off by one in ends_at
             for read_p in range(starts_at, ends_at + 1):
                 bad_read_ps[read_p] += 1
                
+    return bad_read_ps
+
+def split_at_edit_clusters(al, reference_sequences, num_edits=5, window_size=11):
+    ''' Identify read locations at which there are at least num_edits edits in a windows_size nt window. 
+    Excise outwards from any such location until reaching a stretch of 5 exact matches.
+    Remove the excised region, producing new cropped alignments.
+    '''
+    split_als = []
+    
+    bad_read_ps = edit_positions(al, reference_sequences)
     rolling_sums = pd.Series(bad_read_ps).rolling(window=window_size, center=True, min_periods=1).sum()
 
     argmax = rolling_sums.idxmax()
@@ -2728,7 +2760,7 @@ def split_at_edit_clusters(al, target_info, num_edits=5, window_size=11):
         if last_read_p_in_before is not None:
             cropped_before = sam.crop_al_to_query_int(al, 0, last_read_p_in_before)
             if cropped_before is not None:
-                split_als.extend(split_at_edit_clusters(cropped_before, target_info))
+                split_als.extend(split_at_edit_clusters(cropped_before, reference_sequences))
 
         first_read_p_in_after = None
             
@@ -2742,17 +2774,17 @@ def split_at_edit_clusters(al, target_info, num_edits=5, window_size=11):
         if first_read_p_in_after is not None:
             cropped_after = sam.crop_al_to_query_int(al, first_read_p_in_after, np.inf)
             if cropped_after is not None:
-                split_als.extend(split_at_edit_clusters(cropped_after, target_info))
+                split_als.extend(split_at_edit_clusters(cropped_after, reference_sequences))
 
     split_als = [al for al in split_als if not al.is_unmapped]
 
     return split_als
 
-def crop_terminal_mismatches(al, target_info):
+def crop_terminal_mismatches(al, reference_sequences):
     ''' Remove all consecutive mismatches from the start and end of an alignment. '''
     covered = interval.get_covered(al)
 
-    mismatch_ps = {p for p, *rest in knock_knock.layout.get_mismatch_info(al, target_info)}
+    mismatch_ps = {p for p, *rest in knock_knock.layout.get_mismatch_info(al, reference_sequences)}
 
     first = covered.start
     last = covered.end
@@ -2781,11 +2813,11 @@ def comprehensively_split_alignment(al, target_info, mode, ins_size_to_split_at=
         if del_size_to_split_at is None:
             del_size_to_split_at = 1
 
-        for split_1 in split_at_edit_clusters(al, target_info):
+        for split_1 in split_at_edit_clusters(al, target_info.reference_sequences):
             for split_2 in sam.split_at_deletions(split_1, del_size_to_split_at):
                 for split_3 in sam.split_at_large_insertions(split_2, ins_size_to_split_at):
-                    cropped_al = crop_terminal_mismatches(split_3, target_info)
-                    if cropped_al is not None:
+                    cropped_al = crop_terminal_mismatches(split_3, target_info.reference_sequences)
+                    if cropped_al is not None and cropped_al.query_alignment_length >= 5:
                         split_als.append(cropped_al)
 
     elif mode == 'pacbio':
@@ -2817,7 +2849,7 @@ def comprehensively_split_alignment(al, target_info, mode, ins_size_to_split_at=
 
     return split_als
 
-def junction_microhomology(target_info, first_al, second_al):
+def junction_microhomology(reference_sequences, first_al, second_al):
     if first_al is None or second_al is None:
         return -1
 
@@ -2850,7 +2882,7 @@ def junction_microhomology(target_info, first_al, second_al):
         for side in ['left', 'right']:
             al = als_by_side[side]
 
-            for read_p, *rest in get_mismatch_info(al, target_info):
+            for read_p, *rest in get_mismatch_info(al, reference_sequences):
                 bad_read_ps[side].add(read_p)
 
             for kind, info in get_indel_info(al):
