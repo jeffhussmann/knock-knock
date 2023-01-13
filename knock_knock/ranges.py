@@ -989,9 +989,9 @@ def draw_features(ax, ti, seq_name, min_p, max_p,
         line = ax.axvline
 
     for s_name, f_name in features:
-        if (s_name, f_name) not in ti.annotated_and_inferred_features:
+        if (s_name, f_name) not in ti.features:
             continue
-        feature = ti.annotated_and_inferred_features[s_name, f_name]
+        feature = ti.features[s_name, f_name]
 
         if min_p <= feature.start <= max_p or min_p <= feature.end <= max_p:
             color = feature.attribute['color']
