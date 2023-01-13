@@ -112,6 +112,8 @@ class TargetInfo():
                  infer_homology_arms=False,
                  min_relevant_length=None,
                  feature_to_replace=None,
+                 manifest=None,
+                 manual_sgRNA_components=None,
                 ):
         self.name = name
 
@@ -133,26 +135,33 @@ class TargetInfo():
             'protospacer_bam_template': self.dir / 'protospacers_{}.bam',
         }
         
-        manifest_fn = self.dir / 'manifest.yaml'
-        self.manifest = yaml.safe_load(manifest_fn.read_text())
+        if manifest is None:
+            manifest_fn = self.dir / 'manifest.yaml'
+            manifest = yaml.safe_load(manifest_fn.read_text())
+
+        self.manifest = manifest
 
         self.target = self.manifest['target']
 
         self.sources = [s[:-len('.gb')] if s.endswith('.gb') else s for s in self.manifest['sources']]
         self.gb_records = gb_records
+        self.manual_sgRNA_components = manual_sgRNA_components
 
-        def populate_attribute(attribute_name, value, force_list=False):
+        def populate_attribute(attribute_name, value, force_list=False, default_value=None):
             if value is None:
-                value = self.manifest.get(attribute_name)
+                value = self.manifest.get(attribute_name, default_value)
 
             if force_list:
                 if isinstance(value, str):
-                    value = value.split(';')
+                    if value == '':
+                        value = []
+                    else:
+                        value = value.split(';')
 
             setattr(self, attribute_name, value)
 
         populate_attribute('sgRNAs', sgRNAs, force_list=True)
-        populate_attribute('primer_names', primer_names, force_list=True)
+        populate_attribute('primer_names', primer_names, force_list=True, default_value=['forward_primer', 'reverse_primer'])
         populate_attribute('donor', donor)
         populate_attribute('nonhomologous_donor', nonhomologous_donor)
         populate_attribute('sequencing_start_feature_name', sequencing_start_feature_name)
@@ -228,7 +237,10 @@ class TargetInfo():
     @memoized_property
     def protospacer_names(self):
         ''' Names of all features representing protospacers at which cutting was expected to occur '''
-        fs = [knock_knock.pegRNAs.protospacer_name(gRNA_name) for gRNA_name in self.sgRNA_components]
+        if self.sgRNA_components is None:
+            fs = []
+        else:
+            fs = [knock_knock.pegRNAs.protospacer_name(gRNA_name) for gRNA_name in self.sgRNA_components]
         return fs
 
     @memoized_property
@@ -236,7 +248,11 @@ class TargetInfo():
         if self.sgRNAs is None:
             sgRNA_components = None
         else:
-            all_components = knock_knock.pegRNAs.read_csv(self.fns['sgRNAs'])
+            if self.manual_sgRNA_components is None:
+                all_components = knock_knock.pegRNAs.read_csv(self.fns['sgRNAs'])
+            else:
+                all_components = self.manual_sgRNA_components
+
             sgRNA_components = {name: all_components[name] for name in self.sgRNAs}
 
         return sgRNA_components
@@ -244,20 +260,20 @@ class TargetInfo():
     @memoized_property
     def pegRNA_names(self):
         ''' pegRNAs are sgRNAs that have an extension. '''
-        names = [n for n, cs in self.sgRNA_components.items() if len(cs['extension']) > 1]
-
-        if len(names) == 0:
-            names = None
+        if self.sgRNA_components is None:
+            names = []
+        else:
+            names = [n for n, cs in self.sgRNA_components.items() if len(cs['extension']) > 1]
 
         return names
 
     @memoized_property
     def sgRNA_names(self):
         ''' For historical reasons, sgRNA_names are sgRNAs that aren't pegRNAs. '''
-        names = [n for n, cs in self.sgRNA_components.items() if len(cs['extension']) == 0]
-
-        if len(names) == 0:
-            names = None
+        if self.sgRNA_components is None:
+            names = []
+        else:
+            names = [n for n, cs in self.sgRNA_components.items() if len(cs['extension']) == 0]
 
         return names
     
@@ -529,8 +545,8 @@ class TargetInfo():
             features_to_show.update(set(self.PAM_features))
 
         if self.pegRNA_names is not None:
-            if len(self.pegRNA_programmed_insertions) > 0:
-                for insertion in self.pegRNA_programmed_insertions:
+            if len(self.pegRNA_programmed_insertion_features) > 0:
+                for insertion in self.pegRNA_programmed_insertion_features:
                     features_to_show.add((insertion.seqname, insertion.attribute['ID']))
 
                 for pegRNA_name in self.pegRNA_names:
@@ -606,14 +622,15 @@ class TargetInfo():
     @memoized_property
     def protospacer_features(self):
         features = {}
-        for name, components in self.sgRNA_components.items():
-            feature = knock_knock.pegRNAs.identify_protospacer_in_target(self.target_sequence,
-                                                                         components['protospacer'],
-                                                                         components['effector'],
-                                                                        )
-            ps_name = knock_knock.pegRNAs.protospacer_name(name)
-            feature.attribute['ID'] = ps_name
-            features[ps_name] = feature
+        if self.sgRNA_components is not None:
+            for name, components in self.sgRNA_components.items():
+                feature = knock_knock.pegRNAs.identify_protospacer_in_target(self.target_sequence,
+                                                                            components['protospacer'],
+                                                                            components['effector'],
+                                                                            )
+                ps_name = knock_knock.pegRNAs.protospacer_name(name)
+                feature.attribute['ID'] = ps_name
+                features[ps_name] = feature
                                                                         
         return features
     
@@ -1761,7 +1778,7 @@ class TargetInfo():
 
     @memoized_property
     def pegRNA_intended_deletion(self):
-        if self.pegRNA_names is None:
+        if self.pegRNA_names is None or len(self.pegRNA_names) == 0:
             deletion = None
 
         elif len(self.pegRNA_names) == 1:
@@ -1821,23 +1838,26 @@ class TargetInfo():
             ...,
         } 
         '''
-        if self.pegRNA_names is not None:
-            if len(self.pegRNA_names) == 1:
-                _, SNVs, _ = knock_knock.pegRNAs.infer_edit_features(self.pegRNA_names[0],
-                                                                     self.target,
-                                                                     self.features,
-                                                                     self.reference_sequences,
+        if self.pegRNA_names is None or len(self.pegRNA_names) == 0:
+            SNVs = None
+
+        elif len(self.pegRNA_names) == 1:
+            _, SNVs, _ = knock_knock.pegRNAs.infer_edit_features(self.pegRNA_names[0],
+                                                                    self.target,
+                                                                    self.features,
+                                                                    self.reference_sequences,
+                                                                )
+
+        elif len(self.pegRNA_names) == 2:
+            results = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
+                                                                        self.target,
+                                                                        self.features,
+                                                                        self.reference_sequences,
                                                                     )
-            elif len(self.pegRNA_names) == 2:
-                results = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
-                                                                         self.target,
-                                                                         self.features,
-                                                                         self.reference_sequences,
-                                                                        )
-                SNVs = results['SNVs']
+            SNVs = results['SNVs']
 
         else:
-            SNVs = None
+            raise ValueError
 
         return SNVs
 
@@ -1846,20 +1866,22 @@ class TargetInfo():
         deletions = []
 
         if self.pegRNA_names is not None:
-            if len(self.pegRNA_names) == 1:
-                feature_name = f'deletion_{self.pegRNA_names[0]}'
-            elif len(self.pegRNA_names) == 2:
-                feature_name = f'deletion_{self.pegRNA_names[0]}_{self.pegRNA_names[1]}'
-            else:
-                raise ValueError(self.pegRNA_names)
+            feature_names = []
 
-            if (self.target, feature_name) in self.features:
-                deletions.append(self.features[self.target, feature_name])
+            for pegRNA_name in self.pegRNA_names:
+                feature_names.append(f'deletion_{pegRNA_name}')
+
+            if len(self.pegRNA_names) == 2:
+                feature_names.append(f'deletion_{self.pegRNA_names[0]}_{self.pegRNA_names[1]}')
+
+            for feature_name in feature_names:
+                if (self.target, feature_name) in self.features:
+                    deletions.append(self.features[self.target, feature_name])
 
         return deletions
 
     @memoized_property
-    def pegRNA_programmed_insertions(self):
+    def pegRNA_programmed_insertion_features(self):
         insertions = []
 
         if self.pegRNA_names is not None:
@@ -1869,6 +1891,59 @@ class TargetInfo():
                     insertions.append(self.features[pegRNA_name, feature_name])
 
         return insertions
+
+    @memoized_property
+    def pegRNA_programmed_insertion(self):
+        ''' Returns an unexpanded DegenerateInsertion representing the insertion
+        programmed by a single pegRNA.
+        '''
+        if len(self.pegRNA_programmed_insertion_features) != 1:
+            insertion = None
+        else:
+            pegRNA_name = self.pegRNA_names[0]
+
+            HA_RT = self.features[self.target, f'HA_RT_{pegRNA_name}']
+
+            insertion_seq = self.feature_sequence(pegRNA_name, f'insertion_{pegRNA_name}')
+
+            if HA_RT.strand == '+':
+                starts_after = HA_RT.start - 1
+            else:
+                starts_after = HA_RT.end
+                # insertion_seq as returned by self.feature_sequence should be the 
+                # RC of the relevant part of the pegRNA, but if the protospacer is
+                # on the minus strand, this needs to be RCed to represent the inserted
+                # sequence relative to the plus strand. 
+                insertion_seq = utilities.reverse_complement(insertion_seq)
+
+            insertion = DegenerateInsertion([starts_after], [insertion_seq]) 
+
+        return insertion
+
+    #@memoized_property
+    #def intended_edit_sequence(self):
+    #    if len(self.pegRNA_names) != 2:
+    #        raise NotImplementedError
+
+    #    results = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
+    #                                                             self.target,
+    #                                                             self.features,
+    #                                                             self.reference_sequences,
+    #                                                            )
+
+    #    primer_seqs = {side: self.primers_by_side_of_read[side].sequence(self.reference_sequences) for side in ['left', 'right']}
+    #    primer_seqs['right'] = utilities.reverse_complement(primer_seqs['right'])
+
+    #    extended_expected_seq = results['intended_edit_seq']
+    #    if self.sequencing_direction == '-':    
+    #        extended_expected_seq = utilities.reverse_complement(extended_expected_seq)
+
+    #    start = extended_expected_seq.index(primer_seqs['left'])
+    #    end = extended_expected_seq.index(primer_seqs['right']) + len(primer_seqs['right'])
+
+    #    expected_seq = extended_expected_seq[start:end]
+
+    #    return expected_seq
 
 def degenerate_indel_from_string(details_string):
     if details_string is None:
