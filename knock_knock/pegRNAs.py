@@ -92,7 +92,7 @@ def identify_protospacer_in_target(target_sequence, protospacer, effector):
         valid_features = find(protospacer[1:])
 
     if len(valid_features) != 1:
-        raise ValueError(f'{len(valid_features)} valid protospacer locations in target')
+        raise ValueError(f'{len(valid_features)} valid locations for protospacer {protospacer} in target {target_sequence}')
     else:
         valid_feature = valid_features[0]
         return valid_feature    
@@ -163,10 +163,10 @@ def infer_features(pegRNA_name,
 
     valid_alignments = sorted(valid_alignments, key=priority_key, reverse=True)
 
-    if len(valid_alignments) != 1:
+    if len(valid_alignments) == 0:
         seed_sequence = target_bytes[seed_start:seed_start + seed_length]
         starts = [al.reference_start for al in valid_alignments]
-        warning_message = [f'{pegRNA_name}: not exactly one valid PBS alignment for {seed_sequence}'] + \
+        warning_message = [f'{pegRNA_name}: {len(valid_alignments)} valid PBS alignment(s) for {seed_sequence}'] + \
         [f'\tlength: {al.query_alignment_length}, start in pegRNA: {al.reference_start}, start in target: {al.query_alignment_start}' for al in valid_alignments]
         logging.warning('\n'.join(warning_message))
         
