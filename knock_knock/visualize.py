@@ -66,6 +66,7 @@ class ReadDiagram():
                  default_color='grey',
                  color_overrides=None,
                  title=None,
+                 title_y=1.02,
                  mode='normal',
                  label_differences=False,
                  label_overrides=None,
@@ -87,6 +88,7 @@ class ReadDiagram():
                  manual_fade=None,
                  refs_to_draw=None,
                  parallelogram_alpha=0.05,
+                 supplementary_reference_sequences=None,
                  **kwargs,
                 ):
 
@@ -131,6 +133,11 @@ class ReadDiagram():
         self.parallelogram_alpha = parallelogram_alpha
 
         self.target_info = target_info
+
+        if supplementary_reference_sequences is None:
+            supplementary_reference_sequences = {}
+
+        self.all_reference_sequences = {**self.target_info.reference_sequences, **supplementary_reference_sequences}
 
         if self.refs_to_draw is None:
             self.refs_to_draw = set()
@@ -296,7 +303,10 @@ class ReadDiagram():
 
         self.color_overrides = color_overrides
         self.title = title
+        self.title_y = title_y
         self.ax = ax
+
+        self.reference_ys = {}
 
         if features_to_hide is None:
             features_to_hide = set()
@@ -354,7 +364,7 @@ class ReadDiagram():
             self.arrow_linewidth = 2
 
         if arrow_width is None:
-            arrow_width = self.query_length * 0.01
+            arrow_width = self.query_length * 0.012
         self.arrow_width = arrow_width
         self.arrow_height_over_width = self.width_per_unit / self.height_per_unit
 
@@ -403,7 +413,7 @@ class ReadDiagram():
                 color = min(unused_colors)
                 unused_colors.remove(color)
             else:
-                color = 'black'
+                color = 'grey'
 
             self.ref_name_to_color[ref_name] = color
 
@@ -485,6 +495,7 @@ class ReadDiagram():
         arrow_kwargs = {
             'linewidth': self.arrow_linewidth * self.size_multiple,
             'color': 'black',
+            'solid_capstyle': 'butt',
         }
 
         if self.R2_alignments is None:
@@ -500,11 +511,11 @@ class ReadDiagram():
 
         for (x_start, x_end), reverse_complement in arrow_infos:
             if not reverse_complement:
-                arrow_xs = [x_start, x_end]
+                arrow_xs = [x_start - 0.5, x_end + 0.5]
                 if self.draw_arrowheads:
                     arrow_xs.append(x_end - self.arrow_width)
             else:
-                arrow_xs = [x_end, x_start]
+                arrow_xs = [x_end + 0.5, x_start - 0.5]
                 if self.draw_arrowheads:
                     arrow_xs.append(x_start + self.arrow_width)
 
@@ -680,7 +691,7 @@ class ReadDiagram():
                                    )
 
                 if self.draw_mismatches:
-                    mismatches = layout_module.get_mismatch_info(alignment, self.target_info)
+                    mismatches = layout_module.get_mismatch_info(alignment, self.all_reference_sequences)
                     for mismatch_i, (read_p, read_b, ref_p, ref_b, q) in enumerate(mismatches):
                         if q < self.max_qual * 0.75:
                             alpha = 0.25
@@ -984,7 +995,7 @@ class ReadDiagram():
         else:
             title = self.title
 
-        ax.set_title(title, y=1.02, size=self.font_sizes['title'])
+        ax.set_title(title, y=self.title_y, size=self.font_sizes['title'])
             
         ax.set_ylim(1.1 * self.min_y, 1.1 * self.max_y)
         ax.set_xlim(self.min_x, self.max_x)
@@ -1008,7 +1019,7 @@ class ReadDiagram():
 
         if self.draw_qualities:
             def quals_to_ys(quals):
-                return (np.array(quals) + 5) / self.max_qual * 2 * self.gap_between_als
+                return (np.array(quals) + 5) / self.max_qual * (self.initial_alignment_y_offset - 1) * self.gap_between_als
 
             qual_ys = quals_to_ys(self.alignments[0].get_forward_qualities())
 
@@ -1024,7 +1035,7 @@ class ReadDiagram():
 
             label_y = quals_to_ys([self.max_qual])[0]
 
-            self.ax.annotate('sequencing quality scores',
+            self.ax.annotate('quality scores',
                              xy=(self.label_x, label_y),
                              xycoords=('axes fraction', 'data'),
                              xytext=(self.label_x_offset, 0),
@@ -1095,6 +1106,8 @@ class ReadDiagram():
         ti = self.target_info
 
         color = self.ref_name_to_color[ref_name]
+
+        self.reference_ys[ref_name] = ref_y
 
         alignment_coordinates = self.alignment_coordinates[ref_name]
 
