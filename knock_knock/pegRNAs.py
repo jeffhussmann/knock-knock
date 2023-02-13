@@ -244,12 +244,15 @@ def infer_edit_features(pegRNA_name,
                         target_name,
                         existing_features,
                         reference_sequences,
+                        max_deletion_length=None,
                        ):
     ''' Requires features to already include results from infer_features.
     
     Compatibility with code initially designed for HDR screens wants
     pegRNAs to be annotated with 'homology arms' and 'SNPs'.
     One HA is the PBS, the other is the RT, and SNPs are features.
+
+    In pooled screening contexts, max_deletion_length may need to be set.
     '''
 
     target_sequence = reference_sequences[target_name]
@@ -329,6 +332,9 @@ def infer_edit_features(pegRNA_name,
         target_downstream_of_nick = target_sequence[cut_after + 1:]
     else:
         target_downstream_of_nick = utilities.reverse_complement(target_sequence[:cut_after + 1])
+
+    if max_deletion_length is not None:
+        target_downstream_of_nick = target_downstream_of_nick[:max_deletion_length + len(intended_flap_sequence)]
 
     found_suffix = False
 

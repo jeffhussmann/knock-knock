@@ -114,6 +114,7 @@ class TargetInfo():
                  feature_to_replace=None,
                  manifest=None,
                  manual_sgRNA_components=None,
+                 max_programmed_deletion_length=None,
                 ):
         self.name = name
 
@@ -177,6 +178,8 @@ class TargetInfo():
         self.supplemental_indices = supplemental_indices
 
         self.infer_homology_arms = infer_homology_arms
+
+        self.max_programmed_deletion_length = max_programmed_deletion_length
 
         self.min_relevant_length = min_relevant_length
 
@@ -457,6 +460,7 @@ class TargetInfo():
                                                                               self.target,
                                                                               features,
                                                                               self.reference_sequences,
+                                                                              max_deletion_length=self.max_programmed_deletion_length,
                                                                              )
 
                 features.update(edit_features)
@@ -671,14 +675,16 @@ class TargetInfo():
         PAM_features = {}
 
         for name, sl in self.PAM_slices.items():
+            protospacer = self.protospacer_features[name]
+
             PAM_name = f'{name}_PAM'
             PAM_feature = gff.Feature.from_fields(seqname=self.target,
                                                   feature='PAM',
                                                   start=sl.start,
                                                   end=sl.stop - 1,
+                                                  strand=protospacer.strand,
                                                  )
 
-            protospacer = self.protospacer_features[name]
             protospacer_color = protospacer.attribute['color']
             PAM_color = hits.visualize.scale_darkness(protospacer_color, 1.3)
 
@@ -1786,6 +1792,7 @@ class TargetInfo():
                                                                      self.target,
                                                                      self.features,
                                                                      self.reference_sequences,
+                                                                     max_deletion_length=self.max_programmed_deletion_length,
                                                                     )
 
         elif len(self.pegRNA_names) == 2:
@@ -1843,16 +1850,17 @@ class TargetInfo():
 
         elif len(self.pegRNA_names) == 1:
             _, SNVs, _ = knock_knock.pegRNAs.infer_edit_features(self.pegRNA_names[0],
-                                                                    self.target,
-                                                                    self.features,
-                                                                    self.reference_sequences,
+                                                                 self.target,
+                                                                 self.features,
+                                                                 self.reference_sequences,
+                                                                 max_deletion_length=self.max_programmed_deletion_length,
                                                                 )
 
         elif len(self.pegRNA_names) == 2:
             results = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
-                                                                        self.target,
-                                                                        self.features,
-                                                                        self.reference_sequences,
+                                                                     self.target,
+                                                                     self.features,
+                                                                     self.reference_sequences,
                                                                     )
             SNVs = results['SNVs']
 
