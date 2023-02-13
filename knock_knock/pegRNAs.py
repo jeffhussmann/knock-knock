@@ -121,11 +121,12 @@ def infer_features(pegRNA_name,
     target_protospacer_feature.seqname = target_name
     strand = target_protospacer_feature.strand
     
+    cut_afters = effector.cut_afters(target_protospacer_feature)
     try:
-        cut_after = effector.cut_afters(target_protospacer_feature)[strand]
+        cut_after = cut_afters[strand]
     except KeyError:
         # To support PE nuclease strategies, allow for blunt-cutting effectors.
-        cut_after = effector.cut_afters(target_protospacer_feature)['both']
+        cut_after = cut_afters['both']
 
     # Identify the PBS region of the pegRNA by finding a match to
     # the sequence of the target immediately before the nick.    
@@ -469,7 +470,7 @@ def infer_edit_features(pegRNA_name,
         deletion_feature = gff.Feature.from_fields(seqname=names['target'],
                                                    start=starts['target', 'deletion'],
                                                    end=ends['target', 'deletion'],
-                                                   strand='+',
+                                                   strand=strands['target'],
                                                    ID=deletion_name,
                                                   )
         deletion_feature.attribute['color'] = default_feature_colors['deletion']

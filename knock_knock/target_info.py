@@ -629,9 +629,10 @@ class TargetInfo():
         if self.sgRNA_components is not None:
             for name, components in self.sgRNA_components.items():
                 feature = knock_knock.pegRNAs.identify_protospacer_in_target(self.target_sequence,
-                                                                            components['protospacer'],
-                                                                            components['effector'],
+                                                                             components['protospacer'],
+                                                                             components['effector'],
                                                                             )
+                feature.seqname = self.target
                 ps_name = knock_knock.pegRNAs.protospacer_name(name)
                 feature.attribute['ID'] = ps_name
                 features[ps_name] = feature
