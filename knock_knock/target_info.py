@@ -373,10 +373,11 @@ class TargetInfo():
         bam_fn = str(self.fns['protospacer_bam_template']).format(index_name)
         locations = set()
 
-        with pysam.AlignmentFile(bam_fn) as bam_fh:
-            for al in bam_fh:
-                if al.query_name == sgRNA_name:
-                    locations.add((al.reference_name, al.reference_start, sam.get_strand(al)))
+        if Path(bam_fn).exists():
+            with pysam.AlignmentFile(bam_fn) as bam_fh:
+                for al in bam_fh:
+                    if al.query_name == sgRNA_name:
+                        locations.add((al.reference_name, al.reference_start, sam.get_strand(al)))
 
         return locations
     
@@ -386,7 +387,7 @@ class TargetInfo():
 
         locations = self.mapped_protospacer_locations(protospacer, index_name)
         
-        if len(locations) > 1:
+        if len(locations) != 1:
             location = None
         else:
             location = locations.pop()
