@@ -1,6 +1,5 @@
 import copy
 import logging
-import re
 
 from collections import defaultdict
 
@@ -352,8 +351,8 @@ def infer_edit_features(pegRNA_name,
 
     max_suffix_length = max(flap_suffix_length_to_index, default=0)
     
-    if max_suffix_length <= 6:
-        logging.warning(f'Short RTT: {max_suffix_length}')
+    #if max_suffix_length <= 6:
+    #    logging.warning(f'{pegRNA_name} {target_name} has short RTT: {max_suffix_length} nts')
 
     suffix_length = max_suffix_length
 
@@ -544,11 +543,11 @@ def infer_edit_features(pegRNA_name,
     first_differnce_position = starts['pegRNA', 'RTT'] - offset
     name = f'after_first_difference_{names["pegRNA"]}'
     feature = gff.Feature.from_fields(seqname=names['pegRNA'],
-                                        start=0,
-                                        end=first_differnce_position,
-                                        strand='-',
-                                        ID=name,
-                                        )
+                                      start=0,
+                                      end=first_differnce_position,
+                                      strand='-',
+                                      ID=name,
+                                     )
     new_features[names['pegRNA'], name] = feature
 
 
@@ -566,7 +565,7 @@ def infer_edit_features(pegRNA_name,
                                     end=ends['target', 'HA_RT'],
                                     strand=HA_PBS.strand,
                                     ID=HA_RT_name,
-                                    )
+                                   )
     HA_RT.attribute['color'] = default_feature_colors['RTT']
     new_features[target_name, HA_RT_name] = HA_RT
 
@@ -581,7 +580,7 @@ def infer_edit_features(pegRNA_name,
                                     end=ends['pegRNA', 'HA_RT'],
                                     strand='-',
                                     ID=HA_RT_name,
-                                    )
+                                   )
     HA_RT.attribute['color'] = default_feature_colors['RTT']
     new_features[names['pegRNA'], HA_RT_name] = HA_RT
 
@@ -806,118 +805,118 @@ def infer_twin_pegRNA_features(pegRNA_names,
 
     intended_edit_seqs[3] = target_with_RTed[5][:start + length] + target_with_RTed[3][length:]
 
-    if overlap_seqs[5] != overlap_seqs[3]:
-        raise ValueError('inconsistent overlaps inferred')
-
-    if intended_edit_seqs[5] != intended_edit_seqs[3]:
-        raise ValueError('inconsistent intended edits inferred')
-    else:
-        intended_edit_seq = intended_edit_seqs[5]
-
-    # Check if the intended edit is a deletion.
-
-    unedited_seq = target_seq
-
     deletion = None
     SNVs = None
 
-    if len(intended_edit_seq) < len(unedited_seq):
-        for num_matches_at_start, (intended_b, edited_b) in enumerate(zip(unedited_seq, intended_edit_seq)):
-            if intended_b != edited_b:
-                break
+    if (overlap_seqs[5] != overlap_seqs[3]) or (intended_edit_seqs[5] != intended_edit_seqs[3]):
+        intended_edit_seq = None
+        logging.warning(f'Unable to infer a consistent intended edit for {"+".join(pegRNA_names)}')
+        for side in [5, 3]:
+            new_features.pop((pegRNA_names_by_side[side], 'overlap'), None)
+    else:
+        intended_edit_seq = intended_edit_seqs[5]
 
-        # If the sequence following the first difference exactly
-        # matches the end of the wild type amplicon, the intended
-        # edit is a deletion.
-        if unedited_seq.endswith(intended_edit_seq[num_matches_at_start + 1:]):
-            deletion_length = len(unedited_seq) - len(intended_edit_seq)
+        # Check if the intended edit is a deletion.
 
-            deletion_start = num_matches_at_start
+        unedited_seq = target_seq
 
-            deletion = target_info.DegenerateDeletion([deletion_start], deletion_length)
+        if len(intended_edit_seq) < len(unedited_seq):
+            for num_matches_at_start, (intended_b, edited_b) in enumerate(zip(unedited_seq, intended_edit_seq)):
+                if intended_b != edited_b:
+                    break
 
-            deletion_name = f'deletion_{pegRNA_names[0]}_{pegRNA_names[1]}'
-            deletion_feature = gff.Feature.from_fields(seqname=target_name,
-                                                       start=deletion_start,
-                                                       end=deletion_start + deletion_length - 1,
-                                                       strand='+',
-                                                       ID=deletion_name,
-                                                      )
-            deletion_feature.attribute['color'] = default_feature_colors['deletion']
+            # If the sequence following the first difference exactly
+            # matches the end of the wild type amplicon, the intended
+            # edit is a deletion.
+            if unedited_seq.endswith(intended_edit_seq[num_matches_at_start + 1:]):
+                deletion_length = len(unedited_seq) - len(intended_edit_seq)
 
-            new_features[target_name, deletion_name] = deletion_feature
+                deletion_start = num_matches_at_start
 
-    elif len(intended_edit_seq) == len(unedited_seq):
+                deletion = target_info.DegenerateDeletion([deletion_start], deletion_length)
 
-        SNVs = {
-            target_name: {},
-            pegRNA_names[0]: {},
-            pegRNA_names[1]: {},
-        }
+                deletion_name = f'deletion_{pegRNA_names[0]}_{pegRNA_names[1]}'
+                deletion_feature = gff.Feature.from_fields(seqname=target_name,
+                                                           start=deletion_start,
+                                                           end=deletion_start + deletion_length - 1,
+                                                           strand='+',
+                                                           ID=deletion_name,
+                                                          )
+                deletion_feature.attribute['color'] = default_feature_colors['deletion']
 
-        for offset, (pegRNAs_b, target_b) in enumerate(zip(intended_edit_seq, unedited_seq)):
-            if pegRNAs_b != target_b:
+                new_features[target_name, deletion_name] = deletion_feature
 
-                positions = offset_to_positions[offset]
+        elif len(intended_edit_seq) == len(unedited_seq):
 
-                SNV_name = f'SNV_{positions[target_name]}_{target_b}-{pegRNAs_b}'
+            SNVs = {
+                target_name: {},
+                pegRNA_names[0]: {},
+                pegRNA_names[1]: {},
+            }
 
-                SNVs[target_name][SNV_name] = {
-                    'position': positions[target_name],
-                    'strand': '+',
-                    'base': target_b,
-                }
+            for offset, (pegRNAs_b, target_b) in enumerate(zip(intended_edit_seq, unedited_seq)):
+                if pegRNAs_b != target_b:
 
-                feature = gff.Feature.from_fields(seqname=target_name,
-                                                  start=positions[target_name],
-                                                  end=positions[target_name],
-                                                  strand='+',
-                                                  ID=SNV_name,
-                                                 )
-            
-                new_features[target_name, SNV_name] = feature
+                    positions = offset_to_positions[offset]
 
-                if pegRNA_names_by_side[5] in positions:
-                    pegRNA_name = pegRNA_names_by_side[5]
+                    SNV_name = f'SNV_{positions[target_name]}_{target_b}-{pegRNAs_b}'
 
-                    # Note: convention on pegRNA base strandedness is a constant source
-                    # of confusion.
-                    pegRNA_base_effective = utilities.reverse_complement(pegRNAs_b)
-
-                    SNVs[pegRNA_name][SNV_name] = {
-                        'position': positions[pegRNA_name],
-                        'strand': '-',
-                        'base': pegRNA_base_effective,
-                    }
-
-                    feature = gff.Feature.from_fields(seqname=pegRNA_name,
-                                                      start=positions[pegRNA_name],
-                                                      end=positions[pegRNA_name],
-                                                      strand='-',
-                                                      ID=SNV_name,
-                                                     )
-                
-                    new_features[pegRNA_name, SNV_name] = feature
-
-                if pegRNA_names_by_side[3] in positions:
-                    pegRNA_name = pegRNA_names_by_side[3]
-
-                    pegRNA_base_effective = pegRNAs_b
-
-                    SNVs[pegRNA_name][SNV_name] = {
-                        'position': positions[pegRNA_name],
+                    SNVs[target_name][SNV_name] = {
+                        'position': positions[target_name],
                         'strand': '+',
-                        'base': pegRNAs_b,
+                        'base': target_b,
                     }
 
-                    feature = gff.Feature.from_fields(seqname=pegRNA_name,
-                                                      start=positions[pegRNA_name],
-                                                      end=positions[pegRNA_name],
+                    feature = gff.Feature.from_fields(seqname=target_name,
+                                                      start=positions[target_name],
+                                                      end=positions[target_name],
                                                       strand='+',
                                                       ID=SNV_name,
                                                      )
                 
-                    new_features[pegRNA_name, SNV_name] = feature
+                    new_features[target_name, SNV_name] = feature
+
+                    if pegRNA_names_by_side[5] in positions:
+                        pegRNA_name = pegRNA_names_by_side[5]
+
+                        # Note: convention on pegRNA base strandedness is a constant source
+                        # of confusion.
+                        pegRNA_base_effective = utilities.reverse_complement(pegRNAs_b)
+
+                        SNVs[pegRNA_name][SNV_name] = {
+                            'position': positions[pegRNA_name],
+                            'strand': '-',
+                            'base': pegRNA_base_effective,
+                        }
+
+                        feature = gff.Feature.from_fields(seqname=pegRNA_name,
+                                                          start=positions[pegRNA_name],
+                                                          end=positions[pegRNA_name],
+                                                          strand='-',
+                                                          ID=SNV_name,
+                                                         )
+                    
+                        new_features[pegRNA_name, SNV_name] = feature
+
+                    if pegRNA_names_by_side[3] in positions:
+                        pegRNA_name = pegRNA_names_by_side[3]
+
+                        pegRNA_base_effective = pegRNAs_b
+
+                        SNVs[pegRNA_name][SNV_name] = {
+                            'position': positions[pegRNA_name],
+                            'strand': '+',
+                            'base': pegRNAs_b,
+                        }
+
+                        feature = gff.Feature.from_fields(seqname=pegRNA_name,
+                                                          start=positions[pegRNA_name],
+                                                          end=positions[pegRNA_name],
+                                                          strand='+',
+                                                          ID=SNV_name,
+                                                         )
+                    
+                        new_features[pegRNA_name, SNV_name] = feature
 
     results = {
         'deletion': deletion,
