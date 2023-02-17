@@ -316,6 +316,7 @@ class ReadDiagram():
 
         if feature_heights is None:
             feature_heights = {}
+
         self.feature_heights = feature_heights
         
         if len(self.alignments) > 0:
@@ -398,6 +399,7 @@ class ReadDiagram():
 
         if label_overrides is None:
             label_overrides = {}
+
         self.label_overrides = label_overrides
 
         self.feature_label_size = 10
@@ -468,10 +470,10 @@ class ReadDiagram():
     def get_feature_color(self, feature_reference, feature_name):
         feature = self.features[feature_reference, feature_name]
 
-        if feature_name in self.color_overrides:
-            color = self.color_overrides[feature_name]
-        elif (feature_reference, feature_name) in self.color_overrides:
+        if (feature_reference, feature_name) in self.color_overrides:
             color = self.color_overrides[feature_reference, feature_name]
+        elif feature_name in self.color_overrides:
+            color = self.color_overrides[feature_name]
         else:
             color = feature.attribute.get('color')
             if color is None:
@@ -480,14 +482,22 @@ class ReadDiagram():
         return color
 
     def get_feature_height(self, feature_reference, feature_name):
-        if feature_name in self.feature_heights:
-            height = self.feature_heights[feature_name]
-        elif (feature_reference, feature_name) in self.feature_heights:
+        if (feature_reference, feature_name) in self.feature_heights:
             height = self.feature_heights[feature_reference, feature_name]
+        elif feature_name in self.feature_heights:
+            height = self.feature_heights[feature_name]
         else:
             height = 1
 
         return height
+
+    def get_feature_label(self, feature_reference, feature_name):
+        if (feature_reference, feature_name) in self.label_overrides:
+            label = self.label_overrides[feature_reference, feature_name]
+        else:
+            label = self.label_overrides.get(feature_name, feature_name)
+
+        return label
 
     def draw_read_arrows(self):
         ''' Draw black arrows that represent the sequencing read or read pair. '''
@@ -1353,7 +1363,8 @@ class ReadDiagram():
 
                 if label_features:
                     name = feature.attribute['ID']
-                    label = self.label_overrides.get(name, name)
+
+                    label = self.get_feature_label(feature.seqname, name)
 
                     if label is None:
                         continue
