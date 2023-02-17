@@ -346,11 +346,14 @@ def build_target_info(base_dir, info, all_index_locations,
         right = right_al.reference_end
         return right - left
 
+    correct_orientation_pairs = sorted(correct_orientation_pairs, key=lambda pair: amplicon_length(*pair))
+
     if len(correct_orientation_pairs) > 1:
-        lengths = f'{sorted([amplicon_length(*pair) for pair in correct_orientation_pairs], reverse=True)}'
-        logging.warning(f'Multiple primer alignments found. Amplicon lengths: {lengths}')
+        logging.warning(f'Multiple primer alignments found.')
+        for left_al, right_al in correct_orientation_pairs:
+            logging.warning(f'Found {amplicon_length(left_al, right_al):,} nt amplicon on {left_al.reference_name} from {left_al.reference_start:,} to {right_al.reference_end - 1:,}')
         
-    left_al, right_al = max(correct_orientation_pairs, key=lambda pair: amplicon_length(*pair))
+    left_al, right_al = correct_orientation_pairs[0]
 
     region_fetcher = genomes.build_region_fetcher(index_locations['fasta'])
 
