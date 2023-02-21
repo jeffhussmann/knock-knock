@@ -75,7 +75,12 @@ def make_tables(args):
     if args.group:
         groups = args.group.split(',')
 
-        conditions = {'batch': groups}
+        conditions = {
+            'batch': groups,
+        }
+
+        if args.experiment_type is not None:
+            conditions['experiment_type'] = args.experiment_type
 
         knock_knock.table.make_self_contained_zip(args.project_directory,
                                                   conditions,
@@ -96,6 +101,8 @@ def make_tables(args):
             logging.info(f'Making {group}')
 
             conditions = {'batch': group}
+            if args.experiment_type is not None:
+                conditions['experiment_type'] = args.experiment_type
 
             knock_knock.table.make_self_contained_zip(args.project_directory,
                                                       conditions,
@@ -189,6 +196,7 @@ if __name__ == '__main__':
     parser_table.add_argument('--unsorted', action='store_true', help='don\'t sort samples')
     parser_table.add_argument('--arrayed', action='store_true', help='samples are organized as arrayed_experiment_groups')
     parser_table.add_argument('--vmax_multiple', type=float, default=1, help='fractional value that corresponds to full horizontal bar')
+    parser_table.add_argument('--experiment_type', help='experiment type to include')
     parser_table.set_defaults(func=make_tables)
 
     parser_targets = subparsers.add_parser('build-targets', help='build annotations of target locii')
