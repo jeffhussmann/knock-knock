@@ -42,7 +42,8 @@ class IlluminaExperiment(Experiment):
         
                 for fn in self.fns[k]:
                     if not fn.exists():
-                        logging.warning(f'{self.group} {self.sample_name} specifies non-existent {fn}')
+                        pass
+                        #logging.warning(f'{self.group} {self.sample_name} specifies non-existent {fn}')
 
         self.paired_end = 'R2' in self.description
 
@@ -393,32 +394,3 @@ class IlluminaExperiment(Experiment):
         self.generate_read_lengths()
 
         self.record_sanitized_category_names()
-
-    def process_old(self, stage):
-        try:
-            if stage == 'preprocess':
-                self.preprocess()
-
-            elif stage == 'align':
-                self.align()
-                
-            elif stage == 'categorize':
-                self.categorize_outcomes(read_type='stitched')
-                self.categorize_no_overlap_outcomes()
-
-                self.generate_outcome_counts()
-                self.generate_read_lengths()
-
-                self.extract_donor_microhomology_lengths()
-
-                self.record_sanitized_category_names()
-            
-            elif stage == 'visualize':
-                self.generate_figures()
-
-            else:
-                raise ValueError(f'invalid stage: {stage}')
-
-        except:
-            print(self.group, self.sample_name)
-            raise

@@ -92,10 +92,10 @@ def make_tables(args):
     else:
         groups = knock_knock.experiment.get_all_batches(args.project_directory)
 
-        results_dir = args.project_directory / 'results'
-        csv_fn = (results_dir / 'all_groups').with_suffix('.csv')
-        df = knock_knock.table.load_counts(args.project_directory, exclude_empty=False, arrayed=args.arrayed).T
-        df.to_csv(csv_fn)
+        #results_dir = args.project_directory / 'results'
+        #csv_fn = (results_dir / 'all_groups').with_suffix('.csv')
+        #df = knock_knock.table.load_counts(args.project_directory, exclude_empty=False, arrayed=args.arrayed).T
+        #df.to_csv(csv_fn)
 
         for group in groups:
             logging.info(f'Making {group}')
