@@ -1,0 +1,31 @@
+experiment_type: twin_prime
+target_info: PMID34887556_PAH-E4fe+1687
+target_info_kwargs:
+  sgRNAs: PAH_E4.2_45_EvoPreQ1;PAH_E4.4_43_EvoPreQ1
+expected_values:
+  017171944:0000000005:
+    category: intended edit
+    subcategory: replacement
+    note: clean
+  017171944:0000000003:
+    category: intended edit
+    subcategory: partial replacement
+    note: has a mismatch in the overlap region
+  017171944:0000000028:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: left RT'ed, right not RT'ed
+    note: tests whether a pegRNA extension alignment is incorrectly called when the
+      target alignment explains it better
+  017171944:0000000056:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: left RT'ed, right not RT'ed
+    note: rejoins close to left nick
+  017171944:0000000954:
+    category: duplication
+    subcategory: simple
+    note: was once incorrectly called a pegRNA extension alignment on the right
+  017171944:0000000722:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: left RT'ed, right not RT'ed
+    note: target alignment explains better than right pegRNA alignment, but right
+      extends slightly farther out

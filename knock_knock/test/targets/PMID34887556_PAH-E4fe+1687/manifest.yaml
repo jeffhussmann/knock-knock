@@ -1,0 +1,9 @@
+features_to_show:
+- - PAH-E4fe+1687
+  - forward_primer
+- - PAH-E4fe+1687
+  - reverse_primer
+genome_source: hg38
+sources:
+- PAH-E4fe+1687
+target: PAH-E4fe+1687

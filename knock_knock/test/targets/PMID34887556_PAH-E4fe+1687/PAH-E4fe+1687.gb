@@ -1,0 +1,41 @@
+LOCUS       PAH-E4fe+1687           1200 bp    DNA              UNK 01-JAN-1980
+DEFINITION  .
+ACCESSION   <unknown id>
+VERSION     <unknown id>
+KEYWORDS    .
+SOURCE      .
+  ORGANISM  .
+            .
+FEATURES             Location/Qualifiers
+     misc_feature    501..520
+                     /label="reverse_primer"
+                     /ApEinfo_fwdcolor="#9eafd2"
+     misc_feature    complement(681..700)
+                     /label="forward_primer"
+                     /ApEinfo_fwdcolor="#75C6A9"
+     misc_feature    complement(696..700)
+                     /label="sequencing_start"
+     misc_feature    complement(696..700)
+                     /label="anchor"
+ORIGIN
+        1 attctcatac ttaatgcacc aaccagtcat tcccacagta ttgtggatgc ttccaagact
+       61 ctcggtattc tcatacactg ttctttcagc cataagccct ctccgttcct tatctgaccc
+      121 gcatctccta ctcagttttt aagattcagt ttcaacgtcg ccactccccg ctgccccctg
+      181 cagttggcag agttgttagt acaggttgct gtttaccaag cacttgactt aaacctccat
+      241 agatgtacac aggcagaaac aatgatgatt tgcatctgtg tgtgtgtttg tgcatacaca
+      301 gacctagtat atagagacaa tagtttctgg acagtgattt atatttgctc ctacaaaaat
+      361 aatgaccatg ataatgatga tgacaataaa gtcttgctaa tttttcccag ccctcgtgta
+      421 aataggaaca caataagtgt ttgttgaaca agtgaacaag tacattgctc caagtagaga
+      481 aggtaagagg aagggagggg agtggaggag aggcactgaa aaaatctcat cctacgggcc
+      541 atggactcac agggtggtca gcatccagtt ccgctccata gctgagaatc tgattggcaa
+      601 atctgtccag ctcttgaatg gttcttggga accagggcac tgaaacacag agaaggcaac
+      661 gtcctgagta cagattggca gaacatggcc aaaggccttg ctgagatcag aagtggggat
+      721 cccagccaat ggtgatggca agtgggctgg cttccagata acccccaaat tactatcgtt
+      781 caaaagttaa actccatttt ccttagaaac cggttttaaa acccattccc aaatacattc
+      841 tctttcctgg agatgttctc tgaattatct caaaactcat ctccctccca cccgtcatgg
+      901 tagttttctt tgatggtttt ctttagcagc agaatttttt tcccttctgt cacccaggct
+      961 ggagtacagt tgcatgtgat cttggctcac tgaaacctct gcctcctggg ttcaagtgac
+     1021 tctcctgcct cagcctcccg agtagctggg attacaggtg cacgccatca tgcctgccca
+     1081 atttttgtag tttaggtaga ggcagagttc taccatgttg accaggctgg tctcaaactt
+     1141 ttgacctcag gtgacccacc cccttggcct cccaaagtgc tgggattaca ggcatgagcc
+//

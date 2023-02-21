@@ -1,0 +1,82 @@
+experiment_type: prime_editing_layout
+target_info: pPC1000
+target_info_kwargs:
+  sgRNAs: pegRNA_G6C_15;+50
+expected_values:
+  01:01101:001217:035916_:
+    category: wild type
+    subcategory: clean
+    note: wild type, no errors
+  01:01101:023547:034507_:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: includes scaffold
+    note: unintended rejoining, small amount of scaffold, rejoins with partially duplicated
+      HA_RT
+  01:01105:012093:004178_:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: includes scaffold
+    note: unintended rejoining, medium amount of scaffold, rejoins midway between
+      nicks
+  01:01105:012192:030968_:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: includes scaffold
+    note: unintended rejoining, medium amount of scaffold, with 3 mismatches
+  01:01105:012364:004022_:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: includes scaffold
+    note: unintended rejoining, medium amount of scaffold, rejoins well past +50 nick
+  01:01105:016206:031125_:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: includes scaffold
+    note: unintended rejoining, medium amount of scaffold, with mismatches in scaffold
+      and target
+  01:01102:007401:007639_:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: includes scaffold, no SNV
+    note: unintended rejoining, medium amount of scaffold but no intended SNV
+  01:01107:012427:010551_:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: no scaffold
+    note: unintended rejoining, no scaffold, rejoins with partially duplicated HA_RT
+  01:01123:032551:017942_:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: no scaffold
+    note: unintended rejoining, no scaffold, rejoins with fully duplicated HA_RT
+  01:01101:003667:009283_:
+    category: duplication
+    subcategory: simple
+    note: duplication of entire 5' overhang
+  01:01101:023511:010739_:
+    category: duplication
+    subcategory: simple
+    note: duplication of part of 5' overhang
+  01:01102:006316:026428_:
+    category: duplication
+    subcategory: simple
+    note: duplication of part of 5' overhang with a mismatch
+  01:01101:017806:036714_:
+    category: edit + indel
+    subcategory: duplication
+    note: duplication with edit, no errors
+  01:01103:013078:005603_:
+    category: edit + indel
+    subcategory: duplication
+    note: duplication with edit with 1 mismatch
+  01:01105:032208:029716_:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: no scaffold
+    note: also consistent with deletion between nicks that preserves both nicking target,
+      followed by intended edit
+  01:01101:022779:005055_:
+    category: deletion
+    subcategory: clean
+    note: deletion, 17 nts between nicks
+  01:01102:008558:017221_:
+    category: deletion
+    subcategory: mismatches
+    note: deletion, 17 nts between nicks plus 1 mismatch towards end
+  01:01117:010411:027070_:
+    category: multiple indels
+    subcategory: duplication + deletion
+    note: consistent with a duplication between nicks that preserves both nicking
+      targets, followed by deletion

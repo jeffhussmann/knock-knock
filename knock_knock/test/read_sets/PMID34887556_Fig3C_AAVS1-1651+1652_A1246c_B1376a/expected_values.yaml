@@ -1,0 +1,93 @@
+experiment_type: twin_prime
+target_info: PMID34887556_AAVS1-1651+1652
+target_info_kwargs:
+  sgRNAs: AAVS1_A1246c;AAVS1_B1376a
+expected_values:
+  017172022:0000000002:
+    category: intended edit
+    subcategory: replacement
+    note: n/a
+  017172022:0000000009:
+    category: intended edit
+    subcategory: replacement
+    note: single mismatch in overlap
+  017172022:0000000010:
+    category: wild type
+    subcategory: clean
+    note: n/a
+  017172022:0000000094:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: left RT'ed, right not RT'ed
+    note: rejoins between nicks
+  017172022:0000000237:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: left RT'ed, right not RT'ed
+    note: rejoins past right nick
+  017172022:0000000153:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: left RT'ed, right RT'ed
+    note: only 1 nt extra relative to intended edit
+  017172022:0000000910:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: left RT'ed, right RT'ed
+    note: duplication of entire overlap
+  017172022:0000000041:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: left not RT'ed, right RT'ed
+    note: rejoins past left nick
+  017172022:0000002297:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: left not RT'ed, right RT'ed
+    note: rejoing between nicks
+  017172022:0000000122:
+    category: unintended rejoining of overlap-extended sequence
+    subcategory: left RT'ed + overlap-extended, right RT'ed + overlap-extended
+    note: includes genomic sequence in both extension chains
+  017172022:0000000174:
+    category: unintended rejoining of overlap-extended sequence
+    subcategory: left RT'ed + overlap-extended, right RT'ed + overlap-extended
+    note: includes genomic sequence in right chain but not left
+  017172022:0000000801:
+    category: unintended rejoining of overlap-extended sequence
+    subcategory: left RT'ed + overlap-extended, right RT'ed + overlap-extended
+    note: includes genomic sequence in right chain but not left
+  017172022:0000001162:
+    category: unintended rejoining of overlap-extended sequence
+    subcategory: left RT'ed + overlap-extended, right RT'ed + overlap-extended
+    note: includes genomic sequence in left chain but not right
+  017172022:0000000766:
+    category: unintended rejoining of overlap-extended sequence
+    subcategory: left RT'ed + overlap-extended, right not RT'ed
+    note: rejoing between nicks
+  017172022:0000004181:
+    category: unintended rejoining of overlap-extended sequence
+    subcategory: left RT'ed + overlap-extended, right not RT'ed
+    note: includes substantial genomic sequence in extension chain
+  017172022:0000000467:
+    category: unintended rejoining of overlap-extended sequence
+    subcategory: left RT'ed, right RT'ed + overlap-extended
+    note: n/a
+  017172022:0000001666:
+    category: unintended rejoining of overlap-extended sequence
+    subcategory: left RT'ed, right RT'ed + overlap-extended
+    note: includes genomic sequence in right extension chain
+  017172022:0000003739:
+    category: unintended rejoining of overlap-extended sequence
+    subcategory: left RT'ed, right RT'ed + overlap-extended
+    note: includes substantial genomic sequence in right extension chain
+  017172022:0000005077:
+    category: unintended rejoining of overlap-extended sequence
+    subcategory: left RT'ed + overlap-extended, right RT'ed
+    note: includes genomic sequence in left extension chain
+  017172022:0000004088:
+    category: unintended rejoining of overlap-extended sequence
+    subcategory: left not RT'ed, right RT'ed + overlap-extended
+    note: rejoins between nicks
+  017172022:0000000692:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: left RT'ed, right not RT'ed
+    note: includes a spurious overlap-extension alignnment on the left side
+  017172022:0000004626:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: left RT'ed, right not RT'ed
+    note: includes a spurious overlap-extension alignnment on the left side

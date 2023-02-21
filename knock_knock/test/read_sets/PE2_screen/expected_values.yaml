@@ -1,0 +1,57 @@
+experiment_type: prime_editing_layout
+target_info: pPC1000
+target_info_kwargs:
+  sgRNAs: pegRNA_G6C_15
+expected_values:
+  01:01101:001280:016266_:
+    category: wild type
+    subcategory: clean
+    note: wild type, no errors
+  01:01101:001099:018897_34:
+    category: wild type
+    subcategory: mismatches
+    note: wild type with 3 mismatches towards end
+  01:01101:002600:012477_:
+    category: wild type
+    subcategory: mismatches
+    note: wild type with 1 mismatch towards middle
+  01:01102:005819:022216_:
+    category: wild type
+    subcategory: short indel far from cut
+    note: wild type with 1 nt deletion towards middle
+  01:01112:030020:002190_:
+    category: wild type
+    subcategory: short indel far from cut
+    note: wild type with 1 nt deletion towards end
+  01:01101:001515:027383_34:
+    category: intended edit
+    subcategory: SNV
+    note: intended SNV, no errors
+  01:01102:026106:033082_:
+    category: intended edit
+    subcategory: SNV + mismatches
+    note: intended SNV plus 1 mismatch towards middle
+  01:01103:011333:025222_:
+    category: intended edit
+    subcategory: SNV + mismatches
+    note: intended SNV plus 1 mismatch towards end
+  01:01106:007346:030937_:
+    category: extension from intended annealing
+    subcategory: n/a
+    note: dominant extension from intended annealing product from screen
+  01:01115:024261:032205_:
+    category: deletion
+    subcategory: clean
+    note: deletion, 15 nts near nick
+  01:01117:014922:022200_25:
+    category: deletion
+    subcategory: clean
+    note: deletion, 16 nts near nick
+  01:01101:019153:036417_:
+    category: deletion
+    subcategory: mismatches
+    note: deletion, 93 nts spanning nick plus 1 mismatch towards end
+  01:01153:022173:033724_:
+    category: deletion
+    subcategory: mismatches
+    note: deletion, 15 nts spanning nick plus 1 mismatch towards end

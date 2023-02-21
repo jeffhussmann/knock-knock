@@ -12,9 +12,6 @@ import knock_knock.target_info
 import knock_knock.outcome_record
 import knock_knock.outcome
 
-import repair_seq.pooled_layout
-import repair_seq.prime_editing_layout
-
 memoized_property = hits.utilities.memoized_property
 idx = pd.IndexSlice
 
@@ -211,7 +208,7 @@ class Ranges:
 
         with_edit_subcategories = [('edit + indel', 'edit + deletion')]
         def get_with_edit_deletion(outcome):
-            full_Outcome = repair_seq.prime_editing_layout.HDRPlusDeletionOutcome.from_string(outcome.details)
+            full_Outcome = knock_knock.layout.HDRPlusDeletionOutcome.from_string(outcome.details)
             deletion = full_Outcome.deletion_outcome.deletion
             return deletion
 
@@ -290,7 +287,7 @@ class Ranges:
                 total_reads += 1
                 if outcome.category == 'edit + indel' and outcome.subcategory == 'edit + deletion':
 
-                    full_Outcome = repair_seq.prime_editing_layout.HDRPlusDeletionOutcome.from_string(outcome.details)
+                    full_Outcome = knock_knock.layout.HDRPlusDeletionOutcome.from_string(outcome.details)
                     deletion = full_Outcome.deletion_outcome.deletion
 
                     start, end = deletion.starts_ats[0], deletion.ends_ats[0]
@@ -311,7 +308,7 @@ class Ranges:
             for outcome in exp.outcome_iter():
                 total_reads += 1
                 if outcome.category == 'duplication' and outcome.subcategory == 'simple':
-                    dup = repair_seq.prime_editing_layout.DuplicationOutcome.from_string(outcome.details)
+                    dup = knock_knock.layout.DuplicationOutcome.from_string(outcome.details)
 
                     start, end = sorted(dup.ref_junctions[0])
                     start += exp.target_info.anchor
@@ -371,7 +368,7 @@ class Ranges:
                     total_reads += 1
 
                 if (outcome.category, outcome.subcategory) in subcategories:
-                    lti = repair_seq.pooled_layout.LongTemplatedInsertionOutcome.from_string(outcome.details)
+                    lti = knock_knock.outcome.LongTemplatedInsertionOutcome.from_string(outcome.details)
 
                     if component == 'insertion':
                         left = lti.left_insertion_ref_bound
@@ -422,7 +419,7 @@ class Ranges:
                     total_reads += 1
 
                 if (outcome.category, outcome.subcategory) in subcategories:
-                    lti = repair_seq.pooled_layout.LongTemplatedInsertionOutcome.from_string(outcome.details)
+                    lti = knock_knock.outcome.LongTemplatedInsertionOutcome.from_string(outcome.details)
 
                     length = lti.insertion_length()
                     if min_length <= length <= max_length:
@@ -455,7 +452,7 @@ class Ranges:
                     if require_SNV and outcome.subcategory == 'no scaffold, no SNV':
                         continue
 
-                    lti = repair_seq.pooled_layout.LongTemplatedInsertionOutcome.from_string(outcome.details)
+                    lti = knock_knock.outcome.LongTemplatedInsertionOutcome.from_string(outcome.details)
 
                     if sequencing_direction == '-' and sgRNA_strand == '+':
                         donor_end = lti.left_insertion_ref_bound
@@ -494,7 +491,7 @@ class Ranges:
                 total_reads += 1
 
                 if outcome.category == 'donor misintegration' and outcome.subcategory == subcategory:
-                    lti = repair_seq.pooled_layout.LongTemplatedInsertionOutcome.from_string(outcome.details)
+                    lti = knock_knock.outcome.LongTemplatedInsertionOutcome.from_string(outcome.details)
 
                     if lti.left_gap == 0:
                         if 'left unintended' in subcategory:

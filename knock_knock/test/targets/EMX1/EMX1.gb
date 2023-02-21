@@ -1,0 +1,61 @@
+LOCUS       EMX1                    1277 bp    DNA              UNK 01-JAN-1980
+DEFINITION  .
+ACCESSION   <unknown id>
+VERSION     <unknown id>
+KEYWORDS    .
+SOURCE      .
+  ORGANISM  .
+            .
+FEATURES             Location/Qualifiers
+     misc_feature    501..520
+                     /label="forward_primer"
+                     /ApEinfo_fwdcolor="#75C6A9"
+     misc_feature    complement(759..777)
+                     /label="reverse_primer"
+                     /ApEinfo_fwdcolor="#9eafd2"
+     misc_feature    501..505
+                     /label="sequencing_start"
+     misc_feature    501..505
+                     /label="anchor"
+     sgRNA_SpCas9H840complement(680..699)
+                     /label="EMX1_3b_+14"
+                     /ApEinfo_fwdcolor="#c6c9d1"
+     sgRNA_SpCas9H840complement(693..711)
+                     /label="EMX1_3b_+27"
+                     /ApEinfo_fwdcolor="#c6c9d1"
+     sgRNA_SpCas9H840complement(719..737)
+                     /label="EMX1_3b_+53"
+                     /ApEinfo_fwdcolor="#c6c9d1"
+     sgRNA_SpCas9H840complement(746..765)
+                     /label="EMX1_3b_+80"
+                     /ApEinfo_fwdcolor="#c6c9d1"
+     sgRNA_SpCas9H840complement(550..568)
+                     /label="EMX1_3b_-116"
+                     /ApEinfo_fwdcolor="#c6c9d1"
+     sgRNA_SpCas9H840complement(609..627)
+                     /label="EMX1_3b_-57"
+                     /ApEinfo_fwdcolor="#c6c9d1"
+ORIGIN
+        1 gtctggctgt ccaggcactg ctcttgatat aaacaccacc tcctagttat gaaaccatgc
+       61 ccattctgcc tctctgtatg gaaaagagca tggggctggc ccgtggggtg gtgtccactt
+      121 taggccctgt gggagatcat gggaacccac gcagtgggtc ataggctctc tcatttacta
+      181 ctcacatcca ctctgtgaag aagcgattat gatctctcct ctagaaactc gtagagtccc
+      241 atgtctgccg gcttccagag cctgcactcc tccaccttgg cttggctttg ctggggctag
+      301 aggagctagg atgcacagca gctctgtgac cctttgtttg agaggaacag gaaaaccacc
+      361 cttctctctg gcccactgtg tcctcttcct gccctgccat ccccttctgt gaatgttaga
+      421 cccatgggag cagctggtca gaggggaccc cggcctgggg cccctaaccc tatgtagcct
+      481 cagtcttccc atcaggctct cagctcagcc tgagtgttga ggccccagtg gctgctctgg
+      541 gggcctcctg agtttctcat ctgtgcccct ccctccctgg cccaggtgaa ggtgtggttc
+      601 cagaaccgga ggacaaagta caaacggcag aagctggagg aggaagggcc tgagtccgag
+      661 cagaagaaga agggctccca tcacatcaac cggtggcgca ttgccacgaa gcaggccaat
+      721 ggggaggaca tcgatgtcac ctccaatgac tagggtgggc aaccacaaac ccacgagggc
+      781 agagtgctgc ttgctgctgg ccaggcccct gcgtgggccc aagctggact ctggccactc
+      841 cctggccagg ctttggggag gcctggagtc atggccccac agggcttgaa gcccggggcc
+      901 gccattgaca gagggacaag caatgggctg gctgaggcct gggaccactt ggccttctcc
+      961 tcggagagcc tgcctgcctg ggcgggcccg cccgccaccg cagcctccca gctgctctcc
+     1021 gtgtctccaa tctccctttt gttttgatgc atttctgttt taatttattt tccaggcacc
+     1081 actgtagttt agtgatcccc agtgtccccc ttccctatgg gaataataaa agtctctctc
+     1141 ttaatgacac gggcatccag ctccagcccc agagcctggg gtggtagatt ccggctctga
+     1201 gggccagtgg gggctggtag agcaaacgcg ttcagggcct gggagcctgg ggtggggtac
+     1261 tggtggaggg ggtcaag
+//

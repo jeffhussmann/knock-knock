@@ -1,0 +1,15 @@
+experiment_type: twin_prime
+target_info: PMID34887556_PAH-1696+1697
+target_info_kwargs:
+  sgRNAs: PAH_E7.2_34_EvoPreQ1;PAH_E7.5_34_EvoPreQ1
+expected_values:
+  017171854:0000000394:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: left RT'ed, right not RT'ed
+    note: tests whether a pegRNA extension alignment is incorrectly called on the
+      right when the target alignment explains it better
+  017171854:0000000499:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: left not RT'ed, right RT'ed
+    note: tests whether a pegRNA extension alignment is incorrectly called on the
+      left when the target alignment explains it better

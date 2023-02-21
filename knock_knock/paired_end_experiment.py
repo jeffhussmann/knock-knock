@@ -1,11 +1,9 @@
 import gzip
+import sys
 
 from hits import adapters, fastq, utilities
 
 memoized_property = utilities.memoized_property
-
-import knock_knock.illumina_experiment
-import repair_seq.pooled_layout
 
 class PairedEndExperiment:
     def __init__(self, *args, **kwargs):

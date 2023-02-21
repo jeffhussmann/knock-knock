@@ -1,0 +1,34 @@
+features_to_show:
+- - PAH_E7
+  - forward_primer
+- - PAH_E7
+  - reverse_primer
+- - PAH_E7
+  - sgRNA_PAH_E7.2_34_EvoPreQ1
+- - PAH_E7
+  - sgRNA_PAH_E7.5_34_EvoPreQ1
+- - PAH_E7.2_34_EvoPreQ1
+  - scaffold
+- - PAH_E7.2_34_EvoPreQ1
+  - protospacer
+- - PAH_E7.2_34_EvoPreQ1
+  - RTT
+- - PAH_E7.2_34_EvoPreQ1
+  - PBS
+- - PAH_E7.5_34_EvoPreQ1
+  - scaffold
+- - PAH_E7.5_34_EvoPreQ1
+  - protospacer
+- - PAH_E7.5_34_EvoPreQ1
+  - RTT
+- - PAH_E7.5_34_EvoPreQ1
+  - PBS
+genome_source: hg19
+pegRNAs:
+- PAH_E7.2_34_EvoPreQ1
+- PAH_E7.5_34_EvoPreQ1
+sources:
+- PAH_E7
+- PAH_E7.2_34_EvoPreQ1
+- PAH_E7.5_34_EvoPreQ1
+target: PAH_E7

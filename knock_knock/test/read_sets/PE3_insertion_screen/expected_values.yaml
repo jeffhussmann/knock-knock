@@ -1,0 +1,58 @@
+experiment_type: prime_editing_layout
+target_info: pPC1000
+target_info_kwargs:
+  sgRNAs: pPC1044
+  primer_names: gDNA_forward_primer;gDNA_reverse_primer
+expected_values:
+  01:01101:001334:030577_:
+    category: wild type
+    subcategory: clean
+    note: no mismatches
+  01:01101:001280:011005_:
+    category: intended edit
+    subcategory: insertion
+    note: has a mismatch in the PBS
+  01:01101:003730:022169_:
+    category: intended edit
+    subcategory: insertion
+    note: no mismatches
+  01:01101:003079:014278_:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: includes scaffold, no SNV
+    note: includes ~half of scaffold, rejoins in PAM
+  01:01101:005773:001470_:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: includes scaffold, no SNV
+    note: includes ~half of scaffold, rejoins past the PE3 nick
+  01:01101:004960:033786_:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: no scaffold, no SNV
+    note: includes ~half of HA_RT, rejoins just past the PAM
+  01:01111:024252:011052_:
+    category: duplication
+    subcategory: simple
+    note: duplication of full region between nicks
+  01:01105:006696:018756_:
+    category: intended edit
+    subcategory: insertion
+    note: has many low-quality mismatches
+  01:01243:019831:023375_:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: doesn't include insertion
+    note: has ~15 nts of scaffold
+  01:02209:021025:031610_:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: doesn't include insertion
+    note: has ~50 nts of scaffold
+  01:01104:018168:014888_:
+    category: duplication
+    subcategory: simple
+    note: at one point, incorrectly called unintended rejoining
+  01:02240:023565:026741_:
+    category: duplication
+    subcategory: simple
+    note: at one point, incorrectly called unintended rejoining
+  01:01107:024469:001783_:
+    category: edit + indel
+    subcategory: duplication
+    note: pegRNA alignment switches back to target, with mismatches afterwards

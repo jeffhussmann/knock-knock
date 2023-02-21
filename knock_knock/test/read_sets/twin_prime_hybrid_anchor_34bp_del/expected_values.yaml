@@ -1,0 +1,27 @@
+experiment_type: twin_prime
+target_info: pPC1655
+target_info_kwargs:
+  sgRNAs: sample14_pegRNA1;sample14_pegRNA2
+  sequencing_start_feature_name: forward_primer
+  primer_names: forward_primer;gDNA_reverse_primer
+expected_values:
+  01:01101:001897:013623:
+    category: wild type
+    subcategory: clean
+    note: n/a
+  01:01101:010087:016644:
+    category: intended edit
+    subcategory: deletion
+    note: n/a
+  01:01101:002008:015620:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: left RT'ed, right not RT'ed
+    note: the right extension al is ambiguous - not strictly required to explain the read, but has more MH to the left extension al than the target does.
+  01:01101:003084:013264:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: left RT'ed, right RT'ed
+    note: n/a
+  01:01101:004767:017579:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: left not RT'ed, right RT'ed
+    note: n/a

@@ -1,0 +1,41 @@
+experiment_type: twin_prime
+target_info: PMID34887556_HEK3
+target_info_kwargs:
+  sgRNAs: HEK3_DF_A_PD_del90nt;HEK3_DF_B_PD_del90nt
+expected_values:
+  017171774:0000000006:
+    category: wild type
+    subcategory: clean
+    note: n/a
+  017171774:0000000003:
+    category: intended edit
+    subcategory: deletion
+    note: primer overlaps spacer on right
+  017171774:0000000084:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: left not RT'ed, right RT'ed
+    note: pegRNA alignment reaches end of read
+  017171774:0000000125:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: left RT'ed, right not RT'ed
+    note: n/a
+  017171774:0000000127:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: left not RT'ed, right RT'ed
+    note: rejoins past the opposite nick
+  017171774:0000000596:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: left RT'ed, right RT'ed
+    note: n/a
+  017171774:0000001622:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: left RT'ed, right RT'ed
+    note: n/a
+  017171774:0000001263:
+    category: deletion
+    subcategory: clean
+    note: most but not all of the intended deletion
+  017171774:0000003022:
+    category: deletion
+    subcategory: clean
+    note: 1 nt away from the intended deletion

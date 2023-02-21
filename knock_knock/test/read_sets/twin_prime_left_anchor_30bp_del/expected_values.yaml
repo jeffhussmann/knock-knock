@@ -1,0 +1,23 @@
+experiment_type: twin_prime
+target_info: pPC1655
+target_info_kwargs:
+  sgRNAs: sample11_pegRNA1;sample11_pegRNA2
+  sequencing_start_feature_name: forward_primer
+  primer_names: forward_primer;gDNA_reverse_primer
+expected_values:
+  01:01101:001923:015256:
+    category: wild type
+    subcategory: clean
+    note: n/a
+  01:01101:013328:015966:
+    category: intended edit
+    subcategory: deletion
+    note: n/a
+  01:01101:017226:028572:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: left not RT'ed, right RT'ed
+    note: left target extends slightly farther than left pegRNA extension
+  01:01101:023201:008704:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: left RT'ed, right not RT'ed
+    note: n/a

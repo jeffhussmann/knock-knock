@@ -1,0 +1,19 @@
+experiment_type: twin_prime
+target_info: pPC1655
+target_info_kwargs:
+  sgRNAs: 220224_sample07_pegRNA1;220224_sample07_pegRNA2
+  sequencing_start_feature_name: forward_primer
+  primer_names: forward_primer;gDNA_reverse_primer
+expected_values:
+  01:01101:006274:010029:
+    category: intended edit
+    subcategory: replacement
+    note: single SNV that doesn't disrupt PAM
+  01:02101:014156:002790:
+    category: wild type
+    subcategory: mismatches
+    note: has a mismatch (but not the intended one) at the intended location
+  01:01101:010280:009502:
+    category: duplication
+    subcategory: simple
+    note: was once misclassified as unintended rejoining

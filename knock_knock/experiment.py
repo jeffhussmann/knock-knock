@@ -1658,10 +1658,10 @@ def get_exp_class(platform):
         from knock_knock.length_bias_experiment import LengthBiasExperiment
         exp_class = LengthBiasExperiment
     elif platform == 'prime':
-        from repair_seq.prime_editing_experiment import PrimeEditingExperiment
+        from knock_knock.prime_editing_experiment import PrimeEditingExperiment
         exp_class = PrimeEditingExperiment
     elif platform == 'twin_prime':
-        from repair_seq.prime_editing_experiment import TwinPrimeExperiment
+        from knock_knock.prime_editing_experiment import TwinPrimeExperiment
         exp_class = TwinPrimeExperiment
     else:
         exp_class = Experiment

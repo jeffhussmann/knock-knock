@@ -1,0 +1,21 @@
+experiment_type: prime_editing
+target_info: PMID31634902_RNF2
+target_info_kwargs:
+  sgRNAs: RNF2_4h_1CtoA_5GtoT;RNF2_4c_+41_nicking
+expected_values:
+  010287981:0000000003:
+    category: wild type
+    subcategory: clean
+    note: n/a
+  010287981:0000000001:
+    category: intended edit
+    subcategory: SNV
+    note: two SNVs
+  010287981:0000001016:
+    category: deletion
+    subcategory: clean
+    note: n/a
+  010287981:0000000542:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: includes scaffold
+    note: rejoins between nicks

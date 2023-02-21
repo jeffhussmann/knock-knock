@@ -1,0 +1,29 @@
+experiment_type: prime_editing
+target_info: PMID31634902_HEK3
+target_info_kwargs:
+  sgRNAs: HEK3_4g_del1-80;HEK3_4a_+90_nicking
+expected_values:
+  010288018:0000000028:
+    category: wild type
+    subcategory: clean
+    note: n/a
+  010288018:0000000007:
+    category: intended edit
+    subcategory: deletion
+    note: n/a
+  010288018:0000000119:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: no scaffold, no SNV
+    note: includes part of RTT, rejoins just upstream of nick
+  010288018:0000000045:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: includes scaffold, no SNV
+    note: formerly misclassified as edit + duplication
+  010288018:0000000126:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: includes scaffold, no SNV
+    note: formerly misclassified as edit + duplication
+  010288018:0000000052:
+    category: deletion
+    subcategory: clean
+    note: slightly longer than intended deletion

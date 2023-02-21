@@ -1,0 +1,29 @@
+LOCUS       HEK3_4f_1CTTins          122 bp    DNA              UNK 01-JAN-1980
+DEFINITION  .
+ACCESSION   <unknown id>
+VERSION     <unknown id>
+KEYWORDS    .
+SOURCE      .
+  ORGANISM  .
+            .
+FEATURES             Location/Qualifiers
+     misc_feature    1..20
+                     /label="protospacer"
+                     /ApEinfo_fwdcolor="lightgrey"
+     misc_feature    21..96
+                     /label="scaffold"
+                     /ApEinfo_fwdcolor="#b7e6d7"
+     misc_feature    97..122
+                     /label="extension"
+                     /ApEinfo_fwdcolor="#777777"
+     misc_feature    complement(110..122)
+                     /label="PBS"
+                     /ApEinfo_fwdcolor="#85dae9"
+     misc_feature    complement(97..109)
+                     /label="RTT"
+                     /ApEinfo_fwdcolor="#c7b0e3"
+ORIGIN
+        1 ggcccagact gagcacgtga gttttagagc tagaaatagc aagttaaaat aaggctagtc
+       61 cgttatcaac ttgaaaaagt gggaccgagt cggtcctctg ccatcaaagc gtgctcagtc
+      121 tg
+//

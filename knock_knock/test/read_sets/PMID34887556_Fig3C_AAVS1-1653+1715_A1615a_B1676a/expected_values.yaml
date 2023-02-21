@@ -1,0 +1,22 @@
+experiment_type: twin_prime
+target_info: PMID34887556_AAVS1-1653+1715
+target_info_kwargs:
+  sgRNAs: AAVS1_A1615a;AAVS1_B1676a
+expected_values:
+  017172212:0000000009:
+    category: intended edit
+    subcategory: replacement
+    note: includes a mismatch outside of the nicks
+  017172212:0000000002:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: left RT'ed, right RT'ed
+    note: n/a
+  017172212:0000000965:
+    category: unintended rejoining of overlap-extended sequence
+    subcategory: left not RT'ed, right RT'ed + overlap-extended
+    note: includes possibly spurious target alignment in the right side extension
+      chain
+  017172212:0000000380:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: left not RT'ed, right RT'ed
+    note: includes a spurious overlap-extension alignnment on the right side

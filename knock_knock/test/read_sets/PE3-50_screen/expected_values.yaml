@@ -1,0 +1,45 @@
+experiment_type: prime_editing_layout
+target_info: pPC1000
+target_info_kwargs:
+  sgRNAs: pegRNA_G6C_15;-50
+expected_values:
+  01:01101:001325:033786_34:
+    category: duplication
+    subcategory: simple
+    note: duplication of part of 3' overhang with mismatches
+  01:01101:002682:016908_:
+    category: duplication
+    subcategory: simple
+    note: duplication of part of 3' overhang with 1 mismatch toward beginning
+  01:01101:004580:021668_:
+    category: duplication
+    subcategory: iterated
+    note: iterated duplication, no mismatches
+  01:01101:007057:025394_:
+    category: duplication
+    subcategory: iterated
+    note: iterated duplication, no mismatches
+  01:01101:006912:025394_:
+    category: duplication
+    subcategory: complex
+    note: complex duplication, no mismatches
+  01:01101:004661:030483_:
+    category: deletion
+    subcategory: clean
+    note: deletion, 4 nts between nicks
+  01:01101:001633:026960_:
+    category: deletion
+    subcategory: mismatches
+    note: deletion, 34 nts with multiple mismatches
+  01:01101:009417:014481_:
+    category: multiple indels
+    subcategory: duplication + deletion
+    note: deletion spanning -50 nick
+  01:01104:026087:007216_:
+    category: multiple indels
+    subcategory: duplication + deletion
+    note: long deletion
+  01:01101:023131:013119_:
+    category: edit + indel
+    subcategory: duplication
+    note: duplication of part of 3' overhang with intended edit

@@ -14,8 +14,9 @@ import nbformat.v4 as nbf
 import PIL
 import tqdm
 
-from . import experiment
-from . import svg
+import knock_knock.arrayed_experiment_group
+import knock_knock.experiment
+import knock_knock.svg
 
 totals_all_row_label = (' ', 'Total reads')
 totals_relevant_row_label = (' ', 'Total relevant reads')
@@ -33,11 +34,10 @@ def load_counts(base_dir,
         groups_to_exclude = set()
 
     if arrayed:
-        from repair_seq import arrayed_experiment_group
-        exps = arrayed_experiment_group.get_all_experiments(base_dir, conditions=conditions) 
+        exps = knock_knock.arrayed_experiment_group.get_all_experiments(base_dir, conditions=conditions) 
 
     else:
-        exps = experiment.get_all_experiments(base_dir, conditions, groups_to_exclude=groups_to_exclude)
+        exps = knock_knock.experiment.get_all_experiments(base_dir, conditions, groups_to_exclude=groups_to_exclude)
 
     counts = {}
     no_outcomes = []
@@ -209,7 +209,7 @@ class ModalMaker(object):
     def make_length(self, exp, outcome=None, inline_images=True):
         modal_id = self.get_next_id()
         
-        svg_text = svg.length_plot_with_popovers(exp, outcome=outcome, container_selector=f'#{modal_id}', inline_images=inline_images)
+        svg_text = knock_knock.svg.length_plot_with_popovers(exp, outcome=outcome, container_selector=f'#{modal_id}', inline_images=inline_images)
         modal_div = modal_template.format(modal_id=modal_id, contents=svg_text, title=exp.name)
         
         return modal_div, modal_id
@@ -261,10 +261,9 @@ def make_table(base_dir,
         df = df.groupby(axis=1, level=0, sort=False).sum()
 
     if arrayed:
-        from repair_seq import arrayed_experiment_group
-        exps = arrayed_experiment_group.get_all_experiments(base_dir)
+        exps = knock_knock.arrayed_experiment_group.get_all_experiments(base_dir)
     else:
-        exps = experiment.get_all_experiments(base_dir, conditions=conditions, as_dictionary=True)
+        exps = knock_knock.experiment.get_all_experiments(base_dir, conditions=conditions, as_dictionary=True)
 
     modal_maker = ModalMaker()
 
@@ -509,10 +508,9 @@ def make_self_contained_zip(base_dir,
     fns_to_zip.append(pms_fn)
 
     if arrayed:
-        from repair_seq import arrayed_experiment_group
-        exps = arrayed_experiment_group.get_all_experiments(base_dir, conditions=conditions)
+        exps = knock_knock.arrayed_experiment_group.get_all_experiments(base_dir, conditions=conditions)
     else:
-        exps = experiment.get_all_experiments(base_dir, conditions)
+        exps = knock_knock.experiment.get_all_experiments(base_dir, conditions)
 
     exps_missing_files = defaultdict(list)
 

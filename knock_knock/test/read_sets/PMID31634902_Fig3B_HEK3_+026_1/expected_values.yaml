@@ -1,0 +1,38 @@
+experiment_type: prime_editing
+target_info: PMID31634902_HEK3
+target_info_kwargs:
+  sgRNAs: HEK3_3b;HEK3_3b_+26_nicking
+expected_values:
+  010287238:0000000010:
+    category: wild type
+    subcategory: clean
+    note: n/a
+  010287238:0000000003:
+    category: intended edit
+    subcategory: SNV
+    note: n/a
+  010287238:0000055494:
+    category: edit + indel
+    subcategory: deletion
+    note: once miscategorized as unintended annealing
+  010287238:0000000054:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: no scaffold
+    note: deletion removes part of RTT annealing region in target, could also be interpretted
+      as edit + deletion
+  010287238:0000000014:
+    category: edit + indel
+    subcategory: deletion
+    note: mismatch between edit and deletion
+  010287238:0000000182:
+    category: deletion
+    subcategory: mismatches
+    note: once miscategorized as unintended annealing
+  010287238:0000000371:
+    category: duplication
+    subcategory: simple
+    note: partial duplication of overhang
+  010287238:0000000211:
+    category: edit + indel
+    subcategory: duplication
+    note: mismatches to the right of the duplication junction

@@ -1,0 +1,21 @@
+experiment_type: prime_editing
+target_info: PMID31634902_FANCF
+target_info_kwargs:
+  sgRNAs: FANCF_4h_1AtoC_6GtoT;FANCF_4d_+48_nicking
+expected_values:
+  010288015:0000000009:
+    category: wild type
+    subcategory: clean
+    note: n/a
+  010288015:0000000002:
+    category: intended edit
+    subcategory: SNV
+    note: two SNVs
+  010288015:0000000531:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: includes scaffold
+    note: rejoins between nicks
+  010288015:0000007205:
+    category: unintended rejoining of RT'ed sequence
+    subcategory: includes scaffold, no SNV
+    note: rejoins at nick
