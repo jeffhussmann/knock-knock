@@ -337,3 +337,74 @@ class SingleExperimentExplorer(Explorer):
         self.populate_read_ids({'name': 'initial'})
 
         return selection_widget_keys
+
+class ArrayedGroupExplorer(Explorer):
+    def __init__(self,
+                 group,
+                 initial_condition=None,
+                 by_outcome=True,
+                 **plot_kwargs,
+                ):
+        self.group = group
+
+        if initial_condition is None and len(self.group.conditions) > 0:
+            initial_condition = self.group.conditions[0]
+
+        self.initial_condition = initial_condition
+
+        self.experiments = {}
+
+        super().__init__(by_outcome, **plot_kwargs)
+
+    def populate_replicates(self, change):
+        with self.output:
+            if len(self.group.conditions) > 0:
+                condition = self.widgets['condition'].value
+            else:
+                condition = tuple()
+
+            exps = self.group.condition_replicates(condition)
+
+            self.widgets['replicate'].options = [(exp.description['replicate'], exp) for exp in exps]
+            self.widgets['replicate'].index = 0
+
+    def get_current_experiment(self):
+        experiment = self.widgets['replicate'].value
+        return experiment
+
+    def set_up_read_selection_widgets(self):
+
+        selection_widget_keys = []
+
+        if len(self.group.conditions) > 0:
+            condition_options = [(', '.join(c) if isinstance(c, tuple) else c, c) for c in self.group.conditions] 
+            self.widgets.update({
+                'condition': Select(options=condition_options, value=self.initial_condition, layout=Layout(height='200px', width='300px')),
+            })
+            self.widgets['condition'].observe(self.populate_replicates, names='value')
+            selection_widget_keys.append('condition')
+
+        self.widgets.update({
+            'replicate': Select(options=[], layout=Layout(height='200px', width='150px')),
+        })
+
+        self.populate_replicates({'name': 'initial'})
+
+        selection_widget_keys.append('replicate')
+        
+        if self.by_outcome:
+            self.populate_categories({'name': 'initial'})
+            self.populate_subcategories({'name': 'initial'})
+
+            self.widgets['replicate'].observe(self.populate_categories, names='value')
+            self.widgets['category'].observe(self.populate_subcategories, names='value')
+            self.widgets['subcategory'].observe(self.populate_read_ids, names='value')
+            selection_widget_keys.extend(['category', 'subcategory'])
+        else:
+            self.widgets['replicate'].observe(self.populate_read_ids, names='value')
+
+        selection_widget_keys.append('read_id')
+
+        self.populate_read_ids({'name': 'initial'})
+
+        return selection_widget_keys

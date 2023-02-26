@@ -17,6 +17,11 @@ def read_csv(csv_fn, process=True):
         component_order = ['protospacer', 'scaffold', 'extension']
 
         for component in component_order:
+            # Files only containing non-pegRNAs may omit scaffold
+            # and extension columns.
+            if component not in df.columns:
+                df[component] = ''
+
             df[component] = df[component].str.upper()
 
         full_sequences = []

@@ -128,15 +128,17 @@ The next step is to provide information about which genomic location was targete
 `knock-knock` refers to the combination of a genomic location and associated homology donor as a *target*.
 Information about targets is stored in a directory called `targets` inside a project directory.
 
-Genomic location is specified by providing the name of genome targeted (which must exist in PROJECT_DIR/indices), the protospacer of the (SpCas9) sgRNA that was used for cutting, and the amplicon primers flanking the genomic location of this protospacer that were used to amplify the genomic DNA. 
+Genomic location is specified by providing the name of genome targeted (which must exist in `PROJECT_DIR/indices`), the protospacer of the sgRNA that was used for cutting, and the amplicon primers flanking the genomic location of this protospacer that were used to amplify the genomic DNA. 
 
 Targets are defined in a set of csv files inside the `targets` directory. A group of "parts-list" files `sgRNAs.csv`, `amplicon_primers.csv`, `donors.csv`, and `extra_sequences.csv` are used to register named sequences of each csv's corresponding type, and a master csv file `PROJECT_DIR/targets/targets.csv` defines each target using references to these named sequences.
+
+#### targets.csv
 
 A target is defined by filling out a row in `PROJECT_DIR/targets/targets.csv`, which must have the following columns:
 
 - `name`: a short, descriptive name for the target
 - `genome`: the name of the genome targeted (which must exist in `PROJECT_DIR/indices`)
-- `sgRNA_sequence`: name of the protospacer sequence that was cut. knock-knock can analyze data produces by cutting with multiple nearby guides in no-donor mode. If there are multiple guides, include all sgRNA names joined by semicolons.
+- `sgRNAs`: names of all sgRNAs/pegRNAs used with this target. If there are multiple sgRNAs, include all sgRNA names joined by semicolons.
 - `amplicon_primers`: name of the primer pair used to generate the amplicon for sequencing
 - `donor_sequence`: name of the homology-arm-containing donor, if any
 - `nonhomologous_donor_sequence`: name of the non-homology-arm containing donor, if any
@@ -144,41 +146,60 @@ A target is defined by filling out a row in `PROJECT_DIR/targets/targets.csv`, w
 
 As an example, the contents of the `targets.csv` file included with knock-knock's example data are:
 ```
-name,genome,sgRNA_sequence,donor_sequence,amplicon_primers,nonhomologous_donor_sequence,extra_sequences
+name,genome,sgRNAs,donor_sequence,amplicon_primers,nonhomologous_donor_sequence,extra_sequences
 BCAP31_GFP11_U_ILL,hg38,BCAP31,BCAP31_GFP11_U,BCAP31_ILL,,
 CLTA_GFP11_PCR_ILL,hg38,CLTA,CLTA_GFP11_PCR,CLTA_ILL,,
 RAB11A_150nt_plasmid,hg38,RAB11A,pML217_RAB11A-150HA,RAB11A_PAC,,
 RAB11A_150nt_PCR,hg38,RAB11A,RAB11A-150HA_PCR_donor,RAB11A_PAC,,
 ```
 
-Further details:
+#### sgRNAs.csv
 
-The `sgRNA_sequence` column of `targets.csv` should reference entries in `sgRNAs.csv`.
-Each row of `sgRNAs.csv` defines a single named sgRNA sequence, with columns `name` and `sgRNA_sequence`.
-sgRNA sequences should be given as 5' to 3' sequence and not include the PAM.
-They must exactly match a sequence in the targeted genome.
+The `sgRNAs` column of `targets.csv` should reference entries in `sgRNAs.csv`.
+
+Each row of `sgRNAs.csv` defines a single named sgRNA sequence, with columns `name`, `effector`, `protospacer`, `scaffold`, and `extension`.
+
+`effector` is the editing effector used with the sgRNA, which defines the location and sequence of the PAM and the offset of nick(s) relative to the PAM.
+Valid options are
+- SpCas9
+- SpCas9H840A
+- SpCas9N863A
+- SpCas9H840A_VRQR
+- SaCas9
+- SaCas9H840A
+- AsCas12a
+
+`protospacer` sequences should be given as 5' to 3' sequence and not include the PAM.
+They must match a sequence in the targeted genome between the relevant amplicon primers and be flanked by an appropriate PAM. A single mismatched base at the 5′ end of the protospacer is allowed.
+
+`scaffold` and `extension` columns are relevant for prime editing experiments, and can be omitted for non-prime-editing experiments.
 
 As an example, the contents of the `sgRNAs.csv` file included with knock-knock's example data are:
 ```
-name,sgRNA_sequence
-BCAP31,GATGGTCCCATGGACAAGA
-CLTA,GAACGGATCCAGCTCAGCCA
-RAB11A,GGTAGTCGTACTCGTCGTCG
+name,effector,protospacer
+BCAP31,SpCas9,GATGGTCCCATGGACAAGA
+CLTA,SpCas9,GAACGGATCCAGCTCAGCCA
+RAB11A,SpCas9,GGTAGTCGTACTCGTCGTCG
 ```
+
+#### amplicon_primers.csv
 
 The `amplicon_primers` column of `targets.csv` should reference entries in `amplicon_primers.csv`.
 Each row of `amplicon_primers.csv` defines a named amplicon primer pair, with columns `name` and `primer_sequences`.
-Primer sequences should be given as the 5' to 3' sequences of the primer pair (i.e. the two sequences should be on opposite strands) joined by a semicolon.
-If a primer pair is used together with an sgRNA, there must exist exact matches to the two primer sequences on opposite sides of the sgRNA sequence somewhere in the targeted genome.
+Primer sequences should be given as the 5' to 3' sequences of the primer pair (i.e. the two sequences should be on opposite strands), joined by a semicolon.
+Primers may include any adapters or Ns but should end in sequence that exactly matches the genome. 
+For Illumina data, list the primer corresponding to the R1 read first.
 
 As an example, the contents of the `amplicon_primers.csv` file included with knock-knock's example data are:
 
 ```
 name,amplicon_primer_sequences
-BCAP31_ILL,GCTGTTGTTAGGAGAGAGGGG;GGGAAGCAGAAGGGCACAAA
+BCAP31_ILL,GGGAAGCAGAAGGGCACAAA;GCTGTTGTTAGGAGAGAGGGG
 CLTA_ILL,ACCGGATACACGGGTAGGG;AGCCGGGTCTTCTTCGC
 RAB11A_PAC,GCAGTGAAGAAGCTCATTAAGACAAC;GAAGGTAGAGAGAGTTGCCAAATGG
 ```
+
+#### donors.csv
 
 The `donor_sequence` and `nonhomologous_donor_sequence` columns of `targets.csv` should reference entries in `donors.csv`.
 Rows of `donors.csv` define named donors, with columns `name`, `donor_type`, and `donor_sequence`.
@@ -186,7 +207,7 @@ If a donor is used in the `donor` column of a target definition, its sequence mu
 Setting `donor_type` to `plasmid` causes knock-knock to be aware that the sequence has a circular topology when processing alignments to it.
 
 
-As an example, the contents of the `donors.csv` file included with knock-knock's example data are:
+As an example, the (truncated) contents of the `donors.csv` file included with knock-knock's example data are:
 ```
 name,donor_type,donor_sequence
 BCAP31_GFP11_U,ssDNA,CTACTGCTGTGGGATTTCTGTCCCTTTCCAGGCTG...
@@ -195,10 +216,9 @@ pML217_RAB11A-150HA,plasmid,agcccgaccgctgcgccttatccggtaa...
 RAB11A-150HA_PCR_donor,PCR,GCCGGAAATGGCGCAGCGGCAGGGAGGGG...
 ```
 
-where the actual donor sequences have been truncated for display purposes.
+#### Building targets
 
-
-After filling out all target-specification csvs, run 
+After populating all target-specification csvs, run 
 ```
 knock-knock build_targets PROJECT_DIR
 ```
@@ -214,8 +234,9 @@ Every sample sheet should contain the columns:
 - `sample`: a short, descriptive name of the sample
 - `platform`: `illumina` or `pacbio`
 - `target_info`: the name of the target (which must have been built as described [above](#specifying-targets))
+- `sgRNAs`: the names of sgRNAs used for this sample, joined by semicolons. 
 - `supplemental_indices`: the name(s) of full genomes to which reads should be aligned, joined by semicolons. This should typically be the name of the targeted organism, plus e_coli if a plasmid donor produced in e. coli was used. Genome names referenced must exist in `PROJECT_DIR/indices` as described [above](#obtaining-reference-sequences-and-building-indices).
-- `color`: an optional color to associate with this sample in visualizations. Can be an integer or any string format that matplotlib recognizes (see [here](https://matplotlib.org/3.1.0/tutorials/colors/colors.html)).
+- `color`: an optional color to associate with this sample in visualizations. Can be an integer or any string format that matplotlib recognizes (see [here](https://matplotlib.org/stable/tutorials/colors/colors.html)).
 
 The columns used to specify which fastq files belong to each sample are different for Illumina and Pacbio sequencing runs.
 In both cases, all fastq files must be located in `PROJECT_DIR/data/EXAMPLE_GROUP/` and should be given with these leading directory components removed (i.e. as would be returned by `basename`). Fastq files can be gzipped. 
@@ -226,15 +247,15 @@ Pacbio sample sheets should contain column `CCS_fastq_fn`, which should specify 
 
 As examples, the contents of `data/illumina/sample_sheet.csv` in knock-knock's example data are:
 ```
-sample,platform,R1,R2,target_info,supplemental_indices,color
-B_ULT,illumina,BCAP31_ultramer_R1.fastq.gz,BCAP31_ultramer_R2.fastq.gz,BCAP31_GFP11_U_ILL,hg38,1
-C_PCR,illumina,CLTA_PCR_R1.fastq.gz,CLTA_PCR_R2.fastq.gz,CLTA_GFP11_PCR_ILL,hg38,2
+sample,platform,R1,R2,target_info,sgRNAs,supplemental_indices,color
+B_ULT,illumina,BCAP31_ultramer_R1.fastq.gz,BCAP31_ultramer_R2.fastq.gz,BCAP31_GFP11_U_ILL,BCAP31,hg38,1
+C_PCR,illumina,CLTA_PCR_R1.fastq.gz,CLTA_PCR_R2.fastq.gz,CLTA_GFP11_PCR_ILL,CLTA,hg38,2
 ```
 
 and the contents of `data/pacbio/sample_sheet.csv` are:
 ```
-sample,platform,CCS_fastq_fn,target_info,supplemental_indices,max_relevant_length,color
-R_plasmid,pacbio,RAB11A_plasmid.fastq.gz,RAB11A_150nt_plasmid,hg38;e_coli,6000,1
+sample,platform,CCS_fastq_fn,target_info,sgRNAs,supplemental_indices,max_relevant_length,color
+R_plasmid,pacbio,RAB11A_plasmid.fastq.gz,RAB11A_150nt_plasmid,RAB11A,hg38;e_coli,6000,1
 R_PCR,pacbio,RAB11A_PCR.fastq.gz,RAB11A_150nt_PCR,hg38;e_coli,6000,2
 ```
 

@@ -177,7 +177,7 @@ if __name__ == '__main__':
     parser_process.add_argument('group', help='group name')
     parser_process.add_argument('sample', help='sample name')
     parser_process.add_argument('--progress', const=tqdm.tqdm, action='store_const', help='show progress bars')
-    parser_process.add_argument('--stages', default='preprocess,align,categorize,visualize')
+    parser_process.add_argument('--stages', default='preprocess,align,categorize,generate_figures')
     parser_process.set_defaults(func=process)
 
     parser_parallel = subparsers.add_parser('parallel', help='process multiple samples in parallel')
@@ -185,7 +185,7 @@ if __name__ == '__main__':
     parser_parallel.add_argument('max_procs', type=int, help='maximum number of samples to process at once')
     parser_parallel.add_argument('--group', help='if specified, the single group name to process; if not specified, all groups will be processed')
     parser_parallel.add_argument('--conditions', type=yaml.safe_load, default={}, help='if specified, conditions that samples must satisfy to be processed, given as yaml; if not specified, all samples will be processed')
-    parser_parallel.add_argument('--stages', default='preprocess,align,categorize,visualize')
+    parser_parallel.add_argument('--stages', default='preprocess,align,categorize,generate_figures')
     parser_parallel.add_argument('--progress', const=tqdm.tqdm, action='store_const', help='show progress bars')
     parser_parallel.set_defaults(func=parallel)
 

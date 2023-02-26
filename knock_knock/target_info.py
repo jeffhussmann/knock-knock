@@ -184,7 +184,7 @@ class TargetInfo():
         self.min_relevant_length = min_relevant_length
 
     def __repr__(self):
-        if self.pegRNA_names is not None:
+        if len(self.pegRNA_names) > 0:
             representation = f'''\
                 TargetInfo:
                     name = {self.name}
@@ -218,7 +218,7 @@ class TargetInfo():
     def primary_protospacer(self):
         primary_protospacer = self.manifest.get('primary_protospacer')
         if primary_protospacer is None and len(self.protospacer_names) > 0:
-            if self.pegRNA_names is not None and len(self.pegRNA_names) > 0:
+            if len(self.pegRNA_names) > 0:
                 primary_protospacer = knock_knock.pegRNAs.protospacer_name(self.pegRNA_names[0])
             else:
                 primary_protospacer = self.protospacer_names[0]
@@ -447,7 +447,7 @@ class TargetInfo():
 
         features = {(f.seqname, f.attribute['ID']): f for f in gff_features if 'ID' in f.attribute}
 
-        if self.pegRNA_names is not None:
+        if len(self.pegRNA_names) > 0:
             for pegRNA_name in self.pegRNA_names:
                 pegRNA_features, target_features = knock_knock.pegRNAs.infer_features(pegRNA_name,
                                                                                       self.sgRNA_components[pegRNA_name],
@@ -539,7 +539,7 @@ class TargetInfo():
                 primer = (self.target, self.primers_by_side_of_target[side].attribute['ID'])
                 features_to_show.add(primer)
 
-                if self.homology_arms is not None and self.pegRNA_names is None:
+                if self.homology_arms is not None and len(self.pegRNA_names) == 0:
                     target_HA = (self.target, self.homology_arms[side]['target'].attribute['ID'])
                     features_to_show.add(target_HA)
 
@@ -549,7 +549,7 @@ class TargetInfo():
 
             features_to_show.update(set(self.PAM_features))
 
-        if self.pegRNA_names is not None:
+        if len(self.pegRNA_names) > 0:
             if len(self.pegRNA_programmed_insertion_features) > 0:
                 for insertion in self.pegRNA_programmed_insertion_features:
                     features_to_show.add((insertion.seqname, insertion.attribute['ID']))
@@ -585,7 +585,7 @@ class TargetInfo():
 
         seqs = {record.name: record.seq for record in fasta_records}
 
-        if self.pegRNA_names is not None:
+        if len(self.pegRNA_names) > 0:
             for pegRNA_name in self.pegRNA_names:
                 seqs[pegRNA_name] = self.sgRNA_components[pegRNA_name]['full_sequence']
 
@@ -959,10 +959,10 @@ class TargetInfo():
                 side of target (5/3),
                 expected side of read (left/right),
         '''
-        if self.donor is not None and self.pegRNA_names is not None:
+        if self.donor is not None and len(self.pegRNA_names) > 0:
             # integrase
             donor = None
-        elif self.donor is None and self.pegRNA_names is not None and len(self.pegRNA_names) == 1:
+        elif self.donor is None and len(self.pegRNA_names) == 1:
             donor = self.pegRNA_names[0]
         else:
             donor = self.donor
@@ -1021,9 +1021,7 @@ class TargetInfo():
                 seqs[source] = HA_seq
                 
             if seqs['target'] != seqs['donor']:
-                # May want to warn here:
-                #print(f'warning: {name} not identical sequence on target and donor')
-                pass
+                logging.warning(f'{name} not identical sequence on target and donor')
 
             paired_HAs[name] = HAs[name]
 
@@ -1196,7 +1194,7 @@ class TargetInfo():
             'donor': {},
         }
 
-        if self.donor is None and self.pegRNA_names is not None and len(self.pegRNA_names) == 1:
+        if self.donor is None and len(self.pegRNA_names) == 1:
             donor = self.pegRNA_names[0]
         else:
             donor = self.donor
@@ -1378,7 +1376,7 @@ class TargetInfo():
         if self.donor_SNVs is None:
             return None
 
-        if self.donor is None and self.pegRNA_names is not None and len(self.pegRNA_names) == 1:
+        if self.donor is None and len(self.pegRNA_names) == 1:
             donor = self.pegRNA_names[0]
         else:
             donor = self.donor
@@ -1539,7 +1537,7 @@ class TargetInfo():
 
     @memoized_property
     def intended_prime_edit_type(self):
-        if self.pegRNA_names is None or len(self.pegRNA_names) == 0:
+        if len(self.pegRNA_names) == 0:
             edit_type = None
         else:
             pegRNA_name = self.pegRNA_names[0]
@@ -1737,7 +1735,7 @@ class TargetInfo():
 
     @memoized_property
     def PBS_names_by_side_of_target(self):
-        if self.pegRNA_names is None:
+        if len(self.pegRNA_names) == 0:
             by_side = {}
         else:
             by_side = knock_knock.pegRNAs.PBS_names_by_side_of_target(self.pegRNA_names,
@@ -1786,7 +1784,7 @@ class TargetInfo():
 
     @memoized_property
     def pegRNA_intended_deletion(self):
-        if self.pegRNA_names is None or len(self.pegRNA_names) == 0:
+        if len(self.pegRNA_names) == 0:
             deletion = None
 
         elif len(self.pegRNA_names) == 1:
@@ -1811,7 +1809,7 @@ class TargetInfo():
 
     @memoized_property
     def is_prime_del(self):
-        if self.pegRNA_names is not None and len(self.pegRNA_names) == 2:
+        if len(self.pegRNA_names) == 2:
             results = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
                                                                      self.target,
                                                                      self.features,
@@ -1847,7 +1845,7 @@ class TargetInfo():
             ...,
         } 
         '''
-        if self.pegRNA_names is None or len(self.pegRNA_names) == 0:
+        if len(self.pegRNA_names) == 0:
             SNVs = None
 
         elif len(self.pegRNA_names) == 1:
@@ -1875,7 +1873,7 @@ class TargetInfo():
     def pegRNA_programmed_deletions(self):
         deletions = []
 
-        if self.pegRNA_names is not None:
+        if len(self.pegRNA_names) > 0:
             feature_names = []
 
             for pegRNA_name in self.pegRNA_names:
@@ -1894,7 +1892,7 @@ class TargetInfo():
     def pegRNA_programmed_insertion_features(self):
         insertions = []
 
-        if self.pegRNA_names is not None:
+        if len(self.pegRNA_names) > 0:
             for pegRNA_name in self.pegRNA_names:
                 feature_name = f'insertion_{pegRNA_name}'
                 if (pegRNA_name, feature_name) in self.features:

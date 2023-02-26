@@ -419,6 +419,8 @@ def build_target_info(base_dir, info, all_index_locations,
                   ),
     ]
 
+    # Note: the primer listed first is assumed to correspond to the expected
+    # start of sequencing reads.
     if left_al.query_name == 'primer_0':
         sequencing_start_feature_name = 'forward_primer'
     else:
@@ -444,10 +446,13 @@ def build_target_info(base_dir, info, all_index_locations,
 
     if has_donor:
         if not defer_HA_identification:
-            if len(protospacer_features) > 0:
+            if len(info['sgRNAs']) > 1:
                 raise ValueError
 
+            sgRNA_name, components = info['sgRNAs'][0]
+
             protospacer_feature = protospacer_features[0]
+            effector = target_info.effectors[components['effector']]
 
             # TODO: untested code branch here
             cut_after_offset = [offset for offset in effector.cut_after_offset if offset is not None][0]

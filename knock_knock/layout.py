@@ -2267,6 +2267,59 @@ class Layout(Categorizer):
 
         return MH_nts
 
+    def plot(self, relevant=True, manual_alignments=None, **manual_diagram_kwargs):
+        label_overrides = {}
+        label_offsets = {}
+        feature_heights = {}
+
+        if relevant and not self.categorized:
+            self.categorize()
+
+        ti = self.target_info
+        features_to_show = {*ti.features_to_show}
+
+        flip_target = ti.sequencing_direction == '-'
+
+        for name in ti.protospacer_names:
+            label_overrides[name] = 'protospacer'
+            label_offsets[name] = 1
+
+        label_overrides.update({feature_name: None for feature_name in ti.PAM_features})
+
+        features_to_show.update({(ti.target, name) for name in ti.protospacer_names})
+        features_to_show.update({(ti.target, name) for name in ti.PAM_features})
+
+        diagram_kwargs = dict(
+            draw_sequence=True,
+            flip_target=flip_target,
+            split_at_indels=True,
+            features_to_show=features_to_show,
+            label_offsets=label_offsets,
+            label_overrides=label_overrides,
+            inferred_amplicon_length=self.inferred_amplicon_length,
+            center_on_primers=True,
+            highlight_SNPs=True,
+            feature_heights=feature_heights,
+            layout_mode=self.mode,
+        )
+
+        for k, v in diagram_kwargs.items():
+            manual_diagram_kwargs.setdefault(k, v)
+
+        if manual_alignments is not None:
+            als_to_plot = manual_alignments
+        elif relevant:
+            als_to_plot = self.relevant_alignments
+        else:
+            als_to_plot = self.alignments
+
+        diagram = knock_knock.visualize.ReadDiagram(als_to_plot,
+                                                    ti,
+                                                    **manual_diagram_kwargs,
+                                                   )
+
+        return diagram
+
 class NonoverlappingPairLayout():
     def __init__(self, R1_als, R2_als, target_info):
         self.target_info = target_info

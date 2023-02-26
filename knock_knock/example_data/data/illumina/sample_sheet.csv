@@ -1,3 +1,3 @@
-sample,platform,R1,R2,target_info,supplemental_indices,color
-B_ULT,illumina,BCAP31_ultramer_R1.fastq.gz,BCAP31_ultramer_R2.fastq.gz,BCAP31_GFP11_U_ILL,hg38,1
-C_PCR,illumina,CLTA_PCR_R1.fastq.gz,CLTA_PCR_R2.fastq.gz,CLTA_GFP11_PCR_ILL,hg38,2
+sample,platform,R1,R2,target_info,sgRNAs,supplemental_indices,color
+B_ULT,illumina,BCAP31_ultramer_R1.fastq.gz,BCAP31_ultramer_R2.fastq.gz,BCAP31_GFP11_U_ILL,BCAP31,hg38,1
+C_PCR,illumina,CLTA_PCR_R1.fastq.gz,CLTA_PCR_R2.fastq.gz,CLTA_GFP11_PCR_ILL,CLTA,hg38,2

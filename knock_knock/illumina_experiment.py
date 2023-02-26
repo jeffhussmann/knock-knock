@@ -81,7 +81,7 @@ class IlluminaExperiment(Experiment):
     @property
     def read_types_to_align(self):
         return [
-            'stitched',
+            'stitched_by_name',
             'R1_no_overlap',
             'R2_no_overlap',
         ]

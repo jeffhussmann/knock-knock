@@ -220,6 +220,9 @@ class Experiment:
     def check_combined_read_length(self):
         pass
 
+    def make_nonredundant_sequence_fastq(self):
+        pass
+
     @memoized_property
     def fns_by_read_type(self):
         fns = defaultdict(dict)
@@ -1291,50 +1294,27 @@ class Experiment:
     def alignment_groups_to_diagrams(self,
                                      alignment_groups,
                                      num_examples,
-                                     relevant=True,
-                                     label_layout=False,
                                      **diagram_kwargs,
                                     ):
         subsample = utilities.reservoir_sample(alignment_groups, num_examples)
 
-        if relevant:
-            only_relevant = []
-
-            for qname, als in subsample:
-                if isinstance(als, dict):
-                    layout = layout_module.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
-                else:
-                    layout = self.categorizer(als, self.target_info, mode=self.layout_mode)
-
-                layout.categorize()
-                
-                only_relevant.append((qname, layout.relevant_alignments))
-
-            subsample = only_relevant
-
-        kwargs = dict(
-            label_layout=label_layout,
-            title='',
-        )
-        kwargs.update(diagram_kwargs)
+        kwargs = {**diagram_kwargs}
         
         for qname, als in subsample:
-            length = self.qname_to_inferred_length[qname]
-            length = None
 
             if isinstance(als, dict):
                 kwargs['read_label'] = 'sequencing read pair'
+                layout = layout_module.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
+            else:
+                layout = self.categorizer(als, self.target_info, mode=self.layout_mode)
 
             try:
-                d = visualize.ReadDiagram(als, self.target_info,
-                                          inferred_amplicon_length=length,
-                                          **kwargs,
-                                         )
+                diagram = layout.plot(title='', **kwargs)
             except:
-                print(als[0].query_name)
+                print(self.sample_name, qname)
                 raise
                 
-            yield d
+            yield diagram
 
     def generate_length_range_figures(self, specific_outcome=None, num_examples=1):
         by_length = defaultdict(lambda: utilities.ReservoirSampler(num_examples))

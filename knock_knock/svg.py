@@ -1,5 +1,4 @@
 import re
-import html
 import io
 import xml.etree.ElementTree as ET
 
@@ -8,8 +7,6 @@ import matplotlib
 if 'inline' not in matplotlib.get_backend():
     matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-
-from . import table, layout
 
 before_svg_template = '''\
 <head>
@@ -157,6 +154,8 @@ javascript:(function(){
 } )();'''
 
 def decorate_outcome_browser(exp, min_total_to_label=0.1):
+    import knock_knock.table
+
     fig = exp.plot_outcome_stratified_lengths(min_total_to_label=min_total_to_label)
     num_panels = len(fig.axes)
 
@@ -231,7 +230,7 @@ def decorate_outcome_browser(exp, min_total_to_label=0.1):
 
         if fn.exists() or not inline_images:
             if inline_images:
-                URI, width, height = table.fn_to_URI(fn)
+                URI, width, height = knock_knock.table.fn_to_URI(fn)
             else:
                 relative_path = fn.relative_to(exp.fns['results_dir'])
                 URI = str(relative_path)
@@ -319,80 +318,3 @@ def decorate_outcome_browser(exp, min_total_to_label=0.1):
         fh.write(before_svg_template(title=exp.sample_name))
         d.write(fh, encoding='unicode')
         fh.write(after_svg)
-
-def length_plot_with_popovers(exp,
-                              outcome=None,
-                              standalone=False,
-                              container_selector='body',
-                              x_lims=None,
-                              y_lims=None,
-                              inline_images=True,
-                             ):
-    fig = exp.length_distribution_figure(outcome=outcome, show_ranges=True, x_lims=x_lims, y_lims=y_lims)
-
-    with io.StringIO() as buf:
-        fig.savefig(buf, format='svg', bbox_inches='tight')
-        # skip matplotlib header lines
-        lines = buf.getvalue().splitlines(keepends=True)[4:]
-
-    plt.close(fig)
-
-    length_range_pattern = re.compile('<g id="length_range_(?P<outcome>.+)_(?P<start>\d+)_(?P<end>\d+)"')
-    output_lines = []
-
-    if outcome is None:
-        title = exp.name
-    else:
-        category, subcategory = outcome
-        title = f'{category}: {subcategory}'
-    if standalone:
-        output_lines.append(before_svg.format(title=title))
-
-    if outcome is None:
-        fns = exp.fns
-    else:
-        fns = exp.outcome_fns(outcome)
-
-    line_i = 0
-    while line_i < len(lines):
-        line = lines[line_i]
-        output_lines.append(line)
-
-        match = re.search(length_range_pattern, line)
-        if match:
-            outcome, start, end = match.groups()
-            fn = fns['length_range_figures'] / f'{start}_{end}.png'
-            if fn.exists():
-                if inline_images:
-                    URI, width, height = table.fn_to_URI(fn)
-                else:
-                    relative_path = fn.relative_to(fns['dir'])
-                    URI = str(relative_path)
-                    with PIL.Image.open(fn) as im:
-                        width, height = im.size
-
-                before_path = before_path_template.format(URI=URI,
-                                                          width=width,
-                                                          height=height,
-                                                          container_selector=container_selector,
-                                                         )
-                output_lines.append(before_path)
-                line_i += 1
-                line = lines[line_i]
-                while not line.endswith('/>\n'):
-                    output_lines.append(line)
-                    line_i += 1
-                    try:
-                        line = lines[line_i]
-                    except IndexError:
-                        print(line_i, len(lines))
-                        print(lines[-1])
-                        raise
-
-                output_lines.append(after_path)
-        line_i += 1
-
-    if standalone:
-        output_lines.append(after_svg)
-
-    return '\n'.join(output_lines)

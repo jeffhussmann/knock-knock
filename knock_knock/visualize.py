@@ -38,7 +38,6 @@ class ReadDiagram():
                  size_multiple=1,
                  draw_qualities=False,
                  draw_mismatches=True,
-                 draw_polyA=False,
                  draw_sequence=False,
                  draw_ref_sequences=False,
                  max_qual=41,
@@ -68,6 +67,7 @@ class ReadDiagram():
                  title=None,
                  title_y=1.02,
                  mode='normal',
+                 layout_mode='illumina',
                  label_differences=False,
                  label_overrides=None,
                  split_at_indels=False,
@@ -100,7 +100,6 @@ class ReadDiagram():
         self.size_multiple = size_multiple
         self.draw_qualities = draw_qualities
         self.draw_mismatches = draw_mismatches
-        self.draw_polyA = draw_polyA
         self.draw_sequence = draw_sequence
         self.draw_ref_sequences = draw_ref_sequences
         self.max_qual = max_qual
@@ -120,6 +119,7 @@ class ReadDiagram():
         self.hide_donor_alignments = hide_donor_alignments
         self.default_color = default_color
         self.mode = mode
+        self.layout_mode = layout_mode
         self.force_left_aligned = force_left_aligned
         self.force_right_aligned = force_right_aligned
         self.center_on_primers = center_on_primers
@@ -185,7 +185,7 @@ class ReadDiagram():
 
                 for al in als:
                     if al.reference_name in refs_to_split:
-                        split_als = layout_module.comprehensively_split_alignment(al, self.target_info, 'illumina', 1, 1)
+                        split_als = layout_module.comprehensively_split_alignment(al, self.target_info, self.layout_mode)
 
                         seq_bytes = self.target_info.reference_sequence_bytes[al.reference_name]
                         extended = [sw.extend_alignment(al, seq_bytes) for al in split_als]
@@ -445,6 +445,18 @@ class ReadDiagram():
             self.draw_target_and_donor()
 
         self.update_size()
+
+    @property
+    def seq(self):
+        seq = self.alignments[0].get_forward_sequence()
+        if self.reverse_complement:
+            seq = utilities.reverse_complement(seq)
+        return seq
+
+    @property
+    def R2_seq(self):
+        R2_seq = self.R2_alignments[0].get_forward_sequence()
+        return R2_seq
 
     @memoized_property
     def features(self):
@@ -1056,56 +1068,33 @@ class ReadDiagram():
                              size=int(np.floor(self.font_sizes['ref_label'] * 0.75)),
                             )
 
-        if self.draw_polyA:
-            seq = self.alignments[0].get_forward_sequence()
-            for b, color in [('A', 'red'), ('G', 'brown')]:
-                locations = utilities.homopolymer_lengths(seq, b)
-                for start, length in locations:
-                    if length > 10:
-                        ax.fill_between([start, start + length - 1], [self.max_y + self.arrow_height] * 2, [0] * 2, color=color, alpha=0.2)
-                        
-                        ax.annotate(f'poly{b}',
-                                    xy=(start + length / 2, 0),
-                                    xycoords='data',
-                                    xytext=(0, self.text_y),
-                                    textcoords='offset points',
-                                    va='top',
-                                    ha='center',
-                                    color=color,
-                                    alpha=0.4,
-                                    size=10,
-                                    weight='bold',
-                                   )
-                        
         if self.draw_sequence:
-            seq = self.alignments[0].get_forward_sequence()
-            if self.reverse_complement:
-                seq = utilities.reverse_complement(seq)
-
             # Note that query_interval is relative to reverse complement if relevant.
             start, end = self.query_interval
-            seq = seq[start:end + 1]
+            seq_to_draw = self.seq[start:end + 1]
 
-            seq_kwargs = dict(family='monospace',
-                              size=self.font_sizes['sequence'],
-                              ha='center',
-                              textcoords='offset points',
-                              va='top',
-                              xytext=(0, -2 * self.size_multiple),
-                             )
+            # Drawing sequences for very long (i.e. Pabcio) reads is not
+            # useful, and takes a long time.
+            if len(seq_to_draw) <= 1000:
 
-            for x, b in zip(np.arange(start, end + 1), seq):
-                if self.min_x <= x <= self.max_x:
-                    ax.annotate(b, xy=(x, 0), **seq_kwargs)
-            
-            if self.R2_alignments is not None:
-                seq = utilities.reverse_complement(self.R2_alignments[0].get_forward_sequence())
+                seq_kwargs = dict(family='monospace',
+                                size=self.font_sizes['sequence'],
+                                ha='center',
+                                textcoords='offset points',
+                                va='top',
+                                xytext=(0, -2 * self.size_multiple),
+                                )
 
-                x_start = self.R2_query_start
-                for x_offset, b in enumerate(seq):
-                    x = x_start + x_offset
+                for x, b in zip(range(start, end + 1), seq_to_draw):
                     if self.min_x <= x <= self.max_x:
                         ax.annotate(b, xy=(x, 0), **seq_kwargs)
+                
+                if self.R2_alignments is not None:
+                    x_start = self.R2_query_start
+                    for x_offset, b in enumerate(self.R2_seq):
+                        x = x_start + x_offset
+                        if self.min_x <= x <= self.max_x:
+                            ax.annotate(b, xy=(x, 0), **seq_kwargs)
             
         return self.fig
 
