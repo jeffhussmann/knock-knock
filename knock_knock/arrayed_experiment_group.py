@@ -1038,6 +1038,8 @@ def make_group_descriptions_and_sample_sheet(base_dir, df, batch_name=None):
                         'replicate': rep_i,
                         'color': (condition_i * 10 + group_i), 
                     }
+                    if 'R2' in row:
+                        samples[row['sample_name']]['R2'] = Path(row['R2']).name
 
                     for full, short in zip(condition_columns, shortened_condition_columns):
                         samples[row['sample_name']][short] = row[full]
@@ -1050,6 +1052,8 @@ def make_group_descriptions_and_sample_sheet(base_dir, df, batch_name=None):
                     'replicate': rep_i,
                     'color': group_i,
                 }
+                if 'R2' in row:
+                    samples[row['sample_name']]['R2'] = Path(row['R2']).name
 
     if batch_name is None:
         fn_parents = {Path(fn).parent for fn in df['R1']}
