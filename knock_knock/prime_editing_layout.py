@@ -79,10 +79,6 @@ class Layout(layout.Categorizer):
              'duplication + insertion',
             ),
         ),
-        ('extension from intended annealing',
-            ('n/a',
-            ),
-        ),
         ('genomic insertion',
             ('hg19',
              'hg38',
@@ -1758,54 +1754,6 @@ class Layout(layout.Categorizer):
 
         relevant_alignments = details['full_alignments']
 
-        sequencing_direction = self.target_info.sequencing_direction
-        sgRNA_strand = self.target_info.protospacer_feature.strand
-
-        if sequencing_direction == '-' and sgRNA_strand == '+':
-            pegRNA_end = outcome.left_insertion_ref_bound
-            target_start = outcome.left_target_ref_bound
-
-        elif sequencing_direction == '-' and sgRNA_strand == '-':
-            pegRNA_end = outcome.right_insertion_ref_bound
-            target_start = outcome.right_target_ref_bound
-
-        elif sequencing_direction == '+' and sgRNA_strand == '+':
-            pegRNA_end = outcome.right_insertion_ref_bound
-            target_start = outcome.right_target_ref_bound
-
-        elif sequencing_direction == '+' and sgRNA_strand == '-':
-            pegRNA_end = outcome.left_insertion_ref_bound
-            target_start = outcome.left_target_ref_bound
-
-        else:
-            raise NotImplementedError
-
-        # 21.02.22 temp fix
-        if target_start is None:
-            target_start = len(self.target_info.target_sequence)
-
-        # paired_point represents a pegRNA and target position that
-        # should be matched with each other in the intended annealing.
-        paired_point = self.target_info.offset_to_HA_ref_ps[0]
-
-        # TODO: figure out how to remove use of 'donor' here
-        pegRNA_paired_point = paired_point['donor', 'PAM-distal']
-        target_paired_point = paired_point['target', 'PAM-distal']
-        
-        # extension always in negative direction in pegRNA coords
-        pegRNA_offset = pegRNA_paired_point - pegRNA_end
-
-        # extension direction in target coords depends on sgRNA strand
-        # paired_point is matched and we want offset to be difference from 
-        # switching right after matched
-        if sgRNA_strand == '+':
-            target_offset = target_start - (target_paired_point + 1)
-        else:
-            # Note: untested if off by 1 here.
-            target_offset = (target_paired_point - 1) - target_start
-
-        offset_from_intended_annealing = target_offset - pegRNA_offset
-
         if self.pegRNA_insertion_matches_intended:
             if details['longest_edge_deletion'] is None or details['longest_edge_deletion'].length <= 2:
                 self.category = 'intended edit'
@@ -1817,10 +1765,6 @@ class Layout(layout.Categorizer):
                 HDR_outcome = HDROutcome(self.pegRNA_SNV_string, [])
                 deletion_outcome = DeletionOutcome(details['longest_edge_deletion'])
                 outcome = HDRPlusDeletionOutcome(HDR_outcome, deletion_outcome)
-
-        elif np.abs(offset_from_intended_annealing) <= 1:
-            self.category = 'extension from intended annealing'
-            self.subcategory = 'n/a'
 
         else:
             self.category = 'unintended rejoining of RT\'ed sequence'
