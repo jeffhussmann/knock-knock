@@ -263,6 +263,9 @@ def build_target_info(base_dir, info, all_index_locations,
     primers_name, primers = info['amplicon_primers']
     primers = primers.split(';')
 
+    # Only align primer sequence downstream of any N's.
+    primers = [primer.upper().split('N')[-1] for primer in primers]
+
     target_dir = base_dir / 'targets' / ti_name
     target_dir.mkdir(parents=True, exist_ok=True)
 
