@@ -298,7 +298,7 @@ def build_target_info(base_dir, info, all_index_locations,
 
     # Retain only alignments that include the 3' end of the primer.
 
-    with pysam.AlignmentFile(bam_fn, 'rb') as bam_fh:
+    with pysam.AlignmentFile(bam_fn) as bam_fh:
         for al in bam_fh:
             covered = interval.get_covered(al)
             if len(al.query_sequence) - 1 in covered:
@@ -784,8 +784,10 @@ def download_genome_and_build_indices(base_dir, genome_name, num_threads=8):
         'hg38': 'http://hgdownload.cse.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz',
         'hg19': 'http://hgdownload.cse.ucsc.edu/goldenPath/hg19/bigZips/hg19.fa.gz',
         'bosTau7': 'http://hgdownload.cse.ucsc.edu/goldenPath/bosTau7/bigZips/bosTau7.fa.gz',
+        'macFas5': 'http://hgdownload.cse.ucsc.edu/goldenPath/macFas5/bigZips/macFas5.fa.gz',
         'mm10': 'ftp://ftp.ensembl.org/pub/release-98/fasta/mus_musculus/dna/Mus_musculus.GRCm38.dna.toplevel.fa.gz',
         'e_coli': 'ftp://ftp.ensemblgenomes.org/pub/bacteria/release-44/fasta/bacteria_0_collection/escherichia_coli_str_k_12_substr_mg1655/dna/Escherichia_coli_str_k_12_substr_mg1655.ASM584v2.dna.chromosome.Chromosome.fa.gz',
+        'phiX': 'https://webdata.illumina.com/downloads/productfiles/igenomes/phix/PhiX_Illumina_RTA.tar.gz',
     }
 
     if genome_name not in urls:
@@ -813,12 +815,29 @@ def download_genome_and_build_indices(base_dir, genome_name, num_threads=8):
 
     file_name = Path(urlparse(urls[genome_name]).path).name
 
-    gunzip_command = [
-        'gunzip', '--force',  str(fasta_dir / file_name),
-    ]
-    subprocess.run(gunzip_command, check=True)
+    if genome_name == 'phiX':
+        tar_command = [
+            'tar', 'xz',  f'--file={fasta_dir / file_name}', f'--directory={fasta_dir}',
+        ]
+        subprocess.run(tar_command, check=True)
 
-    if genome_name == 'e_coli':
+        extracted_path = fasta_dir / 'PhiX' / 'Illumina' / 'RTA' / 'Sequence' / 'Chromosomes' / 'phix.fa'
+        new_path = fasta_dir / 'phix.fa'
+        extracted_path.rename(new_path)
+
+        shutil.rmtree(fasta_dir / 'PhiX')
+        (fasta_dir / 'README.txt').unlink()
+
+        for tar_gz_fn in fasta_dir.glob('*.tar.gz'):
+            tar_gz_fn.unlink()
+
+    else:
+        gunzip_command = [
+            'gunzip', '--force',  str(fasta_dir / file_name),
+        ]
+        subprocess.run(gunzip_command, check=True)
+
+    if genome_name in ['e_coli', 'phiX']:
         STAR_index_kwargs = {
             'wonky_param': 4,
         }
