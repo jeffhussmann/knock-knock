@@ -44,8 +44,7 @@ class Batch:
         self.only_edited = only_edited
 
         self.sample_sheet_fn = self.data_dir / 'sample_sheet.csv'
-        self.sample_sheet = pd.read_csv(self.sample_sheet_fn, index_col='sample_name')
-        self.sample_sheet.index = self.sample_sheet.index.astype(str)
+        self.sample_sheet = pd.read_csv(self.sample_sheet_fn, index_col='sample_name', dtype=str)
 
         self.group_descriptions_fn = self.data_dir / 'group_descriptions.csv'
         self.group_descriptions = pd.read_csv(self.group_descriptions_fn, index_col='group').replace({np.nan: None})
@@ -438,7 +437,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
         # Empirically, overall editing rates can vary considerably across arrayed 
         # experiments, presumably due to nucleofection efficiency. If self.only_edited
-        # is true, exlcude unedited reads from outcome counting.
+        # is true, exclude unedited reads from outcome counting.
         if self.only_edited:
             to_drop.append('wild type')
 
@@ -960,14 +959,18 @@ def make_targets(base_dir, df, extra_genbanks=None):
 
     targets = {}
 
-    for amplicon_primers, rows in df.groupby('amplicon_primers'):
+    grouped = df.groupby(['amplicon_primers', 'genome'])
+
+    for (amplicon_primers, genome), rows in grouped:
         all_sgRNAs = set()
         for sgRNAs in rows['sgRNAs']:
             if sgRNAs != '':
                 all_sgRNAs.update(sgRNAs.split(';'))
 
-        targets[amplicon_primers] = {
-            'genome': 'hg38',
+        target_info_name = f'{amplicon_primers}_{genome}'
+
+        targets[target_info_name] = {
+            'genome': genome,
             'amplicon_primers': amplicon_primers,
             'sgRNAs': ';'.join(all_sgRNAs),
             'extra_genbanks': ';'.join(extra_genbanks),
@@ -990,36 +993,46 @@ def make_group_descriptions_and_sample_sheet(base_dir, df, batch_name=None):
     if 'donor' not in df.columns:
         df['donor'] = ''
 
+    # Default to hg38 if genome column isn't present.
+    if 'genome' not in df.columns:
+        df['genome'] = 'hg38'
+
+    valid_supplemental_indices = sorted(knock_knock.target_info.locate_supplemental_indices(base_dir))
+
     groups = {}
     samples = {}
 
     condition_columns = [column for column in df.columns if column.startswith('condition:')]
     shortened_condition_columns = [column[len('condition:'):] for column in condition_columns]
 
-    grouped = df.groupby(['amplicon_primers', 'sgRNAs', 'donor'])
+    grouped = df.groupby(['amplicon_primers', 'genome', 'sgRNAs', 'donor'])
 
-    for group_i, ((amplicon_primers, sgRNAs, donor), group_rows) in enumerate(grouped, 1):
-        group_name = f'{amplicon_primers}_{sgRNAs}_{donor}'
+    for group_i, ((amplicon_primers, genome, sgRNAs, donor), group_rows) in enumerate(grouped, 1):
+        target_info_name = f'{amplicon_primers}_{genome}'
+
+        group_name = f'{target_info_name}_{sgRNAs}_{donor}'
         group_name = group_name.replace(';', '+')
-
-        target_info_name = amplicon_primers
 
         ti = knock_knock.target_info.TargetInfo(base_dir, target_info_name, sgRNAs=sgRNAs)
         
         if ti.pegRNA_names is None or len(ti.pegRNA_names) <= 1:
             experiment_type = 'prime_editing'
+
         elif len(ti.pegRNA_names) == 2:
             if donor == '':
                 experiment_type = 'twin_prime'
             else:
                 experiment_type = 'Bxb1_twin_prime'
+
         else:
             raise ValueError
 
         baseline_condition = ';'.join(map(str, tuple(group_rows[condition_columns].iloc[0])))
 
+        supplemental_indices = [name for name in {genome, 'hg38', 'phiX'} if name in valid_supplemental_indices]
+
         groups[group_name] = {
-            'supplemental_indices': 'hg38',
+            'supplemental_indices': ';'.join(supplemental_indices),
             'experiment_type': experiment_type,
             'target_info': target_info_name,
             'sgRNAs': sgRNAs,
