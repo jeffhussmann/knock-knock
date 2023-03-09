@@ -384,6 +384,10 @@ class IlluminaExperiment(Experiment):
 
         for read_type in self.read_types_to_align:
             self.generate_alignments(read_type)
+
+            if 'phiX' in self.supplemental_index_names:
+                self.generate_supplemental_alignments_with_blast('phiX', read_type)
+
             self.generate_supplemental_alignments_with_STAR(read_type)
             self.combine_alignments(read_type)
 

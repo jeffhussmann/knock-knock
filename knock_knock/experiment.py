@@ -22,7 +22,7 @@ import pysam
 import yaml
 
 import hits.visualize
-from hits import sam, fastq, utilities, mapping_tools
+from hits import fastq, genomes, mapping_tools, sam, utilities
 from hits.utilities import memoized_property
 
 from . import target_info, blast, visualize, outcome_record, svg, table, explore
@@ -427,11 +427,64 @@ class Experiment:
         
         for fn in bam_by_name_fns:
             fn.unlink()
-    
+
+    def generate_supplemental_alignments_with_blast(self, index_name, read_type=None):
+        reads = self.reads_by_type(read_type)
+
+        bam_fns = []
+
+        base_bam_fn = self.fns_by_read_type['supplemental_bam'][read_type, index_name]
+        base_bam_by_name_fn = self.fns_by_read_type['supplemental_bam_by_name'][read_type, index_name]
+
+        fasta_dir = self.supplemental_indices[index_name]['fasta']
+        ref_seqs = genomes.load_entire_genome(fasta_dir)
+
+        for i, chunk in enumerate(utilities.chunks(reads, 10000)):
+            suffix = f'.{i:06d}.bam'
+            bam_fn = base_bam_fn.with_suffix(suffix)
+
+            blast.blast(ref_seqs,
+                        chunk,
+                        bam_fn,
+                        max_insertion_length=self.max_insertion_length,
+                       )
+
+            bam_fns.append(bam_fn)
+
+        if len(bam_fns) == 0:
+            # There weren't any reads. Make empty bam files.
+            for fn in [base_bam_fn]:
+                with pysam.AlignmentFile(fn, 'wb', header=self.target_info.header) as fh:
+                    pass
+
+        else:
+            sam.merge_sorted_bam_files(bam_fns, base_bam_fn)
+
+        for fn in bam_fns:
+            fn.unlink()
+            fn.with_suffix('.bam.bai').unlink()
+
+        saved_verbosity = pysam.set_verbosity(0)
+
+        with pysam.AlignmentFile(base_bam_fn) as all_mappings:
+            header = all_mappings.header
+            new_references = [f'{index_name}_{ref}' for ref in header.references]
+            new_header = pysam.AlignmentHeader.from_references(new_references, header.lengths)
+
+            by_name_sorter = sam.AlignmentSorter(base_bam_by_name_fn, new_header, by_name=True)
+
+            with by_name_sorter:
+                for al in all_mappings:
+                    by_name_sorter.write(al)
+
+        pysam.set_verbosity(saved_verbosity)
+        
     def generate_supplemental_alignments_with_STAR(self, read_type=None, min_length=None):
         for index_name in self.supplemental_indices:
-            if not self.silent:
-                print(f'Generating {read_type} supplemental alignments to {index_name}...')
+            if index_name == 'phiX':
+                continue
+
+            logging.info(f'Generating {read_type} supplemental alignments to {index_name}...')
 
             fastq_fn = self.fns_by_read_type['fastq'][read_type]
             STAR_prefix = self.fns_by_read_type['supplemental_STAR_prefix'][read_type, index_name]

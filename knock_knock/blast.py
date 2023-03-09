@@ -25,7 +25,10 @@ def blast(ref_fn,
         bam_by_name_fn: path to write query name-sorted alignments
         max_insertion_length: If not None, any alignments with insertions longer than max_insertion_length will be split into multiple alignments.
     '''
+    saved_verbosity = pysam.set_verbosity(0)
+
     with tempfile.TemporaryDirectory(suffix='_blast', dir=manual_temp_dir) as temp_dir:
+
         temp_dir_path = Path(temp_dir)
 
         if isinstance(ref_fn, dict):
@@ -153,5 +156,7 @@ def blast(ref_fn,
                         by_name_sorter.write(unal)
                     if return_alignments:
                         alignments.append(unal)
+
+        pysam.set_verbosity(saved_verbosity)
 
         return alignments

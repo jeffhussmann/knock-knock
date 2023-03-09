@@ -3,7 +3,7 @@ from collections import Counter, defaultdict
 import numpy as np
 import pysam
 
-from hits import interval, sam, utilities, sw, fastq
+from hits import fastq, genomes, interval, sam, sw, utilities, sw
 from hits.utilities import memoized_property
 
 import knock_knock.pegRNAs
@@ -145,9 +145,6 @@ class Layout(layout.Categorizer):
         
         self.relevant_alignments = self.alignments
 
-        # 22.01.04: This should probably be 1 - only makes sense to be >1 for DSBs.
-        # 22.02.03: doing so breaks current extension from intended annealing logic.
-        # 22.09.26: Trying again!
         self.ins_size_to_split_at = 1
         self.del_size_to_split_at = 1
 
@@ -723,7 +720,16 @@ class Layout(layout.Categorizer):
         for supp_al in supp_als:
             split_als.extend(sam.split_at_large_insertions(supp_al, 2))
         
-        few_mismatches = [al for al in split_als if sam.total_edit_distance(al) / al.query_alignment_length < 0.2]
+        few_mismatches = []
+        # Alignments generated with STAR will have MD tags, but alignments
+        # generated with blastn will not. TODO: pass ref seq along for non-MD-tag
+        # alignments.
+        for al in split_als:
+            if al.has_tag('MD'):
+                if sam.total_edit_distance(al) / al.query_alignment_length < 0.2:
+                    few_mismatches.append(al)
+            else:
+                few_mismatches.append(al)
 
         # Convert relevant supp als to target als, but ignore any that fall largely within the amplicon interval.
         ti = self.target_info
@@ -1544,11 +1550,15 @@ class Layout(layout.Categorizer):
                     not_covered_by_any_target_als = self.whole_read - interval.get_disjoint_covered(target_als)
 
                     if not_covered_by_any_target_als.total_length >= 100:
+                        ref_seqs = {**self.target_info.reference_sequences}
+                        if 'phiX' in self.target_info.supplemental_indices:
+                            ref_seqs.update(self.target_info.supplemental_reference_sequences('phiX'))
+
                         for al in self.supplemental_alignments:
                             covered_by_al = interval.get_covered(al)
                             if (self.not_covered_by_primers - covered_by_al).total_length == 0:
                                 cropped_al = sam.crop_al_to_query_int(al, self.not_covered_by_primers.start, self.not_covered_by_primers.end)
-                                total_edits = sum(knock_knock.layout.edit_positions(cropped_al, self.target_info.reference_sequences, use_deletion_length=True))
+                                total_edits = sum(knock_knock.layout.edit_positions(cropped_al, ref_seqs, use_deletion_length=True))
                                 if total_edits <= 5:
                                     covering_als.append(al)
 
@@ -1863,19 +1873,23 @@ class Layout(layout.Categorizer):
         # For performance reasons, only compute some properties on possible insertions that haven't
         # already been ruled out.
 
+        ref_seqs = {**self.target_info.reference_sequences}
+        if 'phiX' in self.target_info.supplemental_indices:
+            ref_seqs.update(self.target_info.supplemental_reference_sequences('phiX'))
+
         for details in ranked:
             MH_lengths = {}
 
             if details['edge_alignments']['left'] is None:
                 MH_lengths['left'] = None
             else:
-                MH_lengths['left'] = layout.junction_microhomology(self.target_info.reference_sequences, details['edge_alignments']['left'], details['candidate_alignment'])
+                MH_lengths['left'] = layout.junction_microhomology(ref_seqs, details['edge_alignments']['left'], details['candidate_alignment'])
 
             if details['edge_alignments']['right'] is None:
                 MH_lengths['right'] = None
             else:
 
-                MH_lengths['right'] = layout.junction_microhomology(self.target_info.reference_sequences, details['candidate_alignment'], details['edge_alignments']['right'])
+                MH_lengths['right'] = layout.junction_microhomology(ref_seqs, details['candidate_alignment'], details['edge_alignments']['right'])
 
             details['MH_lengths'] = MH_lengths
 
@@ -1887,7 +1901,10 @@ class Layout(layout.Categorizer):
         details = {'source': source}
 
         candidate_ref_seq = ti.reference_sequences.get(candidate_al.reference_name)
-        
+
+        if candidate_ref_seq is None and 'phiX' in ti.supplemental_indices:
+            candidate_ref_seq = ti.supplemental_reference_sequences('phiX').get(candidate_al.reference_name)
+
         # Find the locations on the query at which switching from edge alignments to the
         # candidate and then back again minimizes the edit distance incurred.
 
@@ -2889,9 +2906,9 @@ class Layout(layout.Categorizer):
         return manual_anchors
 
     def plot(self, relevant=True, manual_alignments=None, **manual_diagram_kwargs):
-        label_overrides = {}
-        label_offsets = {}
-        feature_heights = {}
+        label_overrides = manual_diagram_kwargs.pop('label_overrides', {})
+        label_offsets = manual_diagram_kwargs.pop('label_offsets', {})
+        feature_heights = manual_diagram_kwargs.pop('feature_heights', {})
 
         if relevant and not self.categorized:
             self.categorize()
@@ -2958,6 +2975,11 @@ class Layout(layout.Categorizer):
         if ti.pegRNA_names is not None:
             refs_to_draw.update(ti.pegRNA_names)
 
+        if 'phiX' in ti.supplemental_indices:
+            supplementary_reference_sequences = ti.supplemental_reference_sequences('phiX')
+        else:
+            supplementary_reference_sequences = None
+
         diagram_kwargs = dict(
             draw_sequence=True,
             flip_target=flip_target,
@@ -2971,6 +2993,7 @@ class Layout(layout.Categorizer):
             center_on_primers=True,
             highlight_SNPs=True,
             feature_heights=feature_heights,
+            supplementary_reference_sequences=supplementary_reference_sequences,
         )
 
         for k, v in diagram_kwargs.items():

@@ -14,7 +14,7 @@ import Bio.SeqIO
 import Bio.SeqUtils
 
 import hits.visualize
-from hits import fasta, gff, utilities, mapping_tools, interval, sam, sw, genomes
+from hits import fasta, genomes, gff, utilities, mapping_tools, interval, sam, sw
 
 import knock_knock.pegRNAs
 import knock_knock.integrases
@@ -236,6 +236,12 @@ class TargetInfo():
     def genomic_region_fetchers(self):
         fetchers = {name: genomes.build_region_fetcher(fns['fasta']) for name, fns in self.supplemental_indices.items()}
         return fetchers
+
+    @memoized_with_args
+    def supplemental_reference_sequences(self, name):
+        original_ref_seqs = genomes.load_entire_genome(self.supplemental_indices[name]['fasta'])
+        ref_seqs = {f'{name}_{ref_name}': seq for ref_name, seq in original_ref_seqs.items()}
+        return ref_seqs
 
     @memoized_property
     def protospacer_names(self):
