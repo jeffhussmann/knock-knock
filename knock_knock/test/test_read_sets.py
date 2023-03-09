@@ -18,14 +18,24 @@ memoized_property = hits.utilities.memoized_property
 
 base_dir = Path(__file__).parent
 
+def populate_source_dir(source_dir):
+    if source_dir is None:
+        source_dir = base_dir
+    return Path(source_dir)
+
 class ReadSet:
-    def __init__(self, name):
+    def __init__(self, name, source_dir=None):
         self.name = name
 
-        self.dir = base_dir / 'read_sets' / self.name
+        self.source_dir = populate_source_dir(source_dir)
+
+        self.dir = self.source_dir / 'read_sets' / self.name
         
         self.bam_fn =  self.dir / 'alignments.bam'
         self.expected_values_fn = self.dir / 'expected_values.yaml'
+
+    def __repr__(self):
+        return f'ReadSet {self.name} ({self.source_dir})'
 
     @memoized_property
     def details(self):
@@ -54,7 +64,7 @@ class ReadSet:
         supplemental_index_names = ['hg19', 'bosTau7', 'e_coli']
         supplemental_indices = knock_knock.target_info.locate_supplemental_indices(base_dir)
         supplemental_indices = {name: supplemental_indices[name] for name in supplemental_index_names}
-        target_info = knock_knock.target_info.TargetInfo(base_dir,
+        target_info = knock_knock.target_info.TargetInfo(self.source_dir,
                                                          target_info_name,
                                                          supplemental_indices=supplemental_indices,
                                                          **self.details.get('target_info_kwargs', {}),
@@ -99,11 +109,19 @@ class ReadSet:
 
             tested_layouts[result_key].append((layout, expected))
 
+        num_passed = len(tested_layouts['passed']) 
+        num_failed = len(tested_layouts['failed'])
+
+        print(f'Tested {num_passed + num_failed: >3d} sequences ({num_passed} passed, {num_failed} failed) for {self.name}.')
+
         return tested_layouts
 
-def get_all_read_sets():
-    read_set_names = sorted([d.name for d in (base_dir / 'read_sets').iterdir() if d.is_dir()])
-    read_sets = [ReadSet(name) for name in read_set_names]
+def get_all_read_sets(source_dir=None):
+    source_dir = populate_source_dir(source_dir)
+
+    read_set_names = sorted([d.name for d in (source_dir / 'read_sets').iterdir() if d.is_dir()])
+    read_sets = {name: ReadSet(name, source_dir=source_dir) for name in read_set_names}
+
     return read_sets
 
 def build_all_pooled_screen_read_sets(only_new=False):
@@ -197,11 +215,13 @@ def build_all_arrayed_group_read_sets(only_new=False):
         else:
             build_arrayed_group_read_set(set_name)
 
-def build_arrayed_group_read_set(set_name, prompt=True):
-    read_set_fn = base_dir / 'manual_read_sets' / 'arrayed_groups' / f'{set_name}.yaml'
+def build_arrayed_group_read_set(set_name, source_dir=None, prompt=True):
+    source_dir = populate_source_dir(source_dir)
+
+    read_set_fn = source_dir / 'manual_read_sets' / 'arrayed_groups' / f'{set_name}.yaml'
     manual_details = yaml.safe_load(read_set_fn.read_text())
 
-    read_set = ReadSet(set_name)
+    read_set = ReadSet(set_name, source_dir=source_dir)
 
     read_set.dir.mkdir(exist_ok=True, parents=True)
 
@@ -228,7 +248,7 @@ def build_arrayed_group_read_set(set_name, prompt=True):
         prefix = manual_details['target_info_prefix_to_add']
         new_target_info_name = f'{prefix}_{new_target_info_name}'
 
-    new_target_info_dir = base_dir / 'targets' / new_target_info_name
+    new_target_info_dir = source_dir / 'targets' / new_target_info_name
     existing_target_info_dir = exp.target_info.dir
 
     if new_target_info_dir.is_dir():
@@ -269,28 +289,26 @@ def process_read_set(set_name):
     read_set = ReadSet(set_name)
     return read_set.process()
 
-def test_read_sets():
-    read_sets = get_all_read_sets()
+def test_read_sets(source_dir=None):
+    source_dir = populate_source_dir(source_dir)
+
+    read_sets = get_all_read_sets(source_dir=source_dir)
 
     # Ensure that at least one read set was found. 
     assert len(read_sets) > 0
 
     discrepancies = []
 
-    # Delete each read_set after processing to avoid excessive memory usage.
-    while len(read_sets) > 0:
-        read_set = read_sets.pop(0)
+    for name in sorted(read_sets):
+        read_set = read_sets[name]
 
         tested_layouts = read_set.process()
-
-        num_tested = len(tested_layouts['passed']) + len(tested_layouts['failed'])
 
         for layout, expected in tested_layouts['failed']:
             discrepancies.append((read_set.name, layout.query_name, expected, layout.category, layout.subcategory))
 
-        print(f'Tested {num_tested: >3d} sequences for {read_set.name}.') 
-
-        del read_set
+        # Delete each read_set after processing to avoid excessive memory usage.
+        del read_sets[name]
 
     diagnostic_messages = []
 
