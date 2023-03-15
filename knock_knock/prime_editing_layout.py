@@ -3,11 +3,12 @@ from collections import Counter, defaultdict
 import numpy as np
 import pysam
 
-from hits import fastq, genomes, interval, sam, sw, utilities, sw
+from hits import fastq, interval, sam, sw, utilities, sw
 from hits.utilities import memoized_property
 
 import knock_knock.pegRNAs
 import knock_knock.target_info
+import knock_knock.visualize
 from knock_knock import layout
 
 from knock_knock.outcome import *
@@ -418,7 +419,7 @@ class Layout(layout.Categorizer):
 
         return chains
 
-    def characterize_extension_chain_on_side(self, side):
+    def characterize_extension_chain_on_side(self, side, verbose=False):
         als = {}
 
         target_edge_al = self.target_edge_alignments[side]
@@ -431,9 +432,10 @@ class Layout(layout.Categorizer):
             else:
                 shared_feature = 'RTT'
 
-            pegRNA_al, _, _ = self.find_pegRNA_alignment_extending_target_edge_al(side, shared_feature)
-            
+            pegRNA_al, _, cropped_target_al = self.find_pegRNA_alignment_extending_target_edge_al(side, shared_feature)
+
             if pegRNA_al is not None:
+                als['first target'] = cropped_target_al
                 als['pegRNA'] = pegRNA_al
                 
                 if side == self.pegRNA_side:
@@ -2062,6 +2064,11 @@ class Layout(layout.Categorizer):
 
             if distance_from_end > 0 and shared_HAs is not None and PAM_distal_paired_HA not in shared_HAs and insertion_skipping_paired_HA not in shared_HAs:
                 failures.append('doesn\'t share relevant HA')
+
+            # 23.03.12: This is a precursor to migrating unintended rejoining outcomes entirely to extension-chain based.
+
+            if self.extension_chain['description'] == "not RT'ed":
+                failures.append('no unambiguous extension')
 
         if gap_before_length > 0:
             failures.append(f'gap_before_length = {gap_before_length}')
