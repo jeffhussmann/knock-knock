@@ -1041,7 +1041,7 @@ class ReadDiagram():
 
         if self.draw_qualities:
             def quals_to_ys(quals):
-                return (np.array(quals) + 5) / self.max_qual * (self.initial_alignment_y_offset - 1) * self.gap_between_als
+                return (np.array(quals) + 5) / self.max_qual * 0.5 * self.initial_alignment_y_offset * self.gap_between_als
 
             qual_ys = quals_to_ys(self.alignments[0].get_forward_qualities())
 
@@ -1311,6 +1311,7 @@ class ReadDiagram():
                        interpolation='none',
                        zorder=3,
                        visible=visible,
+                       clip_on=False,
                       )
 
         # Draw features.
@@ -1348,6 +1349,7 @@ class ReadDiagram():
                                      color=final_feature_color,
                                      edgecolor='none',
                                      visible=visible,
+                                     clip_on=False,
                                     )
 
                 if label_features:
