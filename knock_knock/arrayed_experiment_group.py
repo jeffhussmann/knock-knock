@@ -933,6 +933,10 @@ def sanitize_and_validate_input(df):
     # unwanted empty rows into a csv), then replace any remaining nans with an empty string.
     df = df.dropna(axis='index', how='all').dropna(axis='columns', how='all').fillna('')
 
+    # Default to hg38 if genome column isn't present.
+    if 'genome' not in df.columns:
+        df['genome'] = 'hg38'
+
     # Confirm mandatory columns are present.
 
     mandatory_columns = [
@@ -940,6 +944,7 @@ def sanitize_and_validate_input(df):
         'R1',
         'amplicon_primers',
         'sgRNAs',
+        'genome',
     ]
     
     missing_columns = [col for col in mandatory_columns if col not in df.columns]
@@ -992,10 +997,6 @@ def make_group_descriptions_and_sample_sheet(base_dir, df, batch_name=None):
 
     if 'donor' not in df.columns:
         df['donor'] = ''
-
-    # Default to hg38 if genome column isn't present.
-    if 'genome' not in df.columns:
-        df['genome'] = 'hg38'
 
     valid_supplemental_indices = sorted(knock_knock.target_info.locate_supplemental_indices(base_dir))
 
