@@ -355,10 +355,16 @@ class pegRNA:
             'flap': (flap_subsequences[-1][0] + after_last_mismatch_offset, flap_subsequences[-1][1] - 1),
             'target_downstream': (target_subsequences[-1][0] + after_last_mismatch_offset, target_subsequences[-1][1] - 1),
         }
+
+        if flap_subsequences[0][0] != 0:
+            insertions.append((0, flap_subsequences[0][0] - 1))
             
         for (_, left_flap_end), (right_flap_start, _) in zip(flap_subsequences, flap_subsequences[1:]):
             if left_flap_end != right_flap_start:
                 insertions.append((left_flap_end, right_flap_start - 1))
+
+        if target_subsequences[0][0] != 0:
+            deletions.append((0, target_subsequences[0][0] - 1))
                 
         for (_, left_target_end), (right_target_start, _) in zip(target_subsequences, target_subsequences[1:]):
             if left_target_end != right_target_start:
