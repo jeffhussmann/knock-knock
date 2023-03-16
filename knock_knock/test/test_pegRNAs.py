@@ -5,8 +5,8 @@ import knock_knock.target_info
 
 base_dir = Path(__file__).parent
 
-def test_intended_insertion_inferrence():
-    for pegRNA_name, (start, end, strand)  in [
+def test_intended_insertion_inference():
+    for pegRNA_name, (start, end, strand) in [
         ('pPC1044', (132, 152, '-')),
     ]:
         ti = knock_knock.target_info.TargetInfo(base_dir,
@@ -19,7 +19,7 @@ def test_intended_insertion_inferrence():
         assert (inferred_insertion.end == end)
         assert (inferred_insertion.strand == strand)
 
-def test_intended_deletion_inferrence():
+def test_intended_deletion_inference():
     for pegRNA, expected_as_string in [
         ('HEK3_4g_del1-5',  'D:{676|677},5'),
         ('HEK3_4g_del1-10', 'D:677,10'),
@@ -36,7 +36,7 @@ def test_intended_deletion_inferrence():
         expected = knock_knock.target_info.degenerate_indel_from_string(expected_as_string)
         assert (ti.pegRNA_intended_deletion == expected)
 
-def test_twin_prime_intended_deletion_inferrence():
+def test_twin_prime_intended_deletion_inference():
     for pegRNA_pair, expected_as_string, is_prime_del in [
         (('sample01_pegRNA1', 'sample01_pegRNA2'), 'D:{3203|3204},50', True),
         (('sample11_pegRNA1', 'sample11_pegRNA2'), 'D:{3223|3224|3225|3226},30', False),
@@ -58,7 +58,7 @@ def test_twin_prime_intended_deletion_inferrence():
             assert (ti.pegRNA_intended_deletion == expected)
             assert (ti.is_prime_del == is_prime_del)
 
-def test_pegRNA_PBS_and_RTT_inferrence():
+def test_pegRNA_PBS_and_RTT_inference():
     ti = knock_knock.target_info.TargetInfo(base_dir, 'PAH_E4-2_45_EvoPreQ1-4_43_EvoPreQ1')
 
     feature = ti.features['PAH_E4', 'PAH_E4.2_45_EvoPreQ1_PBS']
@@ -80,7 +80,7 @@ def test_pegRNA_PBS_and_RTT_inferrence():
     pegRNA_RTT = ti.features['EMX1_3b', 'RTT']
     assert (pegRNA_RTT.start, pegRNA_RTT.end, pegRNA_RTT.strand) == (96, 108, '-')
 
-def test_twin_prime_overlap_inferrence():
+def test_twin_prime_overlap_inference():
     ti = knock_knock.target_info.TargetInfo(base_dir, 'HEK3_attB_A30_B30')
 
     A_feature = ti.features['HEK3_attB_A_30', 'overlap']
