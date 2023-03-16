@@ -38,6 +38,7 @@ class Layout(layout.Categorizer):
              'insertion + SNV',
              'insertion + unintended mismatches',
              'combination',
+             'partial incorporation',
             ),
         ),
         ('unintended rejoining of RT\'ed sequence',
@@ -168,7 +169,16 @@ class Layout(layout.Categorizer):
         al.query_sequence = seq
         al.query_qualities = [41]*len(seq)
         return cls([al], target_info)
-        
+
+    @memoized_property
+    def intended_edit_type(self):
+        if len(self.target_info.pegRNA_names) == 0:
+            edit_type = None
+        else:
+            edit_type = self.target_info.pegRNAs[0].edit_type
+
+        return edit_type
+
     @memoized_property
     def target_alignments(self):
         t_als = [
@@ -545,9 +555,9 @@ class Layout(layout.Categorizer):
 
     @memoized_property
     def is_intended_edit(self):
-        if self.target_info.intended_prime_edit_type is None:
+        if self.intended_edit_type is None:
             return False
-        elif self.target_info.intended_prime_edit_type == 'deletion':
+        elif self.intended_edit_type == 'deletion':
             # Outcomes that are very close to but not exactly an intended deletion
             # can produce full extension chains. 
             return self.is_intended_deletion
@@ -1578,15 +1588,15 @@ class Layout(layout.Categorizer):
 
         self.relevant_alignments = list(self.extension_chain['alignments'].values())
 
-        if self.target_info.intended_prime_edit_type == 'combination':
+        if self.intended_edit_type == 'combination':
             self.subcategory = 'combination'
             self.details = 'n/a'
 
-        elif self.target_info.intended_prime_edit_type == 'insertion':
+        elif self.intended_edit_type == 'insertion':
             self.subcategory = 'insertion'
             self.outcome = InsertionOutcome(self.target_info.pegRNA_programmed_insertion)
 
-        elif self.target_info.intended_prime_edit_type == 'deletion':
+        elif self.intended_edit_type == 'deletion':
             if len(self.non_pegRNA_SNVs) == 0:
                 self.subcategory = 'deletion'
             else:
@@ -1785,7 +1795,7 @@ class Layout(layout.Categorizer):
         else:
             self.category = 'unintended rejoining of RT\'ed sequence'
 
-            if self.target_info.intended_prime_edit_type == 'insertion' and details['shared_HAs'] == {('left', 'right')}:
+            if self.intended_edit_type == 'insertion' and details['shared_HAs'] == {('left', 'right')}:
                 self.subcategory = 'doesn\'t include insertion'
             else:
                 if self.alignment_scaffold_overlap(details['cropped_candidate_alignment']) >= 2:
@@ -2152,31 +2162,37 @@ class Layout(layout.Categorizer):
 
             if len(interesting_indels) == 0:
                 if self.starts_at_expected_location:
-                    self.category = 'wild type'
-
-                    if len(self.non_pegRNA_SNVs) == 0 and len(uninteresting_indels) == 0:
-                        self.subcategory = 'clean'
-                        self.outcome = Outcome('n/a')
-
-                    elif len(uninteresting_indels) == 1:
-                        self.subcategory = 'short indel far from cut'
-
-                        indel = uninteresting_indels[0]
-                        if indel.kind == 'D':
-                            self.outcome = DeletionOutcome(indel)
-                        elif indel.kind == 'I':
-                            self.outcome = InsertionOutcome(indel)
-                        else:
-                            raise ValueError(indel.kind)
-
-                    elif len(uninteresting_indels) > 1:
-                        self.category = 'uncategorized'
-                        self.subcategory = 'uncategorized'
+                    if self.specific_to_pegRNA(self.single_read_covering_target_alignment):
+                        self.category = 'intended edit'
+                        self.subcategory = 'partial incorporation'
                         self.outcome = Outcome('n/a')
 
                     else:
-                        self.subcategory = 'mismatches'
-                        self.outcome = MismatchOutcome(self.non_pegRNA_SNVs)
+                        self.category = 'wild type'
+
+                        if len(self.non_pegRNA_SNVs) == 0 and len(uninteresting_indels) == 0:
+                            self.subcategory = 'clean'
+                            self.outcome = Outcome('n/a')
+
+                        elif len(uninteresting_indels) == 1:
+                            self.subcategory = 'short indel far from cut'
+
+                            indel = uninteresting_indels[0]
+                            if indel.kind == 'D':
+                                self.outcome = DeletionOutcome(indel)
+                            elif indel.kind == 'I':
+                                self.outcome = InsertionOutcome(indel)
+                            else:
+                                raise ValueError(indel.kind)
+
+                        elif len(uninteresting_indels) > 1:
+                            self.category = 'uncategorized'
+                            self.subcategory = 'uncategorized'
+                            self.outcome = Outcome('n/a')
+
+                        else:
+                            self.subcategory = 'mismatches'
+                            self.outcome = MismatchOutcome(self.non_pegRNA_SNVs)
 
                 else:
                     self.category = 'uncategorized'

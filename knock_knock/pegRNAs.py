@@ -3,6 +3,7 @@ import logging
 
 from collections import defaultdict
 
+import Bio.Align
 import pandas as pd
 import pysam
 
@@ -99,409 +100,429 @@ def identify_protospacer_in_target(target_sequence, protospacer, effector):
         raise ValueError(f'{len(valid_features)} valid locations for protospacer {protospacer} in target {target_sequence}')
     else:
         valid_feature = valid_features[0]
-        return valid_feature    
-
-def infer_features(pegRNA_name,
-                   pegRNA_components,
-                   target_name,
-                   target_sequence,
-                  ):
-    '''
-    Identifies primer binding site (PBS) and reverse transcription template (RTT) regions
-    of a pegRNA/target sequence pair by locating the pegRNA protospacer in the target, then
-    finding the longest exact match in the extension region of the pegRNA for the sequence
-    immediately upstream of the nick location in the target.
-
-    Returns dictionaries of hits.gff Features for the pegRNA and the target.
-    '''
-
-    protospacer = pegRNA_components['protospacer']
-    pegRNA_sequence = pegRNA_components['full_sequence']
-    effector = target_info.effectors[pegRNA_components['effector']]
-
-    target_protospacer_feature = identify_protospacer_in_target(target_sequence, protospacer, effector)
-    target_protospacer_name = protospacer_name(pegRNA_name)
-    target_protospacer_feature.attribute['ID'] = target_protospacer_name
-    target_protospacer_feature.seqname = target_name
-    strand = target_protospacer_feature.strand
+        return valid_feature
     
-    cut_afters = effector.cut_afters(target_protospacer_feature)
-    try:
-        cut_after = cut_afters[strand]
-    except KeyError:
-        # To support PE nuclease strategies, allow for blunt-cutting effectors.
-        cut_after = cut_afters['both']
-
-    # Identify the PBS region of the pegRNA by finding a match to
-    # the sequence of the target immediately before the nick.    
-    
-    header = pysam.AlignmentHeader.from_references([pegRNA_name, 'target'], [len(pegRNA_sequence), len(target_sequence)])
-    # 'ref' is pegRNA and 'query' is target
-    mapper = sw.SeedAndExtender(pegRNA_sequence.encode(), 8, header, pegRNA_name)
-
-    target_bytes = target_sequence.encode()
-
-    # Note: assumes PBS perfectly matches at least seed_length nts at the nick.
-    seed_length = 7
-
-    if strand == '+':
-        seed_start = cut_after + 1 - seed_length
-        before_nick_start = 0
-        before_nick_end = cut_after
-    else:
-        before_nick_start = cut_after + 1
-        before_nick_end = len(target_sequence) - 1
-        seed_start = cut_after + 1
-
-    alignments = mapper.seed_and_extend(target_bytes, seed_start, seed_start + seed_length, pegRNA_name)
-    
-    extension_ref_p_start = len(pegRNA_components['protospacer'] + pegRNA_components['scaffold'])
-    extension_ref_interval = interval.Interval(extension_ref_p_start, len(pegRNA_sequence) - 1)
-    def overlaps_extension(al):
-        return interval.get_covered_on_ref(al) & extension_ref_interval
-
-    valid_alignments = [al for al in alignments if sam.get_strand(al) != strand and overlaps_extension(al)]
-
-    def priority_key(al):
-        # Prioritize longer matches, then matches closer to the 3' end.
-        return (al.query_alignment_length, al.reference_start)
-
-    valid_alignments = sorted(valid_alignments, key=priority_key, reverse=True)
-
-    if len(valid_alignments) == 0:
-        seed_sequence = target_bytes[seed_start:seed_start + seed_length]
-        starts = [al.reference_start for al in valid_alignments]
-        warning_message = [f'{pegRNA_name}: {len(valid_alignments)} valid PBS alignment(s) for {seed_sequence}'] + \
-        [f'\tlength: {al.query_alignment_length}, start in pegRNA: {al.reference_start}, start in target: {al.query_alignment_start}' for al in valid_alignments]
-        logging.warning('\n'.join(warning_message))
-        
-    PBS_alignment = valid_alignments[0]
-
-    # Restrict the PBS to not extend past the nick.
-    PBS_alignment = sam.crop_al_to_query_int(PBS_alignment, before_nick_start, before_nick_end)
-
-    # Build GFF features of the pegRNA components.
-
-    starts = {}
-    starts['protospacer'] = 0
-    starts['scaffold'] = starts['protospacer'] + len(pegRNA_components['protospacer'])
-    starts['extension'] = starts['scaffold'] + len(pegRNA_components['scaffold'])
-    
-    ends = {name: starts[name] + len(pegRNA_components[name]) for name in starts}
-    
-    starts['PBS'] = PBS_alignment.reference_start
-    ends['PBS'] = starts['PBS'] + PBS_alignment.query_alignment_length
-    
-    starts['RTT'] = starts['extension']
-    ends['RTT'] = starts['PBS']
-    
-    # Need to annotate PBS and RTT strands like this to enable
-    # identification of shared features.
-    strands = {
-        'protospacer': '+',
-        'scaffold': '+',
-        'extension': '+',
-        'PBS': '-',
-        'RTT': '-',
-    }
-
-    # Update pegRNA_components.
-    for name in ['PBS', 'RTT']:
-        pegRNA_components[name] = pegRNA_sequence[starts[name]:ends[name]]
-
-    pegRNA_features = {
-        (pegRNA_name, name): gff.Feature.from_fields(seqname=pegRNA_name,
-                                                     start=starts[name],
-                                                     end=ends[name] - 1,
-                                                     feature='misc', 
-                                                     strand=strands[name],
-                                                     attribute_string=gff.make_attribute_string({
-                                                         'ID': name,
-                                                         'color': default_feature_colors[name],
-                                                     }),
-                                                    )
-        for name in starts
-    }
-
-    # Build PBS feature on the target.
-
-    target_PBS_start, target_PBS_end = sam.query_interval(PBS_alignment)
-    target_PBS_name = PBS_name(pegRNA_name)
-    target_PBS_feature = gff.Feature.from_fields(seqname=target_name,
-                                                 start=target_PBS_start,
-                                                 end=target_PBS_end,
-                                                 strand=strand,
-                                                 feature='misc', 
-                                                 attribute_string=gff.make_attribute_string({
-                                                     'ID': target_PBS_name,
-                                                     'color': default_feature_colors['PBS'],
-                                                 }),
-                                                )
-
-    target_features = {
-        (target_name, target_PBS_name): target_PBS_feature,
-        (target_name, target_protospacer_name): target_protospacer_feature,
-    }
-    
-    return pegRNA_features, target_features
-
-def infer_edit_features(pegRNA_name,
-                        target_name,
-                        existing_features,
-                        reference_sequences,
-                        max_deletion_length=None,
-                       ):
-    ''' Requires features to already include results from infer_features.
-    
-    Compatibility with code initially designed for HDR screens wants
-    pegRNAs to be annotated with 'homology arms' and 'SNPs'.
-    One HA is the PBS, the other is the RT, and SNPs are features.
-
-    In pooled screening contexts, max_deletion_length may need to be set.
-    '''
-
-    target_sequence = reference_sequences[target_name]
-
-    new_features = {}
-
-    names = {
-        'target': target_name,
-        'pegRNA': pegRNA_name,
-    }
-
-    features = {
-        ('target', 'PBS'): existing_features[names['target'], PBS_name(names['pegRNA'])],
-        ('target', 'protospacer'): existing_features[names['target'], protospacer_name(names['pegRNA'])],
-        ('pegRNA', 'PBS'): existing_features[names['pegRNA'], 'PBS'],
-        ('pegRNA', 'RTT'): existing_features[names['pegRNA'], 'RTT'],
-        ('pegRNA', 'scaffold'): existing_features[names['pegRNA'], 'scaffold'],
-    }
-
-    strands = {
-        'target': features['target', 'PBS'].strand,
-        'pegRNA': '-',
-    }
-
-    seqs = {
-        ('pegRNA', name): features['pegRNA', name].sequence(reference_sequences)
-        for name in ['RTT', 'scaffold']
-    }
-
-    # feature sequence lookup uses strand to RC, so RTT will be RC'ed but not scaffold.
-    if features['pegRNA', 'scaffold'].strand == '+':
-        seqs['pegRNA', 'scaffold'] = utilities.reverse_complement(seqs['pegRNA', 'scaffold'])
-
-    starts = {
-        ('pegRNA', 'RTT'): features['pegRNA', 'RTT'].end,
-    }
-    ends = {}
-
-    if strands['target'] == '+':
-        starts['target', 'RTT'] = features['target', 'PBS'].end + 1
-        ends['target', 'RTT'] = starts['target', 'RTT'] + len(features['pegRNA', 'RTT'])
-
-        starts['target', 'scaffold'] = ends['target', 'RTT'] + 1
-        ends['target', 'scaffold'] = starts['target', 'scaffold'] + len(features['pegRNA', 'scaffold'])
-
-    else:
-        ends['target', 'RTT'] = features['target', 'PBS'].start # Note: ends is exclusive here, so no - 1
-        starts['target', 'RTT'] = ends['target', 'RTT'] - len(features['pegRNA', 'RTT'])
-
-        ends['target', 'scaffold'] = starts['target', 'RTT'] # Note: ends is exclusive here, so no - 1
-        starts['target', 'scaffold'] = ends['target', 'scaffold'] - len(features['pegRNA', 'scaffold'])
-
-    for name in ['RTT', 'scaffold']:
-        seqs['target', name] = target_sequence[starts['target', name]:ends['target', name]]
-        if features['target', 'PBS'].strand == '-':
-            seqs['target', name] = utilities.reverse_complement(seqs['target', name])
-
-    # pegRNA sequences should always be provided as 5'-3' RNA
-    # and therefore have the RTT feature on the - strand. 
-    if features['pegRNA', 'RTT'].strand != '-':
-        raise ValueError(str(features['pegRNA', 'RTT']))
-
-    # Find the longest suffix of the intended flap sequence that matches
-    # somewhere in the target downstream of the nick.
-
-    intended_flap_sequence = seqs['pegRNA', 'RTT']
-
-    protospacer = features['target', 'protospacer']
-    effector = target_info.effectors[protospacer.attribute['effector']]
-    try:
-        cut_after = effector.cut_afters(protospacer)[protospacer.strand]
-    except KeyError:
-        # PE nuclease support
-        cut_after = effector.cut_afters(protospacer)['both']
-
-    if strands['target'] == '+':
-        target_downstream_of_nick = target_sequence[cut_after + 1:]
-    else:
-        target_downstream_of_nick = utilities.reverse_complement(target_sequence[:cut_after + 1])
-
-    if max_deletion_length is not None:
-        target_downstream_of_nick = target_downstream_of_nick[:max_deletion_length + len(intended_flap_sequence)]
-
-    found_suffix = False
-
-    flap_suffix_length_to_index = {} 
-    for suffix_length in range(len(intended_flap_sequence), 0, -1):
-        flap_suffix = intended_flap_sequence[len(intended_flap_sequence) - suffix_length:]
-        if flap_suffix in target_downstream_of_nick:
-            flap_suffix_length_to_index[len(flap_suffix)] = target_downstream_of_nick.index(flap_suffix)
-            found_suffix = True
-
-    if not found_suffix:
-        # Shouldn't really be possible to hit this.
-        raise ValueError
-
-    max_suffix_length = max(flap_suffix_length_to_index, default=0)
-    
-    #if max_suffix_length <= 6:
-    #    logging.warning(f'{pegRNA_name} {target_name} has short RTT: {max_suffix_length} nts')
-
-    suffix_length = max_suffix_length
-
-    if max_suffix_length <= 5:
-        # If a long enough suffix was found, it is likely to be the intended one.
-        # If not, it is possible that a slightly longer but spurious match was found somewhere
-        # further downstream. To minimize the chances of this, prioritize closer but shorter matches.
-        shorter_index = flap_suffix_length_to_index.get(max_suffix_length - 1, 1e6)
-        if shorter_index < flap_suffix_length_to_index[max_suffix_length]:
-            suffix_length = max_suffix_length - 1
-
-    flap_suffix = intended_flap_sequence[len(intended_flap_sequence) - suffix_length:]
-
-    # After removing this suffix, find the longest prefix of the remaining
-    # flap that matches immediately downstream of the nick.
-
-    remaining_flap = intended_flap_sequence[:len(intended_flap_sequence) - suffix_length]
-
-    HA_RT_target_offset = target_downstream_of_nick.index(flap_suffix)
-    remaining_target = target_downstream_of_nick[:HA_RT_target_offset]
-
-    for prefix_length in range(len(remaining_flap) + 1):
-        flap_prefix = remaining_flap[:prefix_length]
-        if not remaining_target.startswith(flap_prefix):
-            prefix_length -= 1
-            flap_prefix = remaining_flap[:prefix_length]
-            break
-
-    # After removing this prefix, compare the remaining flap to the
-    # remaining target sequence that wasn't already paired with
-    # flap sequence.
-
-    # If they have the same length, annotate as SNVs.
-    # If there is pegRNA left but no target left, annotate as an insertion.
-    # If there is target left but not pegRNA, annotate as a deletion.
-    # Other, annotate as a combination of edits.
-
-    remaining_flap = remaining_flap[prefix_length:]
-    remaining_target = remaining_target[prefix_length:]
-
-    if len(remaining_flap) == 0 and len(remaining_target) > 0:
-        edit_type = 'deletion'
-    elif len(remaining_flap) > 0 and len(remaining_target) == 0:
-        edit_type = 'insertion'
-    elif len(remaining_flap) == len(remaining_target):
-        edit_type = 'SNVs'
-    else:
-        edit_type = 'combination'
-
-    # start of RTT is the end of the flap
-    starts['pegRNA', 'HA_RT'] = features['pegRNA', 'RTT'].start
-    ends['pegRNA', 'HA_RT'] = starts['pegRNA', 'HA_RT'] + len(flap_suffix) - 1
-
-    if strands['target'] == '+':
-        starts['target', 'HA_RT'] = cut_after + 1 + HA_RT_target_offset
-        ends['target', 'HA_RT'] = starts['target', 'HA_RT'] + len(flap_suffix) - 1
-    else:
-        ends['target', 'HA_RT'] = cut_after - HA_RT_target_offset
-        starts['target', 'HA_RT'] = ends['target', 'HA_RT'] - len(flap_suffix) + 1
-
-    deletion = None
-    SNVs = None
-
-    if edit_type == 'insertion':
-        insertion_length = len(remaining_flap)
-        starts['pegRNA', 'insertion'] = ends['pegRNA', 'HA_RT'] + 1
-        ends['pegRNA', 'insertion'] = starts['pegRNA', 'insertion'] + insertion_length - 1
-        
-        insertion_name = f'insertion_{pegRNA_name}'
-        insertion = gff.Feature.from_fields(seqname=names['pegRNA'],
-                                            start=starts['pegRNA', 'insertion'],
-                                            end=ends['pegRNA', 'insertion'],
-                                            strand='-',
-                                            ID=insertion_name,
-                                            )
-        insertion.attribute['color'] = default_feature_colors['insertion']
-        new_features[names['pegRNA'], insertion_name] = insertion
-
-    elif edit_type == 'combination':
-        region_length = len(remaining_flap)
-        starts['pegRNA', 'combination'] = ends['pegRNA', 'HA_RT'] + 1
-        ends['pegRNA', 'combination'] = starts['pegRNA', 'combination'] + region_length - 1
-        
-        combination_name = f'combination_{pegRNA_name}'
-        combination = gff.Feature.from_fields(seqname=names['pegRNA'],
-                                              start=starts['pegRNA', 'combination'],
-                                              end=ends['pegRNA', 'combination'],
-                                              strand='-',
-                                              ID=combination_name,
-                                             )
-        combination.attribute['color'] = default_feature_colors['insertion']
-        new_features[names['pegRNA'], combination_name] = combination
-
-    elif edit_type == 'deletion':
-        deletion_length = len(remaining_target)
-
-        # prefix_length is how much sequence at the beginning of
-        # the RTT pairs up with target immediately adjacent to the 
-        # PBS.
-
-        if strands['target'] == '+':
-            deletion_start = cut_after + 1 + prefix_length
-        else:
-            # Note '+ 1' here. cut_after - prefix_length is the last position
-            # deleted, and last is length - 1 away from the first.
-            deletion_start = cut_after - prefix_length - deletion_length + 1
-
-        starts['target', 'deletion'] = deletion_start
-        ends['target', 'deletion'] = deletion_start + deletion_length - 1
-
-        deletion = target_info.DegenerateDeletion([deletion_start], deletion_length)
-
-        deletion_name = f'deletion_{pegRNA_name}'
-        deletion_feature = gff.Feature.from_fields(seqname=names['target'],
-                                                   start=starts['target', 'deletion'],
-                                                   end=ends['target', 'deletion'],
-                                                   strand=strands['target'],
-                                                   ID=deletion_name,
-                                                  )
-        deletion_feature.attribute['color'] = default_feature_colors['deletion']
-        new_features[names['target'], deletion_name] = deletion_feature
-
-    else:
-        SNVs = {
-            target_name: {},
-            pegRNA_name: {},
+class pegRNA:
+    def __init__(self, name, components, target_name, target_sequence, max_deletion_length=None):
+        self.name = name
+        self.components = components
+        self.target_name = target_name
+        self.target_sequence = target_sequence
+        self.target_bytes = target_sequence.encode()
+
+        self.reference_sequences = {
+            self.name: self.components['full_sequence'],
+            self.target_name: self.target_sequence,
         }
 
-        for offset, (pegRNA_b, target_b) in enumerate(zip(seqs['pegRNA', 'RTT'], seqs['target', 'RTT'])):
-            if pegRNA_b != target_b:
+        self.features = {}
 
+        self.PBS_name = PBS_name(self.name)
+        self.protospacer_name = protospacer_name(self.name)
+
+        self.SNVs = None
+        self.deletion = None
+
+        self.max_deletion_length = max_deletion_length
+
+    def infer_PBS_and_RTT_features(self):
+        '''
+        Identifies primer binding site (PBS) and reverse transcription template (RTT) regions
+        of a pegRNA/target sequence pair by locating the pegRNA protospacer in the target, then
+        finding the longest exact match in the extension region of the pegRNA for the sequence
+        immediately upstream of the nick location in the target.
+
+        Returns dictionaries of hits.gff Features for the pegRNA and the target.
+        '''
+
+        protospacer = self.components['protospacer']
+        scaffold = self.components['scaffold']
+        pegRNA_sequence = self.components['full_sequence']
+        effector = target_info.effectors[self.components['effector']]
+
+        target_protospacer_feature = identify_protospacer_in_target(self.target_sequence, protospacer, effector)
+        target_protospacer_feature.attribute['ID'] = self.protospacer_name
+        target_protospacer_feature.seqname = self.target_name
+        strand = target_protospacer_feature.strand
+        
+        cut_afters = effector.cut_afters(target_protospacer_feature)
+        try:
+            cut_after = cut_afters[strand]
+        except KeyError:
+            # To support PE nuclease strategies, allow for blunt-cutting effectors.
+            cut_after = cut_afters['both']
+
+        # Identify the PBS region of the pegRNA by finding a match to
+        # the sequence of the target immediately before the nick.    
+        
+        header = pysam.AlignmentHeader.from_references([self.name, 'target'], [len(pegRNA_sequence), len(self.target_sequence)])
+        # 'ref' is pegRNA and 'query' is target
+        mapper = sw.SeedAndExtender(pegRNA_sequence.encode(), 8, header, self.name)
+
+        # Note: assumes PBS perfectly matches at least seed_length nts at the nick.
+        seed_length = 7
+
+        if strand == '+':
+            seed_start = cut_after + 1 - seed_length
+            before_nick_start = 0
+            before_nick_end = cut_after
+        else:
+            before_nick_start = cut_after + 1
+            before_nick_end = len(self.target_sequence) - 1
+            seed_start = cut_after + 1
+
+        alignments = mapper.seed_and_extend(self.target_bytes, seed_start, seed_start + seed_length, self.name)
+        
+        extension_ref_p_start = len(protospacer + scaffold)
+        extension_ref_interval = interval.Interval(extension_ref_p_start, len(pegRNA_sequence) - 1)
+        def overlaps_extension(al):
+            return interval.get_covered_on_ref(al) & extension_ref_interval
+
+        valid_alignments = [al for al in alignments if sam.get_strand(al) != strand and overlaps_extension(al)]
+
+        def priority_key(al):
+            # Prioritize longer matches, then matches closer to the 3' end.
+            return (al.query_alignment_length, al.reference_start)
+
+        valid_alignments = sorted(valid_alignments, key=priority_key, reverse=True)
+
+        if len(valid_alignments) == 0:
+            seed_sequence = self.target_bytes[seed_start:seed_start + seed_length]
+            starts = [al.reference_start for al in valid_alignments]
+            warning_message = [
+                f'{self.name}: {len(valid_alignments)} valid PBS alignment(s) for {seed_sequence}:'
+            ]
+            for al in valid_alignments:
+                warning_message.append(
+                    f'\tlength: {al.query_alignment_length}, start in pegRNA: {al.reference_start}, start in target: {al.query_alignment_start}'
+                )
+            warning_message = '\n'.join(warning_message)
+            logging.warning(warning_message)
+            
+        PBS_alignment = valid_alignments[0]
+
+        # Restrict the PBS to not extend past the nick.
+        PBS_alignment = sam.crop_al_to_query_int(PBS_alignment, before_nick_start, before_nick_end)
+
+        # Build GFF features of the pegRNA components.
+
+        starts = {}
+        starts['protospacer'] = 0
+        starts['scaffold'] = starts['protospacer'] + len(protospacer)
+        starts['extension'] = starts['scaffold'] + len(scaffold)
+        
+        ends = {name: starts[name] + len(self.components[name]) for name in starts}
+        
+        starts['PBS'] = PBS_alignment.reference_start
+        ends['PBS'] = starts['PBS'] + PBS_alignment.query_alignment_length
+        
+        starts['RTT'] = starts['extension']
+        ends['RTT'] = starts['PBS']
+        
+        # Need to annotate PBS and RTT strands like this to enable
+        # identification of shared features.
+        strands = {
+            'protospacer': '+',
+            'scaffold': '+',
+            'extension': '+',
+            'PBS': '-',
+            'RTT': '-',
+        }
+
+        # Update pegRNA_components.
+        for name in ['PBS', 'RTT']:
+            self.components[name] = pegRNA_sequence[starts[name]:ends[name]]
+
+        self.features.update({
+            (self.name, name): gff.Feature.from_fields(seqname=self.name,
+                                                       start=starts[name],
+                                                       end=ends[name] - 1,
+                                                       feature='misc', 
+                                                       strand=strands[name],
+                                                       attribute_string=gff.make_attribute_string({
+                                                           'ID': name,
+                                                           'color': default_feature_colors[name],
+                                                       }),
+                                                      )
+            for name in starts
+        })
+
+        # Build PBS feature on the target.
+
+        target_PBS_start, target_PBS_end = sam.query_interval(PBS_alignment)
+        target_PBS_feature = gff.Feature.from_fields(seqname=self.target_name,
+                                                    start=target_PBS_start,
+                                                    end=target_PBS_end,
+                                                    strand=strand,
+                                                    feature='misc', 
+                                                    attribute_string=gff.make_attribute_string({
+                                                        'ID': self.PBS_name,
+                                                        'color': default_feature_colors['PBS'],
+                                                    }),
+                                                    )
+
+        self.features.update({
+            (self.target_name, self.PBS_name): target_PBS_feature,
+            (self.target_name, self.protospacer_name): target_protospacer_feature,
+        })
+
+    @utilities.memoized_property
+    def intended_flap_sequence(self):
+        return utilities.reverse_complement(self.components['RTT'])
+
+    @utilities.memoized_property
+    def cut_after(self):
+        protospacer = self.features[self.target_name, self.protospacer_name]
+        effector = target_info.effectors[protospacer.attribute['effector']]
+        try:
+            cut_after = effector.cut_afters(protospacer)[protospacer.strand]
+        except KeyError:
+            # PE nuclease support
+            cut_after = effector.cut_afters(protospacer)['both']
+
+        return cut_after
+
+    @utilities.memoized_property
+    def target_downstream_of_nick(self):
+        protospacer = self.features[self.target_name, self.protospacer_name]
+
+        if protospacer.strand == '+':
+            target_downstream_of_nick = self.target_sequence[self.cut_after + 1:]
+        else:
+            target_downstream_of_nick = utilities.reverse_complement(self.target_sequence[:self.cut_after + 1])
+
+        if self.max_deletion_length is not None:
+            target_downstream_of_nick = target_downstream_of_nick[:self.max_deletion_length + len(self.intended_flap_sequence)]
+
+        return target_downstream_of_nick
+
+    def align_RTT_to_target(self, verbose=False):
+        aligner = Bio.Align.PairwiseAligner()
+
+        aligner.mode = 'global'
+        aligner.match_score = 2
+        aligner.mismatch_score = -1
+        aligner.open_gap_score = -4
+        aligner.extend_gap_score = -0.1
+        aligner.end_gap_score = 0
+
+        alignments = aligner.align(self.intended_flap_sequence, self.target_downstream_of_nick)
+
+        best_alignment = alignments[0]
+
+        max_flap_column = best_alignment.inverse_indices[0][-1]
+        best_alignment = best_alignment[:, :max_flap_column + 1 + 10]
+
+        if verbose:
+            print(best_alignment)
+
+        flap_subsequences, target_subsequences = best_alignment.aligned
+
+        SNVs = {
+        }
+
+        deletions = []
+        insertions = []
+
+        mismatches_in_subsequences = []
+
+        for flap_subsequence, target_subsequence in zip(flap_subsequences, target_subsequences):
+            flap_ps = range(*flap_subsequence)
+            target_ps = range(*target_subsequence)
+            
+            # Track mismatch positions to define HA_RT later.
+            mismatches = [-1]
+            
+            for i, (flap_p, target_p) in enumerate(zip(flap_ps, target_ps)):
+                flap_b = self.intended_flap_sequence[flap_p]
+                target_b = self.target_downstream_of_nick[target_p]
+                if flap_b != target_b:
+                    mismatches.append(i)
+                    
+                    SNV_name = f'SNV_{target_p}_{target_b}_{flap_p}_{flap_b}'
+                    SNVs[SNV_name] = {
+                        'flap': flap_p,
+                        'target_downstream': target_p,
+                    }
+                    
+            mismatches_in_subsequences.append(mismatches)
+            
+        after_last_mismatch_offset = mismatches_in_subsequences[-1][-1] + 1
+
+        # HA_RT is the part of the last subsequence following the last mismatch, or the entire last subsequence if it doesn't contain a mismatch.
+
+        HA_RT = {
+            'flap': (flap_subsequences[-1][0] + after_last_mismatch_offset, flap_subsequences[-1][1] - 1),
+            'target_downstream': (target_subsequences[-1][0] + after_last_mismatch_offset, target_subsequences[-1][1] - 1),
+        }
+            
+        for (_, left_flap_end), (right_flap_start, _) in zip(flap_subsequences, flap_subsequences[1:]):
+            if left_flap_end != right_flap_start:
+                insertions.append((left_flap_end, right_flap_start - 1))
+                
+        for (_, left_target_end), (right_target_start, _) in zip(target_subsequences, target_subsequences[1:]):
+            if left_target_end != right_target_start:
+                deletions.append((left_target_end, right_target_start - 1))
+                
+        return SNVs, deletions, insertions, HA_RT
+
+    def infer_edit_features(self):
+        ''' 
+        Compatibility with code initially designed for HDR screens wants
+        pegRNAs to be annotated with 'homology arms' and 'SNPs'.
+        One HA is the PBS, the other is the RT, and SNPs are features.
+
+        In pooled screening contexts, max_deletion_length may need to be set.
+        '''
+
+        new_features = {}
+
+        names = {
+            'target': self.target_name,
+            'pegRNA': self.name,
+        }
+
+        features = {
+            ('target', 'PBS'): self.features[names['target'], self.PBS_name],
+            ('target', 'protospacer'): self.features[names['target'], self.protospacer_name],
+            ('pegRNA', 'PBS'): self.features[names['pegRNA'], 'PBS'],
+            ('pegRNA', 'RTT'): self.features[names['pegRNA'], 'RTT'],
+            ('pegRNA', 'scaffold'): self.features[names['pegRNA'], 'scaffold'],
+        }
+
+        strands = {
+            'target': features['target', 'PBS'].strand,
+            'pegRNA': '-',
+        }
+
+        seqs = {
+            ('pegRNA', name): features['pegRNA', name].sequence(self.reference_sequences)
+            for name in ['RTT', 'scaffold']
+        }
+
+        # pegRNA sequences should always be provided as 5'-3' RNA
+        # and therefore have the RTT feature on the - strand. 
+        if features['pegRNA', 'RTT'].strand != '-':
+            raise ValueError(str(features['pegRNA', 'RTT']))
+
+        if features['pegRNA', 'scaffold'].strand != '+':
+            raise ValueError(str(features['pegRNA', 'scaffold']))
+
+        # feature sequence lookup uses the value of the strand attribute to reverse
+        # complement if appropriate, so the RTT sequence will be RC'ed but not the scaffold.
+        seqs['pegRNA', 'scaffold'] = utilities.reverse_complement(seqs['pegRNA', 'scaffold'])
+
+        starts = {
+            ('pegRNA', 'RTT'): features['pegRNA', 'RTT'].end,
+        }
+        ends = {}
+
+        if strands['target'] == '+':
+            starts['target', 'RTT'] = features['target', 'PBS'].end + 1
+            ends['target', 'RTT'] = starts['target', 'RTT'] + len(features['pegRNA', 'RTT'])
+
+            starts['target', 'scaffold'] = ends['target', 'RTT'] + 1
+            ends['target', 'scaffold'] = starts['target', 'scaffold'] + len(features['pegRNA', 'scaffold'])
+
+        else:
+            ends['target', 'RTT'] = features['target', 'PBS'].start # Note: ends is exclusive here, so no - 1
+            starts['target', 'RTT'] = ends['target', 'RTT'] - len(features['pegRNA', 'RTT'])
+
+            ends['target', 'scaffold'] = starts['target', 'RTT'] # Note: ends is exclusive here, so no - 1
+            starts['target', 'scaffold'] = ends['target', 'scaffold'] - len(features['pegRNA', 'scaffold'])
+
+        for name in ['RTT', 'scaffold']:
+            seqs['target', name] = self.target_sequence[starts['target', name]:ends['target', name]]
+            if features['target', 'PBS'].strand == '-':
+                seqs['target', name] = utilities.reverse_complement(seqs['target', name])
+
+        # Align the intended flap sequence to the target downstream of the nick.
+
+        SNVs, deletions, insertions, HA_RT = self.align_RTT_to_target()
+
+        if len(SNVs) > 0:
+            if len(deletions) == 0 and len(insertions) == 0:
+                self.edit_type = 'SNVs'
+            else:
+                self.edit_type = 'combination'
+        else:
+            if len(deletions) == 1 and len(insertions) == 0:
+                self.edit_type = 'deletion'
+            elif len(deletions) == 0 and len(insertions) == 1:
+                self.edit_type = 'insertion'
+            else:
+                self.edit_type = 'combination'
+
+        # Convert from flap/target downstream coordinates to pegRNA/target coordinates.
+
+        def convert_flap_to_pegRNA_coordinates(flap_p):
+            return features['pegRNA', 'RTT'].end - flap_p
+
+        def convert_target_to_downstream_of_nick_coordinates(downstream_p):
+            if strands['target'] == '+':
+                return self.cut_after + 1 + downstream_p
+            else:
+                return self.cut_after - downstream_p
+
+        starts['pegRNA', 'HA_RT'], ends['pegRNA', 'HA_RT'] = sorted(map(convert_flap_to_pegRNA_coordinates, HA_RT['flap']))
+        starts['target', 'HA_RT'], ends['target', 'HA_RT'] = sorted(map(convert_target_to_downstream_of_nick_coordinates, HA_RT['target_downstream']))
+
+        if len(insertions) > 0:
+            if len(insertions) > 1:
+                raise NotImplementedError
+            
+            insertion = insertions[0]
+            starts['pegRNA', 'insertion'], ends['pegRNA', 'insertion'] = sorted(map(convert_flap_to_pegRNA_coordinates, insertion))
+                
+            insertion_name = f'insertion_{self.name}'
+            insertion = gff.Feature.from_fields(seqname=names['pegRNA'],
+                                                start=starts['pegRNA', 'insertion'],
+                                                end=ends['pegRNA', 'insertion'],
+                                                strand='-',
+                                                ID=insertion_name,
+                                               )
+            insertion.attribute['color'] = default_feature_colors['insertion']
+            new_features[names['pegRNA'], insertion_name] = insertion
+
+        if len(deletions) > 0:
+            if len(deletions) > 1:
+                raise NotImplementedError
+
+            deletion = deletions[0]
+            starts['target', 'deletion'], ends['target', 'deletion'] = sorted(map(convert_target_to_downstream_of_nick_coordinates, deletion))
+            deletion_length = ends['target', 'deletion'] - starts['target', 'deletion'] + 1
+
+            self.deletion = target_info.DegenerateDeletion([starts['target', 'deletion']], deletion_length)
+
+            deletion_name = f'deletion_{self.name}'
+            deletion_feature = gff.Feature.from_fields(seqname=names['target'],
+                                                       start=starts['target', 'deletion'],
+                                                       end=ends['target', 'deletion'],
+                                                       strand=strands['target'],
+                                                       ID=deletion_name,
+                                                      )
+            deletion_feature.attribute['color'] = default_feature_colors['deletion']
+            new_features[names['target'], deletion_name] = deletion_feature
+
+        if len(SNVs) > 0:
+            self.SNVs = {
+                self.target_name: {},
+                self.name: {},
+            }
+
+            for SNV in SNVs.values():
                 positions = {
-                    'pegRNA': starts['pegRNA', 'RTT'] - offset,
+                    'pegRNA': convert_flap_to_pegRNA_coordinates(SNV['flap']),
+                    'target': convert_target_to_downstream_of_nick_coordinates(SNV['target_downstream']),
                 }
 
                 if strands['target'] == '+':
-                    positions['target'] = starts['target', 'RTT'] + offset
                     pegRNA_strand = '-'
                 else:
-                    positions['target'] = ends['target', 'RTT'] - offset - 1
                     pegRNA_strand = '+'
 
-                target_base_plus = target_sequence[positions['target']]
-                pegRNA_base_plus = reference_sequences[names['pegRNA']][positions['pegRNA']]
+                target_base_plus = self.target_sequence[positions['target']]
+                pegRNA_base_plus = self.reference_sequences[names['pegRNA']][positions['pegRNA']]
 
                 if pegRNA_strand == '+':
                     pegRNA_base_effective = pegRNA_base_plus
@@ -510,13 +531,13 @@ def infer_edit_features(pegRNA_name,
 
                 SNV_name = f'SNV_{positions["target"]}_{target_base_plus}-{pegRNA_base_effective}'
 
-                SNVs[target_name][SNV_name] = {
+                self.SNVs[self.target_name][SNV_name] = {
                     'position': positions['target'],
                     'strand': '+',
                     'base': target_base_plus,
                 }
 
-                SNVs[pegRNA_name][SNV_name] = {
+                self.SNVs[self.name][SNV_name] = {
                     'position': positions['pegRNA'],
                     'strand': pegRNA_strand,
                     'base': pegRNA_base_plus,
@@ -524,72 +545,76 @@ def infer_edit_features(pegRNA_name,
 
                 for seq_name in names:
                     feature = gff.Feature.from_fields(seqname=names[seq_name],
-                                                      start=positions[seq_name],
-                                                      end=positions[seq_name],
-                                                      strand=strands[seq_name],
-                                                      ID=SNV_name,
-                                                     )
+                                                        start=positions[seq_name],
+                                                        end=positions[seq_name],
+                                                        strand=strands[seq_name],
+                                                        ID=SNV_name,
+                                                        )
                 
                     new_features[names[seq_name], SNV_name] = feature
 
-    # When interpreting alignments to pegRNAs, it is useful to know
-    # the point in pegRNA sequence at which it first diverges from
-    # genomic sequence. Annotate the region of the pegRNA past this point
-    # (that is, before it in 5'-to-3' sequence) with a feature
-    # named f'after_first_difference_{pegRNA_name}'.
+        # When interpreting alignments to pegRNAs, it is useful to know
+        # the point in pegRNA sequence at which it first diverges from
+        # genomic sequence. Annotate the region of the pegRNA past this point
+        # (that is, before it in 5'-to-3' sequence) with a feature
+        # named f'after_first_difference_{pegRNA_name}'.
 
-    pegRNA_seq = seqs['pegRNA', 'RTT'] + seqs['pegRNA', 'scaffold']
-    target_seq = seqs['target', 'RTT'] + seqs['target', 'scaffold']
+        pegRNA_seq = seqs['pegRNA', 'RTT'] + seqs['pegRNA', 'scaffold']
+        target_seq = seqs['target', 'RTT'] + seqs['target', 'scaffold']
 
-    for offset, (pegRNA_b, target_b) in enumerate(zip(pegRNA_seq, target_seq)):
-        if pegRNA_b != target_b:
-            break
+        for offset, (pegRNA_b, target_b) in enumerate(zip(pegRNA_seq, target_seq)):
+            if pegRNA_b != target_b:
+                break
 
-    first_differnce_position = starts['pegRNA', 'RTT'] - offset
-    name = f'after_first_difference_{names["pegRNA"]}'
-    feature = gff.Feature.from_fields(seqname=names['pegRNA'],
-                                      start=0,
-                                      end=first_differnce_position,
-                                      strand='-',
-                                      ID=name,
-                                     )
-    new_features[names['pegRNA'], name] = feature
+        first_difference_position = starts['pegRNA', 'RTT'] - offset
+        name = f'after_first_difference_{names["pegRNA"]}'
+        feature = gff.Feature.from_fields(seqname=names['pegRNA'],
+                                        start=0,
+                                        end=first_difference_position,
+                                        strand='-',
+                                        ID=name,
+                                        )
+        new_features[names['pegRNA'], name] = feature
 
 
-    HA_PBS_name = f'HA_PBS_{names["pegRNA"]}'
-    HA_RT_name = f'HA_RT_{names["pegRNA"]}'
+        HA_PBS_name = f'HA_PBS_{names["pegRNA"]}'
+        HA_RT_name = f'HA_RT_{names["pegRNA"]}'
 
-    # Make target HA features.
+        # Make target HA features.
 
-    HA_PBS = copy.deepcopy(features['target', 'PBS'])
-    HA_PBS.attribute['ID'] = HA_PBS_name
-    new_features[target_name, HA_PBS_name] = HA_PBS
+        HA_PBS = copy.deepcopy(features['target', 'PBS'])
+        HA_PBS.attribute['ID'] = HA_PBS_name
+        new_features[self.target_name, HA_PBS_name] = HA_PBS
 
-    HA_RT = gff.Feature.from_fields(seqname=target_name,
-                                    start=starts['target', 'HA_RT'],
-                                    end=ends['target', 'HA_RT'],
-                                    strand=HA_PBS.strand,
-                                    ID=HA_RT_name,
-                                   )
-    HA_RT.attribute['color'] = default_feature_colors['RTT']
-    new_features[target_name, HA_RT_name] = HA_RT
+        HA_RT = gff.Feature.from_fields(seqname=self.target_name,
+                                        start=starts['target', 'HA_RT'],
+                                        end=ends['target', 'HA_RT'],
+                                        strand=HA_PBS.strand,
+                                        ID=HA_RT_name,
+                                       )
+        HA_RT.attribute['color'] = default_feature_colors['RTT']
+        new_features[self.target_name, HA_RT_name] = HA_RT
 
-    # Make pegRNA HA features.
+        # Make pegRNA HA features.
 
-    HA_PBS = copy.deepcopy(features['pegRNA', 'PBS'])
-    HA_PBS.attribute['ID'] = HA_PBS_name
-    new_features[names['pegRNA'], HA_PBS_name] = HA_PBS
+        HA_PBS = copy.deepcopy(features['pegRNA', 'PBS'])
+        HA_PBS.attribute['ID'] = HA_PBS_name
+        new_features[names['pegRNA'], HA_PBS_name] = HA_PBS
 
-    HA_RT = gff.Feature.from_fields(seqname=names['pegRNA'],
-                                    start=starts['pegRNA', 'HA_RT'],
-                                    end=ends['pegRNA', 'HA_RT'],
-                                    strand='-',
-                                    ID=HA_RT_name,
-                                   )
-    HA_RT.attribute['color'] = default_feature_colors['RTT']
-    new_features[names['pegRNA'], HA_RT_name] = HA_RT
+        HA_RT = gff.Feature.from_fields(seqname=names['pegRNA'],
+                                        start=starts['pegRNA', 'HA_RT'],
+                                        end=ends['pegRNA', 'HA_RT'],
+                                        strand='-',
+                                        ID=HA_RT_name,
+                                       )
+        HA_RT.attribute['color'] = default_feature_colors['RTT']
+        new_features[names['pegRNA'], HA_RT_name] = HA_RT
 
-    return new_features, SNVs, deletion
+        self.features.update(new_features)
+
+class TwinPrimePegRNA_pair:
+    def __init__(self):
+        pass
 
 def PBS_names_by_side_of_target(pegRNA_names,
                                 target_name,

@@ -448,38 +448,42 @@ class TargetInfo():
             return converted
 
     @memoized_property
+    def pegRNAs(self):
+        pegRNAs = []
+        for pegRNA_name in self.pegRNA_names:
+            pegRNA = knock_knock.pegRNAs.pegRNA(pegRNA_name,
+                                                self.sgRNA_components[pegRNA_name],
+                                                self.target,
+                                                self.target_sequence,
+                                                max_deletion_length=self.max_programmed_deletion_length
+                                               )
+
+            pegRNA.infer_PBS_and_RTT_features()
+
+            if len(self.pegRNA_names) == 1:
+                pegRNA.infer_edit_features()
+
+            pegRNAs.append(pegRNA)
+
+        return pegRNAs
+
+    @memoized_property
     def features(self):
         fasta_records, gff_features = self.fasta_records_and_gff_features
 
         features = {(f.seqname, f.attribute['ID']): f for f in gff_features if 'ID' in f.attribute}
 
-        if len(self.pegRNA_names) > 0:
-            for pegRNA_name in self.pegRNA_names:
-                pegRNA_features, target_features = knock_knock.pegRNAs.infer_features(pegRNA_name,
-                                                                                      self.sgRNA_components[pegRNA_name],
-                                                                                      self.target,
-                                                                                      self.target_sequence,
-                                                                                     )
-                features.update({**pegRNA_features, **target_features})
+        for pegRNA in self.pegRNAs:
+            features.update(pegRNA.features)
 
-            if len(self.pegRNA_names) == 1:
-                edit_features, _, _ = knock_knock.pegRNAs.infer_edit_features(self.pegRNA_names[0],
-                                                                              self.target,
-                                                                              features,
-                                                                              self.reference_sequences,
-                                                                              max_deletion_length=self.max_programmed_deletion_length,
-                                                                             )
+        if len(self.pegRNA_names) == 2:
+            results = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
+                                                                        self.target,
+                                                                        features,
+                                                                        self.reference_sequences,
+                                                                    )
 
-                features.update(edit_features)
-
-            elif len(self.pegRNA_names) == 2:
-                results = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
-                                                                         self.target,
-                                                                         features,
-                                                                         self.reference_sequences,
-                                                                        )
-
-                features.update(results['new_features'])
+            features.update(results['new_features'])
         
         features.update(self.integrase_sites)
 
@@ -1544,24 +1548,6 @@ class TargetInfo():
 
         return edit_name
 
-    @memoized_property
-    def intended_prime_edit_type(self):
-        if len(self.pegRNA_names) == 0:
-            edit_type = None
-        else:
-            pegRNA_name = self.pegRNA_names[0]
-
-            if (self.target, f'deletion_{pegRNA_name}') in self.features:
-                edit_type = 'deletion'
-            elif (pegRNA_name, f'insertion_{pegRNA_name}') in self.features:
-                edit_type = 'insertion'
-            elif (pegRNA_name, f'combination_{pegRNA_name}') in self.features:
-                edit_type = 'combination'
-            else:
-                edit_type = 'SNV'
-
-        return edit_type
-
     def calculate_microhomology_lengths(self, donor_to_use='homologous', donor_strand='+'):
         def num_matches_at_edge(first, second, relevant_edge):
             ''' Count the number of identical characters at the beginning
@@ -1797,12 +1783,7 @@ class TargetInfo():
             deletion = None
 
         elif len(self.pegRNA_names) == 1:
-            _, _, deletion = knock_knock.pegRNAs.infer_edit_features(self.pegRNA_names[0],
-                                                                     self.target,
-                                                                     self.features,
-                                                                     self.reference_sequences,
-                                                                     max_deletion_length=self.max_programmed_deletion_length,
-                                                                    )
+            deletion = self.pegRNAs[0].deletion
 
         elif len(self.pegRNA_names) == 2:
             results = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
@@ -1858,12 +1839,7 @@ class TargetInfo():
             SNVs = None
 
         elif len(self.pegRNA_names) == 1:
-            _, SNVs, _ = knock_knock.pegRNAs.infer_edit_features(self.pegRNA_names[0],
-                                                                 self.target,
-                                                                 self.features,
-                                                                 self.reference_sequences,
-                                                                 max_deletion_length=self.max_programmed_deletion_length,
-                                                                )
+            SNVs = self.pegRNAs[0].SNVs
 
         elif len(self.pegRNA_names) == 2:
             results = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
