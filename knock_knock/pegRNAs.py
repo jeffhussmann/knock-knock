@@ -297,8 +297,19 @@ class pegRNA:
         return target_downstream_of_nick
 
     def align_RTT_to_target(self, verbose=False):
+        ''' Align the intended flap sequence to genomic sequence downstream
+        of the nick using Biopython's dynamic programming.
+        Return representations of SNVs, deletions, insertions, and
+        of the exactly-matching terminal HA_RT in coordinates relative to the 
+        start of the flap and the nick, respectively. 
+        ''' 
+
         aligner = Bio.Align.PairwiseAligner()
 
+        # These parameters are not well-documented, but
+        # 'global' mode with end_gap_score = 0 should hopefully
+        # require the entire flap to be aligned without penalizing
+        # the inclusion of extra target sequence in the query sequence.  
         aligner.mode = 'global'
         aligner.match_score = 2
         aligner.mismatch_score = -1
@@ -310,27 +321,35 @@ class pegRNA:
 
         best_alignment = alignments[0]
 
+        # Trim off excess target sequence to make text representation
+        # of the alignment clearer.  
         max_flap_column = best_alignment.inverse_indices[0][-1]
         best_alignment = best_alignment[:, :max_flap_column + 1 + 10]
 
         if verbose:
             print(best_alignment)
 
-        flap_subsequences, target_subsequences = best_alignment.aligned
-
-        SNVs = {
-        }
-
+        SNVs = {}
         deletions = []
         insertions = []
 
+        flap_subsequences, target_subsequences = best_alignment.aligned
+
+        # flap_subsequences and target_subsequences are arrays of length-2 arrays
+        # that indicate the start and (exclusive) ends of subsequences of the flap
+        # and target that are aligned to each other.
+
+        # Track mismatch positions within each subsequence to allow definition
+        # of the exactly-matching HA_RT section of the final subsequence later.
         mismatches_in_subsequences = []
 
+        # Compare the sequences of each aligned flap and target subsequences to
+        # identify programmed SNVs.
         for flap_subsequence, target_subsequence in zip(flap_subsequences, target_subsequences):
             flap_ps = range(*flap_subsequence)
             target_ps = range(*target_subsequence)
             
-            # Track mismatch positions to define HA_RT later.
+
             mismatches = [-1]
             
             for i, (flap_p, target_p) in enumerate(zip(flap_ps, target_ps)):
@@ -349,12 +368,16 @@ class pegRNA:
             
         after_last_mismatch_offset = mismatches_in_subsequences[-1][-1] + 1
 
-        # HA_RT is the part of the last subsequence following the last mismatch, or the entire last subsequence if it doesn't contain a mismatch.
+        # HA_RT is the part of the last subsequence following the last mismatch,
+        # or the entire last subsequence if it doesn't contain a mismatch.
 
         HA_RT = {
             'flap': (flap_subsequences[-1][0] + after_last_mismatch_offset, flap_subsequences[-1][1] - 1),
             'target_downstream': (target_subsequences[-1][0] + after_last_mismatch_offset, target_subsequences[-1][1] - 1),
         }
+
+        # Insertions are gaps between consecutive flap subsequences. If the
+        # first subsequence doesn't start at 0, the flap begins with an insertion.
 
         if flap_subsequences[0][0] != 0:
             insertions.append((0, flap_subsequences[0][0] - 1))
@@ -362,6 +385,10 @@ class pegRNA:
         for (_, left_flap_end), (right_flap_start, _) in zip(flap_subsequences, flap_subsequences[1:]):
             if left_flap_end != right_flap_start:
                 insertions.append((left_flap_end, right_flap_start - 1))
+
+        # Deletions are gaps between consecutive target subsequences. If the
+        # first subsequence doesn't start at 0, sequnece immediatley after the
+        # nick is deleted.
 
         if target_subsequences[0][0] != 0:
             deletions.append((0, target_subsequences[0][0] - 1))
@@ -459,7 +486,7 @@ class pegRNA:
             else:
                 self.edit_type = 'combination'
 
-        # Convert from flap/target downstream coordinates to pegRNA/target coordinates.
+        # Convert from flap/downstream coordinates to pegRNA/target coordinates.
 
         def convert_flap_to_pegRNA_coordinates(flap_p):
             return features['pegRNA', 'RTT'].end - flap_p
