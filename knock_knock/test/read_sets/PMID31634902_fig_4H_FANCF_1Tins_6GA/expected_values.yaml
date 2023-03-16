@@ -17,7 +17,7 @@ expected_values:
     note: n/a
   010288008:0000000207:
     category: unintended rejoining of RT'ed sequence
-    subcategory: includes scaffold, no SNV
+    subcategory: includes scaffold
     note: rejoins at pegRNA-targeted nick
   010288008:0000002709:
     category: duplication
