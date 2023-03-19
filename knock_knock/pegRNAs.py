@@ -125,6 +125,8 @@ class pegRNA:
 
         self.max_deletion_length = max_deletion_length
 
+        self.infer_PBS_and_RTT_features()
+
     def infer_PBS_and_RTT_features(self):
         '''
         Identifies primer binding site (PBS) and reverse transcription template (RTT) regions

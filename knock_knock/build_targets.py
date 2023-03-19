@@ -415,7 +415,7 @@ class TargetInfoBuilder:
         sgRNAs_with_extensions = [(name, components) for name, components in self.info['sgRNAs'] if components['extension'] != '']
         if len(sgRNAs_with_extensions) > 0:
             for name, components in sgRNAs_with_extensions:
-                pegRNA_features, new_target_features = pegRNAs.infer_features(name, components, self.target_name, target_sequence)
+                pegRNA = pegRNAs.pegRNA(name, components, self.target_name, target_sequence)
 
                 pegRNA_SeqFeatures = [
                     SeqFeature(id=feature_name,
@@ -426,7 +426,7 @@ class TargetInfoBuilder:
                                    'ApEinfo_fwdcolor': feature.attribute['color'],
                                },
                               )
-                    for (_, feature_name), feature in pegRNA_features.items()
+                    for (seq_name, feature_name), feature in pegRNA.features.items() if seq_name == name
                 ]
 
                 pegRNA_Seq = Seq(components['full_sequence'])
@@ -456,7 +456,7 @@ class TargetInfoBuilder:
         gb_records[self.target_name] = target_record
 
         if self.info.get('extra_sequences') is not None:
-            for extra_seq_name, extra_seq in info['extra_sequences']:
+            for extra_seq_name, extra_seq in self.info['extra_sequences']:
                 record = SeqRecord(extra_seq, name=extra_seq_name, annotations={'molecule_type': 'DNA'})
                 gb_records[extra_seq_name] = record
 

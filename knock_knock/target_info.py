@@ -458,8 +458,6 @@ class TargetInfo():
                                                 max_deletion_length=self.max_programmed_deletion_length
                                                )
 
-            pegRNA.infer_PBS_and_RTT_features()
-
             if len(self.pegRNA_names) == 1:
                 pegRNA.infer_edit_features()
 
