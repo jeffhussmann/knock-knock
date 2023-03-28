@@ -1,6 +1,6 @@
 import numpy as np
 
-import knock_knock.outcome
+import knock_knock.target_info
 from knock_knock.target_info import DegenerateDeletion, DegenerateInsertion, SNV, SNVs
 
 class Outcome:
@@ -95,6 +95,31 @@ class InsertionOutcome(Outcome):
         shifted_starts_afters = [starts_after - anchor for starts_after in self.insertion.starts_afters]
         shifted_insertion = DegenerateInsertion(shifted_starts_afters, self.insertion.seqs)
         return type(self)(shifted_insertion)
+
+class ProgrammedEditOutcome(Outcome):
+    def __init__(self, SNV_read_bases, indels):
+        self.SNV_read_bases = SNV_read_bases
+        self.indels = indels
+        self.deletions = [indel for indel in self.indels if indel.kind == 'D']
+        self.insertions = [indel for indel in self.indels if indel.kind == 'I']
+
+    @classmethod
+    def from_string(cls, details_string):
+        SNV_string, indels_string = details_string.split(';', 1)
+        if indels_string == '':
+            indels = []
+        else:
+            indels = [knock_knock.target_info.degenerate_indel_from_string(s) for s in indels_string.split(';')]
+        return cls(SNV_string, indels)
+
+    def __str__(self):
+        indels_string = ';'.join(str(indel) for indel in self.indels)
+        return f'{self.SNV_read_bases};{indels_string}'
+
+    def perform_anchor_shift(self, anchor):
+        shifted_deletions = [DeletionOutcome(d).perform_anchor_shift(anchor).deletion for d in self.deletions]
+        shifted_insertions = [InsertionOutcome(i).perform_anchor_shift(anchor).insertion for i in self.insertions]
+        return type(self)(self.SNV_read_bases, shifted_deletions + shifted_insertions)
 
 class HDROutcome(Outcome):
     def __init__(self, donor_SNV_read_bases, donor_deletions):

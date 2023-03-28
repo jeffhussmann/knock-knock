@@ -448,7 +448,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
     @memoized_property
     def is_intended_replacement(self):
-        if self.target_info.pegRNA_intended_deletion is not None:
+        if self.target_info.pegRNA_programmed_deletion is not None:
             status = False
         else:
             if not self.has_intended_pegRNA_overlap:
@@ -574,7 +574,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             elif self.is_intended_deletion:
                 self.category = 'intended edit'
                 self.subcategory = 'deletion'
-                self.outcome = DeletionOutcome(self.target_info.pegRNA_intended_deletion)
+                self.outcome = DeletionOutcome(self.target_info.pegRNA_programmed_deletion)
                 self.relevant_alignments = self.target_edge_alignments_list + self.pegRNA_extension_als_list
 
             elif self.is_unintended_rejoining:
@@ -645,7 +645,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                     self.subcategory = 'clean'
 
                 if indel.kind == 'D':
-                    if indel == self.target_info.pegRNA_intended_deletion:
+                    if indel == self.target_info.pegRNA_programmed_deletion:
                         self.category = 'intended edit'
                         self.subcategory = 'deletion'
                         self.relevant_alignments = [target_alignment] + self.pegRNA_extension_als_list

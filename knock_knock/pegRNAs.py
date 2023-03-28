@@ -122,6 +122,7 @@ class pegRNA:
 
         self.SNVs = None
         self.deletion = None
+        self.insertion = None
 
         self.max_deletion_length = max_deletion_length
 
@@ -382,14 +383,26 @@ class pegRNA:
         # first subsequence doesn't start at 0, the flap begins with an insertion.
 
         if flap_subsequences[0][0] != 0:
-            insertions.append((0, flap_subsequences[0][0] - 1))
+            insertion = {
+                'start_in_flap': 0,
+                'end_in_flap': flap_subsequences[0][0] - 1,
+                'starts_after_in_downstream': -1,
+                'starts_before_in_downstream': 0,
+            }
+            insertions.append(insertion)
             
-        for (_, left_flap_end), (right_flap_start, _) in zip(flap_subsequences, flap_subsequences[1:]):
+        for (_, left_flap_end), (right_flap_start, _), (_, left_target_end), (right_target_start, _) in zip(flap_subsequences, flap_subsequences[1:], target_subsequences, target_subsequences[1:]):
             if left_flap_end != right_flap_start:
-                insertions.append((left_flap_end, right_flap_start - 1))
+                insertion = {
+                    'start_in_flap': left_flap_end,
+                    'end_in_flap': right_flap_start - 1,
+                    'starts_after_in_downstream': left_target_end - 1,
+                    'starts_before_in_downstream': right_target_start,
+                }
+                insertions.append(insertion)
 
         # Deletions are gaps between consecutive target subsequences. If the
-        # first subsequence doesn't start at 0, sequnece immediatley after the
+        # first subsequence doesn't start at 0, sequence immediately after the
         # nick is deleted.
 
         if target_subsequences[0][0] != 0:
@@ -399,15 +412,11 @@ class pegRNA:
             if left_target_end != right_target_start:
                 deletions.append((left_target_end, right_target_start - 1))
                 
-        return SNVs, deletions, insertions, HA_RT
+        return SNVs, deletions, insertions, HA_RT, (flap_subsequences, target_subsequences)
 
     def infer_edit_features(self):
         ''' 
-        Compatibility with code initially designed for HDR screens wants
-        pegRNAs to be annotated with 'homology arms' and 'SNPs'.
-        One HA is the PBS, the other is the RT, and SNPs are features.
-
-        In pooled screening contexts, max_deletion_length may need to be set.
+        Note that in pooled screening contexts, self.max_deletion_length may need to be set.
         '''
 
         new_features = {}
@@ -473,7 +482,7 @@ class pegRNA:
 
         # Align the intended flap sequence to the target downstream of the nick.
 
-        SNVs, deletions, insertions, HA_RT = self.align_RTT_to_target()
+        SNVs, deletions, insertions, HA_RT, _ = self.align_RTT_to_target()
 
         if len(SNVs) > 0:
             if len(deletions) == 0 and len(insertions) == 0:
@@ -493,21 +502,24 @@ class pegRNA:
         def convert_flap_to_pegRNA_coordinates(flap_p):
             return features['pegRNA', 'RTT'].end - flap_p
 
-        def convert_target_to_downstream_of_nick_coordinates(downstream_p):
+        def convert_downstream_of_nick_to_target_coordinates(downstream_p):
             if strands['target'] == '+':
                 return self.cut_after + 1 + downstream_p
             else:
                 return self.cut_after - downstream_p
 
         starts['pegRNA', 'HA_RT'], ends['pegRNA', 'HA_RT'] = sorted(map(convert_flap_to_pegRNA_coordinates, HA_RT['flap']))
-        starts['target', 'HA_RT'], ends['target', 'HA_RT'] = sorted(map(convert_target_to_downstream_of_nick_coordinates, HA_RT['target_downstream']))
+        starts['target', 'HA_RT'], ends['target', 'HA_RT'] = sorted(map(convert_downstream_of_nick_to_target_coordinates, HA_RT['target_downstream']))
 
         if len(insertions) > 0:
             if len(insertions) > 1:
                 raise NotImplementedError
             
             insertion = insertions[0]
-            starts['pegRNA', 'insertion'], ends['pegRNA', 'insertion'] = sorted(map(convert_flap_to_pegRNA_coordinates, insertion))
+            flap_coords = (insertion['start_in_flap'], insertion['end_in_flap'])
+            downstream_coords = (insertion['starts_after_in_downstream'], insertion['starts_before_in_downstream'])
+            starts['pegRNA', 'insertion'], ends['pegRNA', 'insertion'] = sorted(map(convert_flap_to_pegRNA_coordinates, flap_coords))
+            starts_after, _ = sorted(map(convert_downstream_of_nick_to_target_coordinates, downstream_coords))
                 
             insertion_name = f'insertion_{self.name}'
             insertion = gff.Feature.from_fields(seqname=names['pegRNA'],
@@ -519,12 +531,23 @@ class pegRNA:
             insertion.attribute['color'] = default_feature_colors['insertion']
             new_features[names['pegRNA'], insertion_name] = insertion
 
+            insertion_starts_after_name = f'insertion_starts_after_{self.name}'
+            insertion_starts_after = gff.Feature.from_fields(seqname=names['target'],
+                                                             start=starts_after,
+                                                             end=starts_after,
+                                                             strand='+',
+                                                             ID=insertion_starts_after_name,
+                                                            )
+            new_features[names['target'], insertion_starts_after_name] = insertion_starts_after
+
+            self.insertion = insertion
+
         if len(deletions) > 0:
             if len(deletions) > 1:
                 raise NotImplementedError
 
             deletion = deletions[0]
-            starts['target', 'deletion'], ends['target', 'deletion'] = sorted(map(convert_target_to_downstream_of_nick_coordinates, deletion))
+            starts['target', 'deletion'], ends['target', 'deletion'] = sorted(map(convert_downstream_of_nick_to_target_coordinates, deletion))
             deletion_length = ends['target', 'deletion'] - starts['target', 'deletion'] + 1
 
             self.deletion = target_info.DegenerateDeletion([starts['target', 'deletion']], deletion_length)
@@ -548,7 +571,7 @@ class pegRNA:
             for SNV in SNVs.values():
                 positions = {
                     'pegRNA': convert_flap_to_pegRNA_coordinates(SNV['flap']),
-                    'target': convert_target_to_downstream_of_nick_coordinates(SNV['target_downstream']),
+                    'target': convert_downstream_of_nick_to_target_coordinates(SNV['target_downstream']),
                 }
 
                 if strands['target'] == '+':
@@ -580,11 +603,11 @@ class pegRNA:
 
                 for seq_name in names:
                     feature = gff.Feature.from_fields(seqname=names[seq_name],
-                                                        start=positions[seq_name],
-                                                        end=positions[seq_name],
-                                                        strand=strands[seq_name],
-                                                        ID=SNV_name,
-                                                        )
+                                                      start=positions[seq_name],
+                                                      end=positions[seq_name],
+                                                      strand=strands[seq_name],
+                                                      ID=SNV_name,
+                                                     )
                 
                     new_features[names[seq_name], SNV_name] = feature
 
@@ -604,11 +627,11 @@ class pegRNA:
         first_difference_position = starts['pegRNA', 'RTT'] - offset
         name = f'after_first_difference_{names["pegRNA"]}'
         feature = gff.Feature.from_fields(seqname=names['pegRNA'],
-                                        start=0,
-                                        end=first_difference_position,
-                                        strand='-',
-                                        ID=name,
-                                        )
+                                          start=0,
+                                          end=first_difference_position,
+                                          strand='-',
+                                          ID=name,
+                                         )
         new_features[names['pegRNA'], name] = feature
 
 

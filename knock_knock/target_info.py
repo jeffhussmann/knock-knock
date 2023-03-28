@@ -1776,7 +1776,7 @@ class TargetInfo():
         return {side: knock_knock.pegRNAs.extract_pegRNA_name(PBS_name) for side, PBS_name in self.PBS_names_by_side_of_target.items()}
 
     @memoized_property
-    def pegRNA_intended_deletion(self):
+    def pegRNA_programmed_deletion(self):
         if len(self.pegRNA_names) == 0:
             deletion = None
 
@@ -1885,7 +1885,7 @@ class TargetInfo():
 
     @memoized_property
     def pegRNA_programmed_insertion(self):
-        ''' Returns an unexpanded DegenerateInsertion representing the insertion
+        ''' Returns an expanded DegenerateInsertion representing the insertion
         programmed by a single pegRNA.
         '''
         if len(self.pegRNA_programmed_insertion_features) != 1:
@@ -1893,14 +1893,13 @@ class TargetInfo():
         else:
             pegRNA_name = self.pegRNA_names[0]
 
-            HA_RT = self.features[self.target, f'HA_RT_{pegRNA_name}']
+            starts_after = self.features[self.target, f'insertion_starts_after_{pegRNA_name}']
+            protospacer = self.features[self.target, knock_knock.pegRNAs.protospacer_name(pegRNA_name)]
 
             insertion_seq = self.feature_sequence(pegRNA_name, f'insertion_{pegRNA_name}')
 
-            if HA_RT.strand == '+':
-                starts_after = HA_RT.start - 1
-            else:
-                starts_after = HA_RT.end
+            starts_after = starts_after.start
+            if protospacer.strand == '-':
                 # insertion_seq as returned by self.feature_sequence should be the 
                 # RC of the relevant part of the pegRNA, but if the protospacer is
                 # on the minus strand, this needs to be RCed to represent the inserted
@@ -1908,6 +1907,7 @@ class TargetInfo():
                 insertion_seq = utilities.reverse_complement(insertion_seq)
 
             insertion = DegenerateInsertion([starts_after], [insertion_seq]) 
+            insertion = self.expand_degenerate_indel(insertion)
 
         return insertion
 
@@ -1943,9 +1943,11 @@ def degenerate_indel_from_string(details_string):
         kind, rest = details_string.split(':')
 
         if kind == 'D':
-            return DegenerateDeletion.from_string(details_string)
+            DegenerateIndel = DegenerateDeletion
         elif kind == 'I':
-            return DegenerateInsertion.from_string(details_string)
+            DegenerateIndel = DegenerateInsertion
+
+        return DegenerateIndel.from_string(details_string)
 
 class DegenerateDeletion():
     def __init__(self, starts_ats, length):

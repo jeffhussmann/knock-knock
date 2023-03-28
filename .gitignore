@@ -2,6 +2,7 @@ __pycache__/
 knock_knock.egg-info/
 build/
 dist/
+knock_knock/test/read_set_specifications
 knock_knock/example_data/results
 knock_knock/example_data/targets/**
 !knock_knock/example_data/targets/*.csv

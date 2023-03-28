@@ -429,7 +429,7 @@ class Layout(layout.Categorizer):
 
         return chains
 
-    def characterize_extension_chain_on_side(self, side, verbose=False):
+    def characterize_extension_chain_on_side(self, side):
         als = {}
 
         target_edge_al = self.target_edge_alignments[side]
@@ -549,7 +549,7 @@ class Layout(layout.Categorizer):
             interesting_indels, uninteresting_indels = self.interesting_and_uninteresting_indels([target_alignment])
             if len(interesting_indels) == 1:
                 indel = interesting_indels[0]
-                if indel.kind == 'D' and indel == self.target_info.pegRNA_intended_deletion:
+                if indel.kind == 'D' and indel == self.target_info.pegRNA_programmed_deletion:
                     is_intended_deletion = True
         return is_intended_deletion
 
@@ -1091,57 +1091,84 @@ class Layout(layout.Categorizer):
 
     @memoized_property
     def SNVs_summary(self):
+        ''' Record bases seen at programmed SNV positions relative to target +. '''
         SNVs = self.target_info.pegRNA_SNVs
 
         target = self.target_info.target
-
-        if SNVs is None:
-            target_position_to_name = {}
-            pegRNA_SNV_locii = {}
+        if len(self.target_info.pegRNA_names) == 1:
+            pegRNA_name = self.target_info.pegRNA_names[0]
         else:
-            target_position_to_name = {SNVs[target][name]['position']: name for name in SNVs[target]}
-            pegRNA_SNV_locii = {name: [] for name in SNVs[target]}
+            pegRNA_name = None
+
+        position_to_SNV_name = {}
+        SNV_name_to_pegRNA_base = {}
+
+        if SNVs is not None:
+            for ref_name in SNVs:
+                for name in SNVs[ref_name]:
+                    position_to_SNV_name[ref_name, SNVs[ref_name][name]['position']] = name
+
+            for SNV_name in position_to_SNV_name.values():
+                pegRNA_bases = set()
+
+                for pegRNA_name in self.target_info.pegRNA_names:
+                    if SNV_name in SNVs[pegRNA_name]:
+                        pegRNA_base = SNVs[pegRNA_name][SNV_name]['base']
+
+                        if SNVs[pegRNA_name][name]['strand'] == '-':
+                            pegRNA_base = utilities.reverse_complement(pegRNA_base)
+
+                    pegRNA_bases.add(pegRNA_base)
+
+                if len(pegRNA_bases) != 1:
+                    raise ValueError(name, pegRNA_bases)
+
+                pegRNA_base = list(pegRNA_bases)[0]
+                SNV_name_to_pegRNA_base[SNV_name] = pegRNA_base
+
+        read_bases_at_SNV_locii = {name: [] for name in position_to_SNV_name.values()}
 
         non_pegRNA_SNVs = []
 
         # Don't want to consider probably spurious alignments to parts of the query that
         # should have been trimmed. 
 
-        target_als = [
+        relevant_als  = [
             al for al in self.parsimonious_target_alignments
             if (interval.get_covered(al) & self.not_covered_by_primers).total_length >= 10
         ]
 
-        for al in target_als:
-            for true_read_i, read_b, ref_i, ref_b, qual in sam.aligned_tuples(al, self.target_info.target_sequence):
-                if ref_i in target_position_to_name:
-                    name = target_position_to_name[ref_i]
+        if pegRNA_name is not None and 'pegRNA' in self.extension_chain['alignments']:
+            pegRNA_al = self.extension_chain['alignments']['pegRNA']
 
-                    if SNVs[target][name]['strand'] == '-':
-                        read_b = utilities.reverse_complement(read_b)
+            relevant_als.append(pegRNA_al)
 
-                    pegRNA_SNV_locii[name].append((read_b, qual))
+        for al in relevant_als:
+            ref_seq = self.target_info.reference_sequences[al.reference_name]
+
+            for true_read_i, read_b, ref_i, ref_b, qual in sam.aligned_tuples(al, ref_seq):
+                if true_read_i is None or ref_i is None:
+                    continue
+
+                if (al.reference_name, ref_i) in position_to_SNV_name:
+                    SNV_name = position_to_SNV_name[al.reference_name, ref_i]
+
+                    # read_b is relative to al.reference_name + strand.
+                    # If target, done.
+                    # If pegRNA, flip if necessary
+                    if al.reference_name == pegRNA_name:
+                        if SNVs[al.reference_name][SNV_name]['strand'] == '-':
+                            read_b = utilities.reverse_complement(read_b)
+
+                    read_bases_at_SNV_locii[SNV_name].append((read_b, qual))
                 else:
-                    name = None
+                    SNV_name = None
 
-                if read_b != '-' and ref_b != '-' and read_b != ref_b:
-                    if name is None:
+                if al.reference_name == target and read_b != ref_b:
+                    if SNV_name is None:
                         matches_pegRNA = False
                     else:
-                        pegRNA_bases = set()
-                        for pegRNA_name in self.target_info.pegRNA_names:
-                            if name in SNVs[pegRNA_name]:
-                                pegRNA_base = SNVs[pegRNA_name][name]['base']
-
-                                if SNVs[pegRNA_name][name]['strand'] == '-':
-                                    pegRNA_base = utilities.reverse_complement(pegRNA_base)
-
-                                pegRNA_bases.add(pegRNA_base)
-
-                        if len(pegRNA_bases) != 1:
-                            raise ValueError(name, pegRNA_bases)
-
-                        pegRNA_base = next(iter(pegRNA_bases))
+                        pegRNA_base = SNV_name_to_pegRNA_base[SNV_name]
 
                         matches_pegRNA = (pegRNA_base == read_b)
 
@@ -1151,7 +1178,7 @@ class Layout(layout.Categorizer):
 
         non_pegRNA_SNVs = knock_knock.target_info.SNVs(non_pegRNA_SNVs)
 
-        return pegRNA_SNV_locii, non_pegRNA_SNVs
+        return read_bases_at_SNV_locii, non_pegRNA_SNVs
 
     @memoized_property
     def non_pegRNA_SNVs(self):
@@ -1250,6 +1277,27 @@ class Layout(layout.Categorizer):
     def pegRNA_SNV_string(self):
         _, string_summary = self.pegRNA_SNV_locii_summary
         return string_summary
+
+    @memoized_property
+    def full_incorporation_pegRNA_SNV_string(self):
+        ''' value of self.pegRNA_SNV_string expected if all SNVs are incorporated '''
+        ti = self.target_info
+        SNVs = ti.pegRNA_SNVs
+
+        if SNVs is None or len(ti.pegRNA_names) == 0:
+            full_incorporation = []
+        else:
+            pegRNA_name = ti.pegRNA_names[0]
+            full_incorporation = []
+            for name in sorted(SNVs[ti.target]):
+                pegRNA_base = SNVs[pegRNA_name][name]['base']
+                if SNVs[pegRNA_name][name]['strand'] == '-':
+                    pegRNA_base = utilities.reverse_complement(pegRNA_base)
+                full_incorporation.append(pegRNA_base)
+
+        full_incorporation = ''.join(full_incorporation)
+
+        return full_incorporation
 
     @memoized_property
     def indels(self):
@@ -1589,8 +1637,20 @@ class Layout(layout.Categorizer):
         self.relevant_alignments = list(self.extension_chain['alignments'].values())
 
         if self.intended_edit_type == 'combination':
-            self.subcategory = 'combination'
-            self.details = 'n/a'
+            if self.pegRNA_SNV_string == self.full_incorporation_pegRNA_SNV_string:
+                self.subcategory = 'combination'
+            else:
+                self.subcategory = 'partial incorporation'
+
+            indels = []
+
+            if self.target_info.pegRNA_programmed_deletion is not None:
+                indels.append(self.target_info.pegRNA_programmed_deletion)
+
+            if self.target_info.pegRNA_programmed_insertion is not None:
+                indels.append(self.target_info.pegRNA_programmed_insertion)
+
+            self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, indels)
 
         elif self.intended_edit_type == 'insertion':
             self.subcategory = 'insertion'
@@ -1602,7 +1662,7 @@ class Layout(layout.Categorizer):
             else:
                 self.subcategory = 'deletion + unintended mismatches'
 
-            self.outcome = HDROutcome(self.pegRNA_SNV_string, [self.target_info.pegRNA_intended_deletion])
+            self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, [self.target_info.pegRNA_programmed_deletion])
 
         else:
             target_alignment = self.single_read_covering_target_alignment
@@ -1615,8 +1675,8 @@ class Layout(layout.Categorizer):
             else:
                 uninteresting_indels = []
 
-            HDR_outcome = HDROutcome(self.pegRNA_SNV_string, [])
-            self.outcome = HDR_outcome
+            outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, [])
+            self.outcome = outcome
 
             if len(self.non_pegRNA_SNVs) == 0 and len(uninteresting_indels) == 0:
                 self.subcategory = 'SNV'
@@ -1626,7 +1686,7 @@ class Layout(layout.Categorizer):
                     indel = uninteresting_indels[0]
                     if indel.kind == 'D':
                         deletion_outcome = DeletionOutcome(indel)
-                        self.outcome = HDRPlusDeletionOutcome(HDR_outcome, deletion_outcome)
+                        self.outcome = HDRPlusDeletionOutcome(outcome, deletion_outcome)
 
                 self.subcategory = 'SNV + short indel far from cut'
 
@@ -1807,7 +1867,7 @@ class Layout(layout.Categorizer):
                     self.subcategory += ', no SNV'
 
                 if details['longest_edge_deletion'] is not None:
-                    if details['longest_edge_deletion'] != self.target_info.pegRNA_intended_deletion:
+                    if details['longest_edge_deletion'] != self.target_info.pegRNA_programmed_deletion:
                         self.subcategory += ', with deletion'
 
             pegRNA_edge = self.get_extension_chain_edge(self.pegRNA_side)
@@ -2165,7 +2225,8 @@ class Layout(layout.Categorizer):
                     if self.specific_to_pegRNA(self.single_read_covering_target_alignment):
                         self.category = 'intended edit'
                         self.subcategory = 'partial incorporation'
-                        self.outcome = Outcome('n/a')
+                        self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, [])
+                        self.relevant_alignments = [target_alignment] + self.non_protospacer_pegRNA_alignments
 
                     else:
                         self.category = 'wild type'
@@ -2194,12 +2255,14 @@ class Layout(layout.Categorizer):
                             self.subcategory = 'mismatches'
                             self.outcome = MismatchOutcome(self.non_pegRNA_SNVs)
 
+                        self.relevant_alignments = [target_alignment]
+
                 else:
                     self.category = 'uncategorized'
                     self.subcategory = 'uncategorized'
                     self.outcome = Outcome('n/a')
 
-                self.relevant_alignments = [target_alignment]
+                    self.relevant_alignments = self.uncategorized_relevant_alignments
 
             elif self.max_scaffold_overlap >= 2 and self.pegRNA_insertion is not None:
                 self.register_pegRNA_insertion()
@@ -2244,13 +2307,13 @@ class Layout(layout.Categorizer):
             else: # more than one indel
                 if len(self.indels) == 2:
                     indels = [indel for indel, near_cut in self.indels]
-                    if self.target_info.pegRNA_intended_deletion in indels:
-                        indel = [indel for indel in indels if indel != self.target_info.pegRNA_intended_deletion][0]
+                    if self.target_info.pegRNA_programmed_deletion in indels:
+                        indel = [indel for indel in indels if indel != self.target_info.pegRNA_programmed_deletion][0]
 
                         if indel.kind  == 'D':
                             self.category = 'edit + indel'
                             self.subcategory = 'deletion'
-                            HDR_outcome = HDROutcome(self.pegRNA_SNV_string, [self.target_info.pegRNA_intended_deletion])
+                            HDR_outcome = HDROutcome(self.pegRNA_SNV_string, [self.target_info.pegRNA_programmed_deletion])
                             deletion_outcome = DeletionOutcome(indel)
                             self.outcome = HDRPlusDeletionOutcome(HDR_outcome, deletion_outcome)
                             self.relevant_alignments = self.parsimonious_target_alignments + self.pegRNA_alignments
@@ -2333,7 +2396,7 @@ class Layout(layout.Categorizer):
 
             elif len(indels) == 1 and indels[0].kind == 'D':
                 indel = indels[0]
-                if indel == self.target_info.pegRNA_intended_deletion:
+                if indel == self.target_info.pegRNA_programmed_deletion:
                     self.category = 'edit + indel'
                     self.subcategory = 'duplication'
                 else:

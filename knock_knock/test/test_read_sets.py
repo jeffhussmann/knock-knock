@@ -102,7 +102,11 @@ class ReadSet:
 
             expected = self.expected_values[qname]
 
-            if expected['category'] != layout.category or expected['subcategory'] != layout.subcategory:
+            if expected['category'] != layout.category:
+                result_key = 'failed'
+            elif expected['subcategory'] != layout.subcategory:
+                result_key = 'failed'
+            elif 'details' in expected and expected['details'] != layout.details:
                 result_key = 'failed'
             else:
                 result_key = 'passed'
@@ -125,7 +129,7 @@ def get_all_read_sets(source_dir=None):
     return read_sets
 
 def build_all_pooled_screen_read_sets(only_new=False):
-    src_read_sets_dir = base_dir / 'manual_read_sets' / 'pooled_screens'
+    src_read_sets_dir = base_dir / 'read_set_specifications' / 'pooled_screens'
     read_set_fns = src_read_sets_dir.glob('*.yaml')
 
     for read_set_fn in read_set_fns:
@@ -141,7 +145,7 @@ def build_all_pooled_screen_read_sets(only_new=False):
 def build_pooled_screen_read_set(set_name):
     import repair_seq.pooled_screen
 
-    read_set_fn = base_dir / 'manual_read_sets' / 'pooled_screens' / f'{set_name}.yaml'
+    read_set_fn = base_dir / 'read_set_specifications' / 'pooled_screens' / f'{set_name}.yaml'
     manual_details = yaml.safe_load(read_set_fn.read_text())
 
     read_set = ReadSet(set_name)
@@ -202,7 +206,7 @@ def build_pooled_screen_read_set(set_name):
     read_set.expected_values_fn.write_text(yaml.safe_dump(read_info, sort_keys=False))
         
 def build_all_arrayed_group_read_sets(only_new=False):
-    src_read_sets_dir = base_dir / 'manual_read_sets' / 'arrayed_groups'
+    src_read_sets_dir = base_dir / 'read_set_specifications' / 'arrayed_groups'
     read_set_fns = src_read_sets_dir.glob('*.yaml')
 
     for read_set_fn in read_set_fns:
@@ -218,7 +222,7 @@ def build_all_arrayed_group_read_sets(only_new=False):
 def build_arrayed_group_read_set(set_name, source_dir=None, prompt=True):
     source_dir = populate_source_dir(source_dir)
 
-    read_set_fn = source_dir / 'manual_read_sets' / 'arrayed_groups' / f'{set_name}.yaml'
+    read_set_fn = source_dir / 'read_set_specifications' / 'arrayed_groups' / f'{set_name}.yaml'
     manual_details = yaml.safe_load(read_set_fn.read_text())
 
     read_set = ReadSet(set_name, source_dir=source_dir)
@@ -285,8 +289,8 @@ def build_arrayed_group_read_set(set_name, source_dir=None, prompt=True):
 
     read_set.expected_values_fn.write_text(yaml.safe_dump(read_info, sort_keys=False))
 
-def process_read_set(set_name):
-    read_set = ReadSet(set_name)
+def process_read_set(set_name, source_dir=None):
+    read_set = ReadSet(set_name, source_dir=source_dir)
     return read_set.process()
 
 def test_read_sets(source_dir=None):
