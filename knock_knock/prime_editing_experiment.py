@@ -452,7 +452,7 @@ def plot_single_flap_extension_chain_edges(ti,
         elif (strand == '-' and ti.sequencing_direction == '+') or (strand == '+' and ti.sequencing_direction == '-'):
             ys = [cut_y_bottom, cut_y_middle]
         else:
-            raise ValueError
+            ys = [cut_y_bottom, cut_y_top]
 
         ax.plot([x, x],
                 ys,
@@ -464,6 +464,8 @@ def plot_single_flap_extension_chain_edges(ti,
                 transform=ax.get_xaxis_transform(),
                 clip_on=False,
                )
+
+        ax.axvline(x, color='black')
 
     for ax in axs[:, 1]:
         ax.set_xlim(x_min, x_max)
@@ -479,7 +481,7 @@ def plot_single_flap_extension_chain_edges(ti,
     axs[0, 0].set_ylabel('Cumulative\npercentage of reads', size=12)
     axs[1, 0].set_ylabel('Percentage of reads', size=12)
 
-    return fig
+    return fig, axs
 
 def plot_dual_flap_extension_chain_edges(ti,
                                guide_sets,
