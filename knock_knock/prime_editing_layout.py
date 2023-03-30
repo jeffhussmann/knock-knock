@@ -1634,7 +1634,12 @@ class Layout(layout.Categorizer):
     def register_intended_edit(self):
         self.category = 'intended edit'
 
-        self.relevant_alignments = list(self.extension_chain['alignments'].values())
+        # For recodes, target als can sometimes be redundant.
+        chain_als = self.extension_chain['alignments']
+        relevant_alignments = interval.make_parsimonious([chain_als[k] for k in ['first target', 'second target'] if k in chain_als])
+        if 'pegRNA' in chain_als:
+            relevant_alignments.append(chain_als['pegRNA'])
+        self.relevant_alignments = relevant_alignments
 
         if self.intended_edit_type == 'combination':
             if self.pegRNA_SNV_string == self.full_incorporation_pegRNA_SNV_string:
@@ -1679,7 +1684,10 @@ class Layout(layout.Categorizer):
             self.outcome = outcome
 
             if len(self.non_pegRNA_SNVs) == 0 and len(uninteresting_indels) == 0:
-                self.subcategory = 'SNV'
+                if self.pegRNA_SNV_string == self.full_incorporation_pegRNA_SNV_string:
+                    self.subcategory = 'SNV'
+                else:
+                    self.subcategory = 'partial incorporation'
 
             elif len(uninteresting_indels) > 0:
                 if len(uninteresting_indels) == 1:
