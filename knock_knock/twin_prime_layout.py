@@ -856,6 +856,11 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
         manual_anchors = manual_diagram_kwargs.get('manual_anchors', self.manual_anchors(als_to_plot))
 
+        if 'phiX' in ti.supplemental_indices:
+            supplementary_reference_sequences = ti.supplemental_reference_sequences('phiX')
+        else:
+            supplementary_reference_sequences = None
+
         diagram_kwargs = dict(
             draw_sequence=True,
             flip_target=flip_target,
@@ -869,6 +874,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             center_on_primers=True,
             color_overrides=color_overrides,
             feature_heights=feature_heights,
+            supplementary_reference_sequences=supplementary_reference_sequences,
         )
 
         diagram_kwargs.update(**manual_diagram_kwargs)
