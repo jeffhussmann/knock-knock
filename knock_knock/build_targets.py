@@ -20,7 +20,7 @@ from Bio.SeqFeature import SeqFeature, FeatureLocation
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
-from hits import fastq, genomes, interval, mapping_tools, sam, sw, utilities
+from hits import fasta, fastq, genomes, interval, mapping_tools, sam, sw, utilities
 from knock_knock import target_info, pegRNAs
 
 def identify_homology_arms(donor_seq, donor_type, target_seq, cut_after, required_match_length=15):
@@ -242,6 +242,8 @@ class TargetInfoBuilder:
         else:
             self.target_name = primers_name
 
+        self.extra_sequences = self.info['extra_sequences']
+
     def build(self):
         donor_info = self.info.get('donor_sequence')
         if donor_info is None:
@@ -455,8 +457,8 @@ class TargetInfoBuilder:
                                  )
         gb_records[self.target_name] = target_record
 
-        if self.info.get('extra_sequences') is not None:
-            for extra_seq_name, extra_seq in self.info['extra_sequences']:
+        if self.extra_sequences is not None:
+            for extra_seq_name, extra_seq in self.extra_sequences:
                 record = SeqRecord(extra_seq, name=extra_seq_name, annotations={'molecule_type': 'DNA'})
                 gb_records[extra_seq_name] = record
 
@@ -557,21 +559,12 @@ class TargetInfoBuilder:
         if self.genome in self.index_locations:
             region_fetcher = genomes.build_region_fetcher(self.index_locations[self.genome]['fasta'])
         else:
-            gb_fns = sorted((self.base_dir / 'targets').glob('*.gb'))
-
-            reference_sequences = {}
-            for gb_fn in gb_fns:
-                for record in Bio.SeqIO.parse(gb_fn, 'genbank'):
-                    if record.name in reference_sequences:
-                        raise ValueError(f'multiple genbank records for {record.name}')
-
-                    reference_sequences[record.name] = str(record.seq)
-
-            if self.genome not in reference_sequences:
-                raise ValueError(f'no record found for {self.genome}')
+            all_extra_sequences = load_extra_sequences(self.base_dir)
+            if self.genome not in all_extra_sequences:
+                raise ValueError(f'no fasta record found for {self.genome}')
 
             def region_fetcher(seq_name, start, end):
-                return reference_sequences[seq_name][start:end]
+                return all_extra_sequences[seq_name][start:end]
 
         return region_fetcher
 
@@ -579,7 +572,7 @@ class TargetInfoBuilder:
         if self.genome in self.index_locations:
             primer_alignments = self.align_primers_to_reference_genome()
         else:
-            primer_alignments = self.align_primers_to_genbank()
+            primer_alignments = self.align_primers_to_extra_sequence()
 
         return primer_alignments
 
@@ -625,7 +618,7 @@ class TargetInfoBuilder:
 
         return primer_alignments
 
-    def align_primers_to_genbank(self):
+    def align_primers_to_extra_sequence(self):
         seq = self.region_fetcher(self.genome, None, None).upper()
 
         header = pysam.AlignmentHeader.from_references([self.genome], [len(seq)])
@@ -701,6 +694,20 @@ def load_sgRNAs(base_dir, process=True):
     else:
         return pegRNAs.read_csv(csv_fn, process=process)
 
+def load_extra_sequences(base_dir):
+    extra_sequences = {}
+
+    extra_sequences_fns = sorted((base_dir / 'targets').glob('*.fasta'))
+    for extra_sequences_fn in extra_sequences_fns:
+        records = fasta.to_dict(extra_sequences_fn)
+        duplicates = set(extra_sequences) & set(records)
+        if len(duplicates) > 0:
+            raise ValueError(f'multiple fasta records for {duplicates}')
+
+        extra_sequences.update(records)
+
+    return extra_sequences
+
 def build_component_registry(base_dir):
     registry = {}
 
@@ -713,11 +720,7 @@ def build_component_registry(base_dir):
     else:
         registry['amplicon_primers'] = {}
 
-    extra_sequences_fn = base_dir / 'targets' / 'extra_sequences.csv'
-    if extra_sequences_fn.exists():
-        registry['extra_sequence'] = pd.read_csv(extra_sequences_fn, index_col='name').squeeze('columns')
-    else:
-        registry['extra_sequence'] = {}
+    registry['extra_sequence'] = load_extra_sequences(base_dir)
 
     donors_fn = base_dir / 'targets' / 'donors.csv'
 

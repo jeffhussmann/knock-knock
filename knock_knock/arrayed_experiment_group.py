@@ -929,6 +929,9 @@ def arrayed_specialized_experiment_factory(experiment_kind):
     return ArrayedSpecializedExperiment, ArrayedSpecializedCommonSequencesExperiment
 
 def sanitize_and_validate_input(df):
+    if isinstance(df, (str, Path)):
+        df = pd.read_csv(df, dtype=str)
+
     # Remove any rows or columns that are entirely nan (e.g. because excel exported
     # unwanted empty rows into a csv), then replace any remaining nans with an empty string.
     df = df.dropna(axis='index', how='all').dropna(axis='columns', how='all').fillna('')
