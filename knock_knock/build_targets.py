@@ -244,7 +244,7 @@ class TargetInfoBuilder:
 
         self.extra_sequences = self.info['extra_sequences']
 
-    def build(self):
+    def build(self, generate_pegRNA_genbanks=False):
         donor_info = self.info.get('donor_sequence')
         if donor_info is None:
             donor_name = None
@@ -472,36 +472,35 @@ class TargetInfoBuilder:
                 for record in Bio.SeqIO.parse(full_gb_fn, 'genbank'):
                     gb_records[record.name] = record
 
-        if len(sgRNAs_with_extensions) > 0:
-            # Note: for debugging convenience, genbank files are written for pegRNAs,
-            # but these are NOT supplied as genbank records to make the final TargetInfo,
-            # since relevant features are either represented by the intial decomposition into
-            # components or inferred on instantiation of the TargetInfo.
-            pegRNA_names = [name for name, components in sgRNAs_with_extensions]
-            non_pegRNA_records = {name: record for name, record in gb_records.items() if name not in pegRNA_names}
-            gb_records_for_manifest = non_pegRNA_records
-        else:
-            gb_records_for_manifest = gb_records
+        # Note: for debugging convenience, genbank files can be written for pegRNAs,
+        # but these are NOT supplied as genbank records to make the final TargetInfo,
+        # since relevant features are either represented by the intial decomposition into
+        # components or inferred on instantiation of the TargetInfo.
+        pegRNA_names = [name for name, components in sgRNAs_with_extensions]
+        non_pegRNA_records = {name: record for name, record in gb_records.items() if name not in pegRNA_names}
+        gb_records_for_manifest = non_pegRNA_records
 
         truncated_name_i = 0
         with warnings.catch_warnings():
             warnings.filterwarnings('ignore', category=BiopythonWarning)
 
             for which_seq, record in gb_records.items(): 
-                gb_fn = self.target_dir / f'{which_seq}.gb'
-                try:
-                    Bio.SeqIO.write(record, gb_fn, 'genbank')
-                except ValueError:
-                    # locus line too long, can't write genbank file with BioPython
-                    old_name = record.name
 
-                    truncated_name = f'{record.name[:11]}_{truncated_name_i}'
-                    record.name = truncated_name
-                    Bio.SeqIO.write(record, gb_fn, 'genbank')
+                if which_seq not in pegRNA_names or generate_pegRNA_genbanks:
+                    gb_fn = self.target_dir / f'{which_seq}.gb'
+                    try:
+                        Bio.SeqIO.write(record, gb_fn, 'genbank')
+                    except ValueError:
+                        # locus line too long, can't write genbank file with BioPython
+                        old_name = record.name
 
-                    record.name = old_name
+                        truncated_name = f'{record.name[:11]}_{truncated_name_i}'
+                        record.name = truncated_name
+                        Bio.SeqIO.write(record, gb_fn, 'genbank')
 
-                    truncated_name_i += 1
+                        record.name = old_name
+
+                        truncated_name_i += 1
 
         manifest_fn = self.target_dir / 'manifest.yaml'
 
@@ -811,7 +810,7 @@ def build_target_infos_from_csv(base_dir, offtargets=False, defer_HA_identificat
                                     indices,
                                     defer_HA_identification=defer_HA_identification,
                                    )
-        builder.build()
+        builder.build(generate_pegRNA_genbanks=False)
 
 def build_indices(base_dir, name, num_threads=1, **STAR_index_kwargs):
     base_dir = Path(base_dir)
