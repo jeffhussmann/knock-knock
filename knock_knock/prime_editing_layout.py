@@ -1783,8 +1783,7 @@ class Layout(layout.Categorizer):
                 self.subcategory = 'plasmid'
 
             elif any(al in self.extra_alignments for al in results['covering_als']):
-                # amplification off of other plasmid
-                self.subcategory = 'plasmid'
+                self.subcategory = 'extra sequence'
             
             elif any(al.reference_name not in self.primary_ref_names for al in results['covering_als']):
                 organisms = {self.target_info.remove_organism_from_alignment(al)[0] for al in results['covering_als']}

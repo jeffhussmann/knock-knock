@@ -459,7 +459,7 @@ class TargetInfoBuilder:
 
         if self.extra_sequences is not None:
             for extra_seq_name, extra_seq in self.extra_sequences:
-                record = SeqRecord(extra_seq, name=extra_seq_name, annotations={'molecule_type': 'DNA'})
+                record = SeqRecord(Seq(extra_seq), name=extra_seq_name, annotations={'molecule_type': 'DNA'})
                 gb_records[extra_seq_name] = record
 
         if self.info.get('extra_genbanks') is not None:

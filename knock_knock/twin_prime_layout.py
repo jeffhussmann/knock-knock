@@ -103,7 +103,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
              'phiX',
              'primer dimer',
              'short unknown',
-             'plasmid',
+             'extra sequence',
             ),
         ),
         ('scaffold chimera',
