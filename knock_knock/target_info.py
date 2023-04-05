@@ -1191,12 +1191,12 @@ class TargetInfo():
 
     @memoized_property
     def SNV_names(self):
-        if self.donor is None and len(self.pegRNA_names) == 1:
-            SNV_source = self.pegRNA_names[0]
+        if len(self.pegRNA_names) > 0:
+            SNV_sources = self.pegRNA_names
         else:
-            SNV_source = self.donor
+            SNV_sources = [self.donor]
 
-        return sorted([name for seq_name, name in self.features if seq_name == SNV_source and name.startswith('SNV')])
+        return sorted({name for seq_name, name in self.features if seq_name in SNV_sources and name.startswith('SNV')})
 
     @memoized_property
     def donor_SNVs_manual(self):
@@ -1205,29 +1205,35 @@ class TargetInfo():
             'donor': {},
         }
 
-        if self.donor is None and len(self.pegRNA_names) == 1:
-            donor = self.pegRNA_names[0]
-        else:
-            donor = self.donor
-
-        if donor is None:
+        if self.donor is None and len(self.pegRNA_names) == 0:
             return SNVs
 
-        for key, seq_name in [('target', self.target), ('donor', donor)]:
+        seqs = [
+            ('target', self.target),
+        ]
+
+        if self.donor is not None:
+            seqs.append(('donor', self.donor))
+        else:
+            for pegRNA_name in self.pegRNA_names:
+                seqs.append(('donor', pegRNA_name))
+
+        for key, seq_name in seqs:
             seq = self.reference_sequences[seq_name]
             for name in self.SNV_names:
-                feature = self.features[seq_name, name]
-                strand = feature.strand
-                position = feature.start
-                b = seq[position:position + 1]
-                if strand == '-':
-                    b = utilities.reverse_complement(b)
+                if (seq_name, name) in self.features:
+                    feature = self.features[seq_name, name]
+                    strand = feature.strand
+                    position = feature.start
+                    b = seq[position:position + 1]
+                    if strand == '-':
+                        b = utilities.reverse_complement(b)
 
-                SNVs[key][name] = {
-                    'position': position,
-                    'strand': strand,
-                    'base': b,
-                }
+                    SNVs[key][name] = {
+                        'position': position,
+                        'strand': strand,
+                        'base': b,
+                    }
             
         return SNVs
 

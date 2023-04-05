@@ -957,13 +957,13 @@ def sanitize_and_validate_input(df):
     if not df['sample_name'].is_unique:
         counts = df['sample_name'].value_counts()
         bad_names = ', '.join(f'{name} ({count})' for name, count in counts[counts > 1].items())
-        raise ValueError(f'Sample name are not unique: {bad_names}')
+        raise ValueError(f'Sample names are not unique: {bad_names}')
 
     return df
 
-def make_targets(base_dir, df, extra_genbanks=None):
-    if extra_genbanks is None:
-        extra_genbanks = []
+def make_targets(base_dir, df, extra_sequences=None):
+    if extra_sequences is None:
+        extra_sequences = []
 
     targets = {}
 
@@ -981,7 +981,7 @@ def make_targets(base_dir, df, extra_genbanks=None):
             'genome': genome,
             'amplicon_primers': amplicon_primers,
             'sgRNAs': ';'.join(all_sgRNAs),
-            'extra_genbanks': ';'.join(extra_genbanks),
+            'extra_sequences': ';'.join(extra_sequences),
         }
 
     targets_df = pd.DataFrame.from_dict(targets, orient='index')

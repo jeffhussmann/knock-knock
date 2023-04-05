@@ -34,7 +34,7 @@ def test_intended_deletion_inference():
                                                )
 
         expected = knock_knock.target_info.degenerate_indel_from_string(expected_as_string)
-        assert (ti.pegRNA_intended_deletion == expected)
+        assert (ti.pegRNA_programmed_deletion == expected)
 
 def test_twin_prime_intended_deletion_inference():
     for pegRNA_pair, expected_as_string, is_prime_del in [
@@ -55,7 +55,7 @@ def test_twin_prime_intended_deletion_inference():
                                                    )
 
             expected = knock_knock.target_info.degenerate_indel_from_string(expected_as_string)
-            assert (ti.pegRNA_intended_deletion == expected)
+            assert (ti.pegRNA_programmed_deletion == expected)
             assert (ti.is_prime_del == is_prime_del)
 
 def test_pegRNA_PBS_and_RTT_inference():

@@ -115,7 +115,7 @@ class Layout(layout.Categorizer):
              'b_subtilis',
              'primer dimer',
              'short unknown',
-             'plasmid',
+             'extra sequence',
              'phiX',
             ),
         ),
@@ -1095,11 +1095,6 @@ class Layout(layout.Categorizer):
         SNVs = self.target_info.pegRNA_SNVs
 
         target = self.target_info.target
-        if len(self.target_info.pegRNA_names) == 1:
-            pegRNA_name = self.target_info.pegRNA_names[0]
-        else:
-            pegRNA_name = None
-
         position_to_SNV_name = {}
         SNV_name_to_pegRNA_base = {}
 
@@ -1118,7 +1113,7 @@ class Layout(layout.Categorizer):
                         if SNVs[pegRNA_name][name]['strand'] == '-':
                             pegRNA_base = utilities.reverse_complement(pegRNA_base)
 
-                    pegRNA_bases.add(pegRNA_base)
+                        pegRNA_bases.add(pegRNA_base)
 
                 if len(pegRNA_bases) != 1:
                     raise ValueError(name, pegRNA_bases)
@@ -1138,10 +1133,18 @@ class Layout(layout.Categorizer):
             if (interval.get_covered(al) & self.not_covered_by_primers).total_length >= 10
         ]
 
-        if pegRNA_name is not None and 'pegRNA' in self.extension_chain['alignments']:
-            pegRNA_al = self.extension_chain['alignments']['pegRNA']
+        if len(self.target_info.pegRNA_names) == 1:
+            if 'pegRNA' in self.extension_chain['alignments']:
+                pegRNA_al = self.extension_chain['alignments']['pegRNA']
 
-            relevant_als.append(pegRNA_al)
+                relevant_als.append(pegRNA_al)
+
+        elif len(self.target_info.pegRNA_names) == 2:
+            for side, extension_chain in self.extension_chains_by_side.items():
+                if 'first pegRNA' in extension_chain['alignments']:
+                    pegRNA_al = extension_chain['alignments']['first pegRNA']
+
+                    relevant_als.append(pegRNA_al)
 
         for al in relevant_als:
             ref_seq = self.target_info.reference_sequences[al.reference_name]
@@ -1284,15 +1287,21 @@ class Layout(layout.Categorizer):
         ti = self.target_info
         SNVs = ti.pegRNA_SNVs
 
-        if SNVs is None or len(ti.pegRNA_names) == 0:
-            full_incorporation = []
-        else:
-            pegRNA_name = ti.pegRNA_names[0]
-            full_incorporation = []
+        full_incorporation = []
+
+        if SNVs is not None:
             for name in sorted(SNVs[ti.target]):
-                pegRNA_base = SNVs[pegRNA_name][name]['base']
-                if SNVs[pegRNA_name][name]['strand'] == '-':
-                    pegRNA_base = utilities.reverse_complement(pegRNA_base)
+                pegRNA_bases = set()
+                for pegRNA_name in ti.pegRNA_names:
+                    if name in SNVs[pegRNA_name]:
+                        pegRNA_base = SNVs[pegRNA_name][name]['base']
+                        if SNVs[pegRNA_name][name]['strand'] == '-':
+                            pegRNA_base = utilities.reverse_complement(pegRNA_base)
+                        pegRNA_bases.add(pegRNA_base)
+                if len(pegRNA_bases) != 1:
+                    raise ValueError(name, pegRNA_bases)
+                else:
+                    pegRNA_base = list(pegRNA_bases)[0]
                 full_incorporation.append(pegRNA_base)
 
         full_incorporation = ''.join(full_incorporation)
@@ -1659,7 +1668,7 @@ class Layout(layout.Categorizer):
 
         elif self.intended_edit_type == 'insertion':
             self.subcategory = 'insertion'
-            self.outcome = InsertionOutcome(self.target_info.pegRNA_programmed_insertion)
+            self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, [self.target_info.pegRNA_programmed_insertion])
 
         elif self.intended_edit_type == 'deletion':
             if len(self.non_pegRNA_SNVs) == 0:

@@ -568,13 +568,13 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             if self.is_intended_replacement:
                 self.category = 'intended edit'
                 self.subcategory = self.is_intended_replacement
-                self.outcome = Outcome('n/a')
+                self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, [])
                 self.relevant_alignments = self.target_edge_alignments_list + self.pegRNA_extension_als_list
 
             elif self.is_intended_deletion:
                 self.category = 'intended edit'
                 self.subcategory = 'deletion'
-                self.outcome = DeletionOutcome(self.target_info.pegRNA_programmed_deletion)
+                self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, [self.target_info.pegRNA_programmed_deletion])
                 self.relevant_alignments = self.target_edge_alignments_list + self.pegRNA_extension_als_list
 
             elif self.is_unintended_rejoining:
@@ -875,6 +875,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             color_overrides=color_overrides,
             feature_heights=feature_heights,
             supplementary_reference_sequences=supplementary_reference_sequences,
+            highlight_SNPs=True,
         )
 
         diagram_kwargs.update(**manual_diagram_kwargs)
