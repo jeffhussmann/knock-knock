@@ -296,7 +296,6 @@ class Layout(layout.Categorizer):
         manually_extended_al = self.generate_extended_target_PBS_alignment(pegRNA_al)
         if manually_extended_al is not None:
             target_als = target_als + [manually_extended_al]
-        target_als = sam.make_noncontained(target_als)
 
         relevant_target_al = None
 
@@ -898,6 +897,7 @@ class Layout(layout.Categorizer):
                                                                'illumina',
                                                                self.ins_size_to_split_at,
                                                                self.del_size_to_split_at,
+                                                               programmed_substitutions=self.target_info.pegRNA_programmed_alternative_bases,
                                                               )
 
             seq_bytes = self.target_info.reference_sequence_bytes[al.reference_name]
@@ -949,6 +949,7 @@ class Layout(layout.Categorizer):
                                                                    'illumina',
                                                                    self.ins_size_to_split_at,
                                                                    self.del_size_to_split_at,
+                                                                   programmed_substitutions=self.target_info.pegRNA_programmed_alternative_bases,
                                                                   )
                 
                 target_seq_bytes = self.target_info.reference_sequences[al.reference_name].encode()
@@ -1096,30 +1097,11 @@ class Layout(layout.Categorizer):
 
         target = self.target_info.target
         position_to_SNV_name = {}
-        SNV_name_to_pegRNA_base = {}
 
         if SNVs is not None:
             for ref_name in SNVs:
                 for name in SNVs[ref_name]:
                     position_to_SNV_name[ref_name, SNVs[ref_name][name]['position']] = name
-
-            for SNV_name in position_to_SNV_name.values():
-                pegRNA_bases = set()
-
-                for pegRNA_name in self.target_info.pegRNA_names:
-                    if SNV_name in SNVs[pegRNA_name]:
-                        pegRNA_base = SNVs[pegRNA_name][SNV_name]['base']
-
-                        if SNVs[pegRNA_name][name]['strand'] == '-':
-                            pegRNA_base = utilities.reverse_complement(pegRNA_base)
-
-                        pegRNA_bases.add(pegRNA_base)
-
-                if len(pegRNA_bases) != 1:
-                    raise ValueError(name, pegRNA_bases)
-
-                pegRNA_base = list(pegRNA_bases)[0]
-                SNV_name_to_pegRNA_base[SNV_name] = pegRNA_base
 
         read_bases_at_SNV_locii = {name: [] for name in position_to_SNV_name.values()}
 
@@ -1159,9 +1141,8 @@ class Layout(layout.Categorizer):
                     # read_b is relative to al.reference_name + strand.
                     # If target, done.
                     # If pegRNA, flip if necessary
-                    if al.reference_name == pegRNA_name:
-                        if SNVs[al.reference_name][SNV_name]['strand'] == '-':
-                            read_b = utilities.reverse_complement(read_b)
+                    if SNVs[al.reference_name][SNV_name]['strand'] == '-':
+                        read_b = utilities.reverse_complement(read_b)
 
                     read_bases_at_SNV_locii[SNV_name].append((read_b, qual))
                 else:
@@ -1171,7 +1152,7 @@ class Layout(layout.Categorizer):
                     if SNV_name is None:
                         matches_pegRNA = False
                     else:
-                        pegRNA_base = SNV_name_to_pegRNA_base[SNV_name]
+                        pegRNA_base = SNVs[target][SNV_name]['alternative_base']
 
                         matches_pegRNA = (pegRNA_base == read_b)
 
@@ -1227,43 +1208,30 @@ class Layout(layout.Categorizer):
 
             has_pegRNA_SNV = False
 
-            for name in sorted(SNVs[target]):
+            for SNV_name in sorted(SNVs[target]):
                 bs = defaultdict(list)
 
-                for b, q in pegRNA_SNV_locii[name]:
+                for b, q in pegRNA_SNV_locii[SNV_name]:
                     bs[b].append(q)
 
                 if len(bs) == 0:
-                    genotype[name] = '-'
+                    genotype[SNV_name] = '-'
                 elif len(bs) != 1:
-                    genotype[name] = 'N'
+                    genotype[SNV_name] = 'N'
                 else:
                     b, qs = list(bs.items())[0]
 
-                    if b == SNVs[target][name]['base']:
-                        genotype[name] = '_'
+                    if b == SNVs[target][SNV_name]['base']:
+                        genotype[SNV_name] = '_'
                     else:
-                        genotype[name] = b
+                        genotype[SNV_name] = b
 
-                        pegRNA_bases = set()
-
-                        for pegRNA_name in self.target_info.pegRNA_names:
-                            if name in SNVs[pegRNA_name]:
-                                pegRNA_base = SNVs[pegRNA_name][name]['base']
-                                if SNVs[pegRNA_name][name]['strand'] == '-':
-                                    pegRNA_base = utilities.reverse_complement(pegRNA_base)
-
-                                pegRNA_bases.add(pegRNA_base)
-
-                        if len(pegRNA_bases) > 1:
-                            raise ValueError(pegRNA_base)
-                        else:
-                            pegRNA_base = list(pegRNA_bases)[0]
+                        pegRNA_base = SNVs[target][SNV_name]['alternative_base']
                     
                         if b == pegRNA_base:
                             has_pegRNA_SNV = True
 
-            string_summary = ''.join(genotype[name] for name in sorted(SNVs[target]))
+            string_summary = ''.join(genotype[SNV_name] for SNV_name in sorted(SNVs[target]))
 
         return has_pegRNA_SNV, string_summary
 
@@ -1290,18 +1258,8 @@ class Layout(layout.Categorizer):
         full_incorporation = []
 
         if SNVs is not None:
-            for name in sorted(SNVs[ti.target]):
-                pegRNA_bases = set()
-                for pegRNA_name in ti.pegRNA_names:
-                    if name in SNVs[pegRNA_name]:
-                        pegRNA_base = SNVs[pegRNA_name][name]['base']
-                        if SNVs[pegRNA_name][name]['strand'] == '-':
-                            pegRNA_base = utilities.reverse_complement(pegRNA_base)
-                        pegRNA_bases.add(pegRNA_base)
-                if len(pegRNA_bases) != 1:
-                    raise ValueError(name, pegRNA_bases)
-                else:
-                    pegRNA_base = list(pegRNA_bases)[0]
+            for SNV_name in sorted(SNVs[ti.target]):
+                pegRNA_base = SNVs[ti.target][SNV_name]['alternative_base']
                 full_incorporation.append(pegRNA_base)
 
         full_incorporation = ''.join(full_incorporation)
@@ -1780,7 +1738,7 @@ class Layout(layout.Categorizer):
 
             if any(al.reference_name in pegRNA_names for al in results['covering_als']):
                 # amplification off of pegRNA-expressing plasmid
-                self.subcategory = 'plasmid'
+                self.subcategory = 'extra sequence'
 
             elif any(al in self.extra_alignments for al in results['covering_als']):
                 self.subcategory = 'extra sequence'

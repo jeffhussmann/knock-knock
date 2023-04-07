@@ -1824,6 +1824,7 @@ class TargetInfo():
                     'position': position in target,
                     'strand': '+',
                     'base': base on + strand of target at position,
+                    'alternative_base': base programmed by pegRNA(s), relative to + strand of target,
                 },
                 ...,
             },
@@ -1833,6 +1834,7 @@ class TargetInfo():
                     'strand': opposite of the strand of the protospacer targeted by pegRNA,
                     'base': base on + strand of pegRNA at position, so needs to be RC'ed if strand
                             is '-' to be compared to base of target SNV,
+                    'alternative_base': base in target relative to + strand of pegRNA,
                 },
                 ...,
             },
@@ -1857,6 +1859,29 @@ class TargetInfo():
             raise ValueError
 
         return SNVs
+
+    @memoized_property
+    def pegRNA_programmed_alternative_bases(self):
+        programmed_subs = {}
+
+        if self.pegRNA_SNVs is not None:
+            for ref_name, SNVs in self.pegRNA_SNVs.items():
+                programmed_subs[ref_name] = {}
+                for SNV_name, SNV in SNVs.items():
+                    programmed_subs[ref_name][SNV['position']] = SNV['alternative_base']
+
+        return programmed_subs
+
+    @memoized_property
+    def pegRNA_programmed_alternative_bases_as_bytes(self):
+        programmed_subs = {}
+
+        for ref_name, subs in self.pegRNA_programmed_alternative_bases.items():
+            programmed_subs[ref_name] = {}
+            for position, b in subs.items():
+                programmed_subs[ref_name][position] = b.encode()[0]
+
+        return programmed_subs
 
     @memoized_property
     def pegRNA_programmed_deletions(self):

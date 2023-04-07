@@ -429,17 +429,10 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
     @memoized_property
     def intended_SNVs_replaced(self):
-        als = self.pegRNA_extension_als
-        positions_not_replaced = {side: self.alignment_SNV_summary(als[side])['mismatches'] for side in als}
-        positions_replaced = {side: self.alignment_SNV_summary(als[side])['matches'] for side in als}
-
-        any_positions_not_replaced = any(len(ps) > 0 for side, ps in positions_not_replaced.items())
-        any_positions_replaced = any(len(ps) > 0 for side, ps in positions_replaced.items())
-
-        if not any_positions_replaced:
+        if not self.has_pegRNA_SNV:
             fraction_replaced = 'none'
         else:
-            if any_positions_not_replaced:
+            if self.pegRNA_SNV_string != self.full_incorporation_pegRNA_SNV_string:
                 fraction_replaced = 'partial replacement'
             else:
                 fraction_replaced = 'replacement'
@@ -462,6 +455,17 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                     status = self.intended_SNVs_replaced
 
         return status
+
+    @memoized_property
+    def intended_edit_relevant_alignments(self):
+        als = list(self.extension_chains_by_side['left']['alignments'].values())
+
+        target_als = [al for al in als if al.reference_name == self.target_info.target]
+        target_als = interval.make_parsimonious(target_als)
+
+        pegRNA_als = [al for al in als if al.reference_name != self.target_info.target]
+
+        return target_als + pegRNA_als
 
     @memoized_property
     def is_unintended_rejoining(self):
@@ -500,42 +504,17 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
         self.outcome = knock_knock.prime_editing_layout.UnintendedRejoiningOutcome(left_edge, right_edge, MH_nts)
 
-        self.relevant_alignments = list(chains['left']['alignments'].values()) + list(chains['right']['alignments'].values())
+        als_by_ref = defaultdict(list)
+        for al in list(chains['left']['alignments'].values()) + list(chains['right']['alignments'].values()):
+            als_by_ref[al.reference_name].append(al)
+
+        self.relevant_alignments = []
+        for ref_name, als in als_by_ref.items():
+            self.relevant_alignments.extend(sam.make_noncontained(als))
 
     @memoized_property
     def has_any_flipped_pegRNA_al(self):
         return {side for side in ['left', 'right'] if len(self.flipped_pegRNA_als[side]) > 0}
-
-    def alignment_SNV_summary(self, al):
-        ''' Identifies any positions in al that correspond to sequence differences
-        between the target and pegRNAs and separates them based on whether they
-        agree with al's reference sequence or not.
-        ''' 
-
-        ti = self.target_info
-        SNVs = ti.pegRNA_SNVs
-        
-        positions_seen = {
-            'matches': set(),
-            'mismatches': set(),
-        }
-
-        if SNVs is None or al is None or al.is_unmapped:
-            return positions_seen
-
-        ref_seq = ti.reference_sequences[al.reference_name]
-
-        pegRNA_SNP_positions = {SNVs[al.reference_name][name]['position'] for name in SNVs[al.reference_name]}
-
-        for true_read_i, read_b, ref_i, ref_b, qual in sam.aligned_tuples(al, ref_seq):
-            # Note: read_b and ref_b are as if the read is the forward strand
-            if ref_i in pegRNA_SNP_positions:
-                if read_b != ref_b:
-                    positions_seen['mismatches'].add(ref_i)
-                else:
-                    positions_seen['matches'].add(ref_i)
-
-        return positions_seen
 
     @memoized_property
     def scaffold_chimera(self):
@@ -569,13 +548,13 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                 self.category = 'intended edit'
                 self.subcategory = self.is_intended_replacement
                 self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, [])
-                self.relevant_alignments = self.target_edge_alignments_list + self.pegRNA_extension_als_list
+                self.relevant_alignments = self.intended_edit_relevant_alignments
 
             elif self.is_intended_deletion:
                 self.category = 'intended edit'
                 self.subcategory = 'deletion'
                 self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, [self.target_info.pegRNA_programmed_deletion])
-                self.relevant_alignments = self.target_edge_alignments_list + self.pegRNA_extension_als_list
+                self.relevant_alignments = self.intended_edit_relevant_alignments
 
             elif self.is_unintended_rejoining:
                 self.register_unintended_rejoining()
@@ -820,12 +799,16 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         features_to_show.update({(ti.target, name) for name in ti.protospacer_names})
         features_to_show.update({(ti.target, name) for name in ti.PAM_features})
 
-
         for pegRNA_name in ti.pegRNA_names:
             PBS_name = knock_knock.pegRNAs.PBS_name(pegRNA_name)
             features_to_show.add((ti.target, PBS_name))
             label_overrides[PBS_name] = None
             feature_heights[PBS_name] = 0.5
+
+            # Draw PBS feature on the same side as corresponding nick.
+            feature = ti.features[ti.target, PBS_name]
+            if (feature.strand == '+' and not flip_target) or (feature.strand == '-' and flip_target):
+                feature_heights[PBS_name] *= -1
 
         for deletion in self.target_info.pegRNA_programmed_deletions:
             label_overrides[deletion.ID] = f'programmed deletion ({len(deletion)} nts)'

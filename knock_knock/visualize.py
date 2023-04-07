@@ -185,7 +185,7 @@ class ReadDiagram():
 
                 for al in als:
                     if al.reference_name in refs_to_split:
-                        split_als = layout_module.comprehensively_split_alignment(al, self.target_info, self.layout_mode)
+                        split_als = layout_module.comprehensively_split_alignment(al, self.target_info, self.layout_mode, programmed_substitutions=self.target_info.pegRNA_programmed_alternative_bases)
 
                         seq_bytes = self.target_info.reference_sequence_bytes[al.reference_name]
                         extended = [sw.extend_alignment(al, seq_bytes) for al in split_als]

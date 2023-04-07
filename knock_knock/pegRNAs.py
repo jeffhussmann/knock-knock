@@ -584,8 +584,10 @@ class pegRNA:
 
                 if pegRNA_strand == '+':
                     pegRNA_base_effective = pegRNA_base_plus
+                    target_base_effective = target_base_plus
                 else:
                     pegRNA_base_effective = utilities.reverse_complement(pegRNA_base_plus)
+                    target_base_effective = utilities.reverse_complement(target_base_plus)
 
                 SNV_name = f'SNV_{positions["target"]}_{target_base_plus}-{pegRNA_base_effective}'
 
@@ -593,12 +595,14 @@ class pegRNA:
                     'position': positions['target'],
                     'strand': '+',
                     'base': target_base_plus,
+                    'alternative_base': pegRNA_base_effective,
                 }
 
                 self.SNVs[self.name][SNV_name] = {
                     'position': positions['pegRNA'],
                     'strand': pegRNA_strand,
                     'base': pegRNA_base_plus,
+                    'alternative_base': target_base_effective,
                 }
 
                 for seq_name in names:
@@ -953,6 +957,7 @@ def infer_twin_pegRNA_features(pegRNA_names,
                         'position': positions[target_name],
                         'strand': '+',
                         'base': target_b,
+                        'alternative_base': pegRNAs_b,
                     }
 
                     feature = gff.Feature.from_fields(seqname=target_name,
@@ -970,11 +975,13 @@ def infer_twin_pegRNA_features(pegRNA_names,
                         # Note: convention on pegRNA base strandedness is a constant source
                         # of confusion.
                         pegRNA_base_effective = utilities.reverse_complement(pegRNAs_b)
+                        target_base_effective = utilities.reverse_complement(target_b)
 
                         SNVs[pegRNA_name][SNV_name] = {
                             'position': positions[pegRNA_name],
                             'strand': '-',
                             'base': pegRNA_base_effective,
+                            'alternative_base': target_base_effective,
                         }
 
                         feature = gff.Feature.from_fields(seqname=pegRNA_name,
@@ -990,11 +997,13 @@ def infer_twin_pegRNA_features(pegRNA_names,
                         pegRNA_name = pegRNA_names_by_side[3]
 
                         pegRNA_base_effective = pegRNAs_b
+                        target_base_effective = target_b
 
                         SNVs[pegRNA_name][SNV_name] = {
                             'position': positions[pegRNA_name],
                             'strand': '+',
-                            'base': pegRNAs_b,
+                            'base': pegRNA_base_effective,
+                            'alternative_base': target_base_effective,
                         }
 
                         feature = gff.Feature.from_fields(seqname=pegRNA_name,

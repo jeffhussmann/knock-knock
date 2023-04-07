@@ -2705,7 +2705,13 @@ def max_indel_nearby(alignment, ref_pos, window):
     max_ins = max_ins_nearby(alignment, ref_pos, window)
     return max(max_del, max_ins)
 
-def get_mismatch_info(alignment, reference_sequences):
+def get_mismatch_info(alignment, reference_sequences, programmed_substitutions=None):
+    if programmed_substitutions is None:
+        programmed_substitutions = {}
+
+    if alignment.reference_name in programmed_substitutions:
+        programmed_substitutions = programmed_substitutions[alignment.reference_name]
+
     mismatches = []
 
     tuples = []
@@ -2729,6 +2735,9 @@ def get_mismatch_info(alignment, reference_sequences):
         ref_b = ref_b.upper()
 
         if read_b != ref_b:
+            if ref_p in programmed_substitutions and programmed_substitutions[ref_p] == read_b:
+                continue
+
             true_read_p = sam.true_query_position(read_p, alignment)
             q = alignment.query_qualities[read_p]
 
@@ -2763,10 +2772,10 @@ def get_indel_info(alignment):
 
     return indels
 
-def edit_positions(al, reference_sequences, use_deletion_length=False):
+def edit_positions(al, reference_sequences, use_deletion_length=False, programmed_substitutions=None):
     bad_read_ps = np.zeros(al.query_length)
     
-    for read_p, *rest in get_mismatch_info(al, reference_sequences):
+    for read_p, *rest in get_mismatch_info(al, reference_sequences, programmed_substitutions=programmed_substitutions):
         bad_read_ps[read_p] += 1
         
     for indel_type, indel_info in get_indel_info(al):
@@ -2786,14 +2795,14 @@ def edit_positions(al, reference_sequences, use_deletion_length=False):
                
     return bad_read_ps
 
-def split_at_edit_clusters(al, reference_sequences, num_edits=5, window_size=11):
+def split_at_edit_clusters(al, reference_sequences, num_edits=5, window_size=11, programmed_substitutions=None):
     ''' Identify read locations at which there are at least num_edits edits in a windows_size nt window. 
     Excise outwards from any such location until reaching a stretch of 5 exact matches.
     Remove the excised region, producing new cropped alignments.
     '''
     split_als = []
     
-    bad_read_ps = edit_positions(al, reference_sequences)
+    bad_read_ps = edit_positions(al, reference_sequences, programmed_substitutions=programmed_substitutions)
     rolling_sums = pd.Series(bad_read_ps).rolling(window=window_size, center=True, min_periods=1).sum()
 
     argmax = rolling_sums.idxmax()
@@ -2813,7 +2822,7 @@ def split_at_edit_clusters(al, reference_sequences, num_edits=5, window_size=11)
         if last_read_p_in_before is not None:
             cropped_before = sam.crop_al_to_query_int(al, 0, last_read_p_in_before)
             if cropped_before is not None:
-                split_als.extend(split_at_edit_clusters(cropped_before, reference_sequences))
+                split_als.extend(split_at_edit_clusters(cropped_before, reference_sequences, programmed_substitutions=programmed_substitutions))
 
         first_read_p_in_after = None
             
@@ -2827,7 +2836,7 @@ def split_at_edit_clusters(al, reference_sequences, num_edits=5, window_size=11)
         if first_read_p_in_after is not None:
             cropped_after = sam.crop_al_to_query_int(al, first_read_p_in_after, np.inf)
             if cropped_after is not None:
-                split_als.extend(split_at_edit_clusters(cropped_after, reference_sequences))
+                split_als.extend(split_at_edit_clusters(cropped_after, reference_sequences, programmed_substitutions=programmed_substitutions))
 
     split_als = [al for al in split_als if not al.is_unmapped]
 
@@ -2852,7 +2861,7 @@ def crop_terminal_mismatches(al, reference_sequences):
 
     return cropped_al
 
-def comprehensively_split_alignment(al, target_info, mode, ins_size_to_split_at=None, del_size_to_split_at=None):
+def comprehensively_split_alignment(al, target_info, mode, ins_size_to_split_at=None, del_size_to_split_at=None, programmed_substitutions=None):
     ''' It is easier to reason about alignments if any that contain long insertions, long deletions, or clusters
     of many edits are split into multiple alignments.
     '''
@@ -2866,7 +2875,7 @@ def comprehensively_split_alignment(al, target_info, mode, ins_size_to_split_at=
         if del_size_to_split_at is None:
             del_size_to_split_at = 1
 
-        for split_1 in split_at_edit_clusters(al, target_info.reference_sequences):
+        for split_1 in split_at_edit_clusters(al, target_info.reference_sequences, programmed_substitutions=programmed_substitutions):
             for split_2 in sam.split_at_deletions(split_1, del_size_to_split_at):
                 for split_3 in sam.split_at_large_insertions(split_2, ins_size_to_split_at):
                     cropped_al = crop_terminal_mismatches(split_3, target_info.reference_sequences)
