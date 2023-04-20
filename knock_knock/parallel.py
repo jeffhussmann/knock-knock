@@ -1,6 +1,7 @@
 import logging
 import logging.handlers
 import multiprocessing
+import os
 
 def setup_logging_then_call(queue, func, args):
     ''' Register a QueueHandler connected queue, then call func
@@ -45,7 +46,8 @@ class PoolWithLoggerThread:
 
         self.queue_listener = logging.handlers.QueueListener(self.queue, *logger.handlers)
 
-        self.pool = multiprocessing.Pool(processes=processes, maxtasksperchild=1)
+        NICENESS = 3
+        self.pool = multiprocessing.Pool(processes=processes, maxtasksperchild=1, initializer=os.nice, initargs=(NICENESS,))
         
     def apply_async(self, func, args):
         ''' Provides the same interface as Pool.starmap, but connects each

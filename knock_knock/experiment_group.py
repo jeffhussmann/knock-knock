@@ -1,6 +1,8 @@
 import bisect
 import datetime
 import logging
+import multiprocessing
+import os
 
 import pandas as pd
 import pysam
@@ -43,7 +45,7 @@ class ExperimentGroup:
             'genomic_insertion_length_distributions': self.results_dir / 'genomic_insertion_length_distribution.txt',
         }
 
-    def process(self, generate_figures=False, num_processes=18, verbose=True):
+    def process(self, generate_figures=False, num_processes=18, verbose=True, use_logger_thread=False):
         self.results_dir.mkdir(exist_ok=True, parents=True)
         log_fn = self.results_dir / f'log_{datetime.datetime.now():%y%m%d-%H%M%S}.out'
 
@@ -61,7 +63,13 @@ class ExperimentGroup:
         if verbose:
             print(f'Logging in {log_fn}')
 
-        with knock_knock.parallel.PoolWithLoggerThread(num_processes, logger) as pool:
+        if use_logger_thread:
+            pool = knock_knock.parallel.PoolWithLoggerThread(num_processes, logger)
+        else:
+            NICENESS = 3
+            pool = multiprocessing.Pool(num_processes, maxtasksperchild=1, initializer=os.nice, initargs=(NICENESS,))
+
+        with pool:
             logger.info('Preprocessing')
 
             args = [(type(self), self.group_args, sample_name, 'preprocess') for sample_name in self.sample_names]
