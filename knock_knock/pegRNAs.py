@@ -315,8 +315,8 @@ class pegRNA:
         # the inclusion of extra target sequence in the query sequence.  
         aligner.mode = 'global'
         aligner.match_score = 2
-        aligner.mismatch_score = -1
-        aligner.open_gap_score = -4
+        aligner.mismatch_score = -2
+        aligner.open_gap_score = -6
         aligner.extend_gap_score = -0.1
         aligner.end_gap_score = 0
 
