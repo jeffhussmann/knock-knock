@@ -40,10 +40,12 @@ expected_values:
     category: unintended rejoining of RT'ed sequence
     subcategory: doesn't include insertion
     note: has ~15 nts of scaffold
+    expected_failure: subcategory has been removed
   01:02209:021025:031610_:
     category: unintended rejoining of RT'ed sequence
     subcategory: doesn't include insertion
     note: has ~50 nts of scaffold
+    expected_failure: subcategory has been removed
   01:01104:018168:014888_:
     category: duplication
     subcategory: simple

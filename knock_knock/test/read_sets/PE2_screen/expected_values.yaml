@@ -39,6 +39,7 @@ expected_values:
     category: extension from intended annealing
     subcategory: n/a
     note: dominant extension from intended annealing product from screen
+    expected_failure: subcategory has been removed
   01:01115:024261:032205_:
     category: deletion
     subcategory: clean
