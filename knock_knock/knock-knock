@@ -114,7 +114,6 @@ def make_tables(args):
 
 def build_targets(args):
     knock_knock.build_targets.build_target_infos_from_csv(args.project_directory,
-                                                          offtargets=args.offtargets,
                                                           defer_HA_identification=args.defer_HA_identification,
                                                          )
 
@@ -201,7 +200,6 @@ if __name__ == '__main__':
 
     parser_targets = subparsers.add_parser('build-targets', help='build annotations of target locii')
     add_project_directory_arg(parser_targets)
-    parser_targets.add_argument('--offtargets', action='store_true', help='don\'t enforce PAMs')
     parser_targets.add_argument('--defer_HA_identification', action='store_true', help='don\'t try to identiy homology arms')
     parser_targets.set_defaults(func=build_targets)
 

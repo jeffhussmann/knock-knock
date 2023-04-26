@@ -242,8 +242,6 @@ class TargetInfoBuilder:
         else:
             self.target_name = primers_name
 
-        self.extra_sequences = self.info['extra_sequences']
-
     def build(self, generate_pegRNA_genbanks=False):
         donor_info = self.info.get('donor_sequence')
         if donor_info is None:
@@ -457,8 +455,8 @@ class TargetInfoBuilder:
                                  )
         gb_records[self.target_name] = target_record
 
-        if self.extra_sequences is not None:
-            for extra_seq_name, extra_seq in self.extra_sequences:
+        if self.info.get('extra_sequences') is not None:
+            for extra_seq_name, extra_seq in self.info['extra_sequences']:
                 record = SeqRecord(Seq(extra_seq), name=extra_seq_name, annotations={'molecule_type': 'DNA'})
                 gb_records[extra_seq_name] = record
 
@@ -696,12 +694,21 @@ def load_sgRNAs(base_dir, process=True):
 def load_extra_sequences(base_dir):
     extra_sequences = {}
 
-    extra_sequences_fns = sorted((base_dir / 'targets').glob('*.fasta'))
-    for extra_sequences_fn in extra_sequences_fns:
-        records = fasta.to_dict(extra_sequences_fn)
+    fasta_fns = sorted((base_dir / 'targets').glob('*.fasta'))
+    for fasta_fn in fasta_fns:
+        records = fasta.to_dict(fasta_fn)
         duplicates = set(extra_sequences) & set(records)
         if len(duplicates) > 0:
-            raise ValueError(f'multiple fasta records for {duplicates}')
+            raise ValueError(f'multiple records for {duplicates}')
+
+        extra_sequences.update(records)
+
+    genbank_fns = sorted((base_dir / 'targets').glob('*.gb'))
+    for genbank_fn in genbank_fns:
+        records = {record.name: str(record.seq) for record in Bio.SeqIO.parse(genbank_fn, 'gb')}
+        duplicates = set(extra_sequences) & set(records)
+        if len(duplicates) > 0:
+            raise ValueError(f'multiple records for {duplicates}')
 
         extra_sequences.update(records)
 
@@ -733,7 +740,7 @@ def build_component_registry(base_dir):
 
     return registry
 
-def build_target_infos_from_csv(base_dir, offtargets=False, defer_HA_identification=False):
+def build_target_infos_from_csv(base_dir, defer_HA_identification=False):
     base_dir = Path(base_dir)
     csv_fn = base_dir / 'targets' / 'targets.csv'
 
