@@ -81,14 +81,14 @@ class Categorizer:
 
     @classmethod
     def sanitized_string_to_outcome(cls, sanitized_string):
-        match = re.match('category(\d+)_subcategory(\d+)', sanitized_string)
+        match = re.match(r'category(\d+)_subcategory(\d+)', sanitized_string)
         if match:
             c, s = map(int, match.groups())
             category, subcats = cls.category_order[c]
             subcategory = subcats[s]
             return category, subcategory
         else:
-            match = re.match('category(\d+)', sanitized_string)
+            match = re.match(r'category(\d+)', sanitized_string)
             if not match:
                 raise ValueError(sanitized_string)
             c = int(match.group(1))
