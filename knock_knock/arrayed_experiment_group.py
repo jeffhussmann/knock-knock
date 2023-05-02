@@ -1,8 +1,10 @@
 import gzip
 import itertools
+import logging
 import shutil
 import time
 import warnings
+
 from pathlib import Path
 from collections import defaultdict, Counter
 
@@ -15,7 +17,7 @@ import knock_knock.experiment_group
 import knock_knock.outcome
 import knock_knock.target_info
 
-from hits import utilities, sam
+from hits import utilities, sam, fastq
 
 memoized_property = utilities.memoized_property
 
@@ -44,7 +46,8 @@ class Batch:
         self.only_edited = only_edited
 
         self.sample_sheet_fn = self.data_dir / 'sample_sheet.csv'
-        self.sample_sheet = pd.read_csv(self.sample_sheet_fn, index_col='sample_name', dtype=str)
+        # Note: set_index after construction is necessary to force dtype=str for the index.
+        self.sample_sheet = pd.read_csv(self.sample_sheet_fn, dtype=str).set_index('sample_name')
 
         self.group_descriptions_fn = self.data_dir / 'group_descriptions.csv'
         self.group_descriptions = pd.read_csv(self.group_descriptions_fn, index_col='group').replace({np.nan: None})
@@ -995,11 +998,87 @@ def make_targets(base_dir, df, extra_sequences=None):
 
     knock_knock.build_targets.build_target_infos_from_csv(base_dir)
 
+def detect_sequencing_start_feature_names(base_dir, batch_name, df):
+    sequencing_start_feature_names = {}
+    
+    for _, row in df.iterrows():
+        R1_name = Path(row['R1']).name
+        R1_fn = base_dir / 'data' / batch_name / R1_name
+
+        if not R1_fn.exists():
+            logging.warning(f"R1 file name {R1_fn} doesn't exist")
+            continue
+
+        target_info_name = f"{row['amplicon_primers']}_{row['genome']}"
+        ti = knock_knock.target_info.TargetInfo(base_dir, target_info_name) 
+
+        primer_sequences = {name: ti.feature_sequence(ti.target, name).upper() for name in ti.primers}
+
+        primer_prefix_length = 6
+        read_length_to_examine = 30
+        num_reads_to_check = 1000
+
+        primer_prefixes = {name: seq[:primer_prefix_length] for name, seq in primer_sequences.items()}
+
+        reads = fastq.reads(R1_fn)
+        reads = itertools.islice(reads, num_reads_to_check)
+
+        prefix_counts = Counter()
+
+        for read in reads:
+            for name, prefix in primer_prefixes.items():
+                if prefix in read.seq[:read_length_to_examine]:
+                    prefix_counts[name] += 1
+                    
+        if len(prefix_counts) == 0:
+            logging.warning(f"Unable to detect sequencing orientation for {row['sample_name']}")
+        else:
+            feature_name, _ = prefix_counts.most_common()[0]
+        
+            sequencing_start_feature_names[row['sample_name']] = feature_name
+        
+    return sequencing_start_feature_names
+
 def make_group_descriptions_and_sample_sheet(base_dir, df, batch_name=None):
     df = df.copy()
 
     if 'donor' not in df.columns:
         df['donor'] = ''
+
+    if batch_name is None:
+        fn_parents = {Path(fn).parent for fn in df['R1']}
+
+        batch_names = {fn_parent.parts[3] for fn_parent in fn_parents}
+        if len(batch_names) > 1:
+            raise ValueError(batch_names)
+        else:
+            batch_name = batch_names.pop()
+
+    sequencing_start_feature_names = detect_sequencing_start_feature_names(base_dir, batch_name, df)
+
+    # For each set of target info parameter values, assign the most common
+    # sequencing_start_feature_name to all samples.
+
+    grouped = df.groupby(['amplicon_primers', 'genome', 'sgRNAs', 'donor'])
+
+    for (amplicon_primers, genome, sgRNAs, donor), rows in grouped:
+        orientations = Counter()
+        
+        for _, row in rows.iterrows():
+            name = sequencing_start_feature_names.get(row['sample_name'])
+            if name is not None:
+                orientations[name] += 1
+        
+        if len(orientations) == 0:
+            raise ValueError(f'No sequencing orientations detected for {amplicon_primers, genome, sgRNAs, donor}')
+        else:
+            feature_name, _ = orientations.most_common()[0]
+            
+            for _, row in rows.iterrows():
+                if row['sample_name'] not in sequencing_start_feature_names:
+                    sequencing_start_feature_names[row['sample_name']] = feature_name
+
+    df['sequencing_start_feature_name'] = df['sample_name'].map(sequencing_start_feature_names)
 
     valid_supplemental_indices = sorted(knock_knock.target_info.locate_supplemental_indices(base_dir))
 
@@ -1009,9 +1088,9 @@ def make_group_descriptions_and_sample_sheet(base_dir, df, batch_name=None):
     condition_columns = [column for column in df.columns if column.startswith('condition:')]
     shortened_condition_columns = [column[len('condition:'):] for column in condition_columns]
 
-    grouped = df.groupby(['amplicon_primers', 'genome', 'sgRNAs', 'donor'])
+    grouped = df.groupby(['amplicon_primers', 'genome', 'sgRNAs', 'donor', 'sequencing_start_feature_name'])
 
-    for group_i, ((amplicon_primers, genome, sgRNAs, donor), group_rows) in enumerate(grouped, 1):
+    for group_i, ((amplicon_primers, genome, sgRNAs, donor, sequencing_start_feature_name), group_rows) in enumerate(grouped, 1):
         target_info_name = f'{amplicon_primers}_{genome}'
 
         group_name = f'{target_info_name}_{sgRNAs}_{donor}'
@@ -1039,6 +1118,7 @@ def make_group_descriptions_and_sample_sheet(base_dir, df, batch_name=None):
             'supplemental_indices': ';'.join(supplemental_indices),
             'experiment_type': experiment_type,
             'target_info': target_info_name,
+            'sequencing_start_feature_name': sequencing_start_feature_name,
             'sgRNAs': sgRNAs,
             'donor': donor,
             'min_relevant_length': 100,
@@ -1071,15 +1151,6 @@ def make_group_descriptions_and_sample_sheet(base_dir, df, batch_name=None):
                 }
                 if 'R2' in row:
                     samples[row['sample_name']]['R2'] = Path(row['R2']).name
-
-    if batch_name is None:
-        fn_parents = {Path(fn).parent for fn in df['R1']}
-
-        batch_names = {fn_parent.parts[3] for fn_parent in fn_parents}
-        if len(batch_names) > 1:
-            raise ValueError(batch_names)
-        else:
-            batch_name = batch_names.pop()
 
     batch_dir = Path(base_dir) / 'data' / batch_name
     batch_dir.mkdir(parents=True, exist_ok=True)
