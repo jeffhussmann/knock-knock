@@ -7,10 +7,9 @@ from hits.utilities import memoized_property
 import knock_knock.layout
 import knock_knock.pegRNAs
 import knock_knock.prime_editing_layout
+import knock_knock.target_info
 import knock_knock.visualize
 from knock_knock.outcome import *
-
-other_side = knock_knock.prime_editing_layout.other_side
 
 class Layout(knock_knock.prime_editing_layout.Layout):
     category_order = [
@@ -141,7 +140,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
     def other_pegRNA_name(self, pegRNA_name):
         ti = self.target_info
         side = ti.pegRNA_name_to_side_of_read[pegRNA_name]
-        other_name = ti.pegRNA_names_by_side_of_read[other_side[side]]
+        other_name = ti.pegRNA_names_by_side_of_read[knock_knock.target_info.other_side[side]]
         return other_name
 
     def pegRNA_alignment_extends_pegRNA_alignment(self, first_pegRNA_al, second_pegRNA_al):
@@ -158,7 +157,8 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             left_al, right_al = second_pegRNA_al, first_pegRNA_al
 
         extension_results = self.are_mutually_extending_from_shared_feature(left_al, 'overlap', right_al, 'overlap')
-        if extension_results:
+
+        if extension_results['status'] == 'definite':
             status = 'definite'
         else:
             status = None
@@ -197,7 +197,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                 
         return relevant_pegRNA_al
 
-    def characterize_extension_chain_on_side(self, side):
+    def characterize_extension_chain_on_side(self, side, require_definite=True):
         als = {}
     
         target_edge_al = self.target_edge_alignments[side]
@@ -386,7 +386,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                     opposite_PBS_end = ti.features[other_side_pegRNA_name, 'PBS'].end 
                     up_to_opposite_PBS_end = opposite_PBS_end - (other_side_overlap.end + 1) + 1
 
-                    opposite_target_PBS_name = ti.PBS_names_by_side_of_read[other_side[side]]
+                    opposite_target_PBS_name = ti.PBS_names_by_side_of_read[knock_knock.target_info.other_side[side]]
                     opposite_target_PBS = ti.features[ti.target, opposite_target_PBS_name]
 
                     if opposite_target_PBS.strand == '+':
@@ -543,28 +543,20 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             self.details = 'n/a'
             self.outcome = None
 
-        elif self.has_any_pegRNA_extension_al:
-            if self.is_intended_replacement:
-                self.category = 'intended edit'
-                self.subcategory = self.is_intended_replacement
-                self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, [])
-                self.relevant_alignments = self.intended_edit_relevant_alignments
+        elif self.is_intended_replacement:
+            self.category = 'intended edit'
+            self.subcategory = self.is_intended_replacement
+            self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, [])
+            self.relevant_alignments = self.intended_edit_relevant_alignments
 
-            elif self.is_intended_deletion:
-                self.category = 'intended edit'
-                self.subcategory = 'deletion'
-                self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, [self.target_info.pegRNA_programmed_deletion])
-                self.relevant_alignments = self.intended_edit_relevant_alignments
+        elif self.is_intended_deletion:
+            self.category = 'intended edit'
+            self.subcategory = 'deletion'
+            self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, [self.target_info.pegRNA_programmed_deletion])
+            self.relevant_alignments = self.intended_edit_relevant_alignments
 
-            elif self.is_unintended_rejoining:
-                self.register_unintended_rejoining()
-
-            else:
-                self.category = 'uncategorized'
-                self.subcategory = 'uncategorized'
-                self.details = 'n/a'
-
-                self.relevant_alignments = self.uncategorized_relevant_alignments
+        elif self.is_unintended_rejoining:
+            self.register_unintended_rejoining()
 
         elif self.single_read_covering_target_alignment:
             target_alignment = self.single_read_covering_target_alignment
@@ -720,7 +712,9 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                     continue
 
                 def priority_key(al):
-                    is_extension_al = (al == self.pegRNA_extension_als['left']) or (al == self.pegRNA_extension_als['right'])
+                    is_extension_al = (al == self.extension_chains_by_side['left']['alignments'].get('first pegRNA')) or \
+                                      (al == self.extension_chains_by_side['right']['alignments'].get('first pegRNA'))
+
                     overlap_length = sam.feature_overlap_length(al, self.target_info.features[pegRNA_name, 'overlap'])
                     return is_extension_al, overlap_length
                 

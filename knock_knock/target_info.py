@@ -22,6 +22,11 @@ import knock_knock.integrases
 memoized_property = utilities.memoized_property
 memoized_with_args = utilities.memoized_with_args
 
+other_side = {
+    'left': 'right',
+    'right': 'left',
+}
+
 class Effector():
     def __init__(self, name, PAM_pattern, PAM_side, cut_after_offset):
         self.name = name
@@ -622,6 +627,9 @@ class TargetInfo():
         else:
             # If there isn't a donor, always return no alignments.
             extenders['donor'] = fake_extender
+
+        for pegRNA_name in self.pegRNA_names:
+            extenders[pegRNA_name] = sw.SeedAndExtender(self.reference_sequence_bytes[pegRNA_name], 20, self.header, pegRNA_name).seed_and_extend
 
         return extenders
 
@@ -1782,6 +1790,24 @@ class TargetInfo():
         return {side: knock_knock.pegRNAs.extract_pegRNA_name(PBS_name) for side, PBS_name in self.PBS_names_by_side_of_target.items()}
 
     @memoized_property
+    def pegRNA_side(self):
+        pegRNA_sides = set(self.pegRNA_names_by_side_of_read)
+
+        if len(pegRNA_sides) > 1:
+            raise ValueError
+        elif len(pegRNA_sides) == 1:
+            pegRNA_side = list(pegRNA_sides)[0]
+        else:
+            # Arbitrary if there is no pegRNA.
+            pegRNA_side = 'left'
+
+        return pegRNA_side
+
+    @memoized_property
+    def non_pegRNA_side(self):
+        return other_side[self.pegRNA_side]
+
+    @memoized_property
     def pegRNA_programmed_deletion(self):
         if len(self.pegRNA_names) == 0:
             deletion = None
@@ -1859,6 +1885,23 @@ class TargetInfo():
             raise ValueError
 
         return SNVs
+
+    @memoized_property
+    def simple_pegRNA_SNVs(self):
+        ''' {ref_name, position: base identity in pegRNA if on forward strand}}'''
+        simple_pegRNA_SNVs = {}
+
+        if self.pegRNA_SNVs is not None:
+            for ref_name, SNVs in self.pegRNA_SNVs.items():
+                for SNV_name, details in SNVs.items():
+                    if ref_name in self.pegRNA_names:
+                        base = details['base']
+                    else:
+                        base = details['alternative_base']
+
+                    simple_pegRNA_SNVs[ref_name, details['position']] = base
+
+        return simple_pegRNA_SNVs
 
     @memoized_property
     def pegRNA_programmed_alternative_bases(self):

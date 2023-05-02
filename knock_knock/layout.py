@@ -150,12 +150,26 @@ class Categorizer:
     def are_mutually_extending_from_shared_feature(self,
                                                    left_al, left_feature_name,
                                                    right_al, right_feature_name,
+                                                   contribution_test=lambda al: False,
                                                   ):
         ti = self.target_info
         
         results = None
 
-        if self.share_feature(left_al, left_feature_name, right_al, right_feature_name):
+        if not self.share_feature(left_al, left_feature_name, right_al, right_feature_name):
+            results = {
+                'status': 'don\'t share feature',
+                'alignments': {
+                    'left': None,
+                    'right': None,
+                },
+                'cropped_alignments': {
+                    'left': None,
+                    'right': None,
+                },
+            }
+
+        else: 
             switch_results = sam.find_best_query_switch_after(left_al,
                                                               right_al,
                                                               ti.reference_sequences[left_al.reference_name],
@@ -173,6 +187,43 @@ class Categorizer:
             right_qs = self.q_to_feature_offset(right_al, right_feature_name)
             right_feature_interval = interval.Interval(min(right_qs), max(right_qs))                    
 
+            switch_in_shared = switch_interval & left_feature_interval
+
+            left_reaches_ref_end = left_al.reference_end == len(ti.reference_sequences[left_al.reference_name])
+            right_reaches_ref_end = right_al.reference_end == len(ti.reference_sequences[right_al.reference_name])
+            both_reach_ref_end = left_reaches_ref_end and right_reaches_ref_end
+
+            left_of_feature = interval.Interval(0, left_feature_interval.start - 1)
+
+            # If as much query as possible is attributed to the right al, does the remaining left al
+            # still explain part of the read to the left of the overlapping feature?
+
+            cropped_left_al = sam.crop_al_to_query_int(left_al, 0, switch_interval.start)
+            left_definite_contribution_past_overlap = interval.get_covered(cropped_left_al) & left_of_feature
+
+            # If as much query as possible is attributed to the left al, does it extend outside of the
+            # the overlapping feature?
+
+            cropped_left_al = sam.crop_al_to_query_int(left_al, 0, switch_interval.end)
+            left_possible_contribution_past_overlap = interval.get_covered(cropped_left_al) & left_of_feature
+
+            right_of_feature = interval.Interval(right_feature_interval.end + 1, self.whole_read.end)
+
+            # Similarly, if as much query as possible is attributed to the left al, does the remaining right al
+            # still explain part of the read to the right of the overlapping feature?
+
+            cropped_right_al = sam.crop_al_to_query_int(right_al, switch_interval.end + 1, self.whole_read.end)
+            right_definite_contribution_past_overlap = interval.get_covered(cropped_right_al) & right_of_feature
+
+            # If as much query as possible is attributed to the right al, does it extend outside of the
+            # overlapping feature?
+
+            cropped_right_al = sam.crop_al_to_query_int(right_al, switch_interval.start + 1, self.whole_read.end)
+            right_possible_contribution_past_overlap = interval.get_covered(cropped_right_al) & right_of_feature
+
+
+            overlap_reaches_read_end = right_of_feature.is_empty
+
             # Heuristic: if an optimal switch point occurs in the shared feature,
             # any amount of sequence past the shared feature is enough.
             # If the optimal switch point is outside, require a longer amount. 
@@ -182,50 +233,34 @@ class Categorizer:
             # still allowing the possibility of partial replacements that retain 
             # some genomic sequence after the transition.
 
-            switch_in_shared = switch_interval & left_feature_interval
+            left_contributes = (switch_in_shared and left_definite_contribution_past_overlap.total_length > 0) or \
+                               (left_definite_contribution_past_overlap.total_length >= 10) or \
+                               both_reach_ref_end or \
+                               contribution_test(left_al)
 
-            left_reaches_ref_end = left_al.reference_end == len(ti.reference_sequences[left_al.reference_name])
-            right_reaches_ref_end = right_al.reference_end == len(ti.reference_sequences[right_al.reference_name])
-            both_reach_ref_end = left_reaches_ref_end and right_reaches_ref_end
+            right_contributes = right_definite_contribution_past_overlap or \
+                                overlap_reaches_read_end or \
+                                both_reach_ref_end or \
+                                contribution_test(right_al)
 
-            # If as much query as possible is attributed to the right al, does the remaining left al
-            # still explain part of the read to the left of the overlapping feature?
+            if left_contributes and right_contributes:
+                status = 'definite'
+            elif switch_in_shared and left_possible_contribution_past_overlap and right_possible_contribution_past_overlap:
+                status = 'possible'
+            else:
+                status = 'not consistent'
 
-            cropped_left_al = sam.crop_al_to_query_int(left_al, 0, switch_interval.start)
-            left_of_feature = interval.Interval(0, left_feature_interval.start - 1)
-            left_contribution_past_overlap = interval.get_covered(cropped_left_al) & left_of_feature
-
-            if (switch_in_shared and left_contribution_past_overlap.total_length > 0) or (left_contribution_past_overlap.total_length >= 10) or both_reach_ref_end:
-                cropped_left_al = sam.crop_al_to_query_int(left_al, 0, switch_interval.end)
-            
-                # Similarly, if as much query as possible is attributed to the left al, does the remaining right al
-                # still explain part of the read to the right of the overlapping feature?
-
-                cropped_right_al = sam.crop_al_to_query_int(right_al, switch_interval.end + 1, self.whole_read.end)
-                right_of_feature = interval.Interval(right_feature_interval.end + 1, self.whole_read.end)
-                right_contributes_past_overlap = interval.get_covered(cropped_right_al) & right_of_feature
-
-                overlap_reaches_read_end = right_of_feature.is_empty
-
-                if right_contributes_past_overlap or overlap_reaches_read_end or both_reach_ref_end:
-                    cropped_right_al = sam.crop_al_to_query_int(right_al, switch_interval.start + 1, len(self.seq))
-
-                    if right_contributes_past_overlap:
-                        status = 'definite'
-                    else:
-                        status = 'reaches end'
-
-                    results = {
-                        'status': status,
-                        'alignments': {
-                            'left': left_al,
-                            'right': right_al,
-                        },
-                        'cropped_alignments': {
-                            'left': cropped_left_al,
-                            'right': cropped_right_al,
-                        },
-                    }
+            results = {
+                'status': status,
+                'alignments': {
+                    'left': left_al,
+                    'right': right_al,
+                },
+                'cropped_alignments': {
+                    'left': cropped_left_al,
+                    'right': cropped_right_al,
+                },
+            }
 
         return results
 
@@ -2861,7 +2896,11 @@ def crop_terminal_mismatches(al, reference_sequences):
 
     return cropped_al
 
-def comprehensively_split_alignment(al, target_info, mode, ins_size_to_split_at=None, del_size_to_split_at=None, programmed_substitutions=None):
+def comprehensively_split_alignment(al, target_info, mode,
+                                    ins_size_to_split_at=None,
+                                    del_size_to_split_at=None,
+                                    programmed_substitutions=None,
+                                   ):
     ''' It is easier to reason about alignments if any that contain long insertions, long deletions, or clusters
     of many edits are split into multiple alignments.
     '''
