@@ -713,14 +713,17 @@ def load_extra_sequences(base_dir):
 
         extra_sequences.update(records)
 
-    genbank_fns = sorted((base_dir / 'targets').glob('*.gb'))
-    for genbank_fn in genbank_fns:
-        records = {record.name: str(record.seq) for record in Bio.SeqIO.parse(genbank_fn, 'gb')}
-        duplicates = set(extra_sequences) & set(records)
-        if len(duplicates) > 0:
-            raise ValueError(f'multiple records for {duplicates}')
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore', category=BiopythonWarning)
 
-        extra_sequences.update(records)
+        genbank_fns = sorted((base_dir / 'targets').glob('*.gb'))
+        for genbank_fn in genbank_fns:
+            records = {record.name: str(record.seq) for record in Bio.SeqIO.parse(genbank_fn, 'gb')}
+            duplicates = set(extra_sequences) & set(records)
+            if len(duplicates) > 0:
+                raise ValueError(f'multiple records for {duplicates}')
+
+            extra_sequences.update(records)
 
     return extra_sequences
 
