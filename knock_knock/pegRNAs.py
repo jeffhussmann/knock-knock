@@ -693,7 +693,7 @@ def PBS_names_by_side_of_target(pegRNA_names,
 
     if len(PBS_features_by_strand) == 2:
         if PBS_features_by_strand['+'].start > PBS_features_by_strand['-'].end:
-            raise ValueError('pegRNAs not in PAM-in configuration')
+            logging.warning('pegRNAs not in PAM-in configuration')
 
     by_side = {}
 
