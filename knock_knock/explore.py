@@ -267,7 +267,7 @@ class Explorer:
             read_details = '\n'.join(read_details)
             self.non_widgets['read_details'].value = read_details
 
-        return diagram.fig
+            return diagram.fig
 
     def save(self, _):
         fig = self.interactive.result
