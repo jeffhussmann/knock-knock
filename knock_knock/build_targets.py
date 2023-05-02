@@ -317,7 +317,7 @@ class TargetInfoBuilder:
                                                 genomic_coords_to_target_coords(right_al.reference_end),
                                                 strand=convert_strand['-'],
                                                )
-        
+
         target_features = [
             SeqFeature(location=left_primer_location,
                        id='forward_primer',
@@ -414,8 +414,15 @@ class TargetInfoBuilder:
 
         sgRNAs_with_extensions = [(name, components) for name, components in self.info['sgRNAs'] if components['extension'] != '']
         if len(sgRNAs_with_extensions) > 0:
+
+            bad_pegRNAs = []
+
             for name, components in sgRNAs_with_extensions:
-                pegRNA = pegRNAs.pegRNA(name, components, self.target_name, target_sequence)
+                try:
+                    pegRNA = pegRNAs.pegRNA(name, components, self.target_name, target_sequence)
+                except:
+                    bad_pegRNAs.append(name)
+                    continue
 
                 pegRNA_SeqFeatures = [
                     SeqFeature(id=feature_name,
@@ -439,6 +446,9 @@ class TargetInfoBuilder:
                                          )
 
                 gb_records[name] = pegRNA_record
+
+            if len(bad_pegRNAs) > 0:
+                raise ValueError(f'Can\'t identify PBS for pegRNAs {bad_pegRNAs}')
             
         if has_nh_donor:
             nh_donor_Seq = Seq(nh_donor_seq)

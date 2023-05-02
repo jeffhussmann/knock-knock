@@ -195,9 +195,9 @@ class pegRNA:
             warning_message = [
                 f'{self.name}: {len(valid_alignments)} valid PBS alignment(s) for {seed_sequence}:'
             ]
-            for al in valid_alignments:
+            for al in alignments:
                 warning_message.append(
-                    f'\tlength: {al.query_alignment_length}, start in pegRNA: {al.reference_start}, start in target: {al.query_alignment_start}'
+                    f'\tlength: {al.query_alignment_length}, start in pegRNA: {al.reference_start} {sam.get_strand(al)}, start in target: {al.query_alignment_start}'
                 )
             warning_message = '\n'.join(warning_message)
             logging.warning(warning_message)
