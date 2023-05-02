@@ -184,11 +184,11 @@ class BoundaryProperties:
 
                 ur_outcome = knock_knock.prime_editing_layout.UnintendedRejoiningOutcome.from_string(outcome.details)
 
-                if ur_outcome.edges['left'] is not None:
-                    self.edge_distributions['pegRNA', 'RT\'ed'][ur_outcome.edges['left']] += 1
+                if ur_outcome.edges[ti.pegRNA_side] is not None:
+                    self.edge_distributions['pegRNA', 'RT\'ed'][ur_outcome.edges[ti.pegRNA_side]] += 1
                 
-                if ur_outcome.edges['right'] is not None:
-                    self.edge_distributions['target', 'RT\'ed'][ur_outcome.edges['right']] += 1
+                if ur_outcome.edges[ti.non_pegRNA_side] is not None:
+                    self.edge_distributions['target', 'RT\'ed'][ur_outcome.edges[ti.non_pegRNA_side] + ur_outcome.MH_nts] += 1
 
                 self.MH_nts_distribution[ur_outcome.MH_nts] += 1
 
@@ -277,12 +277,14 @@ class BoundaryProperties:
 def plot_single_flap_extension_chain_edges(ti,
                                            guide_sets,
                                            normalize=False,
+                                           pegRNA_x_lims=None,
+                                           target_x_lims=None,
                                           ):
     features = ti.features
 
     # Common parameters.
-    ref_bar_height = 0.02
-    feature_height = 0.03
+    ref_bar_height = 0.04
+    feature_height = 0.05
 
     marker_size = 2
 
@@ -314,7 +316,25 @@ def plot_single_flap_extension_chain_edges(ti,
     # is zero in the coordinate system.
     PBS_end = features[pegRNA_name, 'PBS'].end
 
-    y_start = -0.2
+    y_start = -0.25
+
+    pegRNA_length = len(ti.reference_sequences[pegRNA_name])
+
+    start = PBS_end - pegRNA_length - 0.5
+    end = PBS_end + 0.5
+
+    if pegRNA_x_lims is not None:
+        pegRNA_x_min, pegRNA_x_max = pegRNA_x_lims
+    else:
+        pegRNA_x_min, pegRNA_x_max = start - 10, end + 10
+
+    start = max(start, pegRNA_x_min)
+    end = min(end, pegRNA_x_max)
+
+    ax.axvspan(start, end, y_start, y_start + ref_bar_height,
+               facecolor='C1',
+               clip_on=False,
+              )
 
     for feature_name in ['PBS', 'RTT', 'scaffold', 'protospacer']:
         feature = features[pegRNA_name, feature_name]
@@ -323,6 +343,12 @@ def plot_single_flap_extension_chain_edges(ti,
         # Moving back from the PBS end is moving
         # forward in the coordinate system.
         start, end = PBS_end - feature.end - 0.5, PBS_end - feature.start + 0.5
+
+        if end < pegRNA_x_min or start > pegRNA_x_max: 
+            continue
+
+        start = max(start, pegRNA_x_min)
+        end = min(end, pegRNA_x_max)
 
         ax.axvspan(start, end, y_start + ref_bar_height, y_start + ref_bar_height + feature_height,
                    facecolor=color,
@@ -349,17 +375,8 @@ def plot_single_flap_extension_chain_edges(ti,
                     weight='bold',
                    )
 
-    pegRNA_length = len(ti.reference_sequences[pegRNA_name])
-
-    start = PBS_end - pegRNA_length - 0.5
-    end = PBS_end + 0.5
-    ax.axvspan(start, end, y_start, y_start + ref_bar_height,
-               facecolor='C1',
-               clip_on=False,
-              )
-
     for ax in axs[:, 0]:
-        ax.set_xlim(start - 10, end + 10)
+        ax.set_xlim(pegRNA_x_min, pegRNA_x_max)
         ax.set_ylim(0)
 
     axs[0, 0].set_title('pegRNA', color='C1')
@@ -368,38 +385,46 @@ def plot_single_flap_extension_chain_edges(ti,
 
     ax = axs[1, 1]
 
-    colors = {
-    }
+    colors = {}
 
     for primer_name in ti.primer_names:
         colors[primer_name] = 'grey'
 
     PBS = features[ti.target, knock_knock.pegRNAs.PBS_name(pegRNA_name)]
 
-    # By definition, the edge of the PBS adjacent to the nick in the target
-    # for the pegRNA is zero in the coordinate system.
+    # By definition, the nt on the PAM-distal side of the nick
+    # is zero in the coordinate system, and postive values go towards
+    # the PAM.
 
     feature_names = ti.protospacer_names + list(ti.PAM_features) + ti.primer_names
 
-    if PBS.strand == '+':
-        x_min = ti.amplicon_interval.start - PBS.end - 0.5
-        x_max = ti.amplicon_interval.end - PBS.end + 0.5
+    def target_to_nick_coords(target_x):
+        if PBS.strand == '+':
+            return target_x - (PBS.end + 1)
+        else:
+            return (PBS.start - 1) - target_x
+
+    def target_bounds_to_xs(start, end):
+        left, right = sorted([target_to_nick_coords(start), target_to_nick_coords(end)])
+        return left - 0.5, right + 0.5
+
+    if target_x_lims is not None:
+        target_x_min, target_x_max = target_x_lims
     else:
-        x_min = PBS.start - ti.amplicon_interval.end - 0.5
-        x_max = PBS.start - ti.amplicon_interval.start + 0.5
+        target_x_min, target_x_max = target_bounds_to_xs(ti.amplicon_interval.start, ti.amplicon_interval.end)
 
     for feature_name in feature_names:
         feature = features[ti.target, feature_name]
         
-        if PBS.strand == '+':
-            start, end = feature.start - PBS.end - 0.5, feature.end - PBS.end + 0.5
-        else:
-            start, end = PBS.start - feature.end - 0.5, PBS.start - feature.start + 0.5
+        start, end = target_bounds_to_xs(feature.start, feature.end)
+
+        if end < target_x_min or start > target_x_max: 
+            continue
 
         if 'PBS' in feature_name:
-            height = 0.015
+            height = feature_height / 2
         else:
-            height = 0.03
+            height = feature_height
         
         color = colors.get(feature_name, feature.attribute['color'])
 
@@ -431,14 +456,15 @@ def plot_single_flap_extension_chain_edges(ti,
                     weight='bold',
                    )
 
-
-    ax.axvspan(x_min, x_max, y_start, y_start + ref_bar_height, facecolor='C0', clip_on=False)
+    ax.axvspan(target_x_min, target_x_max, y_start, y_start + ref_bar_height, facecolor='C0', clip_on=False)
 
     for cut_after_name, cut_after in ti.cut_afters.items():
-        if PBS.strand == '+':
-            x = cut_after - PBS.end
-        else:
-            x = PBS.start - cut_after
+        # Potentially confusing - if PBS is on the plus strand, cut_after is -1 in nick coords,
+        # but if PBS is on the minus strand, cut_after is 0 in nick coords. In either case,
+        # just take actual cut position (cut_after + 0.5) in target coords and convert it.
+        x = target_to_nick_coords(cut_after + 0.5)
+
+        ax.axvline(x, color='black', alpha=0.75)
 
         name, strand = cut_after_name.rsplit('_', 1)
 
@@ -465,10 +491,8 @@ def plot_single_flap_extension_chain_edges(ti,
                 clip_on=False,
                )
 
-        ax.axvline(x, color='black')
-
     for ax in axs[:, 1]:
-        ax.set_xlim(x_min, x_max)
+        ax.set_xlim(target_x_min, target_x_max)
         ax.set_ylim(0)
 
     axs[0, 1].set_title('genome', color='C0')
@@ -501,7 +525,9 @@ def plot_dual_flap_extension_chain_edges(ti,
     else:
         marker_size = 3
 
-    figsize = (16, 4)
+    figsize = (16, 3)
+
+    figs = {}
 
     # not RT'ed and deletion
     for subcategory_key in [
@@ -509,6 +535,7 @@ def plot_dual_flap_extension_chain_edges(ti,
         "not RT'ed",
     ]:
         fig, axs = plt.subplots(1, 2, figsize=figsize)
+        figs[subcategory_key] = fig
 
         for ax, side in zip(axs, ['left', 'right']):
             for set_name, set_details in guide_sets.items():
@@ -543,8 +570,9 @@ def plot_dual_flap_extension_chain_edges(ti,
             for primer_name in ti.primer_names:
                 colors[primer_name] = 'lightgrey'
 
-            # By definition, the edge of the PBS adjacent to the nick in the target
-            # for this side's pegRNA is zero in the coordinate system.
+            # By definition, the nt on the PAM-distal side of the nick
+            # is zero in the coordinate system, and postive values go towards
+            # the PAM.
 
             y_start = -0.1
 
@@ -570,9 +598,12 @@ def plot_dual_flap_extension_chain_edges(ti,
                     height = 0.015
                 else:
                     height = 0.03
+
+                if end < x_lims[0] or start > x_lims[1]: 
+                    continue
                 
                 ax.axvspan(start, end,
-                           y_start, y_start - height,
+                           y_start, y_start - height * 1.5,
                            facecolor=colors.get(feature_name, feature.attribute['color']),
                            clip_on=False,
                           )
@@ -620,7 +651,8 @@ def plot_dual_flap_extension_chain_edges(ti,
             if side == 'right':
                 ax.invert_xaxis()
 
-        axs[0].legend()
+        if len(guide_sets) > 1:
+            axs[0].legend()
 
         if cumulative:
             axs[0].set_ylabel('Cumulative percentage of reads', size=12)
@@ -631,6 +663,7 @@ def plot_dual_flap_extension_chain_edges(ti,
     subcategory_key = "RT\'ed"
 
     fig, axs = plt.subplots(1, 2, figsize=figsize)
+    figs[subcategory_key] = fig
 
     for ax, side in zip(axs, ['left', 'right']):
         for set_name, set_details in guide_sets.items():
@@ -682,7 +715,8 @@ def plot_dual_flap_extension_chain_edges(ti,
         if side == 'right':
             ax.invert_xaxis()
 
-    axs[0].legend()
+    if len(guide_sets) > 1:
+        axs[0].legend()
 
     if cumulative:
         axs[0].set_ylabel('Cumulative percentage of reads', size=12)
@@ -693,6 +727,7 @@ def plot_dual_flap_extension_chain_edges(ti,
     subcategory_key = "RT'ed + overlap-extended"
 
     fig, axs = plt.subplots(1, 2, figsize=figsize)
+    figs[subcategory_key] = fig
 
     for ax, side in zip(axs, ['left', 'right']):
         for set_name, set_details in guide_sets.items():
@@ -787,12 +822,15 @@ def plot_dual_flap_extension_chain_edges(ti,
         if side == 'right':
             ax.invert_xaxis()
 
-    axs[0].legend()
+    if len(guide_sets) > 1:
+        axs[0].legend()
 
     if cumulative:
         axs[0].set_ylabel('Cumulative percentage of reads', size=12)
     else:
         axs[0].set_ylabel('Percentage of reads', size=12)
+
+    return figs
 
 def plot_joint_RT_edges(target_info, exp_sets, v_max=0.4):
     features = target_info.features
