@@ -317,35 +317,37 @@ class TargetInfo():
         for gb_record in self.gb_records:
             fasta_record, gff_features = parse_benchling_genbank(gb_record)
 
-            if self.feature_to_replace is not None:
-                ref_name, feature_name, new_sequence = self.feature_to_replace
-                if ref_name == fasta_record.name:
+            if fasta_record.name == self.target and self.feature_to_replace is not None:
+                feature_name, new_sequence = self.feature_to_replace
 
-                    # Find the feature start and end.
-                    feature_matches = [f for f in gff_features if f.attribute.get('ID') == feature_name]
-                    if len(feature_matches) != 1:
-                        raise ValueError(f'Expected 1 feature named "{feature_name}", found {len(feature_matches)}')
+                # Find the feature start and end.
+                feature_matches = [f for f in gff_features if f.attribute.get('ID') == feature_name]
+                if len(feature_matches) != 1:
+                    raise ValueError(f'Expected 1 feature named "{feature_name}", found {len(feature_matches)}')
 
-                    feature_to_replace = feature_matches[0]
-                    existing_start = feature_to_replace.start
-                    existing_end = feature_to_replace.end
+                feature_to_replace = feature_matches[0]
+                if feature_to_replace.strand == '-':
+                    raise NotImplementedError
 
-                    # Splice in the new sequence.
-                    before = fasta_record.seq[:existing_start]
-                    after = fasta_record.seq[existing_end + 1:]
+                existing_start = feature_to_replace.start
+                existing_end = feature_to_replace.end
 
-                    fasta_record.seq = before + new_sequence + after
+                # Splice in the new sequence.
+                before = fasta_record.seq[:existing_start]
+                after = fasta_record.seq[existing_end + 1:]
 
-                    change_in_length = len(new_sequence) - len(feature_to_replace)
+                fasta_record.seq = before + new_sequence + after
 
-                    # Find any features whose end is past the start of the replaced feature,
-                    # and shift any of its boundaries that are past the start that by the change in length.
+                change_in_length = len(new_sequence) - len(feature_to_replace)
 
-                    for feature in gff_features:
-                        if feature.end > existing_start:
-                            feature.end += change_in_length
-                            if feature.start > existing_start:
-                                feature.start += change_in_length
+                # Find any features whose end is past the start of the replaced feature,
+                # and shift any of its boundaries that are past the start that by the change in length.
+
+                for feature in gff_features:
+                    if feature.end > existing_start:
+                        feature.end += change_in_length
+                        if feature.start > existing_start:
+                            feature.start += change_in_length
 
             fasta_records.append(fasta_record)
             all_gff_features.extend(gff_features)
