@@ -477,7 +477,10 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
     @memoized_property
     def outcome_fraction_condition_means(self):
-        return self.outcome_fractions.groupby(axis='columns', level=self.condition_keys).mean()
+        if len(self.condition_keys) == 0:
+            return self.outcome_fractions.mean(axis='columns')
+        else:
+            return self.outcome_fractions.groupby(axis='columns', level=self.condition_keys).mean()
 
     @memoized_property
     def outcome_fraction_baseline_means(self):
