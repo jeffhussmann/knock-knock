@@ -69,7 +69,7 @@ class ReadSet:
     @memoized_property
     def target_info(self):
         target_info_name = self.details['target_info']
-        supplemental_index_names = ['hg19', 'bosTau7', 'e_coli']
+        supplemental_index_names = ['hg38', 'hg19', 'bosTau7', 'e_coli']
         supplemental_indices = knock_knock.target_info.locate_supplemental_indices(base_dir)
         supplemental_indices = {name: supplemental_indices[name] for name in supplemental_index_names}
         target_info = knock_knock.target_info.TargetInfo(self.source_dir,
@@ -121,8 +121,8 @@ class ReadSet:
 
     def process(self):
         tested_layouts = {
-            'passed': [],
-            'failed': [],
+            True: [],
+            False: [],
         }
 
         for qname in self.qnames:
