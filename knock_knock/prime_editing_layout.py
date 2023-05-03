@@ -697,7 +697,7 @@ class Layout(layout.Categorizer):
             else:
                 few_mismatches.append(al)
 
-        # Convert relevant supp als to target als, but ignore any that fall largely within the amplicon interval.
+        # Convert relevant supp als to target als, but ignore any that overlap the amplicon interval.
         ti = self.target_info
         if ti.reference_name_in_genome_source:
             extended_target_als = []
@@ -727,9 +727,9 @@ class Layout(layout.Categorizer):
                             if converted_al.is_reverse != al.is_reverse:
                                 raise NotImplementedError
 
-                            outside_amplicon = interval.get_covered_on_ref(converted_al) - ti.amplicon_interval
+                            overlaps_amplicon = interval.get_covered_on_ref(converted_al) & ti.amplicon_interval
 
-                            if outside_amplicon.total_length >= 10:
+                            if not overlaps_amplicon:
                                 extended_target_als.append(converted_al)
                                 accounted_for = True
                             else:
@@ -1439,6 +1439,7 @@ class Layout(layout.Categorizer):
 
         else:
             target_nts_past_primer = {}
+
             for side in ['left', 'right']:
                 target_past_primer = interval.get_covered(self.target_edge_alignments[side]) - interval.get_covered(self.primer_alignments[side])
                 target_nts_past_primer[side] = target_past_primer.total_length 
