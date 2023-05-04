@@ -545,10 +545,12 @@ def make_self_contained_zip(base_dir,
 
     if len(exps_missing_files) > 0:
         logging.warning(f'Warning: {len(exps_missing_files)} experiment(s) are missing output files:')
-        for group, exp_name in sorted(exps_missing_files):
-            logging.warning(f'\t{group} {exp_name}')
-            for fn in exps_missing_files[group, exp_name]:
-                logging.warning(f'\t\t{fn}')
+        if len(exps_missing_files) <= 10:
+            for group, exp_name in sorted(exps_missing_files):
+                logging.warning(f'\t{group} {exp_name}')
+                if len(exps_missing_files[group, exp_name]) <= 10:
+                    for fn in exps_missing_files[group, exp_name]:
+                        logging.warning(f'\t\t{fn}')
 
     zip_fn = fn_prefix.with_suffix('.zip')
     archive_base = Path(fn_prefix.name)

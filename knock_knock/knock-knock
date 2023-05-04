@@ -90,27 +90,42 @@ def make_tables(args):
                                                   vmax_multiple=args.vmax_multiple,
                                                  )
     else:
-        groups = knock_knock.experiment.get_all_batches(args.project_directory)
+        if args.arrayed:
+            batches = knock_knock.arrayed_experiment_group.get_all_batches(args.project_directory)
 
-        #results_dir = args.project_directory / 'results'
-        #csv_fn = (results_dir / 'all_groups').with_suffix('.csv')
-        #df = knock_knock.table.load_counts(args.project_directory, exclude_empty=False, arrayed=args.arrayed).T
-        #df.to_csv(csv_fn)
+            for batch_name, batch in batches.items():
+                experiment_types = {group.experiment_type for group in batch.groups.values()}
+                for experiment_type in experiment_types:
+                    logging.info(f'Making {batch_name} {experiment_type}')
 
-        for group in groups:
-            logging.info(f'Making {group}')
+                    conditions = {
+                        'batch': batch_name,
+                        'experiment_type': experiment_type,
+                    }
 
-            conditions = {'batch': group}
-            if args.experiment_type is not None:
-                conditions['experiment_type'] = args.experiment_type
+                    knock_knock.table.make_self_contained_zip(args.project_directory,
+                                                              conditions,
+                                                              f'{batch_name}_{experiment_type}',
+                                                              sort_samples=not args.unsorted,
+                                                              arrayed=True,
+                                                              vmax_multiple=args.vmax_multiple,
+                                                             )
+        else:
+            batches = knock_knock.experiment.get_all_batches(args.project_directory)
 
-            knock_knock.table.make_self_contained_zip(args.project_directory,
-                                                      conditions,
-                                                      group,
-                                                      sort_samples=not args.unsorted,
-                                                      arrayed=args.arrayed,
-                                                      vmax_multiple=args.vmax_multiple,
-                                                     )
+            for batch_name in batches:
+                logging.info(f'Making {batch_name}')
+
+                conditions = {'batch': batch_name}
+
+                knock_knock.table.make_self_contained_zip(args.project_directory,
+                                                          conditions,
+                                                          batch_name,
+                                                          sort_samples=not args.unsorted,
+                                                          arrayed=False,
+                                                          vmax_multiple=args.vmax_multiple,
+                                                         )
+
 
 def build_targets(args):
     knock_knock.build_targets.build_target_infos_from_csv(args.project_directory,
@@ -195,7 +210,6 @@ if __name__ == '__main__':
     parser_table.add_argument('--unsorted', action='store_true', help='don\'t sort samples')
     parser_table.add_argument('--arrayed', action='store_true', help='samples are organized as arrayed_experiment_groups')
     parser_table.add_argument('--vmax_multiple', type=float, default=1, help='fractional value that corresponds to full horizontal bar')
-    parser_table.add_argument('--experiment_type', help='experiment type to include')
     parser_table.set_defaults(func=make_tables)
 
     parser_targets = subparsers.add_parser('build-targets', help='build annotations of target locii')

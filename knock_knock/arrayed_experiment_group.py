@@ -911,8 +911,11 @@ def arrayed_specialized_experiment_factory(experiment_kind):
     experiment_kind_to_class = {
         'illumina': IlluminaExperiment,
         'prime_editing': PrimeEditingExperiment,
+        'single_flap': PrimeEditingExperiment,
         'twin_prime': TwinPrimeExperiment,
+        'dual_flap': TwinPrimeExperiment,
         'Bxb1_twin_prime': Bxb1TwinPrimeExperiment,
+        'Bxb1_dual_flap': Bxb1TwinPrimeExperiment,
     }
 
     SpecializedExperiment = experiment_kind_to_class[experiment_kind]
@@ -1102,13 +1105,13 @@ def make_group_descriptions_and_sample_sheet(base_dir, df, batch_name=None):
         ti = knock_knock.target_info.TargetInfo(base_dir, target_info_name, sgRNAs=sgRNAs)
         
         if ti.pegRNA_names is None or len(ti.pegRNA_names) <= 1:
-            experiment_type = 'prime_editing'
+            experiment_type = 'single_flap'
 
         elif len(ti.pegRNA_names) == 2:
             if donor == '':
-                experiment_type = 'twin_prime'
+                experiment_type = 'dual_flap'
             else:
-                experiment_type = 'Bxb1_twin_prime'
+                experiment_type = 'Bxb1_dual_flap'
 
         else:
             raise ValueError
