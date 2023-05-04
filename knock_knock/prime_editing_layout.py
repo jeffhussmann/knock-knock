@@ -112,10 +112,10 @@ class Layout(layout.Categorizer):
              'bosTau7',
              'e_coli',
              'b_subtilis',
+             'phiX',
              'primer dimer',
              'short unknown',
              'extra sequence',
-             'phiX',
             ),
         ),
     ]
