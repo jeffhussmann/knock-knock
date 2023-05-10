@@ -883,7 +883,13 @@ class Layout(layout.Categorizer):
     def target_edge_alignments(self):
         edge_alignments = {'left': [], 'right':[]}
 
-        for al in self.target_gap_covering_alignments:
+        # Re-merge any deletions.
+        merged_als = sam.merge_any_adjacent_pairs(self.target_gap_covering_alignments,
+                                                  self.target_info.reference_sequences,
+                                                  max_deletion_length=2,
+                                                 )
+
+        for al in merged_als:
             if sam.get_strand(al) != self.target_info.sequencing_direction:
                 continue
 

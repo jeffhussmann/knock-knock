@@ -291,9 +291,6 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                             if covered_left.end >= covered_right.start - 1:
                                 possible_covers.add((left_key, right_key))
 
-        #for left, right in sorted(possible_covers, key=lambda pair: (al_order.index(pair[0]), al_order.index(pair[1]))):
-        #    print(left, right, al_order.index(left), al_order.index(right))
-                            
         last_parsimonious_key = {}
 
         if possible_covers:
@@ -325,6 +322,54 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         if not_covered_by_primers_minus_edges in chains['right']['query_covered']:
             if chains['left']['description'] == 'no target':
                 chains['left']['description'] = 'not seen'
+
+        # If a putatively overlap-extended chain ends in a target alignment that is a short indel away from
+        # the target edge alignment from the other chain:
+
+        left_al = None
+        right_al = None
+
+        if chains['left']['description'] == 'RT\'ed + overlap-extended' and \
+           chains['right']['description'] == 'not RT\'ed':
+            
+            left_al = chains['left']['alignments'].get('second target')
+            right_al = chains['right']['alignments'].get('first target')
+                
+        elif chains['left']['description'] == 'not RT\'ed' and \
+             chains['right']['description'] == 'RT\'ed + overlap-extended':
+            
+            left_al = chains['left']['alignments'].get('first target')
+            right_al = chains['right']['alignments'].get('second target')
+            
+        if left_al is not None and right_al is not None:
+            merged_al = sam.merge_adjacent_alignments(left_al, right_al, self.target_info.reference_sequences, max_deletion_length=2, max_insertion_length=2)
+            if merged_al is not None:
+                if chains['right']['description'] == 'not RT\'ed':
+                    chains['left']['alignments']['second target'] = merged_al
+                    chains['right']['alignments']['first target'] = merged_al
+
+                    chains['right']['alignments']['first pegRNA'] = chains['left']['alignments']['second pegRNA']
+                    chains['right']['alignments']['second pegRNA'] = chains['left']['alignments']['first pegRNA']
+                    chains['right']['alignments']['second target'] = chains['left']['alignments']['first target']
+
+                elif chains['left']['description'] == 'not RT\'ed':
+                    chains['left']['alignments']['first target'] = merged_al
+                    chains['right']['alignments']['second target'] = merged_al
+
+                    chains['left']['alignments']['first pegRNA'] = chains['right']['alignments']['second pegRNA']
+                    chains['left']['alignments']['second pegRNA'] = chains['right']['alignments']['first pegRNA']
+                    chains['left']['alignments']['second target'] = chains['right']['alignments']['first target']
+                
+                else:
+                    raise ValueError
+
+                chains['left']['description'] = 'RT\'ed + overlap-extended'
+                chains['right']['description'] = 'RT\'ed + overlap-extended'
+
+                query_covered = chains['left']['query_covered'] | chains['right']['query_covered']
+
+                chains['left']['query_covered'] = query_covered
+                chains['right']['query_covered'] = query_covered
 
         return chains
 
