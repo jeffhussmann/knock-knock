@@ -82,10 +82,10 @@ class ReadSet:
 
     @memoized_property
     def categorizer(self):
-        if self.details['experiment_type'] == 'twin_prime':
+        if self.details['experiment_type'] in ['twin_prime', 'dual_flap']:
             from knock_knock.twin_prime_layout import Layout
             categorizer = Layout
-        elif self.details['experiment_type'] in ('prime_editing', 'prime_editing_layout'):
+        elif self.details['experiment_type'] in ['prime_editing', 'prime_editing_layout', 'single_flap']:
             from knock_knock.prime_editing_layout import Layout
             categorizer = Layout
         else:
