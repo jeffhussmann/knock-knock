@@ -553,9 +553,28 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
         return fs
 
+    def reassign_outcomes(self, outcomes, reassign_to):
+        ''' Returns a copy of category_fractions in which outcome fractions
+            for outcomes have been reassigned to to category reassign_to. 
+        '''
+        cat_fs = self.category_fractions.copy()
+
+        for c, s, d in outcomes:
+            if c not in cat_fs.index:
+                continue
+
+            cat_fs.loc[c] -= self.outcome_fractions.loc[c, s, d]
+
+            if reassign_to not in cat_fs.index:
+                cat_fs[reassign_to] = 0
+
+            cat_fs.loc[reassign_to] += self.outcome_fractions.loc[c, s, d]
+
+        return cat_fs
+
     def group_by_condition(self, df):
         if len(self.condition_keys) == 0:
-            # Supplying a constant function to buy means
+            # Supplying a constant function to by means
             # all columns will be grouped together. Making
             # this constant value 'all' means that will be
             # the name of eventual aggregated column. 
