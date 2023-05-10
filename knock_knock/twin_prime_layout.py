@@ -796,8 +796,8 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                 
         return manual_anchors
 
-    def plot(self, relevant=True, manual_alignments=None, **manual_diagram_kwargs):
-        if not self.categorized:
+    def plot(self, relevant=True, manual_alignments=None, annotate_overlap=True, **manual_diagram_kwargs):
+        if relevant and not self.categorized:
             self.categorize()
 
         ti = self.target_info
@@ -872,6 +872,8 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         if 'refs_to_draw' in manual_diagram_kwargs:
             refs_to_draw.update(manual_diagram_kwargs.pop('refs_to_draw'))
 
+        invisible_references = manual_diagram_kwargs.get('invisible_references', set())
+
         if manual_alignments is not None:
             als_to_plot = manual_alignments
         elif relevant:
@@ -879,7 +881,12 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         else:
             als_to_plot = self.uncategorized_relevant_alignments
 
-        manual_anchors = manual_diagram_kwargs.get('manual_anchors', self.manual_anchors(als_to_plot))
+        if relevant:
+            manual_anchors = manual_diagram_kwargs.get('manual_anchors', self.manual_anchors(als_to_plot))
+            inferred_amplicon_length = self.inferred_amplicon_length
+        else:
+            manual_anchors = None
+            inferred_amplicon_length = None
 
         if 'phiX' in ti.supplemental_indices:
             supplementary_reference_sequences = ti.supplemental_reference_sequences('phiX')
@@ -895,12 +902,13 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             manual_anchors=manual_anchors,
             refs_to_draw=refs_to_draw,
             label_overrides=label_overrides,
-            inferred_amplicon_length=self.inferred_amplicon_length,
+            inferred_amplicon_length=inferred_amplicon_length,
             center_on_primers=True,
             color_overrides=color_overrides,
             feature_heights=feature_heights,
             supplementary_reference_sequences=supplementary_reference_sequences,
             highlight_SNPs=True,
+            invisible_references=invisible_references,
         )
 
         diagram_kwargs.update(**manual_diagram_kwargs)
@@ -916,7 +924,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         # Draw the pegRNAs.
         if any(al.reference_name in pegRNA_names for al in diagram.alignments):
             ref_ys = {}
-            ref_ys['left'] = diagram.max_y + diagram.target_and_donor_y_gap
+            ref_ys['left'] = diagram.max_y + diagram.target_and_donor_y_gap * 0.75
             ref_ys['right'] = ref_ys['left'] + 7 * diagram.gap_between_als
 
             # To ensure that features on pegRNAs that extend far to the right of
@@ -929,10 +937,10 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             ref_p_to_xs = {}
 
             left_name = ti.pegRNA_names_by_side_of_read['left']
-            left_visible = any(al.reference_name == left_name for al in diagram.alignments)
+            left_visible = (left_name not in invisible_references) and any(al.reference_name == left_name for al in diagram.alignments)
 
             right_name = ti.pegRNA_names_by_side_of_read['right']
-            right_visible = any(al.reference_name == right_name for al in diagram.alignments)
+            right_visible = (right_name not in invisible_references) and any(al.reference_name == right_name for al in diagram.alignments)
 
             ref_p_to_xs['left'] = diagram.draw_reference(left_name, ref_ys['left'],
                                                          flip=True,
@@ -952,7 +960,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
             diagram.ax.set_xlim(diagram.min_x, diagram.max_x)
 
-            if self.manual_anchors and (left_name, 'overlap') in ti.features:
+            if annotate_overlap and self.manual_anchors and (left_name, 'overlap') in ti.features:
                 offset_to_ref_ps = ti.feature_offset_to_ref_p(left_name, 'overlap')
                 overlap_xs = sorted([ref_p_to_xs['left'](offset_to_ref_ps[0]), ref_p_to_xs['left'](offset_to_ref_ps[max(offset_to_ref_ps)])])
 

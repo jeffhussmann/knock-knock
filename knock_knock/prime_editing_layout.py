@@ -2848,7 +2848,12 @@ class Layout(layout.Categorizer):
                 
         return manual_anchors
 
-    def plot(self, relevant=True, manual_alignments=None, **manual_diagram_kwargs):
+    def plot(self,
+             relevant=True,
+             manual_alignments=None,
+             draw_protospacers_on_nicked_strand=True,
+             **manual_diagram_kwargs,
+            ):
         label_overrides = manual_diagram_kwargs.pop('label_overrides', {})
         label_offsets = manual_diagram_kwargs.pop('label_offsets', {})
         feature_heights = manual_diagram_kwargs.pop('feature_heights', {})
@@ -2882,16 +2887,17 @@ class Layout(layout.Categorizer):
 
                     features_to_show.add((ti.target, name))
 
-        # Draw protospacer features on the same side as their nick.
-        for feature_name, feature in ti.PAM_features.items():
-            if (feature.strand == '+' and not flip_target) or (feature.strand == '-' and flip_target):
-                feature_heights[feature_name] = -1
+        if draw_protospacers_on_nicked_strand:
+            # Draw protospacer features on the same side as their nick.
+            for feature_name, feature in ti.PAM_features.items():
+                if (feature.strand == '+' and not flip_target) or (feature.strand == '-' and flip_target):
+                    feature_heights[feature_name] = -1
 
-            label_offsets[feature_name] = 1
+                label_offsets[feature_name] = 1
 
-        for feature_name, feature in ti.protospacer_features.items():
-            if (feature.strand == '+' and not flip_target) or (feature.strand == '-' and flip_target):
-                feature_heights[feature_name] = -1
+            for feature_name, feature in ti.protospacer_features.items():
+                if (feature.strand == '+' and not flip_target) or (feature.strand == '-' and flip_target):
+                    feature_heights[feature_name] = -1
 
         for deletion in ti.pegRNA_programmed_deletions:
             label_overrides[deletion.ID] = f'programmed deletion ({len(deletion)} nts)'
@@ -2913,6 +2919,9 @@ class Layout(layout.Categorizer):
 
         features_to_show.update({(ti.target, name) for name in ti.protospacer_names})
         features_to_show.update({(ti.target, name) for name in ti.PAM_features})
+
+        if 'features_to_show' in manual_diagram_kwargs:
+            features_to_show.update(manual_diagram_kwargs.pop('features_to_show'))
 
         refs_to_draw = {ti.target}
         if ti.pegRNA_names is not None:

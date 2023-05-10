@@ -89,6 +89,7 @@ class ReadDiagram():
                  refs_to_draw=None,
                  parallelogram_alpha=0.05,
                  supplementary_reference_sequences=None,
+                 invisible_references=None,
                  **kwargs,
                 ):
 
@@ -153,6 +154,10 @@ class ReadDiagram():
         if invisible_alignments is None:
             invisible_alignments = []
         self.invisible_alignments = invisible_alignments
+
+        if invisible_references is None:
+            invisible_references = []
+        self.invisible_references = invisible_references
 
         if manual_anchors is None:
             manual_anchors = {}
@@ -1102,6 +1107,10 @@ class ReadDiagram():
                        label_features=True,
                        visible=True,
                       ):
+
+        if ref_name in self.invisible_references:
+            visible = False
+
         ti = self.target_info
 
         color = self.ref_name_to_color[ref_name]
