@@ -12,6 +12,7 @@ import knock_knock.layout
 import knock_knock.outcome
 import knock_knock.pegRNAs
 import knock_knock.prime_editing_layout
+import knock_knock.target_info
 import knock_knock.twin_prime_layout
 import knock_knock.Bxb1_layout
 
@@ -279,14 +280,14 @@ def plot_single_flap_extension_chain_edges(ti,
                                            normalize=False,
                                            pegRNA_x_lims=None,
                                            target_x_lims=None,
+                                           marker_size=2,
+                                           line_width=1,
                                           ):
     features = ti.features
 
     # Common parameters.
     ref_bar_height = 0.04
     feature_height = 0.05
-
-    marker_size = 2
 
     figsize = (16, 6)
 
@@ -307,7 +308,7 @@ def plot_single_flap_extension_chain_edges(ti,
                 if xs[side] is None:
                     continue
 
-                ax.plot(xs[side], ys[side], 'o-', label=set_name, markersize=marker_size, color=color, alpha=0.5)
+                ax.plot(xs[side], ys[side], 'o-', label=set_name, linewidth=line_width, markersize=marker_size, color=color, alpha=0.8)
 
     ax = axs[1, 0]
     pegRNA_name = ti.pegRNA_names[0]
@@ -359,7 +360,7 @@ def plot_single_flap_extension_chain_edges(ti,
         for data_ax in axs[:, 0]:
             data_ax.axvspan(start, end,
                             facecolor=color,
-                            alpha=0.75,
+                            alpha=0.5,
                             clip_on=False,
                            )
 
@@ -467,7 +468,6 @@ def plot_single_flap_extension_chain_edges(ti,
         ax.axvline(x, color='black', alpha=0.75)
 
         name, strand = cut_after_name.rsplit('_', 1)
-
         ref_y = y_start + 0.5 * ref_bar_height
         cut_y_bottom = ref_y - feature_height
         cut_y_middle = ref_y
@@ -500,7 +500,7 @@ def plot_single_flap_extension_chain_edges(ti,
     axs[0, 0].set_xticklabels([])
 
     if len(guide_sets) > 1:
-        axs[0, 0].legend()
+        axs[0, 1].legend(bbox_to_anchor=(1, 1), loc='upper left')
 
     axs[0, 0].set_ylabel('Cumulative\npercentage of reads', size=12)
     axs[1, 0].set_ylabel('Percentage of reads', size=12)
@@ -508,11 +508,11 @@ def plot_single_flap_extension_chain_edges(ti,
     return fig, axs
 
 def plot_dual_flap_extension_chain_edges(ti,
-                               guide_sets,
-                               cumulative=False,
-                               normalize=False,
-                               x_lims=(-100, 150),
-                              ):
+                                         guide_sets,
+                                         cumulative=False,
+                                         normalize=False,
+                                         x_lims=(-100, 150),
+                                        ):
     features = ti.features
 
     # Common parameters.
@@ -554,8 +554,8 @@ def plot_dual_flap_extension_chain_edges(ti,
             PBS_name = ti.PBS_names_by_side_of_read[side]
             PBS = features[ti.target, PBS_name]
 
-            other_pegRNA_name = ti.pegRNA_names_by_side_of_read[knock_knock.twin_prime_layout.other_side[side]]
-            other_PBS_name = ti.PBS_names_by_side_of_read[knock_knock.twin_prime_layout.other_side[side]]
+            other_pegRNA_name = ti.pegRNA_names_by_side_of_read[knock_knock.target_info.other_side[side]]
+            other_PBS_name = ti.PBS_names_by_side_of_read[knock_knock.target_info.other_side[side]]
             other_protospacer_name = knock_knock.pegRNAs.protospacer_name(other_pegRNA_name)
             PAM_name = f'{protospacer_name}_PAM'
             other_PAM_name = f'{other_protospacer_name}_PAM'
@@ -741,7 +741,7 @@ def plot_dual_flap_extension_chain_edges(ti,
             ax.plot(xs, ys, '.-', label=set_name, color=color, alpha=0.5)
 
         pegRNA_name = ti.pegRNA_names_by_side_of_read[side]
-        other_pegRNA_name = ti.pegRNA_names_by_side_of_read[knock_knock.twin_prime_layout.other_side[side]]
+        other_pegRNA_name = ti.pegRNA_names_by_side_of_read[knock_knock.target_info.other_side[side]]
 
         # By definition, the end of the PBS on this side's pegRNA 
         # is zero in the coordinate system.
@@ -777,7 +777,7 @@ def plot_dual_flap_extension_chain_edges(ti,
             ax.axvspan(start, end, y_start, y_start + ref_bar_height, facecolor=ti.pegRNA_name_to_color[other_pegRNA_name], clip_on=False)
             ax.axvspan(start, end, y_start + ref_bar_height, y_start + ref_bar_height + feature_height, facecolor=feature.attribute['color'], alpha=0.75, clip_on=False)
             
-        other_PBS_name = ti.PBS_names_by_side_of_read[knock_knock.twin_prime_layout.other_side[side]]
+        other_PBS_name = ti.PBS_names_by_side_of_read[knock_knock.target_info.other_side[side]]
         other_protospacer_name = knock_knock.pegRNAs.protospacer_name(other_pegRNA_name)
         other_PBS_target = features[ti.target, other_PBS_name]
             
@@ -787,7 +787,7 @@ def plot_dual_flap_extension_chain_edges(ti,
 
         for feature_name in [other_protospacer_name,
                                 other_PBS_name,
-                                ti.primers_by_side_of_read[knock_knock.twin_prime_layout.other_side[side]].ID,
+                                ti.primers_by_side_of_read[knock_knock.target_info.other_side[side]].ID,
                             ]:
             feature = features[ti.target, feature_name]
             
