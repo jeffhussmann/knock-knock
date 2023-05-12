@@ -63,7 +63,7 @@ class Explorer:
             self.draw_buttons[key] = ToggleButton(value=value, description=label)
 
         toggles = [
-            ('split_at_indels', True),
+            ('split_at_indels', False),
         ]
         for key, default_value in toggles:
             value = self.plot_kwargs.pop(key, default_value)

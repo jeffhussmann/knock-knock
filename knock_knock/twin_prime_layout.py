@@ -896,7 +896,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         diagram_kwargs = dict(
             draw_sequence=True,
             flip_target=flip_target,
-            split_at_indels=True,
+            split_at_indels=False,
             label_offsets=label_offsets,
             features_to_show=features_to_show,
             manual_anchors=manual_anchors,

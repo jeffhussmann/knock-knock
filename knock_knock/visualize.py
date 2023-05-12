@@ -251,7 +251,7 @@ class ReadDiagram():
             }
 
             self.target_and_donor_y_gap = kwargs.get('target_and_donor_y_gap', 0.03)
-            self.initial_alignment_y_offset = 5
+            self.initial_alignment_y_offset = kwargs.get('initial_alignment_y_offset', 5)
             self.feature_line_width = 0.005
             self.gap_between_als = 0.003
             self.label_cut = False
@@ -746,9 +746,20 @@ class ReadDiagram():
                                        
                 # Draw the alignment, with downward dimples at insertions and upward loops at deletions.
 
+                alignment_edge_xs = [start]
+
+                if alignment.is_reverse:
+                    alignment_edge_ref_ps = [alignment.reference_end - 1]
+                    ref_direction_multiplier = -1
+                else:
+                    alignment_edge_ref_ps = [alignment.reference_start]
+                    ref_direction_multiplier = 1
+
                 xs = [left_offset(start)]
                 ys = [y]
+
                 indels = sorted(layout_module.get_indel_info(alignment), key=lambda t: t[1][0])
+
                 for kind, info in indels:
                     if kind == 'deletion' or kind == 'splicing':
                         centered_at, length = info
@@ -763,31 +774,38 @@ class ReadDiagram():
                         # Cap how wide the loop can be.
                         capped_length = min(max_length, length)
                         
-                        if length <= 1:
-                            height = 0.0015
-                            indel_xs = [centered_at, centered_at, centered_at]
-                            indel_ys = [y, y + height, y]
-                        else:
-                            width = self.query_length * 0.001
-                            height = 0.003
+                        width = self.query_length * 0.001
+                        height = 0.003
 
-                            indel_xs = [
-                                centered_at - width,
-                                centered_at - 0.5 * capped_length,
-                                centered_at + 0.5 * capped_length,
-                                centered_at + width,
-                            ]
-                            indel_ys = [y, y + height, y + height, y]
+                        indel_xs = [
+                            centered_at - width,
+                            centered_at - 0.5 * capped_length,
+                            centered_at + 0.5 * capped_length,
+                            centered_at + width,
+                        ]
 
-                            ax.annotate(label,
-                                        xy=(middle_offset(centered_at), y + height),
-                                        xytext=(0, 1),
-                                        textcoords='offset points',
-                                        ha='center',
-                                        va='bottom',
-                                        size=6,
-                                        alpha=1 * alpha_multiplier,
-                                       )
+                        alignment_edge_xs.extend([centered_at - 0.5, centered_at + 0.5])
+
+                        ref_distance_from_last = alignment_edge_xs[-2] - alignment_edge_xs[-3]
+                        next_ref_p = alignment_edge_ref_ps[-1] + ref_distance_from_last * ref_direction_multiplier
+                        alignment_edge_ref_ps.append(next_ref_p)
+
+                        # Deleting length bases means the next query position is paired with
+                        # a ref position length + 1 bases away.
+                        next_ref_p = next_ref_p + (length + 1) * ref_direction_multiplier
+                        alignment_edge_ref_ps.append(next_ref_p)
+
+                        indel_ys = [y, y + height, y + height, y]
+
+                        ax.annotate(label,
+                                    xy=(middle_offset(centered_at), y + height),
+                                    xytext=(0, 1),
+                                    textcoords='offset points',
+                                    ha='center',
+                                    va='bottom',
+                                    size=6,
+                                    alpha=1 * alpha_multiplier,
+                                   )
 
                     elif kind == 'insertion':
                         starts_at, ends_at = info
@@ -797,18 +815,28 @@ class ReadDiagram():
                         min_height = 0.0015
                         height = min_height * min(length**0.5, 3)
 
-                        if length > 1:
-                            ax.annotate(str(length),
-                                        xy=(centered_at, y - height),
-                                        xytext=(0, -1),
-                                        textcoords='offset points',
-                                        ha='center',
-                                        va='top',
-                                        size=6,
-                                        alpha=1 * alpha_multiplier,
-                                       )
+                        ax.annotate(str(length),
+                                    xy=(centered_at, y - height),
+                                    xytext=(0, -1),
+                                    textcoords='offset points',
+                                    ha='center',
+                                    va='top',
+                                    size=6,
+                                    alpha=1 * alpha_multiplier,
+                                   )
 
                         indel_xs = [starts_at - 0.5, centered_at, ends_at + 0.5]
+                        alignment_edge_xs.extend([starts_at - 1, ends_at + 1])
+
+                        ref_distance_from_last = alignment_edge_xs[-2] - alignment_edge_xs[-3]
+                        next_ref_p = alignment_edge_ref_ps[-1] + ref_distance_from_last * ref_direction_multiplier
+                        alignment_edge_ref_ps.append(next_ref_p)
+
+                        # Inserting length bases means the query position on the other side of the insertion
+                        # is paired with a ref position 1 bases away.
+                        next_ref_p = next_ref_p + 1 * ref_direction_multiplier
+                        alignment_edge_ref_ps.append(next_ref_p)
+
                         indel_ys = [y, y - height, y]
 
                         if self.label_differences:
@@ -827,18 +855,25 @@ class ReadDiagram():
                 xs.append(right_offset(end))
                 ys.append(y)
 
-                ref_ps = (alignment.reference_start, alignment.reference_end - 1)
+                alignment_edge_xs.append(end)
+
                 if alignment.is_reverse:
-                    ref_ps = ref_ps[::-1]
+                    alignment_edge_ref_ps.append(alignment.reference_start)
+                else:
+                    alignment_edge_ref_ps.append(alignment.reference_end - 1)
 
                 coordinates = [
-                    (middle_offset(start), middle_offset(end)),
-                    ref_ps,
-                    y,
-                    sam.get_strand(alignment),
-                    alpha_multiplier,
+                    [
+                        (middle_offset(x1), middle_offset(x2)),
+                        (ref_p_1, ref_p_2),
+                        y,
+                        sam.get_strand(alignment),
+                        alpha_multiplier,
+                    ]
+                    for (x1, x2), (ref_p_1, ref_p_2) in zip(utilities.list_chunks(alignment_edge_xs, 2), utilities.list_chunks(alignment_edge_ref_ps, 2))
                 ]
-                self.alignment_coordinates[ref_name].append(coordinates)
+
+                self.alignment_coordinates[ref_name].extend(coordinates)
                 
                 self.max_y = max(self.max_y, max(ys))
                 self.min_y = min(self.min_y, min(ys))
@@ -937,58 +972,66 @@ class ReadDiagram():
                     feature = self.features[feature_reference, feature_name]
                     feature_color = self.get_feature_color(feature_reference, feature_name)
                     
-                    qs = [q for q, r in q_to_r.items() if feature.start <= r <= feature.end]
+                    qs = sorted([q for q, r in q_to_r.items() if feature.start <= r <= feature.end])
                     if not qs:
                         continue
 
-                    query_extent = [min(qs), max(qs)]
-                    
-                    rs = [feature.start, feature.end]
-                    if strand == '-':
-                        rs = rs[::-1]
+                    query_extents = []
+                    while len(qs) > 0:
+                        block_start = qs.pop(0)
+                        current_q = block_start
+                        while(len(qs) > 0 and qs[0] == current_q + 1):
+                            current_q = qs.pop(0)
+                        block_end = current_q
+                        query_extents.append((block_start, block_end))
 
-                    if np.sign(offset) == 1:
-                        va = 'bottom'
-                        text_y = 1
-                    else:
-                        va = 'top'
-                        text_y = -1
+                    for query_extent in query_extents:
+                        if not self.ref_centric:
+                            rs = [feature.start, feature.end]
+                            if strand == '-':
+                                rs = rs[::-1]
 
-                    if not self.ref_centric:
-                        for ha, q, r in zip(['left', 'right'], query_extent, rs):
-                            nts_missing = abs(q_to_r[q] - r)
-                            if nts_missing != 0 and query_extent[1] - query_extent[0] > 20:
-                                ax.annotate(str(nts_missing),
-                                            xy=(q, 0),
-                                            ha=ha,
-                                            xytext=(3 if ha == 'left' else -3, text_y),
+                            if np.sign(offset) == 1:
+                                va = 'bottom'
+                                text_y = 1
+                            else:
+                                va = 'top'
+                                text_y = -1
+
+                            for ha, q, r in zip(['left', 'right'], query_extent, rs):
+                                nts_missing = abs(q_to_r[q] - r)
+                                if nts_missing != 0 and query_extent[1] - query_extent[0] > 20:
+                                    ax.annotate(str(nts_missing),
+                                                xy=(q, 0),
+                                                ha=ha,
+                                                xytext=(3 if ha == 'left' else -3, text_y),
+                                                textcoords='offset points',
+                                                size=6,
+                                                va=va,
+                                            )
+                            
+                            if query_extent[1] - query_extent[0] > 18 or feature.attribute['ID'] == self.target_info.sgRNA:
+                                label = feature.attribute['ID']
+
+                                label_offset = self.label_offsets.get(label, 0)
+                                y_points = -5 - label_offset * self.font_sizes['feature_label']
+
+                                ax.annotate(label,
+                                            xy=(np.mean(query_extent), 0),
+                                            xycoords='data',
+                                            xytext=(0, y_points),
                                             textcoords='offset points',
-                                            size=6,
-                                            va=va,
-                                           )
-                        
-                        if query_extent[1] - query_extent[0] > 18 or feature.attribute['ID'] == self.target_info.sgRNA:
-                            label = feature.attribute['ID']
+                                            va='top',
+                                            ha='center',
+                                            color=feature_color,
+                                            size=10,
+                                            weight='bold',
+                                        )
 
-                            label_offset = self.label_offsets.get(label, 0)
-                            y_points = -5 - label_offset * self.font_sizes['feature_label']
-
-                            ax.annotate(label,
-                                        xy=(np.mean(query_extent), 0),
-                                        xycoords='data',
-                                        xytext=(0, y_points),
-                                        textcoords='offset points',
-                                        va='top',
-                                        ha='center',
-                                        color=feature_color,
-                                        size=10,
-                                        weight='bold',
-                                    )
-
-                    if self.features_on_alignments:
-                        xs = [min(qs) - 0.5 + x_offset, max(qs) + 0.5 + x_offset]
-                        final_feature_color = hits.visualize.apply_alpha(feature_color, alpha=0.7 * alpha_multiplier, multiplicative=True)
-                        ax.fill_between(xs, [y] * 2, [0] * 2, color=final_feature_color, edgecolor='none')
+                        if self.features_on_alignments:
+                            xs = [query_extent[0] - 0.5 + x_offset, query_extent[1] + 0.5 + x_offset]
+                            final_feature_color = hits.visualize.apply_alpha(feature_color, alpha=0.7 * alpha_multiplier, multiplicative=True)
+                            ax.fill_between(xs, [y] * 2, [0] * 2, color=final_feature_color, edgecolor='none')
                         
     def plot_read(self):
         ax = self.ax

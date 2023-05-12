@@ -1573,28 +1573,26 @@ class Layout(layout.Categorizer):
                 self.register_intended_edit()
             else:
                 if self.has_pegRNA_SNV:
-                    self.category = 'edit + indel'
-
                     if indel.kind == 'D':
-                        self.subcategory = 'deletion'
+                        subcategory = 'deletion'
                         self.outcome = DeletionOutcome(indel)
 
                     elif indel.kind == 'I':
-                        self.subcategory = 'insertion'
+                        subcategory = 'insertion'
                         self.outcome = InsertionOutcome(indel)
 
-                    self.relevant_alignments = self.target_edge_alignments_list + self.non_protospacer_pegRNA_alignments
+                    self.register_edit_plus_indel(subcategory)
 
                 else:
                     if indel.kind == 'D':
                         self.category = 'deletion'
                         self.outcome = DeletionOutcome(indel)
-                        self.relevant_alignments = self.target_edge_alignments_list
+                        self.relevant_alignments = [self.original_target_covering_alignment]
 
                     elif indel.kind == 'I':
                         self.category = 'insertion'
                         self.outcome = InsertionOutcome(indel)
-                        self.relevant_alignments = self.target_edge_alignments_list + self.non_protospacer_pegRNA_alignments
+                        self.relevant_alignments = [self.original_target_covering_alignment] + self.non_protospacer_pegRNA_alignments
 
                     if len(self.non_pegRNA_SNVs) > 0:
                         self.subcategory = 'mismatches'
@@ -1666,6 +1664,16 @@ class Layout(layout.Categorizer):
         self.subcategory = details['organism']
         self.relevant_alignments = details['full_alignments']
         self.special_alignment = details['cropped_candidate_alignment']
+
+    def register_edit_plus_indel(self, subcategory):
+        self.category = 'edit + indel'
+        self.subcategory = subcategory
+        als = self.split_target_alignments + self.pegRNA_gap_covering_alignments
+        als = sam.merge_any_adjacent_pairs(als, self.target_info.reference_sequences, max_insertion_length=2)
+        als = [al for al in als if not self.is_pegRNA_protospacer_alignment(al)]
+        self.relevant_alignments = als
+
+        self.details = 'n/a'
 
     def is_valid_unintended_rejoining(self, chains):
         ''' There is RT'ed sequence, and the extension chains cover the whole read.
@@ -2089,12 +2097,10 @@ class Layout(layout.Categorizer):
                         if self.is_unintended_rejoining:
                             self.register_unintended_rejoining()
                         else:
-                            self.category = 'edit + indel'
-                            self.subcategory = 'deletion'
+                            self.register_edit_plus_indel('deletion')
                             HDR_outcome = HDROutcome(self.pegRNA_SNV_string, [])
                             deletion_outcome = DeletionOutcome(indel)
                             self.outcome = HDRPlusDeletionOutcome(HDR_outcome, deletion_outcome)
-                            self.relevant_alignments = [target_alignment] + self.non_protospacer_pegRNA_alignments
 
                     else:
                         self.category = 'uncategorized'
@@ -2125,12 +2131,10 @@ class Layout(layout.Categorizer):
                         indel = [indel for indel in indels if indel != self.target_info.pegRNA_programmed_deletion][0]
 
                         if indel.kind  == 'D':
-                            self.category = 'edit + indel'
-                            self.subcategory = 'deletion'
+                            self.register_edit_plus_indel('deletion')
                             HDR_outcome = HDROutcome(self.pegRNA_SNV_string, [self.target_info.pegRNA_programmed_deletion])
                             deletion_outcome = DeletionOutcome(indel)
                             self.outcome = HDRPlusDeletionOutcome(HDR_outcome, deletion_outcome)
-                            self.relevant_alignments = self.parsimonious_target_alignments + self.pegRNA_gap_covering_alignments
 
                         else:
                             self.category = 'uncategorized'
@@ -2167,7 +2171,10 @@ class Layout(layout.Categorizer):
             self.details = 'n/a'
             ti = self.target_info
             PBS_al = self.generate_extended_pegRNA_PBS_alignment(self.target_edge_alignments[ti.pegRNA_side], ti.pegRNA_side)
-            self.relevant_alignments = interval.make_parsimonious(self.target_edge_alignments_list + self.pegRNA_alignments_cover_target_gap) + [PBS_al]
+            als = self.target_edge_alignments_list + interval.make_parsimonious(self.pegRNA_alignments_cover_target_gap)
+            als.append(PBS_al)
+            als = sam.merge_any_adjacent_pairs(als, ti.reference_sequences, max_deletion_length=2, max_insertion_length=2)
+            self.relevant_alignments = als
 
         elif self.duplication_covers_whole_read:
             subcategory, ref_junctions, indels, als_with_pegRNA_SNVs, merged_als = self.duplication
@@ -2249,10 +2256,7 @@ class Layout(layout.Categorizer):
             self.relevant_alignments = self.duplication_plus_edit
 
         elif self.deletion_plus_edit is not None:
-            self.category = 'edit + indel'
-            self.subcategory = 'deletion'
-            self.details = 'n/a'
-            self.relevant_alignments = self.deletion_plus_edit
+            self.register_edit_plus_indel('deletion')
 
         elif self.original_target_alignment_has_only_relevant_indels:
             self.register_simple_indels()
@@ -2932,16 +2936,23 @@ class Layout(layout.Categorizer):
         else:
             supplementary_reference_sequences = None
 
+        if relevant:
+            manual_anchors = manual_diagram_kwargs.get('manual_anchors', self.manual_anchors)
+            inferred_amplicon_length = self.inferred_amplicon_length
+        else:
+            manual_anchors = None
+            inferred_amplicon_length = None
+
         diagram_kwargs = dict(
             draw_sequence=True,
             flip_target=flip_target,
-            split_at_indels=True,
+            split_at_indels=False,
             features_to_show=features_to_show,
-            manual_anchors=self.manual_anchors,
+            manual_anchors=manual_anchors,
             refs_to_draw=refs_to_draw,
             label_offsets=label_offsets,
             label_overrides=label_overrides,
-            inferred_amplicon_length=self.inferred_amplicon_length,
+            inferred_amplicon_length=inferred_amplicon_length,
             center_on_primers=True,
             highlight_SNPs=True,
             feature_heights=feature_heights,
