@@ -291,7 +291,15 @@ class TargetInfoBuilder:
                 protospacer_feature = pegRNAs.identify_protospacer_in_target(amplicon_sequence, components['protospacer'], components['effector'])
                 protospacer_features_in_amplicon[sgRNA_name] = protospacer_feature
             except ValueError:
-                logging.warning(f'No valid location for {sgRNA_name} {components["effector"]} protospacer: {components["protospacer"]}')
+                logging.warning(f'No valid location for {sgRNA_name} {components["effector"]} protospacer: {components["protospacer"]} in target {ref_name}:{left_al.reference_start:,}-{right_al.reference_end:,}')
+                for name, als in primer_alignments.items():
+                    print(name)
+                    for al in als:
+                        print(al.reference_name, al.reference_start, al.reference_end, al.is_reverse)
+
+                if components['extension'] != '':
+                    # pegRNAs must have a protospacer in target.
+                    raise ValueError
 
         final_window_around = min(500, amplicon_start)
 
@@ -413,6 +421,7 @@ class TargetInfoBuilder:
             gb_records[donor_name] = donor_record
 
         sgRNAs_with_extensions = [(name, components) for name, components in self.info['sgRNAs'] if components['extension'] != '']
+
         if len(sgRNAs_with_extensions) > 0:
 
             bad_pegRNAs = []
@@ -638,7 +647,7 @@ class TargetInfoBuilder:
             
         return primer_alignments
 
-    def identify_concordant_primer_alignment_pair(self, primer_alignments):
+    def identify_concordant_primer_alignment_pair(self, primer_alignments, max_length=10000):
         # Find pairs of alignments that are on the same chromosome and point towards each other.
 
         def in_correct_orientation(first_al, second_al):
@@ -686,6 +695,9 @@ class TargetInfoBuilder:
                 logging.warning(f'Found {amplicon_length(left_al, right_al):,} nt amplicon on {left_al.reference_name} from {left_al.reference_start:,} to {right_al.reference_end - 1:,}')
             
         left_al, right_al = correct_orientation_pairs[0]
+
+        if amplicon_length(left_al, right_al) > max_length:
+            raise ValueError
 
         return left_al, right_al
 

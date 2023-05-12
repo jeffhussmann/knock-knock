@@ -97,7 +97,7 @@ def identify_protospacer_in_target(target_sequence, protospacer, effector):
         valid_features = find(protospacer[1:])
 
     if len(valid_features) != 1:
-        raise ValueError(f'{len(valid_features)} valid locations for protospacer {protospacer} in target {target_sequence}')
+        raise ValueError(f'{len(valid_features)} valid locations for protospacer {protospacer} in target {target_sequence if len(target_sequence) < 1000 else ">1kb long"}')
     else:
         valid_feature = valid_features[0]
         return valid_feature
