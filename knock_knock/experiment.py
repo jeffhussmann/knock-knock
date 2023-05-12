@@ -14,18 +14,19 @@ from itertools import islice, chain
 from pathlib import Path
 from textwrap import dedent
 
-import pandas as pd
+import bokeh.palettes
 import matplotlib.pyplot as plt
 import numpy as np
-import bokeh.palettes
+import pandas as pd
 import pysam
+import threadpoolctl
 import yaml
 
 import hits.visualize
 from hits import fastq, genomes, mapping_tools, sam, utilities
 from hits.utilities import memoized_property
 
-from . import target_info, blast, visualize, outcome_record, svg, table, explore
+from . import target_info, blast, outcome_record, svg, table, explore
 from . import layout as layout_module
 
 class ColorGroupCycler:
@@ -484,8 +485,6 @@ class Experiment:
             if index_name == 'phiX':
                 continue
 
-            logging.info(f'Generating {read_type} supplemental alignments to {index_name}...')
-
             fastq_fn = self.fns_by_read_type['fastq'][read_type]
             STAR_prefix = self.fns_by_read_type['supplemental_STAR_prefix'][read_type, index_name]
             index = self.supplemental_indices[index_name]['STAR']
@@ -527,9 +526,6 @@ class Experiment:
 
     def generate_supplemental_alignments_with_minimap2(self, read_type=None):
         for index_name in self.supplemental_indices:
-            if not self.silent:
-                print(f'Generating {read_type} supplemental alignments to {index_name}...')
-
             # Note: this doesn't support multiple intput fastqs.
             fastq_fn = self.fns_by_read_type['fastq'][read_type][0]
 
