@@ -866,7 +866,7 @@ def build_indices(base_dir, name, num_threads=1, **STAR_index_kwargs):
     STAR_dir.mkdir(exist_ok=True)
     mapping_tools.build_STAR_index([fasta_fn], STAR_dir,
                                    num_threads=num_threads,
-                                   RAM_limit=int(4e10),
+                                   RAM_limit=int(60e9),
                                    **STAR_index_kwargs,
                                   )
 
@@ -934,11 +934,9 @@ def download_genome_and_build_indices(base_dir, genome_name, num_threads=8):
         ]
         subprocess.run(gunzip_command, check=True)
 
+    STAR_index_kwargs = {}
+
     if genome_name in ['e_coli', 'phiX']:
-        STAR_index_kwargs = {
-            'wonky_param': 4,
-        }
-    else:
-        STAR_index_kwargs = {}
+        STAR_index_kwargs['wonky_param'] = 4
 
     build_indices(base_dir, genome_name, num_threads=num_threads, **STAR_index_kwargs)
