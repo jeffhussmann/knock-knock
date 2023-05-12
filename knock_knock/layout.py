@@ -124,13 +124,14 @@ class Categorizer:
     def feature_offset_to_q(self, al, feature_name, target_info=None):
         return utilities.reverse_dictionary(self.q_to_feature_offset(al, feature_name, target_info=target_info))
 
-    def feature_interval(self, al, feature_name, target_info=None):
+    def feature_query_interval(self, al, feature_name, target_info=None):
         ''' Returns the query interval aligned to feature_name by al. '''
         qs = self.q_to_feature_offset(al, feature_name, target_info=target_info)
         if len(qs) == 0:
             return interval.Interval.empty()
         else:
             return interval.Interval(min(qs), max(qs))
+
 
     def share_feature(self, first_al, first_feature_name, second_al, second_feature_name):
         '''
@@ -181,11 +182,7 @@ class Categorizer:
 
             switch_interval = interval.Interval(min(switch_results['best_switch_points']), max(switch_results['best_switch_points']))
             
-            left_qs = self.q_to_feature_offset(left_al, left_feature_name)
-            left_feature_interval = interval.Interval(min(left_qs), max(left_qs))                    
-
-            right_qs = self.q_to_feature_offset(right_al, right_feature_name)
-            right_feature_interval = interval.Interval(min(right_qs), max(right_qs))                    
+            left_feature_interval = self.feature_query_interval(left_al, left_feature_name)
 
             switch_in_shared = switch_interval & left_feature_interval
 
@@ -206,6 +203,8 @@ class Categorizer:
 
             cropped_left_al = sam.crop_al_to_query_int(left_al, 0, switch_interval.end)
             left_possible_contribution_past_overlap = interval.get_covered(cropped_left_al) & left_of_feature
+
+            right_feature_interval = self.feature_query_interval(right_al, right_feature_name)
 
             right_of_feature = interval.Interval(right_feature_interval.end + 1, self.whole_read.end)
 
@@ -285,7 +284,7 @@ class Categorizer:
         # Only extend if the alignment cleanly covers the whole feature.
         covers_whole_feature = sam.feature_overlap_length(feature_al, feature_in_alignment) == len(feature_in_alignment)
 
-        if covers_whole_feature and not sam.contains_indel(feature_al):
+        if feature_al is not None and not sam.contains_indel(feature_al):
             # Create a new alignment covering the feature on ref_to_search,
             # which will then be used as input to sw.extend_alignment.
             # This needs three things:
@@ -298,18 +297,25 @@ class Categorizer:
             #     and cigar.
 
             # Get the query interval covered.
-            al_q_to_feature_offset = self.q_to_feature_offset(alignment_to_extend, feature_name_in_alignment)
-            query_interval = interval.Interval(min(al_q_to_feature_offset), max(al_q_to_feature_offset))
+            query_interval = self.feature_query_interval(feature_al, feature_name_in_alignment)
 
             # Get the ref interval covered.
+
+            feature_offsets = self.q_to_feature_offset(feature_al, feature_name_in_alignment).values()
+            ref_ps = [self.target_info.feature_offset_to_ref_p(ref_to_search, feature_name_in_ref)[fo] for fo in feature_offsets]
+
+            if len(ref_ps) == 0:
+                raise ValueError
+            else:
+                ref_interval = interval.Interval(min(ref_ps), max(ref_ps))
+
             feature_in_ref = ti.features[ref_to_search, feature_name_in_ref]
-            ref_interval = interval.Interval(feature_in_ref.start, feature_in_ref.end)
 
             # Figure out the strand.
             if feature_in_ref.strand == feature_in_alignment.strand:
-                is_reverse = alignment_to_extend.is_reverse
+                is_reverse = feature_al.is_reverse
             else:
-                is_reverse = not alignment_to_extend.is_reverse
+                is_reverse = not feature_al.is_reverse
 
             al = pysam.AlignedSegment(ti.header)
 
