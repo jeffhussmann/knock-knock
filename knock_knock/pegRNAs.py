@@ -101,6 +101,30 @@ def identify_protospacer_in_target(target_sequence, protospacer, effector):
     else:
         valid_feature = valid_features[0]
         return valid_feature
+
+def get_RTT_aligner():
+    aligner = Bio.Align.PairwiseAligner()
+
+    # These parameters are not well-documented, but
+    # 'global' mode with end_gap_score = 0 should hopefully
+    # require the entire flap to be aligned without penalizing
+    # the inclusion of extra target sequence in the query sequence.  
+
+    aligner.mode = 'global'
+    aligner.match_score = 2
+    aligner.mismatch_score = -2
+    aligner.open_gap_score = -6
+    aligner.extend_gap_score = -0.1
+    aligner.end_gap_score = 0
+
+    return aligner
+
+def trim_excess_target_from_alignment(alignment):
+    # Trim off excess target sequence to make text representation
+    # of the alignment clearer.  
+    max_flap_column = alignment.inverse_indices[0][-1]
+    trimmed_alignment = alignment[:, :max_flap_column + 1 + 10]
+    return trimmed_alignment
     
 class pegRNA:
     def __init__(self, name, components, target_name, target_sequence, max_deletion_length=None):
@@ -299,7 +323,23 @@ class pegRNA:
 
         return target_downstream_of_nick
 
-    def align_RTT_to_target(self, verbose=False):
+    def align_RTT_to_target(self):
+        ''' Align the intended flap sequence to genomic sequence downstream
+        of the nick using Biopython's dynamic programming.
+        ''' 
+
+        aligner = get_RTT_aligner()
+
+        alignments = aligner.align(self.intended_flap_sequence, self.target_downstream_of_nick)
+
+        return alignments
+
+    def print_best_alignments(self):
+        alignments = self.align_RTT_to_target()
+        for alignment in alignments:
+            print(trim_excess_target_from_alignment(alignment))
+
+    def extract_edits_from_alignment(self, verbose=False):
         ''' Align the intended flap sequence to genomic sequence downstream
         of the nick using Biopython's dynamic programming.
         Return representations of SNVs, deletions, insertions, and
@@ -307,20 +347,7 @@ class pegRNA:
         start of the flap and the nick, respectively. 
         ''' 
 
-        aligner = Bio.Align.PairwiseAligner()
-
-        # These parameters are not well-documented, but
-        # 'global' mode with end_gap_score = 0 should hopefully
-        # require the entire flap to be aligned without penalizing
-        # the inclusion of extra target sequence in the query sequence.  
-        aligner.mode = 'global'
-        aligner.match_score = 2
-        aligner.mismatch_score = -2
-        aligner.open_gap_score = -6
-        aligner.extend_gap_score = -0.1
-        aligner.end_gap_score = 0
-
-        alignments = aligner.align(self.intended_flap_sequence, self.target_downstream_of_nick)
+        alignments = self.align_RTT_to_target()
 
         best_alignment = alignments[0]
 
@@ -352,7 +379,6 @@ class pegRNA:
             flap_ps = range(*flap_subsequence)
             target_ps = range(*target_subsequence)
             
-
             mismatches = [-1]
             
             for i, (flap_p, target_p) in enumerate(zip(flap_ps, target_ps)):
@@ -482,7 +508,7 @@ class pegRNA:
 
         # Align the intended flap sequence to the target downstream of the nick.
 
-        SNVs, deletions, insertions, HA_RT, _ = self.align_RTT_to_target()
+        SNVs, deletions, insertions, HA_RT, _ = self.extract_edits_from_alignment()
 
         if len(SNVs) > 0:
             if len(deletions) == 0 and len(insertions) == 0:

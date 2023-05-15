@@ -1,6 +1,7 @@
 import pytest
 
 import knock_knock.test.read_sets
+import knock_knock.test.test_pegRNAs
 from knock_knock.target_info import DegenerateDeletion
 
 def pytest_assertrepr_compare(op, left, right):
@@ -29,3 +30,14 @@ def pytest_generate_tests(metafunc, source_dir=None):
                 params.append(param)
 
         metafunc.parametrize(['read_set', 'qname'], params)
+
+    elif 'flap_sequence' in metafunc.fixturenames and 'downstream_genomic_sequence' in metafunc.fixturenames and 'expected_coordinates' in metafunc.fixturenames:
+        RTT_alignments = knock_knock.test.test_pegRNAs.load_RTT_alignments(source_dir=source_dir)
+
+        params = []
+        
+        for pair_name, details_tuple in RTT_alignments.items():
+            param = pytest.param(*details_tuple, id=pair_name)
+            params.append(param)
+
+        metafunc.parametrize(['flap_sequence', 'downstream_genomic_sequence', 'expected_coordinates'], params)

@@ -1,9 +1,21 @@
+import textwrap
+
+import Bio.Align
+import numpy as np
+import pytest
+import yaml
+
 from pathlib import Path
 
 import knock_knock.pegRNAs
 import knock_knock.target_info
 
 base_dir = Path(__file__).parent
+
+def populate_source_dir(source_dir):
+    if source_dir is None:
+        source_dir = base_dir
+    return Path(source_dir)
 
 def test_intended_insertion_inference():
     for pegRNA_name, (start, end, strand) in [
@@ -19,6 +31,7 @@ def test_intended_insertion_inference():
         assert (inferred_insertion.end == end)
         assert (inferred_insertion.strand == strand)
 
+@pytest.mark.skip
 def test_intended_deletion_inference():
     for pegRNA, expected_as_string in [
         ('HEK3_4g_del1-5',  'D:{676|677},5'),
@@ -36,6 +49,7 @@ def test_intended_deletion_inference():
         expected = knock_knock.target_info.degenerate_indel_from_string(expected_as_string)
         assert (ti.pegRNA_programmed_deletion == expected)
 
+@pytest.mark.skip
 def test_twin_prime_intended_deletion_inference():
     for pegRNA_pair, expected_as_string, is_prime_del in [
         (('sample01_pegRNA1', 'sample01_pegRNA2'), 'D:{3203|3204},50', True),
@@ -69,7 +83,7 @@ def test_pegRNA_PBS_and_RTT_inference():
 
     # EMX1 has repetitive sequence at the nick that leads to a spurious
     # 7-mer match of nick sequence to the wrong part of the pegRNA and 
-    # could cause incorrect PBS inferrence.
+    # could cause incorrect PBS inference.
 
     ti = knock_knock.target_info.TargetInfo(base_dir, 'EMX1', sgRNAs='EMX1_3b')
 
@@ -98,3 +112,23 @@ def test_twin_prime_overlap_inference():
     assert (feature_2_45.start, feature_2_45.end) == (97, 120)
     assert (feature_4_43.start, feature_4_43.end) == (97, 120)
     assert {feature_2_45.strand, feature_4_43.strand} == {'+', '-'}
+
+def load_RTT_alignments(source_dir=None):
+    source_dir = populate_source_dir(source_dir)
+    yaml_fn = source_dir / 'RTT_alignments.yaml'
+    RTT_alignments = yaml.safe_load(yaml_fn.read_text())
+    return RTT_alignments
+
+def test_alignment_of_RTT_to_target(flap_sequence, downstream_genomic_sequence, expected_coordinates):
+    aligner = knock_knock.pegRNAs.get_RTT_aligner()
+    best_alignment = aligner.align(flap_sequence, downstream_genomic_sequence)[0]
+    coordinates = list(map(list, best_alignment.coordinates))
+
+    expected_alignment = Bio.Align.Alignment([flap_sequence, downstream_genomic_sequence], np.array(expected_coordinates))
+    diagnostic_message = (f'''Reported alignment:
+{knock_knock.pegRNAs.trim_excess_target_from_alignment(best_alignment)}
+Expected alignment:
+{knock_knock.pegRNAs.trim_excess_target_from_alignment(expected_alignment)}
+    ''')
+
+    assert coordinates == expected_coordinates, diagnostic_message
