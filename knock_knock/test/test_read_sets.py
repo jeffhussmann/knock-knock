@@ -6,8 +6,8 @@ def test_read(read_set, qname):
     diagnostic_message = textwrap.dedent(f'''
         set name: {read_set.name}
         query name: {qname}
-        expected: ({expected['category']}, {expected['subcategory']})
-        actual: ({layout.category}, {layout.subcategory})
+        expected: ({expected['category']}, {expected['subcategory']}, {expected.get('details')})
+        actual: ({layout.category}, {layout.subcategory}, {layout.details})
         note: {expected.get('note', '')}
     ''')
 
