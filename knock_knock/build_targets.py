@@ -719,6 +719,7 @@ def load_extra_sequences(base_dir):
     fasta_fns = sorted((base_dir / 'targets').glob('*.fasta'))
     for fasta_fn in fasta_fns:
         records = fasta.to_dict(fasta_fn)
+        records = {name: seq.upper() for name, seq in records.items()}
         duplicates = set(extra_sequences) & set(records)
         if len(duplicates) > 0:
             raise ValueError(f'multiple records for {duplicates}')
@@ -730,7 +731,7 @@ def load_extra_sequences(base_dir):
 
         genbank_fns = sorted((base_dir / 'targets').glob('*.gb'))
         for genbank_fn in genbank_fns:
-            records = {record.name: str(record.seq) for record in Bio.SeqIO.parse(genbank_fn, 'gb')}
+            records = {record.name: str(record.seq).upper() for record in Bio.SeqIO.parse(genbank_fn, 'gb')}
             duplicates = set(extra_sequences) & set(records)
             if len(duplicates) > 0:
                 raise ValueError(f'multiple records for {duplicates}')
