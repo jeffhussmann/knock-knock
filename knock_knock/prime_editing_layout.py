@@ -8,7 +8,7 @@ from hits.utilities import memoized_property
 
 import knock_knock.pegRNAs
 import knock_knock.target_info
-import knock_knock.visualize
+import knock_knock.visualize.architecture
 from knock_knock import layout
 
 from knock_knock.outcome import *

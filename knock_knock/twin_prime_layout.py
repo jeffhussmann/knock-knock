@@ -8,7 +8,7 @@ import knock_knock.layout
 import knock_knock.pegRNAs
 import knock_knock.prime_editing_layout
 import knock_knock.target_info
-import knock_knock.visualize
+import knock_knock.visualize.architecture
 from knock_knock.outcome import *
 
 class Layout(knock_knock.prime_editing_layout.Layout):
