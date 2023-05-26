@@ -187,6 +187,12 @@ class Batch:
         fs.columns.names = ['group'] + fs.columns.names[1:]
         return fs
 
+    @memoized_property
+    def total_valid_reads(self):
+        counts = pd.concat({gn: group.total_valid_reads for gn, group in self.groups.items()}).fillna(0).sort_index()
+        counts.index.names = ['group'] + counts.index.names[1:]
+        return counts
+    
 def get_batch(base_dir, batch_name, progress=None, **kwargs):
     group_dir = Path(base_dir) / 'data' / batch_name
     group_descriptions_fn = group_dir / 'group_descriptions.csv'
@@ -729,6 +735,32 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         conversion_fractions = pd.DataFrame.from_dict(conversion_fractions, orient='index').sort_index()
         
         return conversion_fractions
+
+    @memoized_property
+    def outcomes_containing_pegRNA_SNVs(self):
+        SNVs = self.target_info.pegRNA_SNVs[self.target_info.target]
+        outcomes_containing_pegRNA_SNVs = {SNV_name: [] for SNV_name in SNVs}
+        
+        for c, s, d  in self.outcome_fractions.index:
+            if c == 'intended edit':
+                outcome = knock_knock.outcome.ProgrammedEditOutcome.from_string(d)
+
+                for (SNV_name, SNV), read_base in zip(SNVs.items(), outcome.SNV_read_bases):
+                    if read_base == SNV['alternative_base']:
+                        outcomes_containing_pegRNA_SNVs[SNV_name].append((c, s, d))
+
+        return outcomes_containing_pegRNA_SNVs
+
+    @memoized_property
+    def pegRNA_conversion_fractions(self):
+        fs = {}
+
+        for SNV_name, outcomes in self.outcomes_containing_pegRNA_SNVs.items():
+            fs[SNV_name] = self.outcome_fractions.loc[outcomes].sum()
+
+        fs_df = pd.DataFrame.from_dict(fs, orient='index')
+
+        return fs_df
 
     def explore(self, **kwargs):
         import knock_knock.explore
