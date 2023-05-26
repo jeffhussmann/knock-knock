@@ -473,6 +473,13 @@ class TargetInfo():
         return pegRNAs
 
     @memoized_property
+    def pegRNA(self):
+        if len(self.pegRNAs) != 1:
+            return None
+        else:
+            return self.pegRNAs[0]
+
+    @memoized_property
     def features(self):
         fasta_records, gff_features = self.fasta_records_and_gff_features
 
