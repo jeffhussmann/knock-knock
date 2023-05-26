@@ -22,29 +22,24 @@ class Layout(layout.Categorizer):
             ),
         ),
         ('intended edit',
-            ('SNV',
-             'SNV + mismatches',
-             'SNV + short indel far from cut',
-             'synthesis errors',
+            ('substitution',
              'deletion',
-             'deletion + SNV',
-             'deletion + unintended mismatches',
+             'deletion + substitution',
              'insertion',
-             'insertion + SNV',
-             'insertion + unintended mismatches',
+             'insertion + substitution',
              'combination',
              'partial incorporation',
             ),
         ),
         ('unintended rejoining of RT\'ed sequence',
             ('includes scaffold',
-             'includes scaffold, no SNV',
+             'includes scaffold, no substitution',
              'includes scaffold, with deletion',
-             'includes scaffold, no SNV, with deletion',
+             'includes scaffold, no substitution, with deletion',
              'no scaffold',
-             'no scaffold, no SNV',
+             'no scaffold, no substitution',
              'no scaffold, with deletion',
-             'no scaffold, no SNV, with deletion',
+             'no scaffold, no substitution, with deletion',
              'doesn\'t include insertion',
             ),
         ),
@@ -1518,10 +1513,7 @@ class Layout(layout.Categorizer):
             self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, [self.target_info.pegRNA_programmed_insertion])
 
         elif self.intended_edit_type == 'deletion':
-            if len(self.non_pegRNA_SNVs) == 0:
-                self.subcategory = 'deletion'
-            else:
-                self.subcategory = 'deletion + unintended mismatches'
+            self.subcategory = 'deletion'
 
             self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, [self.target_info.pegRNA_programmed_deletion])
 
@@ -1536,26 +1528,12 @@ class Layout(layout.Categorizer):
             else:
                 uninteresting_indels = []
 
-            outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, [])
-            self.outcome = outcome
+            self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, uninteresting_indels)
 
-            if len(self.non_pegRNA_SNVs) == 0 and len(uninteresting_indels) == 0:
-                if self.pegRNA_SNV_string == self.full_incorporation_pegRNA_SNV_string:
-                    self.subcategory = 'SNV'
-                else:
-                    self.subcategory = 'partial incorporation'
-
-            elif len(uninteresting_indels) > 0:
-                if len(uninteresting_indels) == 1:
-                    indel = uninteresting_indels[0]
-                    if indel.kind == 'D':
-                        deletion_outcome = DeletionOutcome(indel)
-                        self.outcome = HDRPlusDeletionOutcome(outcome, deletion_outcome)
-
-                self.subcategory = 'SNV + short indel far from cut'
-
+            if self.pegRNA_SNV_string == self.full_incorporation_pegRNA_SNV_string:
+                self.subcategory = 'substitution'
             else:
-                self.subcategory = 'SNV + mismatches'
+                self.subcategory = 'partial incorporation'
 
     def register_simple_indels(self):
         relevant_indels, other_indels = self.indels_in_original_target_covering_alignment
@@ -1726,7 +1704,7 @@ class Layout(layout.Categorizer):
             self.subcategory = 'no scaffold'
 
         if not has_pegRNA_SNV:
-            self.subcategory += ', no SNV'
+            self.subcategory += ', no substitution'
 
         self.outcome = UnintendedRejoiningOutcome(chain_edges['left'], chain_edges['right'], chain_junction_MH)
 
@@ -2044,7 +2022,7 @@ class Layout(layout.Categorizer):
                     if self.specific_to_pegRNA(self.single_read_covering_target_alignment):
                         self.category = 'intended edit'
                         if self.pegRNA_SNV_string == self.full_incorporation_pegRNA_SNV_string:
-                            self.subcategory = 'SNV'
+                            self.subcategory = 'substitution'
                         else:
                             self.subcategory = 'partial incorporation'
                         self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, [])
@@ -2143,8 +2121,8 @@ class Layout(layout.Categorizer):
                             self.relevant_alignments = self.uncategorized_relevant_alignments
 
                     elif len([indel for indel in interesting_indels if indel.kind == 'D']) == 2:
-                        self.category = 'deletion'
-                        self.subcategory = 'multiple'
+                        self.category = 'multiple indels'
+                        self.subcategory = 'multiple indels'
                         self.outcome = MultipleDeletionOutcome([DeletionOutcome(indel) for indel in interesting_indels])
                         self.relevant_alignments = [target_alignment]
                     else:
@@ -2172,7 +2150,8 @@ class Layout(layout.Categorizer):
             ti = self.target_info
             PBS_al = self.generate_extended_pegRNA_PBS_alignment(self.target_edge_alignments[ti.pegRNA_side], ti.pegRNA_side)
             als = self.target_edge_alignments_list + interval.make_parsimonious(self.pegRNA_alignments_cover_target_gap)
-            als.append(PBS_al)
+            if PBS_al is not None:
+                als.append(PBS_al)
             als = sam.merge_any_adjacent_pairs(als, ti.reference_sequences, max_deletion_length=2, max_insertion_length=2)
             self.relevant_alignments = als
 
