@@ -796,9 +796,7 @@ def build_target_infos_from_csv(base_dir, defer_HA_identification=False):
                 seq = registered_values[value_to_lookup]
                 possible_error_message = f'invalid char in {row.name} {column_to_lookup} registry entry {value_to_lookup}\n{seq}'
             else:
-                value_name = None
-                seq = value_to_lookup
-                possible_error_message = f'Error: {row.name} value for {column_to_lookup} ({seq}) is not a registered name but also doesn\'t look like a valid sequence.\nRegistered names: {registered_values}'
+                raise ValueError(value_to_lookup)
 
             if seq is not None and validate_sequence:
                 seq = seq.upper()
