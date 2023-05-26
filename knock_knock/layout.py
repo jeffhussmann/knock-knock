@@ -7,10 +7,10 @@ import pysam
 
 from hits import sam, interval, utilities, fastq, sw
 from .target_info import DegenerateDeletion, DegenerateInsertion
-
 from .outcome_record import Integration
 
 import knock_knock.outcome
+import knock_knock.visualize.architecture
 
 memoized_property = utilities.memoized_property
 memoized_with_args = utilities.memoized_with_args
@@ -2354,10 +2354,10 @@ class Layout(Categorizer):
         else:
             als_to_plot = self.alignments
 
-        diagram = knock_knock.visualize.ReadDiagram(als_to_plot,
-                                                    ti,
-                                                    **manual_diagram_kwargs,
-                                                   )
+        diagram = knock_knock.visualize.architecture.ReadDiagram(als_to_plot,
+                                                                 ti,
+                                                                 **manual_diagram_kwargs,
+                                                                )
 
         return diagram
 

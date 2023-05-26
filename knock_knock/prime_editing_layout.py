@@ -2969,10 +2969,10 @@ class Layout(layout.Categorizer):
         else:
             als_to_plot = self.alignments
 
-        diagram = knock_knock.visualize.ReadDiagram(als_to_plot,
-                                                    ti,
-                                                    **manual_diagram_kwargs,
-                                                   )
+        diagram = knock_knock.visualize.architecture.ReadDiagram(als_to_plot,
+                                                                 ti,
+                                                                 **manual_diagram_kwargs,
+                                                                )
 
         # Note that diagram.alignments may be different than als_to_plot
         # due to application of parsimony.

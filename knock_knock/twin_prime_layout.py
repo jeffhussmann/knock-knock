@@ -913,10 +913,10 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
         diagram_kwargs.update(**manual_diagram_kwargs)
 
-        diagram = knock_knock.visualize.ReadDiagram(als_to_plot,
-                                                    ti,
-                                                    **diagram_kwargs,
-                                                   )
+        diagram = knock_knock.visualize.architecture.ReadDiagram(als_to_plot,
+                                                                 ti,
+                                                                 **diagram_kwargs,
+                                                                )
 
         # Note that diagram.alignments may be different than als_to_plot
         # due to application of parsimony.
@@ -964,7 +964,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                 offset_to_ref_ps = ti.feature_offset_to_ref_p(left_name, 'overlap')
                 overlap_xs = sorted([ref_p_to_xs['left'](offset_to_ref_ps[0]), ref_p_to_xs['left'](offset_to_ref_ps[max(offset_to_ref_ps)])])
 
-                overlap_xs = knock_knock.visualize.adjust_edges(overlap_xs)
+                overlap_xs = knock_knock.visualize.architecture.adjust_edges(overlap_xs)
 
                 overlap_color = ti.features[left_name, 'overlap'].attribute['color']
                     

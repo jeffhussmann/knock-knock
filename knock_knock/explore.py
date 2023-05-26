@@ -1,7 +1,7 @@
 from itertools import islice
 from pathlib import Path
 
-import knock_knock.visualize
+import knock_knock.visualize.architecture
 import knock_knock.target_info
 import knock_knock.experiment
 import knock_knock.layout
@@ -257,12 +257,12 @@ class Explorer:
             if self.by_outcome:
                 diagram = layout.plot(**plot_kwargs)
             else:
-                diagram = knock_knock.visualize.ReadDiagram(als,
-                                                            exp.target_info,
-                                                            inferred_amplicon_length=inferred_amplicon_length,
-                                                            title='',
-                                                            **plot_kwargs,
-                                                           )
+                diagram = knock_knock.visualize.architecture.ReadDiagram(als,
+                                                                         exp.target_info,
+                                                                         inferred_amplicon_length=inferred_amplicon_length,
+                                                                         title='',
+                                                                         **plot_kwargs,
+                                                                        )
 
             read_details = '\n'.join(read_details)
             self.non_widgets['read_details'].value = read_details

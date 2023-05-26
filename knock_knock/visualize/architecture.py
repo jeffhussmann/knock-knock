@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from hits import utilities, interval, sam, sw
 import hits.visualize
 
-from . import layout as layout_module
+import knock_knock.layout
 
 memoized_property = utilities.memoized_property
 
@@ -190,7 +190,7 @@ class ReadDiagram():
 
                 for al in als:
                     if al.reference_name in refs_to_split:
-                        split_als = layout_module.comprehensively_split_alignment(al, self.target_info, self.layout_mode, programmed_substitutions=self.target_info.pegRNA_programmed_alternative_bases)
+                        split_als = knock_knock.layout.comprehensively_split_alignment(al, self.target_info, self.layout_mode, programmed_substitutions=self.target_info.pegRNA_programmed_alternative_bases)
 
                         seq_bytes = self.target_info.reference_sequence_bytes[al.reference_name]
                         extended = [sw.extend_alignment(al, seq_bytes) for al in split_als]
@@ -396,7 +396,7 @@ class ReadDiagram():
         
         if self.reverse_complement is None:
             if self.detect_orientation and not all(al.is_unmapped for al in self.alignments):
-                layout = layout_module.Layout(alignments, self.target_info)
+                layout = knock_knock.layout.Layout(alignments, self.target_info)
                 self.reverse_complement = (layout.strand == '-')
 
             else:
@@ -718,7 +718,7 @@ class ReadDiagram():
                                    )
 
                 if self.draw_mismatches:
-                    mismatches = layout_module.get_mismatch_info(alignment, self.all_reference_sequences)
+                    mismatches = knock_knock.layout.get_mismatch_info(alignment, self.all_reference_sequences)
                     for mismatch_i, (read_p, read_b, ref_p, ref_b, q) in enumerate(mismatches):
                         if q < self.max_qual * 0.75:
                             alpha = 0.25
@@ -758,7 +758,7 @@ class ReadDiagram():
                 xs = [left_offset(start)]
                 ys = [y]
 
-                indels = sorted(layout_module.get_indel_info(alignment), key=lambda t: t[1][0])
+                indels = sorted(knock_knock.layout.get_indel_info(alignment), key=lambda t: t[1][0])
 
                 for kind, info in indels:
                     if kind == 'deletion' or kind == 'splicing':
@@ -1057,7 +1057,7 @@ class ReadDiagram():
 
         if self.title is None:
             if self.label_layout:
-                layout = layout_module.Layout(self.alignments, self.target_info)
+                layout = knock_knock.layout.Layout(self.alignments, self.target_info)
                 cat, subcat, details = layout.categorize()
                 title = f'{self.query_name}\n{cat}, {subcat}, {details}'
             else:
