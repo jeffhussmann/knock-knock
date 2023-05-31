@@ -39,10 +39,11 @@ def read_csv(csv_fn, process=True):
 
 default_feature_colors = {
     'RTT': '#c7b0e3',
+    'HA_RT': '#c542f5',
     'PBS': '#85dae9',
     'protospacer': 'lightgrey',
     'scaffold': '#b7e6d7',
-    'overlap': '#9EAFD2',
+    'overlap': '#9eafd2',
     'extension': '#777777',
     'insertion': '#b1ff67',
     'deletion': 'darkgrey',
