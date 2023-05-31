@@ -2229,6 +2229,7 @@ def parse_benchling_genbank(gb_record):
     convert_strand = {
         -1: '-',
         1: '+',
+        None: '.',
     }
 
     fasta_record = fasta.Read(gb_record.name, str(gb_record.seq))
