@@ -631,6 +631,9 @@ def plot(outcome_order,
             xs = range(len(PBS_seq), 0, -1)
             PBS_seq = hits.utilities.complement(PBS_seq)
 
+        if flip:
+            PBS_seq = hits.utilities.complement(PBS_seq)
+
         for x, b in zip(xs, PBS_seq):
             ax.annotate(b,
                         xy=(x, y),
@@ -681,17 +684,20 @@ def plot(outcome_order,
         for x, b in zip(RTT_xs, RTT_aligned_seq):
             if window_left <= x <= window_right:
                 target_b = seq[-window_left + x]
+
+                if flip:
+                    b_to_draw = hits.utilities.complement(b)
+                else:
+                    b_to_draw = b
+
                 if b != target_b:
-                    color = hits.visualize.igv_colors[b]
+                    color = hits.visualize.igv_colors[b_to_draw]
                     weight = 'bold'
                 else:
                     color = 'black'
                     weight = 'normal'
 
-                if flip:
-                    b = hits.utilities.complement(b)
-
-                ax.annotate(b,
+                ax.annotate(b_to_draw,
                             xy=(x, y),
                             xycoords='data', 
                             ha='center',
@@ -1540,3 +1546,60 @@ class DiagramGrid:
             ax = self.axs_by_name.get(ax_name)
             if ax is not None:
                 ax.set_xlim(*lims)
+
+    def plot_pegRNA_conversion_fractions_above(self, group, y_max=None):
+        def SNV_name_to_x(SNV_name):
+            SNVs = group.target_info.pegRNA_SNVs[group.target_info.target]
+            p = SNVs[SNV_name]['position']
+            x = p - group.target_info.cut_after - 0.5
+            return x
+        
+        pegRNA_conversion_fractions = group.pegRNA_conversion_fractions.copy()
+
+        x_lims = self.axs_by_name['diagram'].get_xlim()
+
+        flipped = x_lims[0] > x_lims[1]
+
+        xs = pegRNA_conversion_fractions.index.map(SNV_name_to_x)
+        pegRNA_conversion_fractions.index = xs
+        pegRNA_conversion_fractions = pegRNA_conversion_fractions.sort_index()
+        
+        if 'above' not in self.axs_by_name:
+            self.add_ax_above(gap=4, height_multiple=7)
+        
+        for condition, fs in pegRNA_conversion_fractions.items():
+            self.plot_on_ax_above(xs, fs * 100,
+                                  line_alpha=0.5,
+                                  linewidth=1,
+                                  markersize=5,
+                                  color='black',
+                                  label=condition,
+                                 )
+
+        ax = self.axs_by_name['above']
+
+        ax.set_ylim(0, y_max)
+
+        ax.set_title(group.group)
+        
+        ax.set_ylabel('Total %\nincorporation\nat position', size=12)
+        ax.tick_params(labelsize=8)
+
+        x_bounds = [min(xs) - 1, max(xs) + 1]
+        if flipped:
+            x_bounds = x_bounds[::-1]
+
+        ax.spines.left.set_position(('data', x_bounds[0]))
+        ax.spines.bottom.set_visible(False)
+
+        for y in ax.get_yticks():
+            if y == 0:
+                alpha = 1
+                clip_on = False
+            else:
+                alpha = 0.25
+                clip_on = True
+
+            ax.plot(x_bounds, [y for x in x_bounds], clip_on=clip_on, color='black', alpha=alpha)
+
+        return pegRNA_conversion_fractions

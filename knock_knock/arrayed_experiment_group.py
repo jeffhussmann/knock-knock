@@ -745,7 +745,9 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
             if c == 'intended edit':
                 outcome = knock_knock.outcome.ProgrammedEditOutcome.from_string(d)
 
-                for (SNV_name, SNV), read_base in zip(SNVs.items(), outcome.SNV_read_bases):
+                # Note: sorting SNVs is critical here to match the order in outcome.SNV_read_bases.
+                for SNV_name, read_base in zip(sorted(SNVs), outcome.SNV_read_bases):
+                    SNV = SNVs[SNV_name]
                     if read_base == SNV['alternative_base']:
                         outcomes_containing_pegRNA_SNVs[SNV_name].append((c, s, d))
 
