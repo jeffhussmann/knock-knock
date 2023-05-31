@@ -22,6 +22,7 @@ setup(
 
     packages=[
         'knock_knock',
+        'knock_knock.visualize',
     ],
 
     package_data={
