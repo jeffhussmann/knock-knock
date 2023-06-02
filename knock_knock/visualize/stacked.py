@@ -1,6 +1,9 @@
+import copy
 import warnings
 
 from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Any, Union, Optional
 
 import numpy as np
 import pandas as pd
@@ -13,142 +16,159 @@ import knock_knock.pegRNAs
 from knock_knock.target_info import degenerate_indel_from_string, SNV, SNVs
 from knock_knock.outcome import *
 
-def plot(outcome_order,
-         target_infos,
-         num_outcomes=None,
-         title=None,
-         window=70,
-         ax=None,
-         flip_if_reverse=True,
-         flip_MH_deletion_boundaries=False,
-         force_flip=False,
-         center_at_PAM=False,
-         draw_cut_afters=True,
-         inches_per_nt=0.12,
-         inches_per_outcome=0.25,
-         line_widths=1.5,
-         draw_all_sequence=False,
-         draw_perfect_MH=True,
-         draw_imperfect_MH=False,
-         draw_wild_type_on_top=False,
-         draw_donor_on_top=False,
-         draw_insertion_degeneracy=True,
-         text_size=8,
-         features_to_draw=None,
-         replacement_text_for_complex=None,
-         cut_color=hits.visualize.apply_alpha('black', 0.5),
-         preserve_x_lims=False,
-         shift_x=0,
-         block_alpha=0.1,
-         override_PAM_color=None,
-         override_protospacer_color=None,
-         **kwargs,
-        ):
+@dataclass
+class StackedDiagrams:
+    outcome_order: list
+    target_infos: Union[knock_knock.target_info.TargetInfo, dict]
 
-    # Can either supply outcomes as (c, s, d) tuples along with a single target_info,
-    # or outcomes as (source_name, c, s, d) tuples along with a {source_name: target_info} dict.
+    ax: Optional[plt.Axes] = None
+    block_alpha: float = 0.1
+    center_at_PAM: bool = False
+    cut_color: Optional[Any] = hits.visualize.apply_alpha('black', 0.5)
+    draw_all_sequence: Union[bool, float] = False
+    draw_cuts: bool = True
+    draw_donor_on_top: bool = False
+    draw_imperfect_MH: bool = False
+    draw_insertion_degeneracy: bool = True
+    draw_perfect_MH: bool = True
+    draw_wild_type_on_top: bool = False
+    features_to_draw: Any = field(default_factory=list)
+    flip_if_reverse: bool = True
+    flip_MH_deletion_boundaries: bool = False
+    force_flip: bool = False
+    inches_per_nt: float = 0.12
+    inches_per_outcome: float = 0.25
+    line_widths: float = 1.5
+    num_outcomes: Optional[int] = None
+    override_PAM_color: Optional[Any] = None
+    override_protospacer_color: Optional[Any] = None
+    preserve_x_lims: bool = False
+    replacement_text_for_complex: dict = field(default_factory=dict)
+    shift_x: float = 0
+    text_size: int = 8
+    title: Optional[str] = None
+    title_size: int = 14
+    title_offset: int = 20
+    title_color: Optional[Any] = 'black'
+    window: int = 70
 
-    if all(len(outcome) == 3 for outcome in outcome_order):
-        target_infos = {'single_source': target_infos}
-        outcome_order = [('single_source', c, s, d) for c, s, d in outcome_order]
+    del_multiple = 0.25
+    wt_height = 0.6
 
-    single_source_name = sorted(target_infos)[0]
+    def __post_init__(self):
+        # Can either supply outcomes as (c, s, d) tuples along with a single target_info,
+        # or outcomes as (source_name, c, s, d) tuples along with a {source_name: target_info} dict.
 
-    if isinstance(window, int):
-        window_left, window_right = -window, window
-    else:
-        window_left, window_right = window
+        if isinstance(self.target_infos, knock_knock.target_info.TargetInfo):
+            self.target_infos = {self.target_infos.name: self.target_infos}
 
-    if features_to_draw is None:
-        features_to_draw = []
+        self.single_source_name = sorted(self.target_infos)[0]
 
-    window_size = window_right - window_left + 1
+        if all(len(outcome) == 3 for outcome in self.outcome_order):
+            self.outcome_order = [(self.single_source_name, c, s, d) for c, s, d in self.outcome_order]
 
-    if num_outcomes is None:
-        num_outcomes = len(outcome_order)
-
-    outcome_order = outcome_order[:num_outcomes]
-
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(inches_per_nt * window_size, inches_per_outcome * num_outcomes))
-    else:
-        fig = ax.figure
-
-    if isinstance(draw_all_sequence, float):
-        sequence_alpha = draw_all_sequence
-    else:
-        sequence_alpha = 0.1
-        
-    del_height = 0.15
-        
-    offsets = {}
-    seqs = {}
-    transform_seqs = {}
-    windows = {}
-
-    for source_name, ti in target_infos.items():
-        guide = ti.features[ti.target, ti.primary_protospacer]
-
-        # TODO: flip behavior for multiple sources
-        if force_flip or (flip_if_reverse and guide.strand == '-'):
-            flip = True
-            transform_seq = hits.utilities.complement
+        if isinstance(self.window, int):
+            self.window_left, self.window_right = -self.window, self.window
         else:
-            flip = False
-            transform_seq = hits.utilities.identity
+            self.window_left, self.window_right = self.window
 
-        if center_at_PAM:
-            if guide.strand == '+':
-                offset = ti.PAM_slice.start
+        self.window_size = self.window_right - self.window_left + 1
+
+        if self.num_outcomes is None:
+            self.num_outcomes = len(self.outcome_order)
+
+        self.outcome_order = self.outcome_order[:self.num_outcomes]
+
+        if self.ax is None:
+            self.fig, self.ax = plt.subplots(figsize=(self.inches_per_nt * self.window_size, self.inches_per_outcome * self.num_outcomes))
+        else:
+            self.fig = self.ax.figure
+
+        if isinstance(self.draw_all_sequence, float):
+            self.sequence_alpha = self.draw_all_sequence
+        else:
+            self.sequence_alpha = 0.1
+            
+        self.offsets = {}
+        self.seqs = {}
+        self.transform_seqs = {}
+        self.windows = {}
+        self.flip = {}
+        self.guide = {}
+
+        for source_name, ti in self.target_infos.items():
+            self.guide[source_name] = ti.features[ti.target, ti.primary_protospacer]
+
+            # TODO: flip behavior for multiple sources
+            if self.force_flip or (self.flip_if_reverse and self.guide[source_name].strand == '-'):
+                self.flip[source_name] = True
+                transform_seq = hits.utilities.complement
             else:
-                offset = ti.PAM_slice.stop - 1
-        else:
-            offset = max(v for n, v in ti.cut_afters.items() if n.startswith(ti.primary_protospacer))
+                self.flip[source_name] = False
+                transform_seq = hits.utilities.identity
 
-        offsets[source_name] = offset
-
-        if flip:
-            this_window_left, this_window_right = -window_right, -window_left
-        else:
-            this_window_left, this_window_right = window_left, window_right
-
-        windows[source_name] = (this_window_left, this_window_right)
-
-        seq = ti.target_sequence[offset + this_window_left:offset + this_window_right + 1]
-        seqs[source_name] = seq
-        transform_seqs[source_name] = transform_seq
-
-    cuts_drawn_at = set()
-    if draw_cut_afters:
-        for source_name, ti in target_infos.items():
-            offset = offsets[source_name]
-            window_left, window_right = windows[source_name]
-
-            for cut_after in ti.cut_afters.values():
-                # temp fix for empirically-determined offset of Cpf1 cut.
-                x = (cut_after + 0.5) - offset + shift_x
-
-                if draw_wild_type_on_top and not draw_donor_on_top:
-                    ys = [-0.5, num_outcomes + 0.5]
+            if self.center_at_PAM:
+                if self.guide[source_name].strand == '+':
+                    offset = ti.PAM_slice.start
                 else:
-                    ys = [-0.5, num_outcomes - 0.5]
+                    offset = ti.PAM_slice.stop - 1
+            else:
+                offset = max(v for n, v in ti.cut_afters.items() if n.startswith(ti.primary_protospacer))
 
-                if x not in cuts_drawn_at and window_left <= x <= window_right: 
-                    ax.plot([x, x], ys,
-                            color=cut_color,
-                            linestyle='--',
-                            clip_on=False,
-                            linewidth=line_widths,
-                        )
-                    cuts_drawn_at.add(x)
+            self.offsets[source_name] = offset
+
+            if self.flip[source_name]:
+                this_window_left, this_window_right = -self.window_right, -self.window_left
+            else:
+                this_window_left, this_window_right = self.window_left, self.window_right
+
+            self.windows[source_name] = (this_window_left, this_window_right)
+
+            seq = ti.target_sequence[offset + this_window_left:offset + this_window_right + 1]
+            self.seqs[source_name] = seq
+            self.transform_seqs[source_name] = transform_seq
+
+        cuts_drawn_at = set()
+        if self.draw_cuts:
+            for source_name, ti in self.target_infos.items():
+                offset = self.offsets[source_name]
+                window_left, window_right = self.windows[source_name]
+
+                for cut_after in ti.cut_afters.values():
+                    # temp fix for empirically-determined offset of Cpf1 cut.
+                    x = (cut_after + 0.5) - offset + self.shift_x
+
+                    if self.draw_wild_type_on_top and not self.draw_donor_on_top:
+                        ys = [-0.5, self.num_outcomes + 0.5]
+                    else:
+                        ys = [-0.5, self.num_outcomes - 0.5]
+
+                    if x not in cuts_drawn_at and window_left <= x <= window_right: 
+                        self.ax.plot([x, x], ys,
+                                     color=self.cut_color,
+                                     linestyle='--',
+                                     clip_on=False,
+                                     linewidth=self.line_widths,
+                                    )
+                        cuts_drawn_at.add(x)
+
+        self.draw_outcomes()
+
+    def get_bottom_and_top(self, y, multiple=1):
+        delta = StackedDiagrams.wt_height * 0.5 * multiple
+        return y - delta, y + delta
     
-    def draw_rect(source_name, x0, x1, y0, y1, alpha, color='black', fill=True):
-        window_left, window_right = windows[source_name]
-        if x0 > window_right or x1 < window_left:
-            return
+    def draw_rect(self, source_name, x0, x1, y0, y1, alpha, color='black', fill=True, clip_to_window=True):
+        window_left, window_right = self.windows[source_name]
+        if clip_to_window:
+            if x0 > window_right or x1 < window_left:
+                return
 
-        x0 = max(x0, window_left - 0.5) + shift_x
-        x1 = min(x1, window_right + 0.5) + shift_x
+            x0 = max(x0, window_left - 0.5)
+            x1 = min(x1, window_right + 0.5)
+
+        x0 += self.shift_x
+        x1 += self.shift_x
 
         path = [
             [x0, y0],
@@ -162,57 +182,55 @@ def plot(outcome_order,
                             closed=True,
                             alpha=alpha,
                             color=color,
-                            linewidth=0 if fill else line_widths,
+                            linewidth=0 if fill else self.line_widths,
                             clip_on=False,
                            )
-        ax.add_patch(patch)
+        self.ax.add_patch(patch)
 
-    wt_height = 0.6
-
-    def draw_sequence(y, source_name, xs_to_skip=None, alpha=0.1):
-        seq = seqs[source_name]
-        transform_seq = transform_seqs[source_name]
-        window_left, window_right = windows[source_name]
+    def draw_sequence(self, y, source_name, xs_to_skip=None, alpha=0.1):
+        seq = self.seqs[source_name]
+        transform_seq = self.transform_seqs[source_name]
+        window_left, window_right = self.windows[source_name]
 
         if xs_to_skip is None:
             xs_to_skip = set()
 
         for x, b in zip(range(window_left, window_right + 1), seq):
             if x not in xs_to_skip:
-                ax.annotate(transform_seq(b),
+                self.ax.annotate(transform_seq(b),
                             xy=(x, y),
                             xycoords='data', 
                             ha='center',
                             va='center',
-                            size=text_size,
+                            size=self.text_size,
                             alpha=alpha,
                             annotation_clip=False,
                            )
 
-    def draw_deletion(y, deletion, source_name, color='black', draw_MH=True, background_color='black'):
+    def draw_deletion(self, y, deletion, source_name, color='black', draw_MH=True, background_color='black'):
         xs_to_skip = set()
 
-        seq = seqs[source_name]
-        transform_seq = transform_seqs[source_name]
-        window_left, window_right = windows[source_name]
+        seq = self.seqs[source_name]
+        transform_seq = self.transform_seqs[source_name]
+        window_left, window_right = self.windows[source_name]
 
-        starts = np.array(deletion.starts_ats) - offsets[source_name]
-        if draw_MH and draw_perfect_MH and len(starts) > 1:
-            for x, b in zip(range(window_left, window_right + 1), seqs[source_name]):
+        starts = np.array(deletion.starts_ats) - self.offsets[source_name]
+        if draw_MH and self.draw_perfect_MH and len(starts) > 1:
+            for x, b in zip(range(window_left, window_right + 1), self.seqs[source_name]):
                 if (starts[0] <= x < starts[-1]) or (starts[0] + deletion.length <= x < starts[-1] + deletion.length):
-                    ax.annotate(transform_seq(b),
-                                xy=(x, y),
-                                xycoords='data', 
-                                ha='center',
-                                va='center',
-                                size=text_size,
-                                color=hits.visualize.igv_colors[transform_seq(b)],
-                                weight='bold',
-                               )
+                    self.ax.annotate(transform_seq(b),
+                                     xy=(x, y),
+                                     xycoords='data', 
+                                     ha='center',
+                                     va='center',
+                                     size=self.text_size,
+                                     color=hits.visualize.igv_colors[transform_seq(b)],
+                                     weight='bold',
+                                    )
 
                     xs_to_skip.add(x)
 
-        if draw_imperfect_MH:
+        if self.draw_imperfect_MH:
             before_MH = np.arange(starts.min() - 5, starts.min())
             after_MH = np.arange(starts.max(), starts.max() + 5)
             left_xs = np.concatenate((before_MH, after_MH))
@@ -228,17 +246,17 @@ def plot(outcome_order,
                     right_b = seq[right_x - window_left]
                     if left_b == right_b:
                         for x, b in ((left_x, left_b), (right_x, right_b)):
-                            ax.annotate(transform_seq(b),
-                                        xy=(x, y),
-                                        xycoords='data', 
-                                        ha='center',
-                                        va='center',
-                                        size=text_size,
-                                        color=hits.visualize.igv_colors[b],
-                                    )
+                            self.ax.annotate(transform_seq(b),
+                                             xy=(x, y),
+                                             xycoords='data', 
+                                             ha='center',
+                                             va='center',
+                                             size=self.text_size,
+                                             color=hits.visualize.igv_colors[b],
+                                            )
                             xs_to_skip.add(x)
 
-        if flip_MH_deletion_boundaries == False:
+        if self.flip_MH_deletion_boundaries == False:
             del_start = starts[0] - 0.5
             del_end = starts[0] + deletion.length - 1 + 0.5
 
@@ -251,16 +269,19 @@ def plot(outcome_order,
             for x in range(starts[-1], starts[-1] + deletion.length):
                 xs_to_skip.add(x)
         
-        draw_rect(source_name, del_start, del_end, y - del_height / 2, y + del_height / 2, 0.4, color=color)
-        draw_rect(source_name, window_left - 0.5, del_start, y - wt_height / 2, y + wt_height / 2, block_alpha, color=background_color)
-        draw_rect(source_name, del_end, window_right + 0.5, y - wt_height / 2, y + wt_height / 2, block_alpha, color=background_color)
+        bottom, top = self.get_bottom_and_top(y, fraction=StackedDiagrams.del_multiple)
+        self.draw_rect(source_name, del_start, del_end, bottom, top, 0.4, color=color)
+        self.draw_rect(source_name, window_left - 0.5, del_start, bottom, top, self.block_alpha, color=background_color)
+
+        bottom, top = self.get_bottom_and_top(y)
+        self.draw_rect(source_name, del_end, window_right + 0.5, bottom, top, self.block_alpha, color=background_color)
 
         return xs_to_skip
 
-    def draw_insertion(y, insertion, source_name, draw_sequence=True):
-        ti = target_infos[source_name]
-        offset = offsets[source_name]
-        transform_seq = transform_seqs[source_name]
+    def draw_insertion(self, y, insertion, source_name, draw_sequence=True):
+        ti = self.target_infos[source_name]
+        offset = self.offsets[source_name]
+        transform_seq = self.transform_seqs[source_name]
         starts = np.array(insertion.starts_afters) - offset
 
         cut = ti.cut_after - offset
@@ -269,9 +290,9 @@ def plot(outcome_order,
         else:
             start_to_label = starts[0]
 
-        purple_line_width = line_widths
+        purple_line_width = self.line_widths
         purple_line_alpha = 0.6
-        if not draw_insertion_degeneracy:
+        if not self.draw_insertion_degeneracy:
             purple_line_width *= 1.5
             purple_line_alpha = 0.9
 
@@ -279,34 +300,37 @@ def plot(outcome_order,
             ys = [y - 0.3, y + 0.3]
             xs = [start + 0.5, start + 0.5]
 
-            if draw_insertion_degeneracy or (start == start_to_label):
-                ax.plot(xs, ys, color='purple', linewidth=purple_line_width, alpha=purple_line_alpha, clip_on=False)
+            if self.draw_insertion_degeneracy or (start == start_to_label):
+                self.ax.plot(xs, ys, color='purple', linewidth=purple_line_width, alpha=purple_line_alpha, clip_on=False)
 
             if draw_sequence and start == start_to_label:
                 width = 0.9
                 center = start + 0.5
                 left_edge = center - (len(bs) * 0.5 * width)
                 for x_offset, b in enumerate(bs):
-                    ax.annotate(transform_seq(b),
-                                xy=(left_edge + (x_offset * width) + width / 2, y + (wt_height / 2)),
-                                xycoords='data',
-                                ha='center',
-                                va='center',
-                                size=text_size * 1,
-                                color=hits.visualize.igv_colors[transform_seq(b)],
-                                weight='bold',
-                                annotation_clip=False,
-                               )
+                    self.ax.annotate(transform_seq(b),
+                                     xy=(left_edge + (x_offset * width) + width / 2, y + (StackedDiagrams.wt_height / 2)),
+                                     xycoords='data',
+                                     ha='center',
+                                     va='center',
+                                     size=self.text_size * 1,
+                                     color=hits.visualize.igv_colors[transform_seq(b)],
+                                     weight='bold',
+                                     annotation_clip=False,
+                                    )
 
-    def draw_duplication(y, duplication, source_name):
-        window_left, window_right = windows[source_name]
-        draw_rect(source_name, window_left - 0.5, window_right + 0.5, y - wt_height / 2, y + wt_height / 2, block_alpha)
+    def draw_duplication(self, y, duplication, source_name):
+        window_left, window_right = self.windows[source_name]
+        offset = self.offsets[source_name]
+
+        bottom, top = self.get_bottom_and_top(y)
+        self.draw_rect(source_name, window_left - 0.5, window_right + 0.5, bottom, top, self.block_alpha)
 
         starts, ends = duplication.ref_junctions[0]
         starts = np.array(starts) - offset
         ends = np.array(ends) - offset
-        bottom = y - 0.55 * wt_height
-        top = y + 0.55 * wt_height
+        bottom = y - 0.55 * StackedDiagrams.wt_height
+        top = y + 0.55 * StackedDiagrams.wt_height
 
         for i, (start, end) in enumerate(zip(starts, ends)):
             if i == 0:
@@ -314,20 +338,22 @@ def plot(outcome_order,
             else:
                 alpha = 0.3
 
-            y_offset = i * wt_height * 0.1
+            y_offset = i * StackedDiagrams.wt_height * 0.1
 
-            draw_rect(source_name, start - 0.5, end + 0.5, bottom + y_offset, top + y_offset, alpha, color='tab:purple', fill=False)
+            self.draw_rect(source_name, start - 0.5, end + 0.5, bottom + y_offset, top + y_offset, alpha, color='tab:purple', fill=False)
 
-        if draw_all_sequence:
-            draw_sequence(y, source_name, alpha=sequence_alpha)
+        if self.draw_all_sequence:
+            self.draw_sequence(y, source_name, alpha=self.sequence_alpha)
 
-    def draw_wild_type(y, source_name, on_top=False, guides_to_draw=None):
-        ti = target_infos[source_name]
-        offset = offsets[source_name]
-        window_left, window_right = windows[source_name]
+    def draw_wild_type(self, y, source_name, on_top=False, guides_to_draw=None):
+        ti = self.target_infos[source_name]
+        offset = self.offsets[source_name]
+        window_left, window_right = self.windows[source_name]
 
-        if on_top or not draw_wild_type_on_top:
-            draw_sequence(y, source_name, alpha=1)
+        bottom, top = self.get_bottom_and_top(y)
+
+        if on_top or not self.draw_wild_type_on_top:
+            self.draw_sequence(y, source_name, alpha=1)
 
             if guides_to_draw is None:
                 guides_to_draw = [ti.primary_protospacer]
@@ -342,30 +368,29 @@ def plot(outcome_order,
                     guide_start = guide.start - 0.5 - offset
                     guide_end = guide.end + 0.5 - offset
 
-                    if override_protospacer_color is not None:
-                        protospacer_color = override_protospacer_color
+                    if self.override_protospacer_color is not None:
+                        protospacer_color = self.override_protospacer_color
                     else:
                         protospacer_color = ti.protospacer_color
 
-                    if override_PAM_color is not None:
-                        PAM_color = override_PAM_color
+                    if self.override_PAM_color is not None:
+                        PAM_color = self.override_PAM_color
                     else:
                         PAM_color = ti.PAM_color
 
-                    draw_rect(source_name, guide_start, guide_end, y - wt_height / 2, y + wt_height / 2, None, color=protospacer_color)
-                    draw_rect(source_name, PAM_start, PAM_end, y - wt_height / 2, y + wt_height / 2, None, color=PAM_color)
-
+                    self.draw_rect(source_name, guide_start, guide_end, bottom, top, None, color=protospacer_color)
+                    self.draw_rect(source_name, PAM_start, PAM_end, bottom, top, None, color=PAM_color)
 
                     if not on_top:
                         # Draw PAMs.
-                        draw_rect(source_name, window_left - 0.5, min(PAM_start, guide_start), y - wt_height / 2, y + wt_height / 2, block_alpha)
-                        draw_rect(source_name, max(PAM_end, guide_end), window_right + 0.5, y - wt_height / 2, y + wt_height / 2, block_alpha)
+                        self.draw_rect(source_name, window_left - 0.5, min(PAM_start, guide_start), bottom, top, self.block_alpha)
+                        self.draw_rect(source_name, max(PAM_end, guide_end), window_right + 0.5, bottom, top, self.block_alpha)
 
         else:
-            draw_rect(source_name, window_left - 0.5, window_right + 0.5, y - wt_height / 2, y + wt_height / 2, block_alpha)
+            self.draw_rect(source_name, window_left - 0.5, window_right + 0.5, bottom, top, self.block_alpha)
 
         if on_top:
-            for feature_name in features_to_draw:
+            for feature_name in self.features_to_draw:
                 feature = ti.features[ti.target, feature_name]
 
                 start = feature.start - 0.5 - offset
@@ -373,22 +398,24 @@ def plot(outcome_order,
 
                 color = feature.attribute.get('color', 'grey')
 
-                draw_rect(source_name, start, end, y - wt_height / 2, y + wt_height / 2, 0.8, color)
-                ax.annotate(feature_name,
-                            xy=(np.mean([start, end]), y + wt_height / 2),
-                            xytext=(0, 5),
-                            textcoords='offset points',
-                            color='black',
-                            annotation_clip=False,
-                            ha='center',
-                            va='bottom',
-                           )
+                self.draw_rect(source_name, start, end, bottom, top, 0.8, color)
+                self.ax.annotate(feature_name,
+                                 xy=(np.mean([start, end]), top),
+                                 xytext=(0, 5),
+                                 textcoords='offset points',
+                                 color='black',
+                                 annotation_clip=False,
+                                 ha='center',
+                                 va='bottom',
+                                )
 
-    def draw_donor(y, HDR_outcome, deletion_outcome, insertion_outcome, source_name, on_top=False):
-        ti = target_infos[source_name]
-        transform_seq = transform_seqs[source_name]
-        window_left, window_right = windows[source_name]
+    def draw_donor(self, y, HDR_outcome, deletion_outcome, insertion_outcome, source_name, on_top=False):
+        ti = self.target_infos[source_name]
+        transform_seq = self.transform_seqs[source_name]
+        window_left, window_right = self.windows[source_name]
         SNP_ps = sorted(p for (s, p), b in ti.fingerprints[ti.target])
+
+        bottom, top = self.get_bottom_and_top(y)
 
         p_to_i = SNP_ps.index
         i_to_p = dict(enumerate(SNP_ps))
@@ -397,24 +424,22 @@ def plot(outcome_order,
         observed_SNP_idxs = set()
 
         for ((strand, position), ref_base), read_base in zip(ti.fingerprints[ti.target], HDR_outcome.donor_SNV_read_bases):
-            x = position - offset
+            x = position - self.offset
             if window_left <= x <= window_right:
                 # Note: read base of '-' means it was deleted
                 if ref_base != read_base and read_base != '_' and read_base != '-':
                     SNP_xs.add(x)
                     observed_SNP_idxs.add(p_to_i(position))
 
-                    ax.annotate(transform_seq(read_base),
-                                xy=(x + shift_x, y),
-                                xycoords='data', 
-                                ha='center',
-                                va='center',
-                                size=text_size,
-                                alpha=0.35,
-                                #color=hits.visualize.igv_colors[transform_seq(read_base)],
-                                #weight='bold',
-                                annotation_clip=False,
-                               )
+                    self.ax.annotate(transform_seq(read_base),
+                                     xy=(x + self.shift_x, y),
+                                     xycoords='data', 
+                                     ha='center',
+                                     va='center',
+                                     size=self.text_size,
+                                     alpha=0.35,
+                                     annotation_clip=False,
+                                    )
             
                 if read_base != '-':
                     if  read_base == '_':
@@ -424,7 +449,7 @@ def plot(outcome_order,
                         color = hits.visualize.igv_colors[transform_seq(read_base)]
                         alpha = 0.7
 
-                    draw_rect(source_name, x - 0.5, x + 0.5, y - wt_height / 2, y + wt_height / 2, alpha, color=color)
+                    self.draw_rect(source_name, x - 0.5, x + 0.5, bottom, top, alpha, color=color)
 
         if not on_top:
             # Draw rectangles around blocks of consecutive incorporated donor SNVs. 
@@ -442,37 +467,41 @@ def plot(outcome_order,
                         block = [i]
 
                 blocks.append(block)
+
+                x_buffer = 0.7
+                y_multiple = 1.4
+
+                bottom, top = self.get_bottom_and_top(y, y_multiple)
+
                 for block in blocks:
-                    start = i_to_p[block[0]] - offset
-                    end = i_to_p[block[-1]] - offset
-                    x_buffer = 0.7
-                    y_buffer = 0.7
-                    draw_rect(source_name, start - x_buffer, end + x_buffer, y - y_buffer * wt_height, y + y_buffer * wt_height, 0.5, fill=False)
+                    start = i_to_p[block[0]] - self.offset
+                    end = i_to_p[block[-1]] - self.offset
+                    self.draw_rect(source_name, start - x_buffer, end + x_buffer, bottom, top, 0.5, fill=False)
         
         all_deletions = [(d, 'red', True) for d in HDR_outcome.donor_deletions]
         if deletion_outcome is not None:
             all_deletions.append((deletion_outcome.deletion, 'black', True))
 
         if len(all_deletions) == 0:
-            draw_rect(source_name, window_left - 0.5, window_right + 0.5, y - wt_height / 2, y + wt_height / 2, block_alpha)
+            self.draw_rect(source_name, window_left - 0.5, window_right + 0.5, bottom, top, self.block_alpha)
         elif len(all_deletions) == 1:
             deletion, color, draw_MH = all_deletions[0]
 
-            if len(target_infos) > 1:
+            if len(self.target_infos) > 1:
                 background_color = ti.protospacer_color
             else:
                 background_color = 'black'
 
-            draw_deletion(y, deletion, source_name, color=color, draw_MH=draw_MH, background_color=background_color)
+            self.draw_deletion(y, deletion, source_name, color=color, draw_MH=draw_MH, background_color=background_color)
 
         elif len(all_deletions) > 1:
             raise NotImplementedError
 
         if insertion_outcome is not None:
-            draw_insertion(y, insertion_outcome.insertion, source_name)
+            self.draw_insertion(y, insertion_outcome.insertion, source_name)
 
-        if draw_all_sequence:
-            draw_sequence(y, source_name, xs_to_skip=SNP_xs, alpha=sequence_alpha)
+        if self.draw_all_sequence:
+            self.draw_sequence(y, source_name, xs_to_skip=SNP_xs, alpha=self.sequence_alpha)
 
         if on_top:
             strands = set(SNV['strand'] for SNV in ti.donor_SNVs['donor'].values())
@@ -481,7 +510,7 @@ def plot(outcome_order,
             else:
                 strand = strands.pop()
 
-            arrow_ys = [y + wt_height * 0.4, y, y - wt_height * 0.4]
+            arrow_ys = [y + StackedDiagrams.wt_height * 0.4, y, y - StackedDiagrams.wt_height * 0.4]
 
             for x in range(window_left, window_right + 1, 1):
                 if x in SNP_xs:
@@ -492,16 +521,21 @@ def plot(outcome_order,
                 else:
                     arrow_xs = [x + 0.5, x - 0.5, x + 0.5]
 
-                ax.plot(arrow_xs, arrow_ys,
-                        color='black',
-                        alpha=0.2,
-                        clip_on=False,
-                )
+                self.ax.plot(arrow_xs, arrow_ys,
+                             color='black',
+                             alpha=0.2,
+                             clip_on=False,
+                            )
 
-    def draw_programmed_edit(y, programmed_edit_outcome, source_name):
-        ti = target_infos[source_name]
-        transform_seq = transform_seqs[source_name]
-        window_left, window_right = windows[source_name]
+    def draw_programmed_edit(self, y, programmed_edit_outcome, source_name):
+        ti = self.target_infos[source_name]
+        transform_seq = self.transform_seqs[source_name]
+        window_left, window_right = self.windows[source_name]
+        offset = self.offsets[source_name]
+
+        bottom, top = self.get_bottom_and_top(y)
+
+        # TODO: remove use of fingerprints here
         SNP_ps = sorted(p for (s, p), b in ti.fingerprints[ti.target])
 
         p_to_i = SNP_ps.index
@@ -536,17 +570,15 @@ def plot(outcome_order,
                         observed_SNP_idxs.add(p_to_i(position))
 
                     if read_base != '-' and read_base != '_':
-                        ax.annotate(transform_seq(read_base),
-                                    xy=(x + shift_x, y),
-                                    xycoords='data', 
-                                    ha='center',
-                                    va='center',
-                                    size=text_size,
-                                    alpha=0.35,
-                                    #color=hits.visualize.igv_colors[transform_seq(read_base)],
-                                    #weight='bold',
-                                    annotation_clip=False,
-                                )
+                        self.ax.annotate(transform_seq(read_base),
+                                         xy=(x + self.shift_x, y),
+                                         xycoords='data', 
+                                         ha='center',
+                                         va='center',
+                                         size=self.text_size,
+                                         alpha=0.35,
+                                         annotation_clip=False,
+                                        )
                 
                     if read_base == '_':
                         color = 'grey'
@@ -555,7 +587,7 @@ def plot(outcome_order,
                         color = hits.visualize.igv_colors[transform_seq(read_base)]
                         alpha = 0.7
 
-                    draw_rect(source_name, x - 0.5, x + 0.5, y - wt_height / 2, y + wt_height / 2, alpha, color=color)
+                    self.draw_rect(source_name, x - 0.5, x + 0.5, bottom, top, alpha, color=color)
 
         # Draw rectangles around blocks of consecutive incorporated donor SNVs. 
         observed_SNP_idxs = sorted(observed_SNP_idxs)
@@ -572,18 +604,23 @@ def plot(outcome_order,
                     block = [i]
 
             blocks.append(block)
+
+            x_buffer = 0.7
+            y_multiple = 1.4
+
+            bottom, top = self.get_bottom_and_top(y, y_multiple)
+
             for block in blocks:
                 start = i_to_p[block[0]] - offset
                 end = i_to_p[block[-1]] - offset
-                x_buffer = 0.7
-                y_buffer = 0.7
-                draw_rect(source_name, start - x_buffer, end + x_buffer, y - y_buffer * wt_height, y + y_buffer * wt_height, 0.5, fill=False)
+                self.draw_rect(source_name, start - x_buffer, end + x_buffer, bottom, top, 0.5, fill=False)
 
         if len(programmed_edit_outcome.deletions) == 0:
-            draw_rect(source_name, window_left - 0.5, window_right + 0.5, y - wt_height / 2, y + wt_height / 2, block_alpha)
+            bottom, top = self.get_bottom_and_top(y)
+            self.draw_rect(source_name, window_left - 0.5, window_right + 0.5, bottom, top, self.block_alpha)
         elif len(programmed_edit_outcome.deletions) == 1:
             deletion = DeletionOutcome(programmed_edit_outcome.deletions[0]).undo_anchor_shift(ti.anchor).deletion
-            draw_deletion(y, deletion, source_name, color='black', draw_MH=False)
+            self.draw_deletion(y, deletion, source_name, color='black', draw_MH=False)
         else:
             raise NotImplementedError
 
@@ -592,16 +629,17 @@ def plot(outcome_order,
         elif len(programmed_edit_outcome.insertions) == 1:
             insertion = InsertionOutcome(programmed_edit_outcome.insertions[0]).undo_anchor_shift(ti.anchor).insertion
             insertion = ti.expand_degenerate_indel(insertion)
-            draw_insertion(y, insertion, source_name, draw_sequence=False)
+            self.draw_insertion(y, insertion, source_name, draw_sequence=False)
         else:
             raise NotImplementedError
         
-        if draw_all_sequence:
-            draw_sequence(y, source_name, xs_to_skip=SNP_xs, alpha=sequence_alpha)
+        if self.draw_all_sequence:
+            self.draw_sequence(y, source_name, xs_to_skip=SNP_xs, alpha=self.sequence_alpha)
 
-    def draw_pegRNA(source_name):
-        ti = target_infos[source_name]
-        SNVs, _, _, _, (flap_subsequences, target_subsequences) = ti.pegRNA.extract_edits_from_alignment()
+    def draw_pegRNA(self, source_name, y_offset=1, label_color=None, label_features=True):
+        ti = self.target_infos[source_name]
+        offset = self.offsets[source_name]
+        _, _, _, _, (flap_subsequences, target_subsequences) = ti.pegRNA.extract_edits_from_alignment()
 
         feature = ti.features[ti.target, f'{ti.pegRNA.name}_PBS']
 
@@ -610,39 +648,42 @@ def plot(outcome_order,
 
         color = feature.attribute['color']
 
-        y = len(outcome_order) + 1
+        y = len(self.outcome_order) + y_offset
 
-        draw_rect(source_name, start, end, y - wt_height / 2, y + wt_height / 2, 0.8, color)
-        ax.annotate('PBS',
-                    xy=(np.mean([start, end]), y + wt_height / 2),
-                    xytext=(0, 5),
-                    textcoords='offset points',
-                    color='black',
-                    annotation_clip=False,
-                    ha='center',
-                    va='bottom',
-                   )
+        bottom, top = self.get_bottom_and_top(y)
+        self.draw_rect(source_name, start, end, bottom, top, 0.8, color)
+
+        if label_features:
+            self.ax.annotate('PBS',
+                             xy=(np.mean([start, end]), top),
+                             xytext=(0, 5),
+                             textcoords='offset points',
+                             color='black',
+                             annotation_clip=False,
+                             ha='center',
+                             va='bottom',
+                            )
 
         PBS_seq = hits.utilities.reverse_complement(ti.pegRNA.components['PBS'])
 
-        if guide.strand == '+':
+        if self.guide[source_name].strand == '+':
             xs = range(-len(PBS_seq) + 1, 1)
         else:
             xs = range(len(PBS_seq), 0, -1)
             PBS_seq = hits.utilities.complement(PBS_seq)
 
-        if flip:
+        if self.flip[source_name]:
             PBS_seq = hits.utilities.complement(PBS_seq)
 
         for x, b in zip(xs, PBS_seq):
-            ax.annotate(b,
-                        xy=(x, y),
-                        xycoords='data', 
-                        ha='center',
-                        va='center',
-                        size=text_size,
-                        annotation_clip=False,
-                       )
+            self.ax.annotate(b,
+                             xy=(x, y),
+                             xycoords='data', 
+                             ha='center',
+                             va='center',
+                             size=self.text_size,
+                             annotation_clip=False,
+                            )
 
         RTT_xs = []
         RTT_rc = hits.utilities.reverse_complement(ti.pegRNA.components['RTT'])
@@ -652,11 +693,11 @@ def plot(outcome_order,
             # 0 is cut_after
 
             RTT_subsequence = RTT_rc[flap_start:flap_end]
-            if guide.strand == '-':
+            if self.guide[source_name].strand == '-':
                 RTT_subsequence = hits.utilities.complement(RTT_subsequence)
             RTT_aligned_seq += RTT_subsequence
 
-            if guide.strand == '+':
+            if self.guide[source_name].strand == '+':
                 xs_start = target_start + 1
                 xs_end = target_end + 1
                 step = 1
@@ -674,18 +715,19 @@ def plot(outcome_order,
 
             color = knock_knock.pegRNAs.default_feature_colors['RTT']
 
-            draw_rect(source_name, rect_start, rect_end, y - wt_height / 2, y + wt_height / 2, 0.8, color)
+            self.draw_rect(source_name, rect_start, rect_end, bottom, top, 0.8, color)
 
+        del_bottom, del_top = self.get_bottom_and_top(y, StackedDiagrams.del_multiple)
         for (_, previous_end), (next_start, _) in zip(target_subsequences, target_subsequences[1:]):
-            draw_rect(source_name, previous_end + 1 - 0.5, next_start + 1 - 0.5, y - del_height / 2, y + del_height / 2, 0.4, color='black')
+            self.draw_rect(source_name, previous_end + 1 - 0.5, next_start + 1 - 0.5, del_bottom, del_top, 0.4, color='black')
 
-        seq = seqs[source_name]
-        window_left, window_right = windows[source_name]
+        seq = self.seqs[source_name]
+        window_left, window_right = self.windows[source_name]
         for x, b in zip(RTT_xs, RTT_aligned_seq):
             if window_left <= x <= window_right:
                 target_b = seq[-window_left + x]
 
-                if flip:
+                if self.flip[source_name]:
                     b_to_draw = hits.utilities.complement(b)
                 else:
                     b_to_draw = b
@@ -697,258 +739,262 @@ def plot(outcome_order,
                     color = 'black'
                     weight = 'normal'
 
-                ax.annotate(b_to_draw,
-                            xy=(x, y),
-                            xycoords='data', 
-                            ha='center',
-                            va='center',
-                            size=text_size,
-                            annotation_clip=False,
-                            color=color,
-                            weight=weight,
-                        )
+                self.ax.annotate(b_to_draw,
+                                 xy=(x, y),
+                                 xycoords='data', 
+                                 ha='center',
+                                 va='center',
+                                 size=self.text_size,
+                                 annotation_clip=False,
+                                 color=color,
+                                 weight=weight,
+                                )
 
         if ti.pegRNA_programmed_insertion is not None:
-            draw_insertion(y, ti.pegRNA_programmed_insertion, source_name)
+            self.draw_insertion(y, ti.pegRNA_programmed_insertion, source_name)
 
-        ax.annotate('RTT',
-                    xy=(np.mean(RTT_xs), y + wt_height / 2),
-                    xytext=(0, 5),
-                    textcoords='offset points',
-                    color='black',
-                    annotation_clip=False,
-                    ha='center',
-                    va='bottom',
-                   )
-
-    draw_pegRNA('single_source')
-
-    for i, (source_name, category, subcategory, details) in enumerate(outcome_order):
-        ti = target_infos[source_name]
-        transform_seq = transform_seqs[source_name]
-        window_left, window_right = windows[source_name]
-        y = num_outcomes - i - 1
-
-        if len(target_infos) > 1:
-            background_color = ti.protospacer_color
-        else:
-            background_color = 'black'
-            
-        if category == 'deletion' or \
-           (category == 'simple indel' and subcategory.startswith('deletion')) or \
-           (category == 'wild type' and subcategory == 'short indel far from cut' and degenerate_indel_from_string(details).kind == 'D'):
-
-            deletion = DeletionOutcome.from_string(details).undo_anchor_shift(ti.anchor).deletion
-            deletion = ti.expand_degenerate_indel(deletion)
-
-            xs_to_skip = draw_deletion(y, deletion, source_name, background_color=background_color)
-            if draw_all_sequence:
-                draw_sequence(y, source_name, xs_to_skip, alpha=sequence_alpha)
-        
-        elif category == 'insertion' or (category == 'simple indel' and subcategory.startswith('insertion')):
-            insertion = InsertionOutcome.from_string(details).undo_anchor_shift(ti.anchor).insertion
-            insertion = ti.expand_degenerate_indel(insertion)
-
-            draw_rect(source_name, window_left - 0.5, window_right + 0.5, y - wt_height / 2, y + wt_height / 2, block_alpha, color=background_color)
-            draw_insertion(y, insertion, source_name)
-
-            if draw_all_sequence:
-                draw_sequence(y, source_name, alpha=sequence_alpha)
-
-        elif category == 'insertion with deletion':
-            outcome = InsertionWithDeletionOutcome.from_string(details).undo_anchor_shift(ti.anchor)
-            insertion = outcome.insertion_outcome.insertion
-            deletion = outcome.deletion_outcome.deletion
-            draw_insertion(y, insertion, source_name)
-            draw_deletion(y, deletion, source_name, background_color=background_color)
-                
-        elif category == 'mismatches' or (category == 'wild type' and subcategory == 'mismatches'):
-            SNV_xs = set()
-            draw_rect(source_name, window_left - 0.5, window_right + 0.5, y - wt_height / 2, y + wt_height / 2, block_alpha)
-            snvs = SNVs.from_string(details) 
-
-            # Undo anchor shift.
-            snvs = SNVs([SNV(s.position + ti.anchor, s.basecall, s.quality) for s in snvs])
-
-            for snv in snvs:
-                x = snv.position - offset
-                SNV_xs.add(x)
-                if window_left <= x <= window_right:
-                    ax.annotate(transform_seq(snv.basecall),
-                                xy=(x, y),
-                                xycoords='data', 
-                                ha='center',
-                                va='center',
-                                size=text_size,
-                                color=hits.visualize.igv_colors[transform_seq(snv.basecall.upper())],
-                                weight='bold',
-                            )
-            
-            for (strand, position), ref_base in ti.fingerprints[ti.target]:
-                color = 'grey'
-                alpha = 0.3
-                draw_rect(source_name, position - offset - 0.5, position - offset + 0.5, y - wt_height / 2, y + wt_height / 2, alpha, color=color)
-
-            if draw_all_sequence:
-                draw_sequence(y, source_name, xs_to_skip=SNV_xs, alpha=sequence_alpha)
-
-        elif category == 'wild type' or category == 'WT':
-            draw_wild_type(y, source_name)
-
-        elif category == 'deletion + adjacent mismatch' or category == 'deletion + mismatches':
-            outcome = DeletionPlusMismatchOutcome.from_string(details).undo_anchor_shift(ti.anchor)
-            xs_to_skip = draw_deletion(y, outcome.deletion_outcome.deletion, draw_MH=True)
-            
-            for snv in outcome.mismatch_outcome.snvs:
-                x = snv.position - offset
-                xs_to_skip.add(x)
-
-                if window_left <= x <= window_right:
-                    ax.annotate(transform_seq(snv.basecall),
-                                xy=(x, y),
-                                xycoords='data', 
-                                ha='center',
-                                va='center',
-                                size=text_size,
-                                color=hits.visualize.igv_colors[transform_seq(snv.basecall.upper())],
-                                weight='bold',
+        if label_features:
+            self.ax.annotate('RTT',
+                             xy=(np.mean(RTT_xs), top),
+                             xytext=(0, 5),
+                             textcoords='offset points',
+                             color='black',
+                             annotation_clip=False,
+                             ha='center',
+                             va='bottom',
                             )
 
-                if category == 'deletion + adjacent mismatch':
-                    # Draw box around mismatch to distinguish from MH.
-                    x_buffer = 0.7
-                    y_buffer = 0.7
-                    draw_rect(source_name, x - x_buffer, x + x_buffer, y - y_buffer * wt_height, y + y_buffer * wt_height, 0.5, fill=False)
+        if label_color is not None:
+            window_left, window_right = self.windows[source_name]
+            self.draw_rect(source_name, window_left - 2, window_left - 1, y - 0.4, y + 0.4, 1, clip_to_window=False, color=label_color)
 
-            if draw_all_sequence:
-                draw_sequence(y, source_name, xs_to_skip, alpha=sequence_alpha)
+    def draw_outcomes(self):
+        for i, (source_name, category, subcategory, details) in enumerate(self.outcome_order):
+            ti = self.target_infos[source_name]
+            transform_seq = self.transform_seqs[source_name]
+            window_left, window_right = self.windows[source_name]
+            offset = self.offsets[source_name]
+            y = self.num_outcomes - i - 1
 
-        elif category == 'donor' or \
-             category == 'donor + deletion' or \
-             category == 'donor + insertion' or \
-             (category == 'intended edit' and subcategory == 'deletion') or \
-             category == 'edit + deletion':
+            bottom, top = self.get_bottom_and_top(y)
 
-            if category == 'donor':
-                HDR_outcome = HDROutcome.from_string(details)
-                deletion_outcome = None
-                insertion_outcome = None
-
-            elif category == 'donor + deletion':
-                HDR_plus_deletion_outcome = HDRPlusDeletionOutcome.from_string(details).undo_anchor_shift(ti.anchor)
-                HDR_outcome = HDR_plus_deletion_outcome.HDR_outcome
-                deletion_outcome = HDR_plus_deletion_outcome.deletion_outcome
-                insertion_outcome = None
-
-            elif category == 'intended edit' and subcategory == 'deletion':
-                HDR_outcome = HDROutcome.from_string(details).undo_anchor_shift(ti.anchor)
-                deletion_outcome = None
-                insertion_outcome = None
-
-            elif category == 'donor + insertion':
-                HDR_plus_insertion_outcome = HDRPlusInsertionOutcome.from_string(details).undo_anchor_shift(ti.anchor)
-                HDR_outcome = HDR_plus_insertion_outcome.HDR_outcome
-                deletion_outcome = None
-                insertion_outcome = HDR_plus_insertion_outcome.insertion_outcome
-
-            elif category == 'edit + deletion':
-                HDR_plus_deletion_outcome = HDRPlusDeletionOutcome.from_string(details).undo_anchor_shift(ti.anchor)
-                HDR_outcome = HDR_plus_deletion_outcome.HDR_outcome
-                deletion_outcome = HDR_plus_deletion_outcome.deletion_outcome
-                insertion_outcome = None
-
+            if len(self.target_infos) > 1:
+                background_color = ti.protospacer_color
             else:
-                raise ValueError
-    
-            draw_donor(y, HDR_outcome, deletion_outcome, insertion_outcome, source_name, False)
-
-        elif category == 'intended edit':
-            draw_programmed_edit(y, ProgrammedEditOutcome.from_string(details), source_name)
-
-        elif category == 'duplication' and subcategory == 'simple':
-            duplication_outcome = DuplicationOutcome.from_string(details).undo_anchor_shift(ti.anchor)
-            draw_duplication(y, duplication_outcome, source_name)
-            
-        else:
-            label = f'{category}, {subcategory}, {details}'
-
-            if replacement_text_for_complex is not None:
-                label = replacement_text_for_complex.get(label, label)
-
-            ax.annotate(label,
-                        xy=(0, y),
-                        xycoords=('axes fraction', 'data'), 
-                        xytext=(5, 0),
-                        textcoords='offset points',
-                        ha='left',
-                        va='center',
-                        size=text_size,
-                        )
-            if len(target_infos) > 1:
-                draw_rect(source_name, window_left - 0.5, window_right + 0.5, y - wt_height / 2, y + wt_height / 2, block_alpha, color=background_color)
-
-    if draw_donor_on_top and len(ti.donor_SNVs['target']) > 0:
-        donor_SNV_read_bases = ''.join(d['base'] for name, d in sorted(ti.donor_SNVs['donor'].items()))
-        strands = set(SNV['strand'] for SNV in ti.donor_SNVs['donor'].values())
-        if len(strands) > 1:
-            raise ValueError('donor strand is weird')
-        else:
-            strand = strands.pop()
-        HDR_outcome = HDROutcome(donor_SNV_read_bases, [])
-        if strand == '-':
-            y = num_outcomes + 0.5
-        else:
-            y = num_outcomes + 2.5
-        draw_donor(y, HDR_outcome, None, None, source_name, on_top=True)
-
-    if draw_wild_type_on_top:
-        y = num_outcomes
-        if draw_donor_on_top:
-            y += 1.5
-        
-        if len(target_infos) > 1:
-            raise ValueError
-
-        draw_wild_type(y, source_name, on_top=True, guides_to_draw=target_infos[single_source_name].protospacer_names)
-        ax.set_xticks([])
+                background_color = 'black'
                 
-    if not preserve_x_lims:
-        # Some uses don't want x lims to be changed.
-        x_lims = [window_left - 0.5, window_right + 0.5]
-        if flip:
-            ax.set_xlim(*x_lims[::-1])
-        else:
-            ax.set_xlim(*x_lims)
+            if (category == 'deletion') or \
+               (category == 'simple indel' and subcategory.startswith('deletion')) or \
+               (category == 'wild type' and subcategory == 'short indel far from cut' and degenerate_indel_from_string(details).kind == 'D'):
 
-        ax.xaxis.tick_top()
-        ax.axhline(num_outcomes + 0.5 - 1, color='black', alpha=0.75, clip_on=False)
+                deletion = DeletionOutcome.from_string(details).undo_anchor_shift(ti.anchor).deletion
+                deletion = ti.expand_degenerate_indel(deletion)
 
-    ax.set_ylim(-0.5, num_outcomes - 0.5)
-    ax.set_frame_on(False)
+                xs_to_skip = self.draw_deletion(y, deletion, source_name, background_color=background_color)
+                if self.draw_all_sequence:
+                    self.draw_sequence(y, source_name, xs_to_skip, alpha=self.sequence_alpha)
+            
+            elif category == 'insertion' or (category == 'simple indel' and subcategory.startswith('insertion')):
+                insertion = InsertionOutcome.from_string(details).undo_anchor_shift(ti.anchor).insertion
+                insertion = ti.expand_degenerate_indel(insertion)
 
-    title_color = kwargs.get('title_color')
-    if title_color is None:
-        if len(target_infos) > 1:
-            title_color = 'black'
-        else:
-            title_color = target_infos[single_source_name].PAM_color
+                self.draw_rect(source_name, window_left - 0.5, window_right + 0.5, bottom, top, self.block_alpha, color=background_color)
+                self.draw_insertion(y, insertion, source_name)
 
-    if title:
-        ax.annotate(title,
-                    xy=(0.5, 1),
-                    xycoords=('axes fraction', 'axes fraction'),
-                    xytext=(0, kwargs.get('title_offset', 20)),
-                    textcoords='offset points',
-                    ha='center',
-                    va='bottom',
-                    size=kwargs.get('title_size', 14),
-                    color=title_color,
-                   )
+                if self.draw_all_sequence:
+                    self.draw_sequence(y, source_name, alpha=self.sequence_alpha)
+
+            elif category == 'insertion with deletion':
+                outcome = InsertionWithDeletionOutcome.from_string(details).undo_anchor_shift(ti.anchor)
+                insertion = outcome.insertion_outcome.insertion
+                deletion = outcome.deletion_outcome.deletion
+                self.draw_insertion(y, insertion, source_name)
+                self.draw_deletion(y, deletion, source_name, background_color=background_color)
+                    
+            elif category == 'mismatches' or (category == 'wild type' and subcategory == 'mismatches'):
+                SNV_xs = set()
+                self.draw_rect(source_name, window_left - 0.5, window_right + 0.5, bottom, top, self.block_alpha)
+                snvs = SNVs.from_string(details) 
+
+                # Undo anchor shift.
+                snvs = SNVs([SNV(s.position + ti.anchor, s.basecall, s.quality) for s in snvs])
+
+                for snv in snvs:
+                    x = snv.position - offset
+                    SNV_xs.add(x)
+                    if window_left <= x <= window_right:
+                        self.ax.annotate(transform_seq(snv.basecall),
+                                         xy=(x, y),
+                                         xycoords='data', 
+                                         ha='center',
+                                         va='center',
+                                         size=self.text_size,
+                                         color=hits.visualize.igv_colors[transform_seq(snv.basecall.upper())],
+                                         weight='bold',
+                                        )
+                
+                for (strand, position), ref_base in ti.fingerprints[ti.target]:
+                    color = 'grey'
+                    alpha = 0.3
+                    left = position - offset - 0.5
+                    right = position + offset + 0.5
+                    self.draw_rect(source_name, left, right, bottom, top, alpha, color=color)
+
+                if self.draw_all_sequence:
+                    self.draw_sequence(y, source_name, xs_to_skip=SNV_xs, alpha=self.sequence_alpha)
+
+            elif category == 'wild type' or category == 'WT':
+                self.draw_wild_type(y, source_name)
+
+            elif category == 'deletion + adjacent mismatch' or category == 'deletion + mismatches':
+                outcome = DeletionPlusMismatchOutcome.from_string(details).undo_anchor_shift(ti.anchor)
+                xs_to_skip = self.draw_deletion(y, outcome.deletion_outcome.deletion, draw_MH=True)
+                
+                for snv in outcome.mismatch_outcome.snvs:
+                    x = snv.position - self.offsets
+                    xs_to_skip.add(x)
+
+                    if window_left <= x <= window_right:
+                        self.ax.annotate(transform_seq(snv.basecall),
+                                         xy=(x, y),
+                                         xycoords='data', 
+                                         ha='center',
+                                         va='center',
+                                         size=self.text_size,
+                                         color=hits.visualize.igv_colors[transform_seq(snv.basecall.upper())],
+                                         weight='bold',
+                                        )
+
+                    if category == 'deletion + adjacent mismatch':
+                        # Draw box around mismatch to distinguish from MH.
+                        x_buffer = 0.7
+                        y_multiple = 1.4
+                        box_bottom, box_top = self.get_bottom_and_top(y, y_multiple)
+                        self.draw_rect(source_name, x - x_buffer, x + x_buffer, box_bottom, box_top, 0.5, fill=False)
+
+                if self.draw_all_sequence:
+                    self.draw_sequence(y, source_name, xs_to_skip, alpha=self.sequence_alpha)
+
+            elif category == 'donor' or \
+                category == 'donor + deletion' or \
+                category == 'donor + insertion' or \
+                (category == 'intended edit' and subcategory == 'deletion') or \
+                category == 'edit + deletion':
+
+                if category == 'donor':
+                    HDR_outcome = HDROutcome.from_string(details)
+                    deletion_outcome = None
+                    insertion_outcome = None
+
+                elif category == 'donor + deletion':
+                    HDR_plus_deletion_outcome = HDRPlusDeletionOutcome.from_string(details).undo_anchor_shift(ti.anchor)
+                    HDR_outcome = HDR_plus_deletion_outcome.HDR_outcome
+                    deletion_outcome = HDR_plus_deletion_outcome.deletion_outcome
+                    insertion_outcome = None
+
+                elif category == 'intended edit' and subcategory == 'deletion':
+                    HDR_outcome = HDROutcome.from_string(details).undo_anchor_shift(ti.anchor)
+                    deletion_outcome = None
+                    insertion_outcome = None
+
+                elif category == 'donor + insertion':
+                    HDR_plus_insertion_outcome = HDRPlusInsertionOutcome.from_string(details).undo_anchor_shift(ti.anchor)
+                    HDR_outcome = HDR_plus_insertion_outcome.HDR_outcome
+                    deletion_outcome = None
+                    insertion_outcome = HDR_plus_insertion_outcome.insertion_outcome
+
+                elif category == 'edit + deletion':
+                    HDR_plus_deletion_outcome = HDRPlusDeletionOutcome.from_string(details).undo_anchor_shift(ti.anchor)
+                    HDR_outcome = HDR_plus_deletion_outcome.HDR_outcome
+                    deletion_outcome = HDR_plus_deletion_outcome.deletion_outcome
+                    insertion_outcome = None
+
+                else:
+                    raise ValueError
         
-    ax.set_yticks([])
-    
-    return fig, ax
+                self.draw_donor(y, HDR_outcome, deletion_outcome, insertion_outcome, source_name, False)
 
+            elif category == 'intended edit':
+                self.draw_programmed_edit(y, ProgrammedEditOutcome.from_string(details), source_name)
+
+            elif category == 'duplication' and subcategory == 'simple':
+                duplication_outcome = DuplicationOutcome.from_string(details).undo_anchor_shift(ti.anchor)
+                self.draw_duplication(y, duplication_outcome, source_name)
+                
+            else:
+                label = f'{category}, {subcategory}, {details}'
+
+                label = self.replacement_text_for_complex.get(label, label)
+
+                self.ax.annotate(label,
+                                 xy=(0, y),
+                                 xycoords=('axes fraction', 'data'), 
+                                 xytext=(5, 0),
+                                 textcoords='offset points',
+                                 ha='left',
+                                 va='center',
+                                 size=self.text_size,
+                                )
+                if len(self.target_infos) > 1:
+                    self.draw_rect(source_name, window_left - 0.5, window_right + 0.5, bottom, top, self.block_alpha, color=background_color)
+
+        if self.draw_donor_on_top and len(ti.donor_SNVs['target']) > 0:
+            donor_SNV_read_bases = ''.join(d['base'] for name, d in sorted(ti.donor_SNVs['donor'].items()))
+            strands = set(SNV['strand'] for SNV in ti.donor_SNVs['donor'].values())
+            if len(strands) > 1:
+                raise ValueError('donor strand is weird')
+            else:
+                strand = strands.pop()
+
+            HDR_outcome = HDROutcome(donor_SNV_read_bases, [])
+
+            if strand == '-':
+                y = self.num_outcomes + 0.5
+            else:
+                y = self.num_outcomes + 2.5
+
+            self.draw_donor(y, HDR_outcome, None, None, self.single_source_name, on_top=True)
+
+        if self.draw_wild_type_on_top:
+            y = self.num_outcomes
+            if self.draw_donor_on_top:
+                y += 1.5
+
+            
+            self.draw_wild_type(y, self.single_source_name,
+                                on_top=True,
+                                guides_to_draw=self.target_infos[self.single_source_name].protospacer_names,
+                               )
+            self.ax.set_xticks([])
+                    
+        if not self.preserve_x_lims:
+            # Some uses don't want x lims to be changed.
+            x_lims = [window_left - 0.5, window_right + 0.5]
+            if self.flip[self.single_source_name]:
+                self.ax.set_xlim(*x_lims[::-1])
+            else:
+                self.ax.set_xlim(*x_lims)
+
+            self.ax.xaxis.tick_top()
+            self.ax.axhline(self.num_outcomes + 0.5 - 1, color='black', alpha=0.75, clip_on=False)
+
+        self.ax.set_ylim(-0.5, self.num_outcomes - 0.5)
+        self.ax.set_frame_on(False)
+
+        if self.title is not None:
+            self.ax.annotate(self.title,
+                             xy=(0.5, 1),
+                             xycoords=('axes fraction', 'axes fraction'),
+                             xytext=(0, self.title_offset),
+                             textcoords='offset points',
+                             ha='center',
+                             va='bottom',
+                             size=self.title_size,
+                             color=self.title_color,
+                            )
+            
+        self.ax.set_yticks([])
+        
 def add_frequencies(fig, ax, count_source, outcome_order, fixed_guide='none', text_only=False):
     if isinstance(count_source, (dict, pd.Series)):
         counts = np.array([count_source[outcome] for outcome in outcome_order])
@@ -1066,12 +1112,13 @@ class DiagramGrid:
 
         self.outcomes = outcomes
         self.target_info = target_info
-        PAM_feature = target_info.PAM_features[f'{target_info.primary_protospacer}_PAM']
-        self.PAM_color = PAM_feature.attribute['color']
+        #PAM_feature = target_info.PAM_features[f'{target_info.primary_protospacer}_PAM']
+        
+        #self.PAM_color = PAM_feature.attribute['color']
         self.ax_on_bottom = ax_on_bottom
 
-        if cut_color == 'PAM':
-            diagram_kwargs['cut_color'] = self.PAM_color
+        #if cut_color == 'PAM':
+        #    diagram_kwargs['cut_color'] = self.PAM_color
 
         self.inches_per_nt = inches_per_nt
         self.inches_per_outcome = inches_per_outcome
@@ -1098,43 +1145,21 @@ class DiagramGrid:
         self.plot_diagrams()
 
     def plot_diagrams(self):
-        if isinstance(self.outcomes[0], tuple) and len(self.outcomes[0]) == 3:
-            self.fig, ax = plot(self.outcomes,
-                                self.target_info,
-                                ax=self.axs_by_name['diagram'],
-                                title=self.title,
-                                inches_per_outcome=self.inches_per_outcome,
-                                inches_per_nt=self.inches_per_nt,
-                                **self.diagram_kwargs,
-                               )
-        else:
-            self.fig, ax = plt.subplots(figsize=(self.outcome_ax_width,
-                                                 len(self.outcomes) * self.inches_per_outcome,
-                                                ),
+        self.diagrams = StackedDiagrams(self.outcomes,
+                                        self.target_info,
+                                        ax=self.axs_by_name['diagram'],
+                                        title=self.title,
+                                        inches_per_outcome=self.inches_per_outcome,
+                                        inches_per_nt=self.inches_per_nt,
+                                        **self.diagram_kwargs,
                                        )
 
-            for i, outcome in enumerate(self.outcomes):
-                if isinstance(outcome, tuple):
-                    outcome = ', '.join(outcome)
+        self.fig = self.diagrams.fig
 
-                label = self.label_aliases.get(outcome, outcome)
-                ax.annotate(label,
-                            xy=(1, len(self.outcomes) - i - 1),
-                            xycoords=('axes fraction', 'data'),
-                            ha='right',
-                            va='center',
-                            size=self.diagram_kwargs.get('label_size', 8),
-                )
+        self.axs_by_name['diagram'] = self.diagrams.ax
+        self.ordered_axs.append(self.diagrams.ax)
 
-            ax.set_ylim(-0.5, len(self.outcomes) - 0.5)
-
-            ax.axis('off')
-            ax.set_title(self.title)
-
-        self.axs_by_name['diagram'] = ax
-        self.ordered_axs.append(ax)
-
-        ax_p = ax.get_position()
+        ax_p = self.diagrams.ax.get_position()
         self.widths['diagram'] = ax_p.width
 
         return self.fig
@@ -1249,7 +1274,7 @@ class DiagramGrid:
 
             warnings.resetwarnings()
 
-        xs = [value_source.get(outcome, np.nan) for outcome in self.outcomes]
+        xs = [value_source.get((c, s, d), np.nan) for (source_name, c, s, d) in self.outcomes]
 
         ax.plot(xs, ys, marker=marker, linestyle='', alpha=marker_alpha, label=label, **plot_kwargs)
         ax.plot(xs, ys, marker=None, linestyle='-', alpha=line_alpha, **plot_kwargs)
@@ -1547,7 +1572,12 @@ class DiagramGrid:
             if ax is not None:
                 ax.set_xlim(*lims)
 
-    def plot_pegRNA_conversion_fractions_above(self, group, y_max=None):
+    def plot_pegRNA_conversion_fractions_above(self, group, gap=4, height_multiple=10, **plot_kwargs):
+        plot_kwargs = copy.copy(plot_kwargs)
+        plot_kwargs.setdefault('line_alpha', 0.5)
+        plot_kwargs.setdefault('linewidth', 1)
+        plot_kwargs.setdefault('markersize', 5)
+
         def SNV_name_to_x(SNV_name):
             SNVs = group.target_info.pegRNA_SNVs[group.target_info.target]
             p = SNVs[SNV_name]['position']
@@ -1556,41 +1586,42 @@ class DiagramGrid:
         
         pegRNA_conversion_fractions = group.pegRNA_conversion_fractions.copy()
 
-        x_lims = self.axs_by_name['diagram'].get_xlim()
-
-        flipped = x_lims[0] > x_lims[1]
-
         xs = pegRNA_conversion_fractions.index.map(SNV_name_to_x)
         pegRNA_conversion_fractions.index = xs
         pegRNA_conversion_fractions = pegRNA_conversion_fractions.sort_index()
         
         if 'above' not in self.axs_by_name:
-            self.add_ax_above(gap=4, height_multiple=7)
+            self.add_ax_above(gap=gap, height_multiple=height_multiple)
         
         for condition, fs in pegRNA_conversion_fractions.items():
             self.plot_on_ax_above(xs, fs * 100,
-                                  line_alpha=0.5,
-                                  linewidth=1,
-                                  markersize=5,
-                                  color='black',
                                   label=condition,
+                                  **plot_kwargs,
                                  )
+
+    def style_pegRNA_conversion_plot(self, y_max=None):
+        if 'diagram' not in self.axs_by_name or 'above' not in self.axs_by_name:
+            return
+
+        diagram_x_lims = self.axs_by_name['diagram'].get_xlim()
+
+        flipped = diagram_x_lims[0] > diagram_x_lims[1]
 
         ax = self.axs_by_name['above']
 
+        if y_max is None:
+            ax.autoscale(axis='y')
+
         ax.set_ylim(0, y_max)
 
-        ax.set_title(group.group)
-        
-        ax.set_ylabel('Total %\nincorporation\nat position', size=12)
-        ax.tick_params(labelsize=8)
+        xs = set()
 
+        for line in ax.lines:
+            xs.update(set(line.get_xdata()))
+            
         x_bounds = [min(xs) - 1, max(xs) + 1]
         if flipped:
             x_bounds = x_bounds[::-1]
-
-        ax.spines.left.set_position(('data', x_bounds[0]))
-        ax.spines.bottom.set_visible(False)
 
         for y in ax.get_yticks():
             if y == 0:
@@ -1602,4 +1633,8 @@ class DiagramGrid:
 
             ax.plot(x_bounds, [y for x in x_bounds], clip_on=clip_on, color='black', alpha=alpha)
 
-        return pegRNA_conversion_fractions
+        ax.set_ylabel('Total %\nincorporation\nat position', size=12)
+        ax.tick_params(labelsize=8)
+
+        ax.spines.left.set_position(('data', x_bounds[0]))
+        ax.spines.bottom.set_visible(False)
