@@ -9,8 +9,8 @@ expected_values:
     note: n/a
   010287981:0000000001:
     category: intended edit
-    subcategory: SNV
-    note: two SNVs
+    subcategory: substitution
+    note: two substitutions
   010287981:0000001016:
     category: deletion
     subcategory: clean

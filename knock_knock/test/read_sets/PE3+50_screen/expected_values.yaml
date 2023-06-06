@@ -32,8 +32,8 @@ expected_values:
       and target
   01:01102:007401:007639_:
     category: unintended rejoining of RT'ed sequence
-    subcategory: includes scaffold, no SNV
-    note: unintended rejoining, medium amount of scaffold but no intended SNV
+    subcategory: includes scaffold, no substitution
+    note: unintended rejoining, medium amount of scaffold but no intended substitution
   01:01107:012427:010551_:
     category: unintended rejoining of RT'ed sequence
     subcategory: no scaffold

@@ -25,16 +25,16 @@ expected_values:
     note: wild type with 1 nt deletion towards end
   01:01101:001515:027383_34:
     category: intended edit
-    subcategory: SNV
-    note: intended SNV, no errors
+    subcategory: substitution
+    note: intended substitution, no errors
   01:01102:026106:033082_:
     category: intended edit
-    subcategory: SNV + mismatches
-    note: intended SNV plus 1 mismatch towards middle
+    subcategory: substitution
+    note: intended substitution plus 1 mismatch towards middle
   01:01103:011333:025222_:
     category: intended edit
-    subcategory: SNV + mismatches
-    note: intended SNV plus 1 mismatch towards end
+    subcategory: substitution
+    note: intended substitution plus 1 mismatch towards end
   01:01106:007346:030937_:
     category: extension from intended annealing
     subcategory: n/a

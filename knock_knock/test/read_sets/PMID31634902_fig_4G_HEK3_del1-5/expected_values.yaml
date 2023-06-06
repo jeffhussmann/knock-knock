@@ -13,15 +13,15 @@ expected_values:
     note: n/a
   010288035:0000000020:
     category: unintended rejoining of RT'ed sequence
-    subcategory: includes scaffold, no SNV
+    subcategory: includes scaffold, no substitution
     note: rejoins near PE3 nick
   010288035:0000004718:
     category: unintended rejoining of RT'ed sequence
-    subcategory: no scaffold, no SNV
+    subcategory: no scaffold, no substitution
     note: rejoins at pegRNA-targeted nick
   010288035:0000004846:
     category: unintended rejoining of RT'ed sequence
-    subcategory: no scaffold, no SNV
+    subcategory: no scaffold, no substitution
     note: rejoins far downstream
   010288035:0000001862:
     category: deletion

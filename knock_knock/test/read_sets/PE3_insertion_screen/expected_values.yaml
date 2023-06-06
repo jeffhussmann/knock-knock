@@ -18,15 +18,15 @@ expected_values:
     note: no mismatches
   01:01101:003079:014278_:
     category: unintended rejoining of RT'ed sequence
-    subcategory: includes scaffold, no SNV
+    subcategory: includes scaffold, no substitution
     note: includes ~half of scaffold, rejoins in PAM
   01:01101:005773:001470_:
     category: unintended rejoining of RT'ed sequence
-    subcategory: includes scaffold, no SNV
+    subcategory: includes scaffold, no substitution
     note: includes ~half of scaffold, rejoins past the PE3 nick
   01:01101:004960:033786_:
     category: unintended rejoining of RT'ed sequence
-    subcategory: no scaffold, no SNV
+    subcategory: no scaffold, no substitution
     note: includes ~half of HA_RT, rejoins just past the PAM
   01:01111:024252:011052_:
     category: duplication
