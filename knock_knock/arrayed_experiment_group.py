@@ -990,17 +990,10 @@ def arrayed_specialized_experiment_factory(experiment_kind):
     
     return ArrayedSpecializedExperiment, ArrayedSpecializedCommonSequencesExperiment
 
-def sanitize_and_validate_input(df):
-    if isinstance(df, (str, Path)):
-        df = pd.read_csv(df, dtype=str)
-
-    # Remove any rows or columns that are entirely nan (e.g. because excel exported
-    # unwanted empty rows into a csv), then replace any remaining nans with an empty string.
-    df = df.dropna(axis='index', how='all').dropna(axis='columns', how='all').fillna('')
-
+def sanitize_and_validate_sample_sheet(sample_sheet_df):
     # Default to hg38 if genome column isn't present.
-    if 'genome' not in df.columns:
-        df['genome'] = 'hg38'
+    if 'genome' not in sample_sheet_df.columns:
+        sample_sheet_df['genome'] = 'hg38'
 
     # Confirm mandatory columns are present.
 
@@ -1012,16 +1005,16 @@ def sanitize_and_validate_input(df):
         'genome',
     ]
     
-    missing_columns = [col for col in mandatory_columns if col not in df.columns]
+    missing_columns = [col for col in mandatory_columns if col not in sample_sheet_df.columns]
     if len(missing_columns) > 0:
         raise ValueError(f'{missing_columns} column(s) not found in sample sheet')
 
-    if not df['sample_name'].is_unique:
-        counts = df['sample_name'].value_counts()
+    if not sample_sheet_df['sample_name'].is_unique:
+        counts = sample_sheet_df['sample_name'].value_counts()
         bad_names = ', '.join(f'{name} ({count})' for name, count in counts[counts > 1].items())
         raise ValueError(f'Sample names are not unique: {bad_names}')
 
-    return df
+    return sample_sheet_df
 
 def make_targets(base_dir, df, extra_sequences=None):
     if extra_sequences is None:

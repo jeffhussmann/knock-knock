@@ -23,6 +23,8 @@ from Bio.SeqRecord import SeqRecord
 from hits import fasta, fastq, genomes, interval, mapping_tools, sam, sw, utilities
 from knock_knock import target_info, pegRNAs
 
+import knock_knock.utilities
+
 def identify_homology_arms(donor_seq, donor_type, target_seq, cut_after, required_match_length=15):
     header = pysam.AlignmentHeader.from_references(['donor', 'target'], [len(donor_seq), len(target_seq)])
     mapper = sw.SeedAndExtender(donor_seq.encode(), 8, header, 'donor')
@@ -292,10 +294,6 @@ class TargetInfoBuilder:
                 protospacer_features_in_amplicon[sgRNA_name] = protospacer_feature
             except ValueError:
                 logging.warning(f'No valid location for {sgRNA_name} {components["effector"]} protospacer: {components["protospacer"]} in target {ref_name}:{left_al.reference_start:,}-{right_al.reference_end:,}')
-                for name, als in primer_alignments.items():
-                    print(name)
-                    for al in als:
-                        print(al.reference_name, al.reference_start, al.reference_end, al.is_reverse)
 
                 if components['extension'] != '':
                     # pegRNAs must have a protospacer in target.
@@ -628,7 +626,7 @@ class TargetInfoBuilder:
                     primer_alignments[al.query_name].append(al)
                     
         if len(primer_alignments) != 2:
-            raise ValueError
+            raise ValueError(f'At least one primer could not be located in {self.genome}')
 
         shutil.rmtree(primers_dir)
 
@@ -644,60 +642,76 @@ class TargetInfoBuilder:
         primer_alignments = {}
         for primer_name, primer in self.primers.items():
             primer_alignments[primer_name] = mapper.seed_and_extend(primer, len(primer) - 10, len(primer), primer_name)
+            if not primer_alignments[primer_name]:
+                raise ValueError(f'At least one primer could not be located in {self.genome}')
             
         return primer_alignments
 
     def identify_concordant_primer_alignment_pair(self, primer_alignments, max_length=10000):
         # Find pairs of alignments that are on the same chromosome and point towards each other.
 
+        def same_reference_name(first_al, second_al):
+            return first_al.reference_name == second_al.reference_name
+
         def in_correct_orientation(first_al, second_al):
             ''' Check if first_al and second_al point towards each other on the same chromosome. '''
             
-            if first_al.reference_name != second_al.reference_name:
-                return False
+            if not same_reference_name(first_al, second_al):
+                return None
             
             first_interval = interval.get_covered_on_ref(first_al)
             second_interval = interval.get_covered_on_ref(second_al)
             if interval.are_overlapping(first_interval, second_interval):
-                return False
+                return None
             
             left_al, right_al = sorted([first_al, second_al], key=lambda al: al.reference_start)
             
             if sam.get_strand(left_al) != '+' or sam.get_strand(right_al) != '-':
-                return False
+                return None
             else:
                 return left_al, right_al
 
+        def reference_extent(first_al, second_al):
+            if not same_reference_name(first_al, second_al):
+                return np.inf
+            else:
+                start = min(first_al.reference_start, second_al.reference_start)
+                end = max(first_al.reference_end, second_al.reference_end)
+
+                return end - start
+
         correct_orientation_pairs = []
+        not_correct_orientation_pairs = []
 
         primer_names = sorted(primer_alignments)
 
         for first_al in primer_alignments[primer_names[0]]:
             for second_al in primer_alignments[primer_names[1]]:
-                if in_correct_orientation(first_al, second_al):
-                    correct_orientation_pairs.append(in_correct_orientation(first_al, second_al))
+                if (oriented_pair := in_correct_orientation(first_al, second_al)) is not None:
+                    correct_orientation_pairs.append(oriented_pair)
+                elif reference_extent(first_al, second_al) < max_length:
+                    not_correct_orientation_pairs.append((first_al, second_al))
                     
         if len(correct_orientation_pairs) == 0:
-            raise ValueError
+            if len(not_correct_orientation_pairs) > 0:
+                for first_al, second_al in not_correct_orientation_pairs:
+                    logging.warning(f'Found nearby primer alignments that don\'t point towards each other: {first_al.reference_name} {sam.get_strand(first_al)} {first_al.reference_start:,}-{first_al.reference_end:,}, {sam.get_strand(second_al)} {second_al.reference_start:,}-{second_al.reference_end:,}')
+            raise ValueError(f'Could not identify primer binding sites in {self.genome} that point towards each other.')
 
         # Rank pairs in the correct orientation by (shortest) amplicon length.
 
-        def amplicon_length(left_al, right_al):
-            left = left_al.reference_start
-            right = right_al.reference_end
-            return right - left
-
-        correct_orientation_pairs = sorted(correct_orientation_pairs, key=lambda pair: amplicon_length(*pair))
+        correct_orientation_pairs = sorted(correct_orientation_pairs, key=lambda pair: reference_extent(*pair))
 
         if len(correct_orientation_pairs) > 1:
             logging.warning(f'Multiple primer alignments found.')
             for left_al, right_al in correct_orientation_pairs:
-                logging.warning(f'Found {amplicon_length(left_al, right_al):,} nt amplicon on {left_al.reference_name} from {left_al.reference_start:,} to {right_al.reference_end - 1:,}')
+                logging.warning(f'Found {reference_extent(left_al, right_al):,} nt amplicon on {left_al.reference_name} from {left_al.reference_start:,} to {right_al.reference_end - 1:,}')
             
         left_al, right_al = correct_orientation_pairs[0]
 
-        if amplicon_length(left_al, right_al) > max_length:
-            raise ValueError
+        if reference_extent(left_al, right_al) > max_length:
+            logging.warning(f'Found {reference_extent(left_al, right_al):,} nt amplicon on {left_al.reference_name} from {left_al.reference_start:,} to {right_al.reference_end - 1:,}')
+            raise ValueError(f'Could not identify an amplicon shorter than {max_length} in {self.genome}')
 
         return left_al, right_al
 
@@ -748,7 +762,7 @@ def build_component_registry(base_dir):
     amplicon_primers_fn = base_dir / 'targets' / 'amplicon_primers.csv'
 
     if amplicon_primers_fn.exists():
-        registry['amplicon_primers'] = pd.read_csv(amplicon_primers_fn, index_col='name').squeeze('columns')
+        registry['amplicon_primers'] = knock_knock.utilities.read_and_sanitize_csv(amplicon_primers_fn, index_col='name')
     else:
         registry['amplicon_primers'] = {}
 

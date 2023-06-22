@@ -9,10 +9,11 @@ import pysam
 
 from hits import gff, interval, sam, sw, utilities
 
+import knock_knock.utilities
 from knock_knock import target_info
 
 def read_csv(csv_fn, process=True):
-    df = pd.read_csv(csv_fn, index_col='name', comment='#').fillna('')
+    df = knock_knock.utilities.read_and_sanitize_csv(csv_fn, index_col='name')
 
     if process:
         component_order = ['protospacer', 'scaffold', 'extension']
