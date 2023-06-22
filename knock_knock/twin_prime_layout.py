@@ -25,6 +25,13 @@ class Layout(knock_knock.prime_editing_layout.Layout):
              'deletion',
             ),
         ),
+        ('partial replacement',
+            ('left pegRNA',
+             'right pegRNA',
+             'both pegRNAs',
+             'single pegRNA (ambiguous)',
+            ),
+        ),
         ('unintended rejoining of RT\'ed sequence',
             ('left RT\'ed, right RT\'ed',
              'left RT\'ed, right not RT\'ed',
@@ -476,19 +483,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                )
 
     @memoized_property
-    def intended_SNVs_replaced(self):
-        if not self.has_pegRNA_SNV:
-            fraction_replaced = 'none'
-        else:
-            if self.pegRNA_SNV_string != self.full_incorporation_pegRNA_SNV_string:
-                fraction_replaced = 'partial replacement'
-            else:
-                fraction_replaced = 'replacement'
-
-        return fraction_replaced
-
-    @memoized_property
-    def is_intended_replacement(self):
+    def is_intended_or_partial_replacement(self):
         if self.target_info.pegRNA_programmed_deletion is not None:
             status = False
         else:
@@ -496,13 +491,33 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                 status = False
             else:
                 if self.target_info.pegRNA_SNVs is None:
-                    status = 'replacement'
-                elif self.intended_SNVs_replaced == 'none':
+                    status = True
+                elif not self.has_pegRNA_SNV:
                     status = False
                 else:
-                    status = self.intended_SNVs_replaced
+                    status = True
 
         return status
+
+    def registered_intended_replacement(self):
+        if self.pegRNA_SNV_string == self.full_incorporation_pegRNA_SNV_string:
+            self.category = 'intended edit'
+            self.subcategory = 'replacement'
+        else:
+            self.category = 'partial replacement'
+            if len(self.pegRNAs_that_explain_all_SNVs) == 0:
+                self.subcategory = 'both pegRNAs'
+            elif len(self.pegRNAs_that_explain_all_SNVs) == 2:
+                self.subcategory = 'single pegRNA (ambiguous)'
+            elif self.target_info.pegRNA_names_by_side_of_read['left'] in self.pegRNAs_that_explain_all_SNVs:
+                self.subcategory = 'left pegRNA'
+            elif self.target_info.pegRNA_names_by_side_of_read['right'] in self.pegRNAs_that_explain_all_SNVs:
+                self.subcategory = 'right pegRNA'
+            else:
+                raise ValueError
+
+        self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, [])
+        self.relevant_alignments = self.intended_edit_relevant_alignments
 
     @memoized_property
     def intended_edit_relevant_alignments(self):
@@ -591,11 +606,8 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             self.details = 'n/a'
             self.outcome = None
 
-        elif self.is_intended_replacement:
-            self.category = 'intended edit'
-            self.subcategory = self.is_intended_replacement
-            self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, [])
-            self.relevant_alignments = self.intended_edit_relevant_alignments
+        elif self.is_intended_or_partial_replacement:
+            self.registered_intended_replacement()
 
         elif self.is_intended_deletion:
             self.category = 'intended edit'
@@ -613,11 +625,8 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             if len(interesting_indels) == 0:
                 if self.starts_at_expected_location:
                     # Need to check in case the intended replacements only involves minimal changes. 
-                    if self.is_intended_replacement:
-                        self.category = 'intended edit'
-                        self.subcategory = self.is_intended_replacement
-                        self.outcome = Outcome('n/a')
-                        self.relevant_alignments = self.target_edge_alignments_list + self.pegRNA_extension_als_list
+                    if self.is_intended_or_partial_replacement:
+                        self.registered_intended_replacement()
 
                     else:
                         self.category = 'wild type'

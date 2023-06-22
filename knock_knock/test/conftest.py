@@ -21,7 +21,7 @@ def pytest_generate_tests(metafunc, source_dir=None):
         for read_set in read_sets.values():
             for qname in read_set.qnames:
                 if 'expected_failure' in read_set.expected_values[qname]:
-                    marks = [pytest.mark.xfail]
+                    marks = [pytest.mark.xfail(strict=True)]
                 else:
                     marks = []
 

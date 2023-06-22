@@ -8,8 +8,8 @@ expected_values:
     subcategory: replacement
     note: clean
   017171944:0000000003:
-    category: intended edit
-    subcategory: partial replacement
+    category: partial replacement
+    subcategory: both pegRNAs
     note: has a mismatch in the overlap region
   017171944:0000000028:
     category: unintended rejoining of RT'ed sequence

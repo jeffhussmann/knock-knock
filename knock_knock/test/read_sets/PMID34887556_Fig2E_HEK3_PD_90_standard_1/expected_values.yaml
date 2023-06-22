@@ -39,4 +39,3 @@ expected_values:
     category: deletion
     subcategory: clean
     note: 1 nt away from the intended deletion
-    expected_failure: very close to intended deletion

@@ -4,14 +4,17 @@ import logging
 import multiprocessing
 import os
 
+import numpy as np
 import pandas as pd
 import pysam
 import scipy.sparse
 
+import hits.visualize
 from hits import utilities
 memoized_property = utilities.memoized_property
 memoized_with_args = utilities.memoized_with_args
 
+import knock_knock.visualize.stacked
 import knock_knock.outcome_record
 import knock_knock.parallel
 
@@ -43,6 +46,8 @@ class ExperimentGroup:
             'outcome_counts': self.results_dir  / 'outcome_counts.npz',
 
             'genomic_insertion_length_distributions': self.results_dir / 'genomic_insertion_length_distribution.txt',
+             
+            'partial_incorporation_figure': self.results_dir / 'partial_incorporation.pdf',
         }
 
     def process(self, generate_figures=False, num_processes=18, verbose=True, use_logger_thread=False):
@@ -103,6 +108,7 @@ class ExperimentGroup:
 
         logger.info('Collecting outcome counts')
         self.make_outcome_counts()
+        self.make_group_figures()
 
         logger.info('Done!')
 
@@ -234,6 +240,80 @@ class ExperimentGroup:
         diagram = layout.plot(relevant=relevant, **diagram_kwargs)
 
         return diagram
+
+    def make_group_figures(self):
+        self.make_partial_incorporation_figure()
+
+    def make_partial_incorporation_figure(self):
+        if len(self.target_info.pegRNA_names) == 2:
+            fs = self.outcome_fractions
+
+            frequency_cutoff = 1e-3
+            outcomes = [(c, s, d) for (c, s, d), f_row in fs.iterrows()
+                        if ((c, s) in {('wild type', 'mismatches')}
+                             or c in {'intended edit', 'partial replacement'}
+                           )
+                        and max(f_row) > frequency_cutoff
+                       ]
+            outcomes = fs.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
+
+            ps_color_overrides = {}
+            PAM_color_overrides = {}
+
+            ti = self.target_info
+            for pegRNA_name in ti.pegRNA_names:
+                ps_name = knock_knock.pegRNAs.protospacer_name(pegRNA_name)
+                color = ti.pegRNA_name_to_color[pegRNA_name]
+                light_color = hits.visualize.apply_alpha(color, 0.5)
+                ps_color_overrides[ps_name] = light_color
+                PAM_color_overrides[ps_name] = color
+
+            grid = knock_knock.visualize.stacked.DiagramGrid(outcomes, 
+                                                             self.target_info,
+                                                             draw_wild_type_on_top=True,
+                                                             window=(-20, self.target_info.nick_offset + 20 - 1),
+                                                             block_alpha=0.1,
+                                                             override_protospacer_color=ps_color_overrides,
+                                                             override_PAM_color=PAM_color_overrides,
+                                                             draw_all_sequence=0.1,
+                                                            )
+
+            grid.add_ax('fractions', width_multiple=12, title='% of reads')
+            grid.add_ax('log10_fractions', width_multiple=12, gap_multiple=2, title='% of reads (log scale)')
+
+            for ax, transform in [('fractions', 'percentage'),
+                                  ('log10_fractions', 'log10'),
+                                 ]:
+
+                for condition in fs:
+                    grid.plot_on_ax(ax, fs[condition],
+                                    transform=transform,
+                                    color='black',
+                                    line_alpha=0.75,
+                                    linewidth=1.5,
+                                    markersize=7,
+                                    fill=0,
+                                   )
+
+            grid.style_frequency_ax('fractions')
+
+            grid.set_xlim('fractions', (0,))
+            x_max = (grid.axs_by_name['fractions'].get_xlim()[1] / 100) * 1.01
+
+            grid.set_xlim('log10_fractions', (np.log10(4.9e-4), np.log10(x_max)))
+            grid.style_log10_frequency_ax('log10_fractions')
+
+            for pegRNA_i, pegRNA_name in enumerate(self.target_info.pegRNA_names):
+                grid.diagrams.draw_pegRNA(self.target_info.name, pegRNA_name, y_offset=pegRNA_i + 1, label_features=False)
+
+            grid.plot_pegRNA_conversion_fractions_above(self)
+            grid.style_pegRNA_conversion_plot()
+
+            grid.fig.savefig(self.fns['partial_incorporation_figure'], bbox_inches='tight')
+            return grid.fig
+
+        else:
+            pass
 
     def make_outcome_counts(self):
         all_counts = {}

@@ -1901,14 +1901,17 @@ class TargetInfo():
         simple_pegRNA_SNVs = {}
 
         if self.pegRNA_SNVs is not None:
-            for ref_name, SNVs in self.pegRNA_SNVs.items():
-                for SNV_name, details in SNVs.items():
-                    if ref_name in self.pegRNA_names:
-                        base = details['base']
-                    else:
-                        base = details['alternative_base']
+            ref_names = [self.target] + self.pegRNA_names
+            for ref_name in ref_names:
+                if ref_name in self.pegRNA_SNVs:
+                    SNVs = self.pegRNA_SNVs[ref_name]
+                    for SNV_name, details in SNVs.items():
+                        if ref_name in self.pegRNA_names:
+                            base = details['base']
+                        else:
+                            base = details['alternative_base']
 
-                    simple_pegRNA_SNVs[ref_name, details['position']] = base
+                        simple_pegRNA_SNVs[ref_name, details['position']] = base
 
         return simple_pegRNA_SNVs
 
@@ -1917,10 +1920,13 @@ class TargetInfo():
         programmed_subs = {}
 
         if self.pegRNA_SNVs is not None:
-            for ref_name, SNVs in self.pegRNA_SNVs.items():
-                programmed_subs[ref_name] = {}
-                for SNV_name, SNV in SNVs.items():
-                    programmed_subs[ref_name][SNV['position']] = SNV['alternative_base']
+            ref_names = [self.target] + self.pegRNA_names
+            for ref_name in ref_names:
+                if ref_name in self.pegRNA_SNVs:
+                    SNVs = self.pegRNA_SNVs[ref_name]
+                    programmed_subs[ref_name] = {}
+                    for SNV_name, SNV in SNVs.items():
+                        programmed_subs[ref_name][SNV['position']] = SNV['alternative_base']
 
         return programmed_subs
 

@@ -417,7 +417,7 @@ class pegRNA:
                 'start_in_flap': 0,
                 'end_in_flap': flap_subsequences[0][0] - 1,
                 'starts_after_in_downstream': -1,
-                'starts_before_in_downstream': 0,
+                'ends_before_in_downstream': 0,
             }
             insertions.append(insertion)
             
@@ -427,7 +427,7 @@ class pegRNA:
                     'start_in_flap': left_flap_end,
                     'end_in_flap': right_flap_start - 1,
                     'starts_after_in_downstream': left_target_end - 1,
-                    'starts_before_in_downstream': right_target_start,
+                    'ends_before_in_downstream': right_target_start,
                 }
                 insertions.append(insertion)
 
@@ -543,11 +543,12 @@ class pegRNA:
 
         if len(insertions) > 0:
             if len(insertions) > 1:
-                raise NotImplementedError
+                logging.warning('multiple insertions')
+                #raise NotImplementedError
             
             insertion = insertions[0]
             flap_coords = (insertion['start_in_flap'], insertion['end_in_flap'])
-            downstream_coords = (insertion['starts_after_in_downstream'], insertion['starts_before_in_downstream'])
+            downstream_coords = (insertion['starts_after_in_downstream'], insertion['ends_before_in_downstream'])
             starts['pegRNA', 'insertion'], ends['pegRNA', 'insertion'] = sorted(map(convert_flap_to_pegRNA_coordinates, flap_coords))
             starts_after, _ = sorted(map(convert_downstream_of_nick_to_target_coordinates, downstream_coords))
                 
@@ -574,7 +575,8 @@ class pegRNA:
 
         if len(deletions) > 0:
             if len(deletions) > 1:
-                raise NotImplementedError
+                logging.warning('multiple deletions')
+                #raise NotImplementedError
 
             deletion = deletions[0]
             starts['target', 'deletion'], ends['target', 'deletion'] = sorted(map(convert_downstream_of_nick_to_target_coordinates, deletion))
@@ -596,7 +598,11 @@ class pegRNA:
             self.SNVs = {
                 self.target_name: {},
                 self.name: {},
+                'flap': {},
+                'target_downstream': {},
             }
+
+            self.SNV_name_to_alternative_coordinates = {}
 
             for SNV in SNVs.values():
                 positions = {
@@ -620,6 +626,15 @@ class pegRNA:
                     target_base_effective = utilities.reverse_complement(target_base_plus)
 
                 SNV_name = f'SNV_{positions["target"]}_{target_base_plus}-{pegRNA_base_effective}'
+
+                self.SNVs['flap'][SNV_name] = {
+                    'position': SNV['flap'],
+                    'base': self.intended_flap_sequence[SNV['flap']],
+                }
+                self.SNVs['target_downstream'][SNV_name] = {
+                    'position': SNV['target_downstream'],
+                    'base': self.target_downstream_of_nick[SNV['target_downstream']],
+                }
 
                 self.SNVs[self.target_name][SNV_name] = {
                     'position': positions['target'],

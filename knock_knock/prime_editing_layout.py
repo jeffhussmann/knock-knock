@@ -1111,8 +1111,10 @@ class Layout(layout.Categorizer):
     @memoized_property
     def pegRNA_SNV_locii_summary(self):
         SNVs = self.target_info.pegRNA_SNVs
+
+        SNV_names_seen = set()
+
         if SNVs is None:
-            has_pegRNA_SNV = False
             string_summary = ''
         else:
             pegRNA_SNV_locii, _ = self.SNVs_summary
@@ -1120,8 +1122,6 @@ class Layout(layout.Categorizer):
             target = self.target_info.target
             
             genotype = {}
-
-            has_pegRNA_SNV = False
 
             for SNV_name in sorted(SNVs[target]):
                 bs = defaultdict(list)
@@ -1144,16 +1144,28 @@ class Layout(layout.Categorizer):
                         pegRNA_base = SNVs[target][SNV_name]['alternative_base']
                     
                         if b == pegRNA_base:
-                            has_pegRNA_SNV = True
+                            SNV_names_seen.add(SNV_name)
 
             string_summary = ''.join(genotype[SNV_name] for SNV_name in sorted(SNVs[target]))
 
-        return has_pegRNA_SNV, string_summary
+        has_pegRNA_SNV = len(SNV_names_seen) > 0
+
+        pegRNAs_that_explain_all_SNVs = set()
+        for pegRNA_name in self.target_info.pegRNA_names:
+            if all(SNV_name in SNVs[pegRNA_name] for SNV_name in SNV_names_seen):
+                pegRNAs_that_explain_all_SNVs.add(pegRNA_name)
+
+        return has_pegRNA_SNV, pegRNAs_that_explain_all_SNVs, string_summary
 
     @memoized_property
     def has_pegRNA_SNV(self):
-        has_pegRNA_SNV, _ = self.pegRNA_SNV_locii_summary
+        has_pegRNA_SNV, _, _ = self.pegRNA_SNV_locii_summary
         return has_pegRNA_SNV
+
+    @memoized_property
+    def pegRNAs_that_explain_all_SNVs(self):
+        _, pegRNAs_that_explain_all_SNVs, _ = self.pegRNA_SNV_locii_summary
+        return pegRNAs_that_explain_all_SNVs
 
     @memoized_property
     def has_any_SNV(self):
@@ -1161,7 +1173,7 @@ class Layout(layout.Categorizer):
 
     @memoized_property
     def pegRNA_SNV_string(self):
-        _, string_summary = self.pegRNA_SNV_locii_summary
+        _, _, string_summary = self.pegRNA_SNV_locii_summary
         return string_summary
 
     @memoized_property
@@ -1685,11 +1697,13 @@ class Layout(layout.Categorizer):
             chains = self.extension_chains_by_side
             chain_edges = self.extension_chain_edges
             chain_junction_MH = self.extension_chain_junction_microhomology
+
         elif self.is_possible_unintended_rejoining:
             chain = self.possible_extension_chain
             chains = self.possible_extension_chains_by_side
             chain_edges = self.possible_extension_chain_edges
             chain_junction_MH = self.possible_extension_chain_junction_microhomology
+
         else:
             raise ValueError
 

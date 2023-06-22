@@ -742,7 +742,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         outcomes_containing_pegRNA_SNVs = {SNV_name: [] for SNV_name in SNVs}
         
         for c, s, d  in self.outcome_fractions.index:
-            if c == 'intended edit':
+            if c in {'intended edit', 'partial replacement'}:
                 outcome = knock_knock.outcome.ProgrammedEditOutcome.from_string(d)
 
                 # Note: sorting SNVs is critical here to match the order in outcome.SNV_read_bases.

@@ -269,11 +269,11 @@ class StackedDiagrams:
             for x in range(starts[-1], starts[-1] + deletion.length):
                 xs_to_skip.add(x)
         
-        bottom, top = self.get_bottom_and_top(y, fraction=StackedDiagrams.del_multiple)
+        bottom, top = self.get_bottom_and_top(y, multiple=StackedDiagrams.del_multiple)
         self.draw_rect(source_name, del_start, del_end, bottom, top, 0.4, color=color)
-        self.draw_rect(source_name, window_left - 0.5, del_start, bottom, top, self.block_alpha, color=background_color)
 
         bottom, top = self.get_bottom_and_top(y)
+        self.draw_rect(source_name, window_left - 0.5, del_start, bottom, top, self.block_alpha, color=background_color)
         self.draw_rect(source_name, del_end, window_right + 0.5, bottom, top, self.block_alpha, color=background_color)
 
         return xs_to_skip
@@ -369,12 +369,18 @@ class StackedDiagrams:
                     guide_end = guide.end + 0.5 - offset
 
                     if self.override_protospacer_color is not None:
-                        protospacer_color = self.override_protospacer_color
+                        try:
+                            protospacer_color = self.override_protospacer_color[guide_name]
+                        except:
+                            protospacer_color = self.override_protospacer_color
                     else:
                         protospacer_color = ti.protospacer_color
 
                     if self.override_PAM_color is not None:
-                        PAM_color = self.override_PAM_color
+                        try:
+                            PAM_color = self.override_PAM_color[guide_name]
+                        except:
+                            PAM_color = self.override_PAM_color
                     else:
                         PAM_color = ti.PAM_color
 
@@ -569,6 +575,21 @@ class StackedDiagrams:
                         SNP_xs.add(x)
                         observed_SNP_idxs.add(p_to_i(position))
 
+                        rect_color = hits.visualize.igv_colors[transform_seq(read_base)]
+                        rect_alpha = 0.7
+
+                        letter_color = 'black'
+                        letter_alpha = 0.35
+                        letter_weight = 'normal'
+                    else:
+                        rect_color = 'grey'
+                        rect_alpha = 0.3
+
+                        # 'get' since read_base might be '_'.
+                        letter_color = hits.visualize.igv_colors.get(transform_seq(read_base))
+                        letter_alpha = 1
+                        letter_weight = 'bold'
+
                     if read_base != '-' and read_base != '_':
                         self.ax.annotate(transform_seq(read_base),
                                          xy=(x + self.shift_x, y),
@@ -576,20 +597,15 @@ class StackedDiagrams:
                                          ha='center',
                                          va='center',
                                          size=self.text_size,
-                                         alpha=0.35,
+                                         alpha=letter_alpha,
                                          annotation_clip=False,
+                                         color=letter_color,
+                                         weight=letter_weight,
                                         )
-                
-                    if read_base == '_':
-                        color = 'grey'
-                        alpha = 0.3
-                    else:
-                        color = hits.visualize.igv_colors[transform_seq(read_base)]
-                        alpha = 0.7
 
-                    self.draw_rect(source_name, x - 0.5, x + 0.5, bottom, top, alpha, color=color)
+                    self.draw_rect(source_name, x - 0.5, x + 0.5, bottom, top, rect_alpha, color=rect_color)
 
-        # Draw rectangles around blocks of consecutive incorporated donor SNVs. 
+        # Draw rectangles around blocks of consecutive incorporated programmed SNVs. 
         observed_SNP_idxs = sorted(observed_SNP_idxs)
         if observed_SNP_idxs:
             # no SNPs if just a donor deletion
@@ -636,22 +652,36 @@ class StackedDiagrams:
         if self.draw_all_sequence:
             self.draw_sequence(y, source_name, xs_to_skip=SNP_xs, alpha=self.sequence_alpha)
 
-    def draw_pegRNA(self, source_name, y_offset=1, label_color=None, label_features=True):
+    def draw_pegRNA(self,
+                    source_name,
+                    pegRNA_name=None,
+                    y_offset=1,
+                    label_color=None,
+                    label_features=True,
+                   ):
         ti = self.target_infos[source_name]
         offset = self.offsets[source_name]
-        _, _, _, _, (flap_subsequences, target_subsequences) = ti.pegRNA.extract_edits_from_alignment()
 
-        feature = ti.features[ti.target, f'{ti.pegRNA.name}_PBS']
+        if pegRNA_name is None:
+            pegRNA_name = ti.pegRNA_names[0]
+            _, _, _, _, (flap_subsequences, target_subsequences) = ti.pegRNA.extract_edits_from_alignment()
+            components = ti.sgRNA_components[pegRNA_name]
+        else:
+            components = ti.sgRNA_components[pegRNA_name]
+            flap_subsequences = [(0, len(components['RTT']))]
+            target_subsequences = [(0, len(components['RTT']))]
 
-        start = feature.start - 0.5 - offset
-        end = feature.end + 0.5 - offset
+        PBS = ti.features[ti.target, f'{pegRNA_name}_PBS']
 
-        color = feature.attribute['color']
+        start = PBS.start - offset
+        end = PBS.end - offset
+
+        color = PBS.attribute['color']
 
         y = len(self.outcome_order) + y_offset
 
         bottom, top = self.get_bottom_and_top(y)
-        self.draw_rect(source_name, start, end, bottom, top, 0.8, color)
+        self.draw_rect(source_name, start - 0.5, end + 0.5, bottom, top, 0.8, color)
 
         if label_features:
             self.ax.annotate('PBS',
@@ -664,16 +694,24 @@ class StackedDiagrams:
                              va='bottom',
                             )
 
-        PBS_seq = hits.utilities.reverse_complement(ti.pegRNA.components['PBS'])
+        PBS_seq = hits.utilities.reverse_complement(components['PBS'])
 
         if self.guide[source_name].strand == '+':
-            xs = range(-len(PBS_seq) + 1, 1)
+            xs = end + np.arange(-len(PBS_seq) + 1, 1)
         else:
-            xs = range(len(PBS_seq), 0, -1)
+            xs = start + np.arange(len(PBS_seq) - 1, -1, -1)
             PBS_seq = hits.utilities.complement(PBS_seq)
 
         if self.flip[source_name]:
-            PBS_seq = hits.utilities.complement(PBS_seq)
+            if PBS.strand == '-':
+                PBS_seq = hits.utilities.complement(PBS_seq)
+            else:
+                PBS_seq = PBS_seq[::-1]
+        else:
+            if PBS.strand == '+':
+                PBS_seq = hits.utilities.complement(PBS_seq)
+            else:
+                PBS_seq = PBS_seq[::-1]
 
         for x, b in zip(xs, PBS_seq):
             self.ax.annotate(b,
@@ -686,18 +724,21 @@ class StackedDiagrams:
                             )
 
         RTT_xs = []
-        RTT_rc = hits.utilities.reverse_complement(ti.pegRNA.components['RTT'])
+        RTT_rc = hits.utilities.reverse_complement(components['RTT'])
         RTT_aligned_seq = ''
+
+        RTT_offset = ti.cut_afters[f'{pegRNA_name}_protospacer_{PBS.strand}'] - offset
+
         for (target_start, target_end), (flap_start, flap_end) in zip(target_subsequences, flap_subsequences):
             # target_subsequences are in downstream_of_nick coords and end is exclusive.
             # 0 is cut_after
 
             RTT_subsequence = RTT_rc[flap_start:flap_end]
-            if self.guide[source_name].strand == '-':
+            if PBS.strand == '-':
                 RTT_subsequence = hits.utilities.complement(RTT_subsequence)
             RTT_aligned_seq += RTT_subsequence
 
-            if self.guide[source_name].strand == '+':
+            if PBS.strand == '+':
                 xs_start = target_start + 1
                 xs_end = target_end + 1
                 step = 1
@@ -706,12 +747,12 @@ class StackedDiagrams:
                 xs_end = -target_end
                 step = -1
 
-            RTT_xs.extend(range(xs_start, xs_end, step))
+            RTT_xs.extend(RTT_offset + np.arange(xs_start, xs_end, step))
 
             rect_start, rect_end = sorted([xs_start, xs_end])
 
-            rect_start = rect_start - (0.5 * step)
-            rect_end = rect_end - (0.5 * step)
+            rect_start = RTT_offset + rect_start - (0.5 * step)
+            rect_end = RTT_offset + rect_end - (0.5 * step)
 
             color = knock_knock.pegRNAs.default_feature_colors['RTT']
 
@@ -814,7 +855,11 @@ class StackedDiagrams:
             elif category == 'mismatches' or (category == 'wild type' and subcategory == 'mismatches'):
                 SNV_xs = set()
                 self.draw_rect(source_name, window_left - 0.5, window_right + 0.5, bottom, top, self.block_alpha)
-                snvs = SNVs.from_string(details) 
+
+                if details == 'n/a':
+                    snvs = []
+                else:
+                    snvs = SNVs.from_string(details) 
 
                 # Undo anchor shift.
                 snvs = SNVs([SNV(s.position + ti.anchor, s.basecall, s.quality) for s in snvs])
@@ -837,7 +882,7 @@ class StackedDiagrams:
                     color = 'grey'
                     alpha = 0.3
                     left = position - offset - 0.5
-                    right = position + offset + 0.5
+                    right = position - offset + 0.5
                     self.draw_rect(source_name, left, right, bottom, top, alpha, color=color)
 
                 if self.draw_all_sequence:
@@ -914,7 +959,7 @@ class StackedDiagrams:
         
                 self.draw_donor(y, HDR_outcome, deletion_outcome, insertion_outcome, source_name, False)
 
-            elif category == 'intended edit':
+            elif category in ['intended edit', 'partial replacement']:
                 self.draw_programmed_edit(y, ProgrammedEditOutcome.from_string(details), source_name)
 
             elif category == 'duplication' and subcategory == 'simple':
@@ -1248,6 +1293,7 @@ class DiagramGrid:
                    line_alpha=1,
                    label='',
                    marker='.',
+                   fill=np.nan,
                    **plot_kwargs,
                   ):
         # To simplify logic of excluding panels, do nothing if ax_name is not an existing ax.
@@ -1274,7 +1320,10 @@ class DiagramGrid:
 
             warnings.resetwarnings()
 
-        xs = [value_source.get((c, s, d), np.nan) for (source_name, c, s, d) in self.outcomes]
+        if len(self.outcomes[0]) == 3:
+            xs = [value_source.get((c, s, d), fill) for c, s, d in self.outcomes]
+        else:
+            xs = [value_source.get((c, s, d), fill) for source_name, c, s, d in self.outcomes]
 
         ax.plot(xs, ys, marker=marker, linestyle='', alpha=marker_alpha, label=label, **plot_kwargs)
         ax.plot(xs, ys, marker=None, linestyle='-', alpha=line_alpha, **plot_kwargs)
@@ -1572,16 +1621,17 @@ class DiagramGrid:
             if ax is not None:
                 ax.set_xlim(*lims)
 
-    def plot_pegRNA_conversion_fractions_above(self, group, gap=4, height_multiple=10, **plot_kwargs):
+    def plot_pegRNA_conversion_fractions_above(self, group, gap=4, height_multiple=10, conditions=None, **plot_kwargs):
         plot_kwargs = copy.copy(plot_kwargs)
-        plot_kwargs.setdefault('line_alpha', 0.5)
-        plot_kwargs.setdefault('linewidth', 1)
-        plot_kwargs.setdefault('markersize', 5)
+        plot_kwargs.setdefault('line_alpha', 0.75)
+        plot_kwargs.setdefault('linewidth', 1.5)
+        plot_kwargs.setdefault('markersize', 7)
+        plot_kwargs.setdefault('color', 'black')
 
         def SNV_name_to_x(SNV_name):
             SNVs = group.target_info.pegRNA_SNVs[group.target_info.target]
             p = SNVs[SNV_name]['position']
-            x = p - group.target_info.cut_after - 0.5
+            x = p - group.target_info.cut_after
             return x
         
         pegRNA_conversion_fractions = group.pegRNA_conversion_fractions.copy()
@@ -1594,6 +1644,9 @@ class DiagramGrid:
             self.add_ax_above(gap=gap, height_multiple=height_multiple)
         
         for condition, fs in pegRNA_conversion_fractions.items():
+            if conditions is not None and condition not in conditions:
+                continue
+
             self.plot_on_ax_above(xs, fs * 100,
                                   label=condition,
                                   **plot_kwargs,
@@ -1628,10 +1681,10 @@ class DiagramGrid:
                 alpha = 1
                 clip_on = False
             else:
-                alpha = 0.25
+                alpha = 0.3
                 clip_on = True
 
-            ax.plot(x_bounds, [y for x in x_bounds], clip_on=clip_on, color='black', alpha=alpha)
+            ax.plot(x_bounds, [y for x in x_bounds], linewidth=0.5, clip_on=clip_on, color='black', alpha=alpha)
 
         ax.set_ylabel('Total %\nincorporation\nat position', size=12)
         ax.tick_params(labelsize=8)

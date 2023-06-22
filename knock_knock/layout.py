@@ -184,7 +184,7 @@ class Categorizer:
             
             left_feature_interval = self.feature_query_interval(left_al, left_feature_name)
 
-            switch_in_shared = switch_interval & left_feature_interval
+            switch_in_shared = interval.are_overlapping(switch_interval, left_feature_interval)
 
             left_reaches_ref_end = left_al.reference_end == len(ti.reference_sequences[left_al.reference_name])
             right_reaches_ref_end = right_al.reference_end == len(ti.reference_sequences[right_al.reference_name])
@@ -234,12 +234,10 @@ class Categorizer:
 
             left_contributes = (switch_in_shared and left_definite_contribution_past_overlap.total_length > 0) or \
                                (left_definite_contribution_past_overlap.total_length >= 10) or \
-                               both_reach_ref_end or \
                                contribution_test(left_al)
 
             right_contributes = right_definite_contribution_past_overlap or \
                                 overlap_reaches_read_end or \
-                                both_reach_ref_end or \
                                 contribution_test(right_al)
 
             if left_contributes and right_contributes:
