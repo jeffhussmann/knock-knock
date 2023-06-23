@@ -764,6 +764,41 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
         return fs_df
 
+    @memoized_property
+    def deletion_boundaries(self):
+        ti = self.target_info
+        deletion_fractions = self.outcome_fractions.xs('deletion', drop_level=False)
+        index = np.arange(len(ti.target_sequence))
+        columns = deletion_fractions.columns
+
+        fraction_removed = np.zeros((len(index), len(columns)))
+        starts = np.zeros_like(fraction_removed)
+        stops = np.zeros_like(fraction_removed)
+
+        for (c, s, d), row in deletion_fractions.iterrows():
+            # Undo anchor shift to make coordinates relative to full target sequence.
+            deletion = knock_knock.outcome.DeletionOutcome.from_string(d).undo_anchor_shift(ti.anchor).deletion
+            
+            per_possible_start = row.values / len(deletion.starts_ats)
+            
+            for start, stop in zip(deletion.starts_ats, deletion.ends_ats):
+                deletion_slice = slice(start, stop + 1)
+
+                fraction_removed[deletion_slice] += per_possible_start
+                starts[start] += per_possible_start
+                stops[stop] += per_possible_start
+
+        fraction_removed = pd.DataFrame(fraction_removed, index=index, columns=columns)
+        starts = pd.DataFrame(starts, index=index, columns=columns)
+        stops = pd.DataFrame(stops, index=index, columns=columns)
+
+        deletion_boundaries = {
+            'fraction_removed': fraction_removed,
+            'starts': starts,
+            'stops': stops,
+        }
+        return deletion_boundaries
+
     def explore(self, **kwargs):
         import knock_knock.explore
         explorer = knock_knock.explore.ArrayedGroupExplorer(self, **kwargs)

@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import pysam
 import scipy.sparse
+import seaborn as sns
 
 import hits.visualize
 from hits import utilities
@@ -48,6 +49,7 @@ class ExperimentGroup:
             'genomic_insertion_length_distributions': self.results_dir / 'genomic_insertion_length_distribution.txt',
              
             'partial_incorporation_figure': self.results_dir / 'partial_incorporation.pdf',
+            'deletion_boundaries_figure': self.results_dir / 'deletion_boundaries.pdf',
         }
 
     def process(self, generate_figures=False, num_processes=18, verbose=True, use_logger_thread=False):
@@ -243,77 +245,199 @@ class ExperimentGroup:
 
     def make_group_figures(self):
         self.make_partial_incorporation_figure()
+        self.make_deletion_boundaries_figure()
 
     def make_partial_incorporation_figure(self):
-        if len(self.target_info.pegRNA_names) == 2:
-            fs = self.outcome_fractions
+        fs = self.outcome_fractions
+        ti = self.target_info
 
-            frequency_cutoff = 1e-3
-            outcomes = [(c, s, d) for (c, s, d), f_row in fs.iterrows()
-                        if ((c, s) in {('wild type', 'mismatches')}
-                             or c in {'intended edit', 'partial replacement'}
-                           )
-                        and max(f_row) > frequency_cutoff
-                       ]
-            outcomes = fs.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
+        if len(ti.pegRNA_names) == 0:
+            return
 
-            ps_color_overrides = {}
-            PAM_color_overrides = {}
+        frequency_cutoff = 1e-3
+        outcomes = [(c, s, d) for (c, s, d), f_row in fs.iterrows()
+                    if ((c, s) in {('wild type', 'mismatches')}
+                            or c in {'intended edit', 'partial replacement'}
+                        )
+                    and max(f_row) > frequency_cutoff
+                   ]
+        outcomes = fs.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
 
-            ti = self.target_info
-            for pegRNA_name in ti.pegRNA_names:
-                ps_name = knock_knock.pegRNAs.protospacer_name(pegRNA_name)
-                color = ti.pegRNA_name_to_color[pegRNA_name]
-                light_color = hits.visualize.apply_alpha(color, 0.5)
-                ps_color_overrides[ps_name] = light_color
-                PAM_color_overrides[ps_name] = color
+        color_overrides = {primer_name: 'grey' for primer_name in ti.primers}
 
-            grid = knock_knock.visualize.stacked.DiagramGrid(outcomes, 
-                                                             self.target_info,
-                                                             draw_wild_type_on_top=True,
-                                                             window=(-20, self.target_info.nick_offset + 20 - 1),
-                                                             block_alpha=0.1,
-                                                             override_protospacer_color=ps_color_overrides,
-                                                             override_PAM_color=PAM_color_overrides,
-                                                             draw_all_sequence=0.1,
-                                                            )
+        for pegRNA_name in ti.pegRNA_names:
+            ps_name = knock_knock.pegRNAs.protospacer_name(pegRNA_name)
+            PAM_name = f'{pegRNA_name}_PAM'
+            color = ti.pegRNA_name_to_color[pegRNA_name]
+            light_color = hits.visualize.apply_alpha(color, 0.5)
+            color_overrides[ps_name] = light_color
+            color_overrides[PAM_name] = color
 
-            grid.add_ax('fractions', width_multiple=12, title='% of reads')
-            grid.add_ax('log10_fractions', width_multiple=12, gap_multiple=2, title='% of reads (log scale)')
-
-            for ax, transform in [('fractions', 'percentage'),
-                                  ('log10_fractions', 'log10'),
-                                 ]:
-
-                for condition in fs:
-                    grid.plot_on_ax(ax, fs[condition],
-                                    transform=transform,
-                                    color='black',
-                                    line_alpha=0.75,
-                                    linewidth=1.5,
-                                    markersize=7,
-                                    fill=0,
-                                   )
-
-            grid.style_frequency_ax('fractions')
-
-            grid.set_xlim('fractions', (0,))
-            x_max = (grid.axs_by_name['fractions'].get_xlim()[1] / 100) * 1.01
-
-            grid.set_xlim('log10_fractions', (np.log10(4.9e-4), np.log10(x_max)))
-            grid.style_log10_frequency_ax('log10_fractions')
-
-            for pegRNA_i, pegRNA_name in enumerate(self.target_info.pegRNA_names):
-                grid.diagrams.draw_pegRNA(self.target_info.name, pegRNA_name, y_offset=pegRNA_i + 1, label_features=False)
-
-            grid.plot_pegRNA_conversion_fractions_above(self)
-            grid.style_pegRNA_conversion_plot()
-
-            grid.fig.savefig(self.fns['partial_incorporation_figure'], bbox_inches='tight')
-            return grid.fig
-
+        if len(ti.pegRNA_names) == 2:
+            window = (-20, ti.nick_offset + 20 - 1)
+        elif len(ti.pegRNA_names) == 1:
+            window = (-20, len(ti.sgRNA_components[ti.pegRNA_names[0]]['RTT']) + 4)
         else:
-            pass
+            raise ValueError
+
+        grid = knock_knock.visualize.stacked.DiagramGrid(outcomes, 
+                                                         ti,
+                                                         draw_wild_type_on_top=True,
+                                                         window=window,
+                                                         block_alpha=0.1,
+                                                         color_overrides=color_overrides,
+                                                         draw_all_sequence=0.1,
+                                                        )
+
+        grid.add_ax('fractions', width_multiple=12, title='% of reads')
+        grid.add_ax('log10_fractions', width_multiple=12, gap_multiple=2, title='% of reads (log scale)')
+
+        for ax, transform in [('fractions', 'percentage'),
+                                ('log10_fractions', 'log10'),
+                                ]:
+
+            for condition in fs:
+                grid.plot_on_ax(ax, fs[condition],
+                                transform=transform,
+                                color='black',
+                                line_alpha=0.75,
+                                linewidth=1.5,
+                                markersize=7,
+                                fill=0,
+                                )
+
+        grid.style_frequency_ax('fractions')
+
+        grid.set_xlim('fractions', (0,))
+        x_max = (grid.axs_by_name['fractions'].get_xlim()[1] / 100) * 1.01
+
+        grid.set_xlim('log10_fractions', (np.log10(0.49 * frequency_cutoff), np.log10(x_max)))
+        grid.style_log10_frequency_ax('log10_fractions')
+
+        for pegRNA_i, pegRNA_name in enumerate(ti.pegRNA_names):
+            grid.diagrams.draw_pegRNA(ti.name, pegRNA_name, y_offset=pegRNA_i + 1, label_features=False)
+
+        grid.plot_pegRNA_conversion_fractions_above(self)
+        grid.style_pegRNA_conversion_plot('pegRNA_conversion_fractions')
+
+        grid.fig.savefig(self.fns['partial_incorporation_figure'], bbox_inches='tight')
+
+        return grid.fig
+
+    def make_deletion_boundaries_figure(self, conditions=None):
+        ti = self.target_info
+
+        if conditions is None:
+            conditions = self.full_conditions
+
+        colors = sns.color_palette('husl', len(conditions))
+        condition_to_color = dict(zip(conditions, colors))
+
+        fs = self.outcome_fractions[conditions]
+
+        collapsed = fs.xs('deletion', drop_level=False).groupby('details').sum()
+
+        collapsed.index = pd.MultiIndex.from_tuples([('deletion', 'collapsed', details) for details in collapsed.index])
+
+        frequency_cutoff = 2e-4
+        outcomes = [(c, s, d) for (c, s, d), f_row in collapsed.iterrows()
+                    if max(f_row) > frequency_cutoff
+                ]
+        outcomes = collapsed.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
+
+        color_overrides = {primer_name: 'grey' for primer_name in ti.primers}
+
+        for pegRNA_name in ti.pegRNA_names:
+            ps_name = knock_knock.pegRNAs.protospacer_name(pegRNA_name)
+            PAM_name = f'{pegRNA_name}_PAM'
+            color = ti.pegRNA_name_to_color[pegRNA_name]
+            light_color = hits.visualize.apply_alpha(color, 0.5)
+            color_overrides[ps_name] = light_color
+            color_overrides[PAM_name] = color
+
+        flip = (ti.features[ti.target, ti.primary_protospacer].strand == '-')
+
+        if flip:
+            window = (ti.cut_after - ti.amplicon_interval.end, ti.cut_after - ti.amplicon_interval.start)
+        else:
+            window = (ti.amplicon_interval.start - ti.cut_after, ti.amplicon_interval.end - ti.cut_after)
+            
+        window = (window[0] - 5, window[1] + 5)
+            
+        grid = knock_knock.visualize.stacked.DiagramGrid(outcomes, 
+                                                         ti,
+                                                         draw_wild_type_on_top=True,
+                                                         window=window,
+                                                         block_alpha=0.1,
+                                                         color_overrides=color_overrides,
+                                                         features_to_draw=sorted(ti.primers), 
+                                                        )
+
+        grid.add_ax('fractions', width_multiple=12, title='% of reads')
+        #grid.add_ax('log10_fractions', width_multiple=12, gap_multiple=2, title='% of reads (log scale)')
+
+        for ax, transform in [('fractions', 'percentage'),
+                              ('log10_fractions', 'log10'),
+                             ]:
+
+            for condition in collapsed:
+                grid.plot_on_ax(ax, collapsed[condition],
+                                transform=transform,
+                                color=condition_to_color[condition],
+                                line_alpha=0.75,
+                                linewidth=1,
+                                markersize=3,
+                                label=' '.join(condition),
+                               )
+
+        grid.style_frequency_ax('fractions')
+        grid.axs_by_name['fractions'].legend(loc='lower right')
+
+        grid.set_xlim('fractions', (0,))
+        x_max = (grid.axs_by_name['fractions'].get_xlim()[1] / 100) * 1.01
+
+        grid.set_xlim('log10_fractions', (np.log10(0.49 * frequency_cutoff), np.log10(x_max)))
+        grid.style_log10_frequency_ax('log10_fractions')
+
+        if flip:
+            panel_order = [
+                'fraction_removed',
+                'stops',
+                'starts',
+            ]
+        else:
+            panel_order = [
+                'fraction_removed',
+                'starts',
+                'stops',
+            ]
+
+        for quantity in panel_order:
+            grid.add_ax_above(quantity, gap=6 if quantity == panel_order[0] else 2,)
+
+            for condition in conditions:
+                series = self.deletion_boundaries[quantity][condition].copy()
+                series.index = series.index.values - grid.diagrams.offsets[ti.name]
+                grid.plot_on_ax_above(quantity,
+                                      series.index,
+                                      series * 100,
+                                      markersize=3 if quantity != 'fraction_removed' else 0,
+                                      linewidth=1 if quantity != 'fraction_removed' else 1.5,
+                                      color=condition_to_color[condition],
+                                     )
+            for cut_after in ti.cut_afters.values():
+                grid.axs_by_name[quantity].axvline(cut_after + 0.5 - grid.diagrams.offsets[ti.name], linestyle='--', color=grid.diagrams.cut_color, linewidth=grid.diagrams.line_widths)
+
+        for pegRNA_i, pegRNA_name in enumerate(ti.pegRNA_names):
+            grid.diagrams.draw_pegRNA(ti.name, pegRNA_name, y_offset=pegRNA_i + 1, label_features=False)
+
+        grid.axs_by_name['fraction_removed'].set_ylabel('% of reads with\nposition deleted', size=14)
+        grid.axs_by_name[panel_order[1]].set_ylabel('% of reads with\ndeletion starting at', size=14)
+        grid.axs_by_name[panel_order[2]].set_ylabel('% of reads with\ndeletion starting at', size=14)
+
+        grid.fig.savefig(self.fns['deletion_boundaries_figure'], bbox_inches='tight')
+
+        return grid.fig
 
     def make_outcome_counts(self):
         all_counts = {}

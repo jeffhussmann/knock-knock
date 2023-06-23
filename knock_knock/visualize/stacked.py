@@ -40,8 +40,7 @@ class StackedDiagrams:
     inches_per_outcome: float = 0.25
     line_widths: float = 1.5
     num_outcomes: Optional[int] = None
-    override_PAM_color: Optional[Any] = None
-    override_protospacer_color: Optional[Any] = None
+    color_overrides: dict = field(default_factory=dict)
     preserve_x_lims: bool = False
     replacement_text_for_complex: dict = field(default_factory=dict)
     shift_x: float = 0
@@ -368,21 +367,10 @@ class StackedDiagrams:
                     guide_start = guide.start - 0.5 - offset
                     guide_end = guide.end + 0.5 - offset
 
-                    if self.override_protospacer_color is not None:
-                        try:
-                            protospacer_color = self.override_protospacer_color[guide_name]
-                        except:
-                            protospacer_color = self.override_protospacer_color
-                    else:
-                        protospacer_color = ti.protospacer_color
+                    protospacer_color = self.color_overrides.get(guide_name, ti.protospacer_color)
 
-                    if self.override_PAM_color is not None:
-                        try:
-                            PAM_color = self.override_PAM_color[guide_name]
-                        except:
-                            PAM_color = self.override_PAM_color
-                    else:
-                        PAM_color = ti.PAM_color
+                    PAM_name = f'{guide_name[:-len("_protospacer")]}_PAM'
+                    PAM_color = self.color_overrides.get(PAM_name, ti.PAM_color)
 
                     self.draw_rect(source_name, guide_start, guide_end, bottom, top, None, color=protospacer_color)
                     self.draw_rect(source_name, PAM_start, PAM_end, bottom, top, None, color=PAM_color)
@@ -402,7 +390,7 @@ class StackedDiagrams:
                 start = feature.start - 0.5 - offset
                 end = feature.end + 0.5 - offset
 
-                color = feature.attribute.get('color', 'grey')
+                color = self.color_overrides.get(feature_name, feature.attribute.get('color', 'grey'))
 
                 self.draw_rect(source_name, start, end, bottom, top, 0.8, color)
                 self.ax.annotate(feature_name,
@@ -1040,106 +1028,6 @@ class StackedDiagrams:
             
         self.ax.set_yticks([])
         
-def add_frequencies(fig, ax, count_source, outcome_order, fixed_guide='none', text_only=False):
-    if isinstance(count_source, (dict, pd.Series)):
-        counts = np.array([count_source[outcome] for outcome in outcome_order])
-        if isinstance(count_source, dict):
-            total = sum(count_source.values())
-        else:
-            total = sum(count_source.values)
-        freqs = counts / total
-    else:
-        pool = count_source
-        freqs = pool.non_targeting_fractions('perfect', fixed_guide).loc[outcome_order]
-        counts = pool.non_targeting_counts('perfect', fixed_guide).loc[outcome_order]
-
-    ys = np.arange(len(outcome_order) - 1, -1, -1)
-    
-    for y, freq, count in zip(ys, freqs, counts):
-        ax.annotate('{:> 7.2%} {:>8s}'.format(freq, '({:,})'.format(count)),
-                    xy=(1, y),
-                    xycoords=('axes fraction', 'data'),
-                    xytext=(6, 0),
-                    textcoords=('offset points'),
-                    family='monospace',
-                    ha='left',
-                    va='center',
-                   )
-
-    if not text_only:
-        ax_p = ax.get_position()
-        
-        width_inches, height_inches = fig.get_size_inches()
-
-        width = 2 / width_inches
-        gap = 0.5 / width_inches
-
-        freq_ax = fig.add_axes((ax_p.x1 + 4 * gap, ax_p.y0, width, ax_p.height), sharey=ax)
-        freq_ax_p = freq_ax.get_position()
-        log_ax = fig.add_axes((freq_ax_p.x1 + gap, ax_p.y0, width, ax_p.height), sharey=ax)
-        log_ax_p = log_ax.get_position()
-        cumulative_ax = fig.add_axes((log_ax_p.x1 + gap, ax_p.y0, width, ax_p.height), sharey=ax)
-        
-        freq_ax.plot(freqs, ys, 'o-', markersize=2, color='black')
-        log_ax.plot(np.log10(freqs), ys, 'o-', markersize=2, color='black')
-
-        cumulative = freqs.cumsum()
-        cumulative_ax.plot(cumulative, ys, 'o-', markersize=2, color='black')
-        
-        freq_ax.set_xlim(0, max(freqs) * 1.05)
-        cumulative_ax.set_xlim(0, cumulative[-1] * 1.05)
-        
-        for p_ax in [freq_ax, log_ax, cumulative_ax]:
-            p_ax.set_yticks([])
-            p_ax.xaxis.tick_top()
-            p_ax.spines['left'].set_alpha(0.3)
-            p_ax.spines['right'].set_alpha(0.3)
-            p_ax.tick_params(labelsize=6)
-            p_ax.grid(axis='x', alpha=0.3)
-            
-            p_ax.spines['bottom'].set_visible(False)
-            
-            p_ax.xaxis.set_label_position('top')
-        
-        freq_ax.set_xlabel('frequency', size=8)
-        log_ax.set_xlabel('frequency (log10)', size=8)
-        cumulative_ax.set_xlabel('cumulative frequency', size=8)
-        
-        ax.set_ylim(-0.5, len(outcome_order) - 0.5)
-
-def add_values(fig, ax, vals, width=0.2):
-    ax_p = ax.get_position()
-    
-    offset = 0.04
-
-    ys = np.arange(len(vals) - 1, -1, -1)
-    
-    val_ax = fig.add_axes((ax_p.x1 + offset, ax_p.y0, width, ax_p.height), sharey=ax)
-    
-    val_ax.plot(vals, ys, 'o-', markersize=2, color='black')
-    
-    val_ax.set_yticks([])
-    val_ax.xaxis.tick_top()
-    val_ax.spines['left'].set_alpha(0.3)
-    val_ax.spines['right'].set_alpha(0.3)
-    val_ax.tick_params(labelsize=6)
-    val_ax.grid(axis='x', alpha=0.3)
-    
-    val_ax.spines['bottom'].set_visible(False)
-    
-    val_ax.xaxis.set_label_position('top')
-    
-    ax.set_ylim(-0.5, len(vals) - 0.5)
-
-def plot_with_frequencies(pool, outcomes, fixed_guide='none', text_only=False, count_source=None, **kwargs):
-    if count_source is None:
-        count_source = pool
-
-    fig = plot(outcomes, pool.target_info, fixed_guide=fixed_guide, **kwargs)
-    num_outcomes = kwargs.get('num_outcomes')
-    add_frequencies(fig, fig.axes[0], count_source, outcomes[:num_outcomes], text_only=text_only)
-    return fig
-
 class DiagramGrid:
     def __init__(self,
                  outcomes,
@@ -1173,6 +1061,7 @@ class DiagramGrid:
         self.title = title
 
         self.ordered_axs = []
+        self.ordered_axs_above = []
 
         self.axs_by_name = {
             'diagram': diagram_ax,
@@ -1203,6 +1092,7 @@ class DiagramGrid:
 
         self.axs_by_name['diagram'] = self.diagrams.ax
         self.ordered_axs.append(self.diagrams.ax)
+        self.ordered_axs_above.append(self.diagrams.ax)
 
         ax_p = self.diagrams.ax.get_position()
         self.widths['diagram'] = ax_p.width
@@ -1266,8 +1156,8 @@ class DiagramGrid:
 
         return ax
 
-    def add_ax_above(self, height_multiple=10, gap=2):
-        ax_p = self.axs_by_name['diagram'].get_position()
+    def add_ax_above(self, name, height_multiple=10, gap=2):
+        ax_p = self.ordered_axs_above[-1].get_position()
         x0 = ax_p.x0 
 
         width = ax_p.width
@@ -1280,7 +1170,9 @@ class DiagramGrid:
         ax.spines['right'].set_visible(False)
         ax.spines['top'].set_visible(False)
 
-        self.axs_by_name['above'] = ax
+        self.axs_by_name[name] = ax
+
+        self.ordered_axs_above.append(ax)
 
     def plot_on_ax(self,
                    ax_name,
@@ -1341,14 +1233,22 @@ class DiagramGrid:
                         clip_on=plot_kwargs.get('clip_on', True),
                        )
 
-    def plot_on_ax_above(self, xs, value_source,
+    def plot_on_ax_above(self,
+                         ax_name,
+                         xs,
+                         value_source,
                          marker_alpha=1,
-                         line_alpha=1,
+                         line_alpha=0.75,
                          label='',
                          marker='.',
                          **plot_kwargs,
                         ):
-        ax = self.axs_by_name['above']
+        plot_kwargs = copy.copy(plot_kwargs)
+        plot_kwargs.setdefault('linewidth', 1.5)
+        plot_kwargs.setdefault('markersize', 7)
+        plot_kwargs.setdefault('color', 'black')
+
+        ax = self.axs_by_name[ax_name]
 
         ys = [value_source[x] for x in xs]
 
@@ -1640,27 +1540,29 @@ class DiagramGrid:
         pegRNA_conversion_fractions.index = xs
         pegRNA_conversion_fractions = pegRNA_conversion_fractions.sort_index()
         
-        if 'above' not in self.axs_by_name:
-            self.add_ax_above(gap=gap, height_multiple=height_multiple)
+        if 'pegRNA_conversion_fractions' not in self.axs_by_name:
+            self.add_ax_above('pegRNA_conversion_fractions', gap=gap, height_multiple=height_multiple)
         
         for condition, fs in pegRNA_conversion_fractions.items():
             if conditions is not None and condition not in conditions:
                 continue
 
-            self.plot_on_ax_above(xs, fs * 100,
+            self.plot_on_ax_above('pegRNA_conversion_fractions',
+                                  xs,
+                                  fs * 100,
                                   label=condition,
                                   **plot_kwargs,
                                  )
 
-    def style_pegRNA_conversion_plot(self, y_max=None):
-        if 'diagram' not in self.axs_by_name or 'above' not in self.axs_by_name:
+    def style_pegRNA_conversion_plot(self, ax_name, y_max=None):
+        if 'diagram' not in self.axs_by_name or ax_name not in self.axs_by_name:
             return
 
         diagram_x_lims = self.axs_by_name['diagram'].get_xlim()
 
         flipped = diagram_x_lims[0] > diagram_x_lims[1]
 
-        ax = self.axs_by_name['above']
+        ax = self.axs_by_name[ax_name]
 
         if y_max is None:
             ax.autoscale(axis='y')
