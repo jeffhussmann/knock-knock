@@ -28,7 +28,11 @@ class Layout(layout.Categorizer):
              'insertion',
              'insertion + substitution',
              'combination',
-             'partial incorporation',
+            ),
+        ),
+        ('partial edit',
+            ('partial incorporation',
+             'other',
             ),
         ),
         ('unintended rejoining of RT\'ed sequence',
@@ -1047,6 +1051,8 @@ class Layout(layout.Categorizer):
                     relevant_als.append(pegRNA_al)
 
         for al in relevant_als:
+            is_pegRNA_al = al.reference_name in self.target_info.pegRNA_names
+
             ref_seq = self.target_info.reference_sequences[al.reference_name]
 
             for true_read_i, read_b, ref_i, ref_b, qual in sam.aligned_tuples(al, ref_seq):
@@ -1062,7 +1068,12 @@ class Layout(layout.Categorizer):
                     if SNVs[al.reference_name][SNV_name]['strand'] == '-':
                         read_b = utilities.reverse_complement(read_b)
 
-                    read_bases_at_SNV_locii[SNV_name].append((read_b, qual))
+                    # For combination edits, a target alignment may spuriously
+                    # extend across an SNV, creating a disagreement with a pegRNA
+                    # alignment. If this happens, gave precedence to the pegRNA
+                    # alignment.
+
+                    read_bases_at_SNV_locii[SNV_name].append((read_b, qual, is_pegRNA_al))
                 else:
                     SNV_name = None
 
@@ -1124,17 +1135,20 @@ class Layout(layout.Categorizer):
             genotype = {}
 
             for SNV_name in sorted(SNVs[target]):
-                bs = defaultdict(list)
+                bs_from_pegRNA = {b for b, q, from_pegRNA in pegRNA_SNV_locii[SNV_name] if from_pegRNA}
+                all_bs = {b for b, q, from_pegRNA in pegRNA_SNV_locii[SNV_name]}
 
-                for b, q in pegRNA_SNV_locii[SNV_name]:
-                    bs[b].append(q)
+                if len(bs_from_pegRNA) > 0:
+                    bs = bs_from_pegRNA
+                else:
+                    bs = all_bs
 
                 if len(bs) == 0:
                     genotype[SNV_name] = '-'
                 elif len(bs) != 1:
                     genotype[SNV_name] = 'N'
                 else:
-                    b, qs = list(bs.items())[0]
+                    b = list(bs)[0]
 
                     if b == SNVs[target][SNV_name]['base']:
                         genotype[SNV_name] = '_'
@@ -1494,7 +1508,7 @@ class Layout(layout.Categorizer):
 
         return results
 
-    def register_intended_edit(self):
+    def register_intended_edit(self, single_target_alignment_without_indels=False):
         self.category = 'intended edit'
 
         # For recodes, target als can sometimes be redundant.
@@ -1505,18 +1519,20 @@ class Layout(layout.Categorizer):
         self.relevant_alignments = relevant_alignments
 
         if self.intended_edit_type == 'combination':
-            if self.pegRNA_SNV_string == self.full_incorporation_pegRNA_SNV_string:
+            if self.pegRNA_SNV_string == self.full_incorporation_pegRNA_SNV_string and not single_target_alignment_without_indels:
                 self.subcategory = 'combination'
             else:
-                self.subcategory = 'partial incorporation'
+                self.category = 'partial edit'
+                self.subcategory = 'other'
 
             indels = []
 
-            if self.target_info.pegRNA_programmed_deletion is not None:
-                indels.append(self.target_info.pegRNA_programmed_deletion)
+            if not single_target_alignment_without_indels:
+                if self.target_info.pegRNA_programmed_deletion is not None:
+                    indels.append(self.target_info.pegRNA_programmed_deletion)
 
-            if self.target_info.pegRNA_programmed_insertion is not None:
-                indels.append(self.target_info.pegRNA_programmed_insertion)
+                if self.target_info.pegRNA_programmed_insertion is not None:
+                    indels.append(self.target_info.pegRNA_programmed_insertion)
 
             self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, indels)
 
@@ -1545,6 +1561,7 @@ class Layout(layout.Categorizer):
             if self.pegRNA_SNV_string == self.full_incorporation_pegRNA_SNV_string:
                 self.subcategory = 'substitution'
             else:
+                self.category = 'partial edit'
                 self.subcategory = 'partial incorporation'
 
     def register_simple_indels(self):
@@ -2034,14 +2051,7 @@ class Layout(layout.Categorizer):
             if len(interesting_indels) == 0:
                 if self.starts_at_expected_location:
                     if self.specific_to_pegRNA(self.single_read_covering_target_alignment):
-                        self.category = 'intended edit'
-                        if self.pegRNA_SNV_string == self.full_incorporation_pegRNA_SNV_string:
-                            self.subcategory = 'substitution'
-                        else:
-                            self.subcategory = 'partial incorporation'
-                        self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, [])
-                        self.relevant_alignments = [target_alignment] + interval.make_parsimonious(self.non_protospacer_pegRNA_alignments)
-
+                        self.register_intended_edit(single_target_alignment_without_indels=True)
                     else:
                         self.category = 'wild type'
 
