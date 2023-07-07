@@ -121,14 +121,14 @@ def load_RTT_alignments(source_dir=None):
 
 def test_alignment_of_RTT_to_target(flap_sequence, downstream_genomic_sequence, expected_coordinates):
     aligner = knock_knock.pegRNAs.get_RTT_aligner()
-    best_alignment = aligner.align(flap_sequence, downstream_genomic_sequence)[0]
-    coordinates = list(map(list, best_alignment.coordinates))
+    best_alignments = aligner.align(flap_sequence, downstream_genomic_sequence)
+    all_equivalent_coordinates = [list(map(list, al.coordinates)) for al in best_alignments]
 
     expected_alignment = Bio.Align.Alignment([flap_sequence, downstream_genomic_sequence], np.array(expected_coordinates))
     diagnostic_message = (f'''Reported alignment:
-{knock_knock.pegRNAs.trim_excess_target_from_alignment(best_alignment)}
+{knock_knock.pegRNAs.trim_excess_target_from_alignment(best_alignments[0])}
 Expected alignment:
 {knock_knock.pegRNAs.trim_excess_target_from_alignment(expected_alignment)}
     ''')
 
-    assert coordinates == expected_coordinates, diagnostic_message
+    assert expected_coordinates in all_equivalent_coordinates, diagnostic_message
