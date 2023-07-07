@@ -765,7 +765,7 @@ class ReadDiagram():
                         centered_at, length = info
 
                         if kind == 'deletion':
-                            max_length = 100
+                            max_length = 20
                             label = str(length)
                         else:
                             max_length = 10
