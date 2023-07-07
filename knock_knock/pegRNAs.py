@@ -104,8 +104,16 @@ def identify_protospacer_in_target(target_sequence, protospacer, effector):
         valid_feature = valid_features[0]
         return valid_feature
 
-def get_RTT_aligner():
-    aligner = Bio.Align.PairwiseAligner()
+def get_RTT_aligner(match_score=2,
+                    mismatch_score=-3,
+                    open_gap_score=-12,
+                    extend_gap_score=-0.1,
+                   ):
+    aligner = Bio.Align.PairwiseAligner(match_score=match_score,
+                                        mismatch_score=mismatch_score,
+                                        open_gap_score=open_gap_score,
+                                        extend_gap_score=extend_gap_score,
+                                       )
 
     # Idea: 'global' mode with no penalty for target right gaps
     # requires the entire flap to be aligned without penalizing
@@ -113,11 +121,6 @@ def get_RTT_aligner():
     # query.  
 
     aligner.mode = 'global'
-    aligner.match_score = 2
-    aligner.mismatch_score = -3
-    aligner.open_gap_score = -6
-    aligner.extend_gap_score = -0.1
-
     aligner.target_right_open_gap_score = 0
     aligner.target_right_extend_gap_score = 0
 
