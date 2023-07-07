@@ -121,6 +121,13 @@ class StackedDiagrams:
             else:
                 this_window_left, this_window_right = self.window_left, self.window_right
 
+            # Clip window to be within the sequence if necessary.
+            if offset + this_window_left < 0:
+                this_window_left = -offset
+
+            if offset + this_window_right + 1 > len(ti.target_sequence):
+                this_window_right = len(ti.target_sequence) - offset - 1
+
             self.windows[source_name] = (this_window_left, this_window_right)
 
             seq = ti.target_sequence[offset + this_window_left:offset + this_window_right + 1]
@@ -193,18 +200,18 @@ class StackedDiagrams:
 
         if xs_to_skip is None:
             xs_to_skip = set()
-
+            
         for x, b in zip(range(window_left, window_right + 1), seq):
             if x not in xs_to_skip:
                 self.ax.annotate(transform_seq(b),
-                            xy=(x, y),
-                            xycoords='data', 
-                            ha='center',
-                            va='center',
-                            size=self.text_size,
-                            alpha=alpha,
-                            annotation_clip=False,
-                           )
+                                 xy=(x, y),
+                                 xycoords='data', 
+                                 ha='center',
+                                 va='center',
+                                 size=self.text_size,
+                                 alpha=alpha,
+                                 annotation_clip=False,
+                                )
 
     def draw_deletion(self, y, deletion, source_name, color='black', draw_MH=True, background_color='black'):
         xs_to_skip = set()
