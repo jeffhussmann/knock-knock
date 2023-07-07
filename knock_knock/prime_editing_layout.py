@@ -1086,7 +1086,7 @@ class Layout(layout.Categorizer):
                         matches_pegRNA = (pegRNA_base == read_b)
 
                     if not matches_pegRNA:
-                        SNV = knock_knock.target_info.SNV(ref_i, read_b, qual)
+                        SNV = knock_knock.target_info.SNV(ref_i, read_b)
                         non_pegRNA_SNVs.append(SNV)
 
         non_pegRNA_SNVs = knock_knock.target_info.SNVs(non_pegRNA_SNVs)

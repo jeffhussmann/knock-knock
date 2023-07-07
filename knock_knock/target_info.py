@@ -2163,31 +2163,20 @@ class DegenerateInsertion():
         return DegenerateInsertion.from_pairs(all_pairs)
 
 class SNV():
-    def __init__(self, position, basecall, quality):
+    def __init__(self, position, basecall):
         self.position = position
         self.basecall = basecall
-        self.quality = quality
 
     @classmethod
     def from_string(cls, details_string):
         basecall = details_string[-1]
 
-        if basecall.islower():
-            quality = 0
-        else:
-            quality = 40
-
         position = int(details_string[:-1])
 
-        return SNV(position, basecall, quality)
+        return SNV(position, basecall)
 
     def __str__(self):
-        if self.quality < 30:
-            bc = self.basecall.lower()
-        else:
-            bc = self.basecall
-
-        return f'{self.position}{bc}'
+        return f'{self.position}{self.basecall}'
 
 class SNVs():
     def __init__(self, snvs):

@@ -233,7 +233,7 @@ class MismatchOutcome(Outcome):
         return str(self.snvs)
 
     def perform_anchor_shift(self, anchor):
-        shifted_snvs = SNVs([SNV(s.position - anchor, s.basecall, s.quality) for s in self.snvs])
+        shifted_snvs = SNVs([SNV(s.position - anchor, s.basecall) for s in self.snvs])
         return type(self)(shifted_snvs)
 
 class TruncationOutcome(Outcome):
