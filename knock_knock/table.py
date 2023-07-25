@@ -355,17 +355,11 @@ def make_table(base_dir,
 
     styled = df.style
 
-    styles = [
-        dict(selector="th", props=[("border", "1px solid black")]),
-        dict(selector="tr:hover", props=[("background-color", "#cccccc")]),
-    ]
-    
     for exp_group, name_tuple_string in df.index:
         # rsplit here is future-proofing against handling ArrayedGroup/screens better.
         sl = pd.IndexSlice[[(exp_group, name_tuple_string)], :]
-        styled = styled.format(bind_link_maker(name_tuple_string), subset=sl)
+        styled.format(bind_link_maker(name_tuple_string), subset=sl)
     
-    styled = styled.set_properties(**{'border': '1px solid black'})
     for exp_group, name_tuple_string in df.index:
         name_tuple = tuple(name_tuple_string.split('/'))
         exp = exps[name_tuple]
@@ -375,15 +369,144 @@ def make_table(base_dir,
 
         subset_slice = pd.IndexSlice[[(exp_group, name_tuple_string)], :]
 
-        styled = styled.bar(subset=subset_slice,
-                            axis=1,
-                            color=exp.color,
-                            vmin=0,
-                            vmax=df.loc[exp_group, name_tuple_string].max() * vmax_multiple,
-                           )
+        styled.bar(subset=subset_slice,
+                   axis=1,
+                   color=exp.color,
+                   vmin=0,
+                   vmax=df.loc[exp_group, name_tuple_string].max() * vmax_multiple,
+                  )
 
-    styled.set_table_styles(styles)
+    styled.set_table_attributes('style="border-collapse: separate"')
+
+    pre_styles = [
+        {
+            # Cap the bottom of row labels on the last row.
+            'selector': 'tbody tr:nth-last-child(1) th.level1, tbody tr:nth-child(1) th.level0',
+            'props': [
+                ('border-bottom', '1px solid black'),
+            ],
+        },
+        {
+            # Cap the bottom of upper left corer.
+            'selector': 'thead tr:nth-last-child(1) th',
+            'props': [
+                ('border-bottom', '1px solid black'),
+            ],
+        },
+        {
+            # level 1 needs left and right since it is sticky.
+            'selector': 'tbody tr th.row_heading.level1',
+            'props': [
+                ('border-left', '1px solid black'),
+                ('border-right', '1px solid black'),
+            ],
+        },
+        {
+            # level 0 needs left.
+            'selector': 'tbody tr th.row_heading.level0',
+            'props': [
+                ('border-left', '1px solid black'),
+            ],
+        },
+        {
+            # Cap the top of all row labels.
+            'selector': 'tbody tr th',
+            'props': [
+                ('border-top', '1px solid black'),
+            ],
+        },
+        {
+            # Cap the far right side of the upper left corner. (nth-last-child(1) doesn't work...)
+            'selector': 'thead tr th.blank:nth-child(2)',
+            'props': [
+                ('border-right', '1px solid black'),
+            ],
+        },
+        {
+            # Top and right of all col heading cells.
+            'selector': 'thead tr th.col_heading',
+            'props': [
+                ('border-right', '1px solid black'),
+                ('border-top', '1px solid black'),
+            ],
+        },
+        {
+            # Top and right of all data cells.
+            'selector': 'td',
+            'props': [
+                ('border-right', '1px solid black'),
+                ('border-top', '1px solid black'),
+            ],
+        },
+        {
+            # Cap the bottom of last row of data cells.
+            'selector': 'tbody tr:nth-last-child(1) td',
+            'props': [
+                ('border-bottom', '1px solid black'),
+            ],
+        },
+         {
+            # Cap the bottom of the column headings.
+            'selector': 'thead tr:nth-last-child(1) th.col_heading',
+            'props': [
+                ('border-bottom', '1px solid black'),
+            ],
+        },
+            # Hover background for data rows
+        {
+            'selector': 'tr:hover',
+            'props': [
+                ('background-color', '#cccccc'),
+            ],
+        },
+        {
+            # No hover background for header rows
+            'selector': 'thead tr:hover',
+            'props': [
+                ('background-color', 'white'),
+            ],
+        },
+    ]
+
+    post_styles = [
+        {
+            # Overwrite max-width set by .set_sticky(axis=1).
+            'selector': 'tbody tr th.level0, tbody tr th.level1',
+            'props': [
+                ('max-width', 'none'),
+            ],
+        },
+        {
+            # Make upper left corner opaque.
+            'selector': 'thead tr th.blank, thead tr th.col_heading',
+            'props': [
+                ('background-color', 'white'),
+            ],
+        },
+        {
+            # Set height of the top level of column labels...
+            'selector': 'thead tr:nth-child(1) th',
+            'props': [
+                ('height', '50px'),
+            ],
+        },
+        {
+            # ... and adjust sticky top of 2nd level to match this height.
+            'selector': 'thead tr:nth-child(2) th',
+            'props': [
+                ('top', '50px'),
+            ],
+        },
+    ]
+
+    styled.set_table_styles(pre_styles)
         
+    styled.set_sticky(axis=1)
+    styled.set_sticky(axis=0, levels=1)
+
+
+    styled.set_table_styles(post_styles, overwrite=False)
+
     return styled
 
 def generate_html(base_dir, fn,
@@ -435,7 +558,7 @@ knock-knock is a tool for exploring, categorizing, and quantifying the sequence 
                                   )
 
     nb['cells'] = [
-        documentation_cell,
+        #documentation_cell,
         table_cell,
     ]
 
