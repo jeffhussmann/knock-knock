@@ -999,6 +999,7 @@ class Experiment:
         expected_lengths = {
             'WT': ti.amplicon_length,
         }
+
         if ti.clean_HDR_length is not None:
             expected_lengths['intended\nedit'] = ti.clean_HDR_length
 
@@ -1007,6 +1008,8 @@ class Experiment:
     def plot_outcome_stratified_lengths(self, **kwargs):
         return knock_knock.visualize.lengths.plot_outcome_stratified_lengths(self.outcome_stratified_lengths,
                                                                              self.categorizer,
+                                                                             length_ranges=self.length_ranges,
+                                                                             expected_lengths=self.expected_lengths,
                                                                              **kwargs,
                                                                             )
 
