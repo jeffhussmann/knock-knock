@@ -170,7 +170,7 @@ class Layout(layout.Categorizer):
 
     @memoized_property
     def intended_edit_type(self):
-        if len(self.target_info.pegRNA_names) == 0:
+        if len(self.target_info.pegRNA_names) != 1:
             edit_type = None
         else:
             edit_type = self.target_info.pegRNAs[0].edit_type
@@ -429,7 +429,7 @@ class Layout(layout.Categorizer):
         last_parsimonious_key = {}
 
         if possible_covers:
-            last_parsimonious_key['left'], last_parsimonious_key['right'] = min(possible_covers, key=lambda pair: (al_order.index(pair[0]), al_order.index(pair[1])))
+            last_parsimonious_key['left'], last_parsimonious_key['right'] = max(possible_covers, key=lambda pair: (al_order.index(pair[0]), al_order.index(pair[1])))
         else:
             for side in ['left', 'right']:
                 last_parsimonious_key[side] = max(chains[side]['alignments'], key=al_order.index, default='none')
@@ -600,22 +600,42 @@ class Layout(layout.Categorizer):
     def pegRNA_extension_als_list(self):
         extension_als = []
 
-        for side, extension_chain in self.extension_chains_by_side.items():
-            if 'pegRNA' in extension_chain['alignments']:
-                extension_als.append(extension_chain['alignments']['pegRNA'])
+        if len(self.target_info.pegRNA_names) == 1:
+            if 'pegRNA' in self.extension_chain['alignments']:
+                extension_als.append(self.extension_chain['alignments']['pegRNA'])
+
+        elif len(self.target_info.pegRNA_names) == 2:
+            for side, extension_chain in self.extension_chains_by_side.items():
+                if 'first pegRNA' in extension_chain['alignments']:
+                    extension_als.append(extension_chain['alignments']['first pegRNA'])
+                if 'second pegRNA' in extension_chain['alignments']:
+                    extension_als.append(extension_chain['alignments']['second pegRNA'])
+
+        extension_als = sam.make_nonredundant(extension_als)
 
         return extension_als
 
     @memoized_property
     def is_intended_deletion(self):
         is_intended_deletion = False
+
+        def is_intended(indel):
+            return indel.kind == 'D' and indel == self.target_info.pegRNA_programmed_deletion
+
         if self.single_read_covering_target_alignment:
             target_alignment = self.single_read_covering_target_alignment
+
             interesting_indels, uninteresting_indels = self.interesting_and_uninteresting_indels([target_alignment])
-            if len(interesting_indels) == 1:
-                indel = interesting_indels[0]
-                if indel.kind == 'D' and indel == self.target_info.pegRNA_programmed_deletion:
-                    is_intended_deletion = True
+
+            # "Uninteresting indels" are 1-nt deletions that don't overlap a window of 5 nts on either side of a cut site.
+            # Need to check these in case this is true of the intended deletion.
+
+            intended_deletions = [indel for indel in interesting_indels + uninteresting_indels if is_intended(indel)]
+            interesting_not_intended_deletions = [indel for indel in interesting_indels if not is_intended(indel)]
+
+            if len(intended_deletions) == 1 and len(interesting_not_intended_deletions) == 0:
+                is_intended_deletion = True
+
         return is_intended_deletion
 
     @memoized_property
@@ -636,7 +656,7 @@ class Layout(layout.Categorizer):
 
             chain_covers_whole_read = full_chain and uncovered.total_length == 0
 
-            return chain_covers_whole_read
+            return chain_covers_whole_read and self.matches_all_programmed_insertion_features
 
     @memoized_property
     def flipped_pegRNA_als(self):
@@ -1037,18 +1057,7 @@ class Layout(layout.Categorizer):
             if (interval.get_covered(al) & self.not_covered_by_primers).total_length >= 10
         ]
 
-        if len(self.target_info.pegRNA_names) == 1:
-            if 'pegRNA' in self.extension_chain['alignments']:
-                pegRNA_al = self.extension_chain['alignments']['pegRNA']
-
-                relevant_als.append(pegRNA_al)
-
-        elif len(self.target_info.pegRNA_names) == 2:
-            for side, extension_chain in self.extension_chains_by_side.items():
-                if 'first pegRNA' in extension_chain['alignments']:
-                    pegRNA_al = extension_chain['alignments']['first pegRNA']
-
-                    relevant_als.append(pegRNA_al)
+        relevant_als.extend(self.pegRNA_extension_als_list)
 
         for al in relevant_als:
             is_pegRNA_al = al.reference_name in self.target_info.pegRNA_names
@@ -1206,6 +1215,61 @@ class Layout(layout.Categorizer):
         full_incorporation = ''.join(full_incorporation)
 
         return full_incorporation
+
+    @memoized_property
+    def truncation_pegRNA_SNV_strings(self):
+        ''' values of self.pegRNA_SNV_string expected if a block of SNVs
+            from the beginning of the RTT up to some point are incorporated
+            but past that point are not - i.e. consistent with incomplete RT.
+        '''
+        ti = self.target_info
+        SNVs = ti.pegRNA_SNVs
+
+        pegRNA_protospacer_strand = ti.features[ti.target, ti.primary_protospacer].strand
+
+        full_incorporation = []
+
+        if SNVs is not None:
+            for SNV_name in sorted(SNVs[ti.target]):
+                pegRNA_base = SNVs[ti.target][SNV_name]['alternative_base']
+                full_incorporation.append(pegRNA_base)
+
+        full_incorporation = ''.join(full_incorporation)
+
+        return full_incorporation
+
+    @memoized_property
+    def pegRNA_insertion_feature_summaries(self):
+        summaries = {}
+        
+        for feature in self.target_info.pegRNA_programmed_insertion_features:
+            programmed_insertion_sequence = feature.sequence(self.target_info.reference_sequences)
+            observed_sequences = []
+            for al in self.pegRNA_extension_als_list:
+                cropped_al = sam.crop_al_to_feature(al, feature)
+                if cropped_al is not None:
+                    # programmed sequence is always on minus strand, and
+                    # query_alignment_sequence is always reported as if on plus
+                    observed_sequence = utilities.reverse_complement(cropped_al.query_alignment_sequence)
+
+                    observed_sequences.append(observed_sequence)
+
+            def close_enough(observed):
+                if len(observed) != len(programmed_insertion_sequence):
+                    return False
+                else:
+                    return sum(a == b for a, b in zip(observed, programmed_insertion_sequence)) >= 0.9 * len(observed)
+                    
+            matches = (len(observed_sequences) > 0) and all(map(close_enough, observed_sequences))
+            
+            summaries[feature.ID] = (programmed_insertion_sequence, observed_sequences, matches)
+            
+        return summaries
+
+    @memoized_property
+    def matches_all_programmed_insertion_features(self):
+        summaries = self.pegRNA_insertion_feature_summaries
+        return len(summaries) == 0 or all(matches for _, _, matches in summaries.values())
 
     @memoized_property
     def indels(self):
@@ -1582,13 +1646,11 @@ class Layout(layout.Categorizer):
                 if self.has_pegRNA_SNV:
                     if indel.kind == 'D':
                         subcategory = 'deletion'
-                        self.outcome = DeletionOutcome(indel)
 
                     elif indel.kind == 'I':
                         subcategory = 'insertion'
-                        self.outcome = InsertionOutcome(indel)
 
-                    self.register_edit_plus_indel(subcategory)
+                    self.register_edit_plus_indel(subcategory, [indel])
 
                 else:
                     if indel.kind == 'D':
@@ -1672,15 +1734,20 @@ class Layout(layout.Categorizer):
         self.relevant_alignments = details['full_alignments']
         self.special_alignment = details['cropped_candidate_alignment']
 
-    def register_edit_plus_indel(self, subcategory):
+    def register_edit_plus_indel(self, subcategory, indels):
         self.category = 'edit + indel'
         self.subcategory = subcategory
-        als = self.split_target_alignments + self.pegRNA_gap_covering_alignments
+        als = interval.make_parsimonious(self.split_target_alignments) + self.pegRNA_extension_als_list
         als = sam.merge_any_adjacent_pairs(als, self.target_info.reference_sequences, max_insertion_length=2)
-        als = [al for al in als if not self.is_pegRNA_protospacer_alignment(al)]
         self.relevant_alignments = als
 
-        self.details = 'n/a'
+        if self.intended_edit_type == 'insertion':
+            indels = indels + [self.target_info.pegRNA_programmed_insertion]
+
+        elif self.intended_edit_type == 'deletion':
+            indels = indels + [self.target_info.pegRNA_programmed_deletion]
+
+        self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, indels)
 
     def is_valid_unintended_rejoining(self, chains):
         ''' There is RT'ed sequence, and the extension chains cover the whole read.
@@ -2099,10 +2166,7 @@ class Layout(layout.Categorizer):
                         if self.is_unintended_rejoining:
                             self.register_unintended_rejoining()
                         else:
-                            self.register_edit_plus_indel('deletion')
-                            HDR_outcome = HDROutcome(self.pegRNA_SNV_string, [])
-                            deletion_outcome = DeletionOutcome(indel)
-                            self.outcome = HDRPlusDeletionOutcome(HDR_outcome, deletion_outcome)
+                            self.register_edit_plus_indel('deletion', [indel])
 
                     else:
                         self.category = 'uncategorized'
@@ -2133,10 +2197,7 @@ class Layout(layout.Categorizer):
                         indel = [indel for indel in indels if indel != self.target_info.pegRNA_programmed_deletion][0]
 
                         if indel.kind  == 'D':
-                            self.register_edit_plus_indel('deletion')
-                            HDR_outcome = HDROutcome(self.pegRNA_SNV_string, [self.target_info.pegRNA_programmed_deletion])
-                            deletion_outcome = DeletionOutcome(indel)
-                            self.outcome = HDRPlusDeletionOutcome(HDR_outcome, deletion_outcome)
+                            self.register_edit_plus_indel('deletion', [indel])
 
                         else:
                             self.category = 'uncategorized'
@@ -2258,8 +2319,9 @@ class Layout(layout.Categorizer):
             self.details = 'n/a'
             self.relevant_alignments = self.duplication_plus_edit
 
-        elif self.deletion_plus_edit is not None:
-            self.register_edit_plus_indel('deletion')
+        elif self.is_deletion_plus_edit is not None:
+            deletion = self.is_deletion_plus_edit
+            self.register_edit_plus_indel('deletion', [deletion])
 
         elif self.original_target_alignment_has_only_relevant_indels:
             self.register_simple_indels()
@@ -2529,16 +2591,17 @@ class Layout(layout.Categorizer):
                 if 'pegRNA' in chain_als and 'second target' in chain_als:
                     combined_covered = self.extension_chain['query_covered'] | covered_by_duplication
 
-                    uncovered = self.whole_read_minus_edges(2) - combined_covered
-                
-                    if uncovered.total_length == 0:
-                        alignments = list(chain_als.values()) + duplication_als
+                    if self.matches_all_programmed_insertion_features:
+                        uncovered = self.whole_read_minus_edges(2) - combined_covered
+                    
+                        if uncovered.total_length == 0:
+                            alignments = list(chain_als.values()) + duplication_als
 
         return alignments
 
     @memoized_property
-    def deletion_plus_edit(self):
-        alignments = None
+    def is_deletion_plus_edit(self):
+        deletion = None
 
         if self.target_info.pegRNA_names is not None and len(self.target_info.pegRNA_names) > 0:
             target_als = self.duplications_from_each_read_edge[self.target_info.non_pegRNA_side]
@@ -2553,9 +2616,11 @@ class Layout(layout.Categorizer):
                     uncovered = self.whole_read_minus_edges(2) - combined_covered
                 
                     if uncovered.total_length == 0:
-                        alignments = list(chain_als.values()) + target_als
+                        deletions = self.extract_indels_from_alignments(target_als)
+                        if len(deletions) == 1:
+                            deletion = deletions[0][0]
 
-        return alignments
+        return deletion
 
     @memoized_property
     def duplication(self):

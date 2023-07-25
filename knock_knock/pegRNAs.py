@@ -4,7 +4,6 @@ import logging
 from collections import defaultdict
 
 import Bio.Align
-import pandas as pd
 import pysam
 
 from hits import gff, interval, sam, sw, utilities
@@ -519,7 +518,7 @@ class pegRNA:
 
         if len(SNVs) > 0:
             if len(deletions) == 0 and len(insertions) == 0:
-                self.edit_type = 'SNVs'
+                self.edit_type = 'substitution(s)'
             else:
                 self.edit_type = 'combination'
         else:

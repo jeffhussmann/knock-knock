@@ -1,3 +1,4 @@
+import copy
 import itertools
 import re
 
@@ -3033,3 +3034,77 @@ def junction_microhomology(reference_sequences, first_al, second_al):
         MH_nts = overlap.total_length
 
     return MH_nts
+
+def extend_alignment_allowing_programmed_subs(query_seq, target_seq, query_start, query_end, target_start, target_end, programmed_subs):
+    while query_start > 0 and target_start > 0 and (query_seq[query_start - 1] == target_seq[target_start - 1] or ((target_start - 1) in programmed_subs and query_seq[query_start - 1] == programmed_subs[target_start - 1])):
+        query_start -= 1
+        target_start -= 1
+
+    while query_end < len(query_seq) and target_end < len(target_seq) and (query_seq[query_end] == target_seq[target_end] or (query_end in programmed_subs and query_seq[query_end] == programmed_subs[query_end])):
+        query_end += 1
+        target_end += 1
+
+    return query_start, query_end, target_start
+
+def extend_alignment(initial_al, target_seq_bytes, programmed_subs):
+    query_seq_bytes = initial_al.query_sequence.encode()
+    
+    if not isinstance(target_seq_bytes, bytes):
+        target_seq_bytes = target_seq_bytes.encode()
+
+    new_query_start, new_query_end, new_target_start = extend_alignment_allowing_programmed_subs(query_seq_bytes,
+                                                                                                 target_seq_bytes,
+                                                                                                 initial_al.query_alignment_start,
+                                                                                                 initial_al.query_alignment_end,
+                                                                                                 initial_al.reference_start,
+                                                                                                 initial_al.reference_end,
+                                                                                                 programmed_subs[initial_al.reference_name],
+                                                                                                )
+    added_to_start = initial_al.query_alignment_start - new_query_start
+    added_to_end = new_query_end - initial_al.query_alignment_end
+    cigar = initial_al.cigar
+    
+    if added_to_start > 0:
+        # Remove from starting soft clip...
+        kind, length = cigar[0]
+        if kind != sam.BAM_CSOFT_CLIP:
+            raise ValueError(f'expected soft-clip, got {kind}')
+        
+        cigar[0] = (kind, length - added_to_start)
+
+        # ... and add to subsequent match.
+        kind, length = cigar[1]
+        if kind != sam.BAM_CMATCH:
+            raise ValueError(f'expected match, got {kind}')
+            
+        cigar[1] = (kind, length + added_to_start)
+
+        if cigar[0][1] == 0:
+            cigar = cigar[1:]
+        
+    if added_to_end > 0:
+        # Remove from ending soft clip...
+        kind, length = cigar[-1]
+        if kind != sam.BAM_CSOFT_CLIP:
+            raise ValueError(f'expected soft-clip, got {kind}')
+        
+        cigar[-1] = (kind, length - added_to_end)
+        
+        # ... and add to subsequent match.
+        kind, length = cigar[-2]
+        if kind != sam.BAM_CMATCH:
+            raise ValueError(f'expected match, got {kind}')
+            
+        cigar[-2] = (kind, length + added_to_end)
+
+        if cigar[-1][1] == 0:
+            cigar = cigar[:-1]
+
+    if added_to_start > 0 or added_to_end > 0:
+        new_al = copy.deepcopy(initial_al)
+        new_al.cigar = cigar
+        new_al.reference_start = new_target_start
+    else:
+        new_al = initial_al
+    
+    return new_al
