@@ -19,15 +19,18 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pysam
-import threadpoolctl
 import yaml
 
 import hits.visualize
 from hits import fastq, genomes, mapping_tools, sam, utilities
 from hits.utilities import memoized_property
 
-from . import target_info, blast, outcome_record, svg, table, explore
-from . import layout as layout_module
+import knock_knock.blast
+import knock_knock.lengths
+import knock_knock.visualize.lengths
+import knock_knock.target_info
+import knock_knock.layout as layout_module
+from . import outcome_record, svg, table, explore
 
 class ColorGroupCycler:
     def __init__(self):
@@ -114,7 +117,7 @@ class Experiment:
             'outcome_counts': self.results_dir / 'outcome_counts.csv',
             'outcome_list': self.results_dir / 'outcome_list.txt',
 
-            'lengths': self.results_dir / 'lengths.txt',
+            'outcome_stratified_lengths': self.results_dir / 'lengths.hdf5',
             'lengths_figure': self.results_dir / 'all_lengths.png',
 
             'donor_microhomology_lengths': self.results_dir / 'donor_microhomology_lengths.txt', 
@@ -195,22 +198,22 @@ class Experiment:
 
     @memoized_property
     def supplemental_indices(self):
-        locations = target_info.locate_supplemental_indices(self.base_dir)
+        locations = knock_knock.target_info.locate_supplemental_indices(self.base_dir)
         return {name: locations[name] for name in self.supplemental_index_names}
 
     @memoized_property
     def target_info(self):
-        ti = target_info.TargetInfo(self.base_dir,
-                                    self.target_name,
-                                    donor=self.donor,
-                                    nonhomologous_donor=self.nonhomologous_donor,
-                                    sgRNAs=self.sgRNAs,
-                                    primer_names=self.primer_names,
-                                    sequencing_start_feature_name=self.sequencing_start_feature_name,
-                                    supplemental_indices=self.supplemental_indices,
-                                    infer_homology_arms=self.infer_homology_arms,
-                                    min_relevant_length=self.min_relevant_length,
-                                   )
+        ti = knock_knock.target_info.TargetInfo(self.base_dir,
+                                                self.target_name,
+                                                donor=self.donor,
+                                                nonhomologous_donor=self.nonhomologous_donor,
+                                                sgRNAs=self.sgRNAs,
+                                                primer_names=self.primer_names,
+                                                sequencing_start_feature_name=self.sequencing_start_feature_name,
+                                                supplemental_indices=self.supplemental_indices,
+                                                infer_homology_arms=self.infer_homology_arms,
+                                                min_relevant_length=self.min_relevant_length,
+                                               )
 
         return ti
 
@@ -298,16 +301,8 @@ class Experiment:
     
     @memoized_property
     def read_lengths(self):
-        return np.loadtxt(self.fns['lengths'], dtype=int)
+        return self.outcome_stratified_lengths.lengths_for_all_outcomes
     
-    def generate_read_lengths(self):
-        if len(self.outcome_stratified_lengths) == 0:
-            lengths = []
-        else:
-            lengths = sum(self.outcome_stratified_lengths.values())
-
-        np.savetxt(self.fns['lengths'], lengths, '%d')
-
     def generate_outcome_counts(self):
         ''' Note that metadata lines start with '#' so category names can't. '''
         counts_fn = self.fns['outcome_counts']
@@ -324,6 +319,13 @@ class Experiment:
 
         counts = pd.Series(counts, dtype=int).sort_values(ascending=False)
         counts.to_csv(counts_fn, mode='a', sep='\t', header=False)
+
+    def generate_outcome_stratified_lengths(self):
+        lengths = knock_knock.lengths.OutcomeStratifiedLengths(self.outcome_iter(),
+                                                               self.max_relevant_length,
+                                                               self.length_to_store_unknown,
+                                                              )
+        lengths.to_file(self.fns['outcome_stratified_lengths'])
 
     def record_snapshot(self):
         ''' Make copies of per-read outcome categorizations and
@@ -344,7 +346,7 @@ class Experiment:
         if outcome is None:
             lengths = self.read_lengths
         else:
-            lengths = self.outcome_stratified_lengths[outcome]
+            lengths = self.outcome_stratified_lengths.outcome_length_arrays[outcome]
 
         nonzero, = np.nonzero(lengths)
         ranges = [(i, i) for i in nonzero]
@@ -402,12 +404,12 @@ class Experiment:
             bam_fn = base_bam_fn.with_suffix(suffix)
             bam_by_name_fn = base_bam_by_name_fn.with_suffix(suffix)
 
-            blast.blast(self.target_info.reference_sequences,
-                        chunk,
-                        bam_fn,
-                        bam_by_name_fn,
-                        max_insertion_length=self.max_insertion_length,
-                       )
+            knock_knock.blast.blast(self.target_info.reference_sequences,
+                                    chunk,
+                                    bam_fn,
+                                    bam_by_name_fn,
+                                    max_insertion_length=self.max_insertion_length,
+                                   )
 
             bam_fns.append(bam_fn)
             bam_by_name_fns.append(bam_by_name_fn)
@@ -444,11 +446,11 @@ class Experiment:
             suffix = f'.{i:06d}.bam'
             bam_fn = base_bam_fn.with_suffix(suffix)
 
-            blast.blast(ref_seqs,
-                        chunk,
-                        bam_fn,
-                        max_insertion_length=self.max_insertion_length,
-                       )
+            knock_knock.blast.blast(ref_seqs,
+                                    chunk,
+                                    bam_fn,
+                                    max_insertion_length=self.max_insertion_length,
+                                   )
 
             bam_fns.append(bam_fn)
 
@@ -825,11 +827,11 @@ class Experiment:
             ys_to_check = all_ys
         else:
             if isinstance(outcome, tuple):
-                outcome_lengths = self.outcome_stratified_lengths[outcome]
-                color = self.outcome_to_color[outcome]
+                outcome_lengths = self.outcome_stratified_lengths.outcome_length_arrays[outcome]
+                color = self.outcome_stratified_lengths.outcome_to_color(smooth_window=self.length_plot_smooth_window)[outcome]
                 label = ': '.join(outcome)
             else:
-                outcome_lengths = sum([v for (c, s), v in self.outcome_stratified_lengths.items() if c == outcome])
+                outcome_lengths = sum([v for (c, s), v in self.outcome_stratified_lengths.outcome_length_arrays.items() if c == outcome])
                 color = 'black'
                 label = outcome
 
@@ -972,31 +974,7 @@ class Experiment:
 
     @memoized_property
     def outcome_stratified_lengths(self):
-        outcome_lengths = defaultdict(Counter)
-
-        outcomes = self.outcome_iter()
-        description = 'Counting outcome-specific lengths'
-        for outcome in self.progress(outcomes, desc=description):
-            outcome_lengths[outcome.category, outcome.subcategory][outcome.inferred_amplicon_length] += 1
-
-        max_length = self.max_relevant_length
-        if self.length_to_store_unknown is not None:
-            max_length = max(max_length, self.length_to_store_unknown)
-
-        outcome_length_arrays = {}
-        for outcome, counts in outcome_lengths.items():
-            array = np.zeros(max_length + 1)
-            for length, value in counts.items():
-                if length == -1:
-                    array[self.length_to_store_unknown] = value
-                elif length >= self.max_relevant_length:
-                    array[self.max_relevant_length] += value
-                else:
-                    array[length] = value
-
-            outcome_length_arrays[outcome] = array
-
-        return outcome_length_arrays
+        return knock_knock.lengths.OutcomeStratifiedLengths.from_file(self.fns['outcome_stratified_lengths'])
 
     @memoized_property
     def qname_to_inferred_length(self):
@@ -1012,23 +990,7 @@ class Experiment:
 
     @memoized_property
     def outcome_highest_points(self):
-        ''' Dictionary of {outcome: maximum of that outcome's read length frequency distribution} '''
-        highest_points = {}
-
-        for outcome, lengths in self.outcome_stratified_lengths.items():
-            window = self.length_plot_smooth_window * 2 + 1
-            smoothed_lengths = pd.Series(lengths).rolling(window=window, center=True, min_periods=1).sum()
-            highest_points[outcome] = max(smoothed_lengths / self.total_reads * 100)
-
-        return highest_points
-
-    @memoized_property
-    def outcome_to_color(self):
-        # To minimize the chance that a color will be used more than once in the same panel in 
-        # outcome_stratified_lengths plots, sort color order by highest point.
-        # Factored out here so that same colors can be used in svgs.
-        color_order = sorted(self.categories_by_frequency, key=self.outcome_highest_points.get, reverse=True)
-        return {outcome: f'C{i % 10}' for i, outcome in enumerate(color_order)}
+        return self.outcome_stratified_lengths.outcome_highest_points(smooth_window=self.length_plot_smooth_window)
 
     @memoized_property
     def expected_lengths(self):
@@ -1042,303 +1004,11 @@ class Experiment:
 
         return expected_lengths
 
-    def plot_outcome_stratified_lengths(self, x_lims=None, min_total_to_label=0.1, zoom_factor=0.1):
-        outcome_lengths = self.outcome_stratified_lengths
-
-        if x_lims is None:
-            ys = list(outcome_lengths.values())[0]
-            x_max = int(len(ys) * 1.005)
-            x_lims = (0, x_max)
-
-        panel_groups = []
-
-        current_max = max(self.outcome_highest_points.values())
-
-        left_after_previous = sorted(self.outcome_highest_points)
-
-        while True:
-            group = []
-            still_left = []
-
-            for outcome in left_after_previous:
-                highest_point = self.outcome_highest_points[outcome]
-                if current_max * zoom_factor < highest_point <= current_max:
-                    group.append(outcome)
-                else:
-                    still_left.append(outcome)
-                    
-            if len(group) > 0:
-                panel_groups.append((current_max, group))
-                
-            if len(still_left) == 0:
-                break
-                
-            current_max = current_max * zoom_factor
-            left_after_previous = still_left
-
-        num_panels = len(panel_groups)
-
-        fig, axs = plt.subplots(num_panels, 1, figsize=(14, 6 * num_panels), gridspec_kw=dict(hspace=0.12))
-
-        if num_panels == 1:
-            # Want to be able to treat axs as a 1D array.
-            axs = [axs]
-
-        ax = axs[0]
-
-        if isinstance(self.batch, tuple):
-            title = f'{": ".join(self.batch)}: {self.sample_name}'
-        else:
-            title = f'{self.batch}: {self.sample_name}'
-
-        ax.annotate(title,
-                    xy=(0.5, 1), xycoords='axes fraction',
-                    xytext=(0, 40), textcoords='offset points',
-                    ha='center',
-                    va='bottom',
-                    size=14,
-                   )
-
-        y_maxes = []
-
-        listed_order = sorted(outcome_lengths, key=self.categorizer.order)
-
-        non_highlight_color = 'grey'
-
-        for panel_i, (ax, (y_max, group)) in enumerate(zip(axs, panel_groups)):
-            high_enough_to_show = []
-
-            for outcome in listed_order:
-                lengths = outcome_lengths[outcome]
-                total_fraction = lengths.sum() / self.total_reads
-                window = self.length_plot_smooth_window * 2 + 1
-                smoothed_lengths = pd.Series(lengths).rolling(window=window, center=True, min_periods=1).sum()
-                ys = smoothed_lengths / self.total_reads
-
-                sanitized_string = self.categorizer.outcome_to_sanitized_string(outcome)
-
-                if outcome in group:
-                    gid = f'line_highlighted_{sanitized_string}_{panel_i}'
-                    color = self.outcome_to_color[outcome]
-                    alpha = 1
-                else:
-                    color = non_highlight_color
-                    # At higher zoom levels, fade the grey lines more to avoid clutter.
-                    if panel_i == 0:
-                        alpha = 0.6
-                        gid = f'line_nonhighlighted_6_{sanitized_string}_{panel_i}'
-                    elif panel_i == 1:
-                        alpha = 0.3
-                        gid = f'line_nonhighlighted_3_{sanitized_string}_{panel_i}'
-                    else:
-                        alpha = 0.05
-                        gid = f'line_nonhighlighted_05_{sanitized_string}_{panel_i}'
-
-                category, subcategory = outcome
-
-                if total_fraction * 100 > min_total_to_label:
-                    high_enough_to_show.append(outcome)
-                    label = f'{total_fraction:6.2%} {category}: {subcategory}'
-                else:
-                    label = None
-
-                ax.plot(ys * 100, label=label, color=color, alpha=alpha, gid=gid)
-
-                if outcome in group:
-                    length_ranges = self.length_ranges(outcome)
-                    for _, row in length_ranges.iterrows():
-                        ax.axvspan(row.start - 0.5, row.end + 0.5,
-                                   gid=f'length_range_{sanitized_string}_{row.start}_{row.end}',
-                                   alpha=0.0,
-                                   facecolor='white',
-                                   edgecolor='black',
-                                   zorder=100,
-                                  )
-
-            legend_cols = int(np.ceil(len(high_enough_to_show) / 18))
-
-            legend = ax.legend(bbox_to_anchor=(1.05, 1),
-                               loc='upper left',
-                               prop=dict(family='monospace', size=9),
-                               framealpha=0.3,
-                               ncol=legend_cols,
-                              )
-
-            for outcome, line in zip(high_enough_to_show, legend.get_lines()):
-                if line.get_color() != non_highlight_color:
-                    line.set_linewidth(5)
-                    sanitized_string = self.categorizer.outcome_to_sanitized_string(outcome)
-                    line.set_gid(f'outcome_{sanitized_string}')
-
-            ax.set_ylim(0, y_max * 1.05)
-            y_maxes.append(y_max)
-
-        for panel_i, ax in enumerate(axs):
-            main_ticks = list(range(0, self.max_relevant_length, self.x_tick_multiple))
-            main_tick_labels = [str(x) for x in main_ticks]
-
-            extra_ticks = [self.max_relevant_length]
-            extra_tick_labels = [r'$\geq$' + f'{self.max_relevant_length}']
-
-            if self.length_to_store_unknown is not None:
-                extra_ticks.append(self.length_to_store_unknown)
-                extra_tick_labels.append('?')
-
-            ax.set_xticks(main_ticks + extra_ticks)
-            ax.set_xticklabels(main_tick_labels + extra_tick_labels)
-
-            ax.set_xlim(*x_lims)
-            ax.set_ylabel('Percentage of reads', size=12)
-            ax.set_xlabel('amplicon length', size=12)
-
-            if panel_i == 0:
-                for i, (name, length) in enumerate(self.expected_lengths.items()):
-                    ax.axvline(length, color='black', alpha=0.2)
-
-                    y = 1 + 0.05 * i
-                    ax.annotate(name,
-                                xy=(length, y), xycoords=('data', 'axes fraction'),
-                                xytext=(0, 1), textcoords='offset points',
-                                ha='center', va='bottom',
-                                size=10,
-                               )
-
-        def draw_inset_guide(fig, top_ax, bottom_ax, bottom_y_max, panel_i):
-            params_dict = {
-                'top': {
-                    'offset': 0.04,
-                    'width': 0.007,
-                    'transform': top_ax.get_yaxis_transform(),
-                    'ax': top_ax,
-                    'y': bottom_y_max,
-                },
-                'bottom': {
-                    'offset': 0.01,
-                    'width': 0.01,
-                    'transform': bottom_ax.transAxes,
-                    'ax': bottom_ax,
-                    'y': 1,
-                },
-            }
-
-            for which, params in params_dict.items():
-                start = 1 + params['offset']
-                end = start + params['width']
-                y = params['y']
-                transform = params['transform']
-                ax = params['ax']
-
-                params['start'] = start
-                params['end'] = end
-
-                params['top_corner'] = [end, y]
-                params['bottom_corner'] = [end, 0]
-
-                ax.plot([start, end, end, start],
-                        [y, y, 0, 0],
-                        transform=transform,
-                        clip_on=False,
-                        color='black',
-                        linewidth=3,
-                        gid=f'zoom_toggle_{which}_{panel_i}',
-                       )
-
-                ax.fill([start, end, end, start],
-                        [y, y, 0, 0],
-                        transform=transform,
-                        clip_on=False,
-                        color='white',
-                        gid=f'zoom_toggle_{which}_{panel_i}',
-                       )
-
-                if which == 'top' and panel_i in [0, 1]:
-                    if panel_i == 0:
-                        bracket_message = 'Click this bracket to explore lower-frequency outcomes\nby zooming in on the bracketed range. Click again to close.'
-                    else:
-                        bracket_message = 'Click this bracket to zoom in further.'
-
-                    ax.annotate(bracket_message,
-                                xy=(end, y / 2),
-                                xycoords=transform,
-                                xytext=(10, 0),
-                                textcoords='offset points',
-                                ha='left',
-                                va='center',
-                                size=12,
-                                gid=f'help_message_bracket_{panel_i + 1}',
-                            )
-
-            inverted_fig_tranform = fig.transFigure.inverted().transform    
-
-            for which, top_coords, bottom_coords in (('top', params_dict['top']['top_corner'], params_dict['bottom']['top_corner']),
-                                                     ('bottom', params_dict['top']['bottom_corner'], params_dict['bottom']['bottom_corner']),
-                                                    ):
-                top_in_fig = inverted_fig_tranform(params_dict['top']['transform'].transform((top_coords)))
-                bottom_in_fig = inverted_fig_tranform(params_dict['bottom']['transform'].transform((bottom_coords)))
-
-                xs = [top_in_fig[0], bottom_in_fig[0]]
-                ys = [top_in_fig[1], bottom_in_fig[1]]
-                line = matplotlib.lines.Line2D(xs, ys,
-                                               transform=fig.transFigure,
-                                               clip_on=False,
-                                               linestyle='--',
-                                               color='black',
-                                               alpha=0.5,
-                                               gid=f'zoom_dotted_line_{panel_i}_{which}',
-                                              )
-                fig.lines.append(line)
-
-        for panel_i, (y_max, top_ax, bottom_ax) in enumerate(zip(y_maxes[1:], axs, axs[1:])):
-            draw_inset_guide(fig, top_ax, bottom_ax, y_max, panel_i)
-
-        top_ax = axs[0]
-
-        help_box_width = 0.04
-        help_box_height = 0.1
-        help_box_y = 1.05
-
-        top_ax.annotate('?',
-                        xy=(1 - 0.5 * help_box_width, help_box_y + 0.5 * help_box_height),
-                        xycoords='axes fraction',
-                        ha='center',
-                        va='center',
-                        size=22,
-                        weight='bold',
-                        gid='help_toggle_question_mark',
-                       )
-
-        help_box = matplotlib.patches.Rectangle((1 - help_box_width, help_box_y), help_box_width, help_box_height,
-                                 transform=top_ax.transAxes,
-                                 clip_on=False,
-                                 color='black',
-                                 alpha=0.2,
-                                 gid='help_toggle',
-                                )
-        top_ax.add_patch(help_box)
-
-        legend_message = dedent('''\
-            Click the colored line next to an outcome category
-            in the legend to activate that category. Once
-            activated, hovering the cursor over the plot will
-            show an example diagram of the activated category
-            of the length that the cursor is over. Press
-            Esc when done to deactivate the category.''')
-
-        top_ax.annotate(legend_message,
-                        xy=(1, 0.95),
-                        xycoords='axes fraction',
-                        xytext=(-10, 0),
-                        textcoords='offset points',
-                        ha='right',
-                        va='top',
-                        size=12,
-                        gid='help_message_legend',
-                       )
-
-        for ax in axs:
-            ax.tick_params(axis='y', which='both', left=True, right=True)
-
-        return fig
+    def plot_outcome_stratified_lengths(self, **kwargs):
+        return knock_knock.visualize.lengths.plot_outcome_stratified_lengths(self.outcome_stratified_lengths,
+                                                                             self.categorizer,
+                                                                             **kwargs,
+                                                                            )
 
     def alignment_groups_to_diagrams(self,
                                      alignment_groups,

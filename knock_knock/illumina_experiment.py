@@ -395,6 +395,6 @@ class IlluminaExperiment(Experiment):
         self.categorize_outcomes()
 
         self.generate_outcome_counts()
-        self.generate_read_lengths()
+        self.generate_outcome_stratified_lengths()
 
         self.record_sanitized_category_names()

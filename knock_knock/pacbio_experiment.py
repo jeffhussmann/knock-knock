@@ -117,6 +117,6 @@ class PacbioExperiment(Experiment):
         self.categorize_outcomes(read_type='CCS')
 
         self.generate_outcome_counts()
-        self.generate_read_lengths()
+        self.generate_outcome_stratified_lengths()
 
         self.record_sanitized_category_names()
