@@ -247,21 +247,17 @@ class ExperimentGroup:
         self.make_partial_incorporation_figure()
         self.make_deletion_boundaries_figure()
 
-    def make_partial_incorporation_figure(self):
-        fs = self.outcome_fractions
+    def make_partial_incorporation_figure(self,
+                                          conditions=None,
+                                          frequency_cutoff=1e-3,
+                                         ):
         ti = self.target_info
 
         if len(ti.pegRNA_names) == 0:
             return
 
-        frequency_cutoff = 1e-3
-        outcomes = [(c, s, d) for (c, s, d), f_row in fs.iterrows()
-                    if ((c, s) in {('wild type', 'mismatches')}
-                            or c in {'intended edit', 'partial replacement'}
-                        )
-                    and max(f_row) > frequency_cutoff
-                   ]
-        outcomes = fs.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
+        if conditions is None:
+            conditions = self.full_conditions
 
         color_overrides = {primer_name: 'grey' for primer_name in ti.primers}
 
@@ -280,6 +276,28 @@ class ExperimentGroup:
         else:
             raise ValueError
 
+        if ti.protospacer_feature.strand == '+':
+            window_interval = hits.interval.Interval(ti.cut_after + window[0], ti.cut_after + window[1])
+        else:
+            window_interval = hits.interval.Interval(ti.cut_after - window[1], ti.cut_after - window[0])
+
+        def mismatch_in_window(d):
+            if d == 'n/a':
+                return False
+            else:
+                SNVs = knock_knock.outcome.MismatchOutcome.from_string(d).undo_anchor_shift(ti.anchor).snvs
+                return any(p in window_interval for p in SNVs.positions)
+
+        fs = self.outcome_fractions[conditions]
+
+        outcomes = [(c, s, d) for (c, s, d), f_row in fs.iterrows()
+                    if (((c, s) in {('wild type', 'mismatches')} and mismatch_in_window(d))
+                        or c in {'intended edit', 'partial replacement', 'partial edit'}
+                       )
+                    and max(f_row) > frequency_cutoff
+                   ]
+        outcomes = fs.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
+
         grid = knock_knock.visualize.stacked.DiagramGrid(outcomes, 
                                                          ti,
                                                          draw_wild_type_on_top=True,
@@ -293,8 +311,8 @@ class ExperimentGroup:
         grid.add_ax('log10_fractions', width_multiple=12, gap_multiple=2, title='% of reads (log scale)')
 
         for ax, transform in [('fractions', 'percentage'),
-                                ('log10_fractions', 'log10'),
-                                ]:
+                              ('log10_fractions', 'log10'),
+                             ]:
 
             for condition in fs:
                 grid.plot_on_ax(ax, fs[condition],
@@ -317,33 +335,50 @@ class ExperimentGroup:
         for pegRNA_i, pegRNA_name in enumerate(ti.pegRNA_names):
             grid.diagrams.draw_pegRNA(ti.name, pegRNA_name, y_offset=pegRNA_i + 1, label_features=False)
 
-        grid.plot_pegRNA_conversion_fractions_above(self)
+        grid.plot_pegRNA_conversion_fractions_above(self, conditions=conditions)
         grid.style_pegRNA_conversion_plot('pegRNA_conversion_fractions')
 
         grid.fig.savefig(self.fns['partial_incorporation_figure'], bbox_inches='tight')
 
         return grid.fig
 
-    def make_deletion_boundaries_figure(self, conditions=None):
+    def make_deletion_boundaries_figure(self,
+                                        frequency_cutoff=5e-4,
+                                        conditions=None,
+                                        include_simple_deletions=True,
+                                        include_edit_plus_deletions=True,
+                                        condition_to_color=None,
+                                       ):
         ti = self.target_info
 
         if conditions is None:
             conditions = self.full_conditions
 
-        colors = sns.color_palette('husl', len(conditions))
-        condition_to_color = dict(zip(conditions, colors))
+        if condition_to_color is None:
+            colors = sns.color_palette('husl', len(conditions))
+            condition_to_color = dict(zip(conditions, colors))
 
         fs = self.outcome_fractions[conditions]
 
-        collapsed = fs.xs('deletion', drop_level=False).groupby('details').sum()
+        deletions = fs.xs('deletion', drop_level=False).groupby('details').sum()
+        deletions.index = pd.MultiIndex.from_tuples([('deletion', 'collapsed', details) for details in deletions.index])
 
-        collapsed.index = pd.MultiIndex.from_tuples([('deletion', 'collapsed', details) for details in collapsed.index])
+        edit_plus_deletions = [(c, s, d) for c, s, d in self.outcome_fractions.index
+                               if (c, s) == ('edit + indel', 'deletion')
+                              ] 
 
-        frequency_cutoff = 2e-4
-        outcomes = [(c, s, d) for (c, s, d), f_row in collapsed.iterrows()
+        to_concat = []
+        if include_simple_deletions:
+            to_concat.append(deletions)
+        if include_edit_plus_deletions:
+            to_concat.append(self.outcome_fractions.loc[edit_plus_deletions])
+
+        all_deletions = pd.concat(to_concat)
+
+        outcomes = [(c, s, d) for (c, s, d), f_row in all_deletions.iterrows()
                     if max(f_row) > frequency_cutoff
-                ]
-        outcomes = collapsed.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
+                   ]
+        outcomes = all_deletions.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
 
         color_overrides = {primer_name: 'grey' for primer_name in ti.primers}
 
@@ -380,8 +415,8 @@ class ExperimentGroup:
                               ('log10_fractions', 'log10'),
                              ]:
 
-            for condition in collapsed:
-                grid.plot_on_ax(ax, collapsed[condition],
+            for condition in all_deletions:
+                grid.plot_on_ax(ax, all_deletions[condition],
                                 transform=transform,
                                 color=condition_to_color[condition],
                                 line_alpha=0.75,
@@ -391,7 +426,7 @@ class ExperimentGroup:
                                )
 
         grid.style_frequency_ax('fractions')
-        grid.axs_by_name['fractions'].legend(loc='lower right')
+        grid.axs_by_name['fractions'].legend(bbox_to_anchor=(1, 1), loc='upper left')
 
         grid.set_xlim('fractions', (0,))
         x_max = (grid.axs_by_name['fractions'].get_xlim()[1] / 100) * 1.01
@@ -412,11 +447,18 @@ class ExperimentGroup:
                 'stops',
             ]
 
+        deletion_boundaries = self.deletion_boundaries(include_simple_deletions=include_simple_deletions,
+                                                       include_edit_plus_deletions=include_edit_plus_deletions,
+                                                      )
+
         for quantity in panel_order:
-            grid.add_ax_above(quantity, gap=6 if quantity == panel_order[0] else 2,)
+            grid.add_ax_above(quantity,
+                              gap=6 if quantity == panel_order[0] else 2,
+                              height_multiple=15 if quantity == 'fraction_removed' else 7,
+                             )
 
             for condition in conditions:
-                series = self.deletion_boundaries[quantity][condition].copy()
+                series = deletion_boundaries[quantity][condition].copy()
                 series.index = series.index.values - grid.diagrams.offsets[ti.name]
                 grid.plot_on_ax_above(quantity,
                                       series.index,
@@ -433,7 +475,10 @@ class ExperimentGroup:
 
         grid.axs_by_name['fraction_removed'].set_ylabel('% of reads with\nposition deleted', size=14)
         grid.axs_by_name[panel_order[1]].set_ylabel('% of reads with\ndeletion starting at', size=14)
-        grid.axs_by_name[panel_order[2]].set_ylabel('% of reads with\ndeletion starting at', size=14)
+        grid.axs_by_name[panel_order[2]].set_ylabel('% of reads with\ndeletion ending at', size=14)
+
+        for panel in panel_order:
+            grid.axs_by_name[panel].set_ylim(0)
 
         grid.fig.savefig(self.fns['deletion_boundaries_figure'], bbox_inches='tight')
 

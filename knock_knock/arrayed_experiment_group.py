@@ -20,6 +20,7 @@ import knock_knock.target_info
 from hits import utilities, sam, fastq
 
 memoized_property = utilities.memoized_property
+memoized_with_kwargs = utilities.memoized_with_kwargs
 
 class Batch:
     def __init__(self, base_dir, batch,
@@ -738,18 +739,21 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
     @memoized_property
     def outcomes_containing_pegRNA_SNVs(self):
-        SNVs = self.target_info.pegRNA_SNVs[self.target_info.target]
-        outcomes_containing_pegRNA_SNVs = {SNV_name: [] for SNV_name in SNVs}
-        
-        for c, s, d  in self.outcome_fractions.index:
-            if c in {'intended edit', 'partial replacement'}:
-                outcome = knock_knock.outcome.ProgrammedEditOutcome.from_string(d)
+        if self.target_info.pegRNA_SNVs is None:
+            outcomes_containing_pegRNA_SNVs = {}
+        else:
+            SNVs = self.target_info.pegRNA_SNVs[self.target_info.target]
+            outcomes_containing_pegRNA_SNVs = {SNV_name: [] for SNV_name in SNVs}
+            
+            for c, s, d  in self.outcome_fractions.index:
+                if c in {'intended edit', 'partial replacement', 'partial edit'}:
+                    outcome = knock_knock.outcome.ProgrammedEditOutcome.from_string(d)
 
-                # Note: sorting SNVs is critical here to match the order in outcome.SNV_read_bases.
-                for SNV_name, read_base in zip(sorted(SNVs), outcome.SNV_read_bases):
-                    SNV = SNVs[SNV_name]
-                    if read_base == SNV['alternative_base']:
-                        outcomes_containing_pegRNA_SNVs[SNV_name].append((c, s, d))
+                    # Note: sorting SNVs is critical here to match the order in outcome.SNV_read_bases.
+                    for SNV_name, read_base in zip(sorted(SNVs), outcome.SNV_read_bases):
+                        SNV = SNVs[SNV_name]
+                        if read_base == SNV['alternative_base']:
+                            outcomes_containing_pegRNA_SNVs[SNV_name].append((c, s, d))
 
         return outcomes_containing_pegRNA_SNVs
 
@@ -764,10 +768,15 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
         return fs_df
 
-    @memoized_property
-    def deletion_boundaries(self):
+    @memoized_with_kwargs
+    def deletion_boundaries(self, *, include_simple_deletions=True, include_edit_plus_deletions=False):
         ti = self.target_info
-        deletion_fractions = self.outcome_fractions.xs('deletion', drop_level=False)
+
+        deletions = [(c, s, d) for c, s, d in self.outcome_fractions.index
+                     if (include_simple_deletions and c == 'deletion')
+                     or (include_edit_plus_deletions and (c, s) == ('edit + indel', 'deletion'))
+                    ] 
+        deletion_fractions = self.outcome_fractions.loc[deletions]
         index = np.arange(len(ti.target_sequence))
         columns = deletion_fractions.columns
 
@@ -777,7 +786,16 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
         for (c, s, d), row in deletion_fractions.iterrows():
             # Undo anchor shift to make coordinates relative to full target sequence.
-            deletion = knock_knock.outcome.DeletionOutcome.from_string(d).undo_anchor_shift(ti.anchor).deletion
+            if c == 'deletion':
+                deletion = knock_knock.outcome.DeletionOutcome.from_string(d).undo_anchor_shift(ti.anchor).deletion
+            elif c == 'edit + indel':
+                deletions = knock_knock.outcome.ProgrammedEditOutcome.from_string(d).undo_anchor_shift(ti.anchor).deletions
+                if len(deletions) != 1:
+                    raise NotImplementedError
+                else:
+                    deletion = deletions[0]
+            else:
+                raise ValueError
             
             per_possible_start = row.values / len(deletion.starts_ats)
             

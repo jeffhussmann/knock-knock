@@ -284,7 +284,7 @@ class StackedDiagrams:
 
         return xs_to_skip
 
-    def draw_insertion(self, y, insertion, source_name, draw_sequence=True):
+    def draw_insertion(self, y, insertion, source_name, draw_sequence=True, draw_degeneracy=None):
         ti = self.target_infos[source_name]
         offset = self.offsets[source_name]
         transform_seq = self.transform_seqs[source_name]
@@ -302,11 +302,14 @@ class StackedDiagrams:
             purple_line_width *= 1.5
             purple_line_alpha = 0.9
 
+        if draw_degeneracy is None:
+            draw_degeneracy = self.draw_insertion_degeneracy
+
         for i, (start, bs) in enumerate(zip(starts, insertion.seqs)):
             ys = [y - 0.3, y + 0.3]
             xs = [start + 0.5, start + 0.5]
 
-            if self.draw_insertion_degeneracy or (start == start_to_label):
+            if draw_degeneracy or (start == start_to_label):
                 self.ax.plot(xs, ys, color='purple', linewidth=purple_line_width, alpha=purple_line_alpha, clip_on=False)
 
             if draw_sequence and start == start_to_label:
@@ -399,7 +402,7 @@ class StackedDiagrams:
 
                 color = self.color_overrides.get(feature_name, feature.attribute.get('color', 'grey'))
 
-                self.draw_rect(source_name, start, end, bottom, top, 0.8, color)
+                self.draw_rect(source_name, start, end, bottom, top, None, color)
                 self.ax.annotate(feature_name,
                                  xy=(np.mean([start, end]), top),
                                  xytext=(0, 5),
@@ -640,7 +643,7 @@ class StackedDiagrams:
         elif len(programmed_edit_outcome.insertions) == 1:
             insertion = InsertionOutcome(programmed_edit_outcome.insertions[0]).undo_anchor_shift(ti.anchor).insertion
             insertion = ti.expand_degenerate_indel(insertion)
-            self.draw_insertion(y, insertion, source_name, draw_sequence=False)
+            self.draw_insertion(y, insertion, source_name, draw_sequence=True)
         else:
             raise NotImplementedError
         
@@ -657,14 +660,16 @@ class StackedDiagrams:
         ti = self.target_infos[source_name]
         offset = self.offsets[source_name]
 
-        if pegRNA_name is None:
-            pegRNA_name = ti.pegRNA_names[0]
-            _, _, _, _, (flap_subsequences, target_subsequences) = ti.pegRNA.extract_edits_from_alignment()
-            components = ti.sgRNA_components[pegRNA_name]
-        else:
+        if len(ti.pegRNA_names) > 1:
+            if pegRNA_name is None:
+                raise ValueError
             components = ti.sgRNA_components[pegRNA_name]
             flap_subsequences = [(0, len(components['RTT']))]
             target_subsequences = [(0, len(components['RTT']))]
+        else:
+            pegRNA_name = ti.pegRNA_names[0]
+            _, _, _, _, (flap_subsequences, target_subsequences) = ti.pegRNA.extract_edits_from_alignment()
+            components = ti.sgRNA_components[pegRNA_name]
 
         PBS = ti.features[ti.target, f'{pegRNA_name}_PBS']
 
@@ -787,7 +792,7 @@ class StackedDiagrams:
                                 )
 
         if ti.pegRNA_programmed_insertion is not None:
-            self.draw_insertion(y, ti.pegRNA_programmed_insertion, source_name)
+            self.draw_insertion(y, ti.pegRNA_programmed_insertion, source_name, draw_degeneracy=False)
 
         if label_features:
             self.ax.annotate('RTT',
@@ -857,7 +862,7 @@ class StackedDiagrams:
                     snvs = SNVs.from_string(details) 
 
                 # Undo anchor shift.
-                snvs = SNVs([SNV(s.position + ti.anchor, s.basecall, s.quality) for s in snvs])
+                snvs = SNVs([SNV(s.position + ti.anchor, s.basecall) for s in snvs])
 
                 for snv in snvs:
                     x = snv.position - offset
@@ -916,10 +921,10 @@ class StackedDiagrams:
                     self.draw_sequence(y, source_name, xs_to_skip, alpha=self.sequence_alpha)
 
             elif category == 'donor' or \
-                category == 'donor + deletion' or \
-                category == 'donor + insertion' or \
-                (category == 'intended edit' and subcategory == 'deletion') or \
-                category == 'edit + deletion':
+                 category == 'donor + deletion' or \
+                 category == 'donor + insertion' or \
+                 (category == 'intended edit' and subcategory == 'deletion') or \
+                 category == 'edit + deletion':
 
                 if category == 'donor':
                     HDR_outcome = HDROutcome.from_string(details)
@@ -954,7 +959,8 @@ class StackedDiagrams:
         
                 self.draw_donor(y, HDR_outcome, deletion_outcome, insertion_outcome, source_name, False)
 
-            elif category in ['intended edit', 'partial replacement']:
+            elif category in ['intended edit', 'partial replacement', 'partial edit'] or \
+                 (category == 'edit + indel' and subcategory == 'deletion'):
                 self.draw_programmed_edit(y, ProgrammedEditOutcome.from_string(details), source_name)
 
             elif category == 'duplication' and subcategory == 'simple':
@@ -1528,7 +1534,13 @@ class DiagramGrid:
             if ax is not None:
                 ax.set_xlim(*lims)
 
-    def plot_pegRNA_conversion_fractions_above(self, group, gap=4, height_multiple=10, conditions=None, **plot_kwargs):
+    def plot_pegRNA_conversion_fractions_above(self,
+                                               group,
+                                               gap=4,
+                                               height_multiple=10,
+                                               conditions=None,
+                                               **plot_kwargs,
+                                              ):
         plot_kwargs = copy.copy(plot_kwargs)
         plot_kwargs.setdefault('line_alpha', 0.75)
         plot_kwargs.setdefault('linewidth', 1.5)
@@ -1580,23 +1592,24 @@ class DiagramGrid:
 
         for line in ax.lines:
             xs.update(set(line.get_xdata()))
-            
-        x_bounds = [min(xs) - 1, max(xs) + 1]
-        if flipped:
-            x_bounds = x_bounds[::-1]
 
-        for y in ax.get_yticks():
-            if y == 0:
-                alpha = 1
-                clip_on = False
-            else:
-                alpha = 0.3
-                clip_on = True
+        if len(xs) > 0:
+            x_bounds = [min(xs) - 1, max(xs) + 1]
+            if flipped:
+                x_bounds = x_bounds[::-1]
 
-            ax.plot(x_bounds, [y for x in x_bounds], linewidth=0.5, clip_on=clip_on, color='black', alpha=alpha)
+            for y in ax.get_yticks():
+                if y == 0:
+                    alpha = 1
+                    clip_on = False
+                else:
+                    alpha = 0.3
+                    clip_on = True
 
-        ax.set_ylabel('Total %\nincorporation\nat position', size=12)
-        ax.tick_params(labelsize=8)
+                ax.plot(x_bounds, [y for x in x_bounds], linewidth=0.5, clip_on=clip_on, color='black', alpha=alpha)
 
-        ax.spines.left.set_position(('data', x_bounds[0]))
-        ax.spines.bottom.set_visible(False)
+            ax.set_ylabel('Total %\nincorporation\nat position', size=12)
+            ax.tick_params(labelsize=8)
+
+            ax.spines.left.set_position(('data', x_bounds[0]))
+            ax.spines.bottom.set_visible(False)

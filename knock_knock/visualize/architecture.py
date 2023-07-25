@@ -764,11 +764,11 @@ class ReadDiagram():
                     if kind == 'deletion' or kind == 'splicing':
                         centered_at, length = info
 
+                        max_length = 10
+
                         if kind == 'deletion':
-                            max_length = 20
                             label = str(length)
                         else:
-                            max_length = 10
                             label = 'splicing'
 
                         # Cap how wide the loop can be.
