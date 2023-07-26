@@ -1067,6 +1067,16 @@ def sanitize_and_validate_sample_sheet(sample_sheet_df):
         bad_names = ', '.join(f'{name} ({count})' for name, count in counts[counts > 1].items())
         raise ValueError(f'Sample names are not unique: {bad_names}')
 
+
+    # Since only the final path component of R1 and R2 files will be retained,
+    # ensure that these are unique to avoid clobbering.
+
+    if not sample_sheet_df['R1'].apply(lambda fn: Path(fn).name).is_unique:
+        raise ValueError(f'R1 files do not have unique names')
+
+    if 'R2' in sample_sheet_df and not sample_sheet_df['R1'].apply(lambda fn: Path(fn).name).is_unique:
+        raise ValueError(f'R2 files do not have unique names')
+    
     return sample_sheet_df
 
 def make_targets(base_dir, df, extra_sequences=None):
