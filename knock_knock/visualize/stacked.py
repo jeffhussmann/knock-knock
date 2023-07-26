@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 from typing import Any, Union, Optional
 
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 
 import hits.utilities
@@ -632,20 +631,24 @@ class StackedDiagrams:
         if len(programmed_edit_outcome.deletions) == 0:
             bottom, top = self.get_bottom_and_top(y)
             self.draw_rect(source_name, window_left - 0.5, window_right + 0.5, bottom, top, self.block_alpha)
-        elif len(programmed_edit_outcome.deletions) == 1:
-            deletion = DeletionOutcome(programmed_edit_outcome.deletions[0]).undo_anchor_shift(ti.anchor).deletion
-            self.draw_deletion(y, deletion, source_name, color='black', draw_MH=False)
         else:
-            raise NotImplementedError
+            if len(programmed_edit_outcome.deletions) > 1:
+                print(f'Warning: multiple deletions in {programmed_edit_outcome}')
+
+            for deletion in programmed_edit_outcome.deletions:
+                deletion = DeletionOutcome(deletion).undo_anchor_shift(ti.anchor).deletion
+                self.draw_deletion(y, deletion, source_name, color='black', draw_MH=False)
 
         if len(programmed_edit_outcome.insertions) == 0:
             pass
-        elif len(programmed_edit_outcome.insertions) == 1:
-            insertion = InsertionOutcome(programmed_edit_outcome.insertions[0]).undo_anchor_shift(ti.anchor).insertion
-            insertion = ti.expand_degenerate_indel(insertion)
-            self.draw_insertion(y, insertion, source_name, draw_sequence=True)
         else:
-            raise NotImplementedError
+            if len(programmed_edit_outcome.insertions) > 1:
+                print(f'Warning: multiple insertions in {programmed_edit_outcome}')
+
+            for insertion in programmed_edit_outcome.insertions:
+                insertion = InsertionOutcome(insertion).undo_anchor_shift(ti.anchor).insertion
+                insertion = ti.expand_degenerate_indel(insertion)
+                self.draw_insertion(y, insertion, source_name, draw_sequence=True)
         
         if self.draw_all_sequence:
             self.draw_sequence(y, source_name, xs_to_skip=SNP_xs, alpha=self.sequence_alpha)
