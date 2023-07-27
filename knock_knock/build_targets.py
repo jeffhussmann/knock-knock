@@ -231,7 +231,7 @@ class TargetInfoBuilder:
         self.target_dir.mkdir(parents=True, exist_ok=True)
 
         # Only align primer sequence downstream of any N's.
-        primers_name, primers = self.info['amplicon_primers']
+        self.primers_name, primers = self.info['amplicon_primers']
         self.primers = {}
         
         for primer_i, primer in enumerate(primers.split(';')):
@@ -239,10 +239,10 @@ class TargetInfoBuilder:
 
         self.genome = self.info['genome']
 
-        if primers_name is None:
+        if self.primers_name is None:
             self.target_name = self.name
         else:
-            self.target_name = primers_name
+            self.target_name = self.primers_name
 
     def build(self, generate_pegRNA_genbanks=False):
         donor_info = self.info.get('donor_sequence')
@@ -626,7 +626,7 @@ class TargetInfoBuilder:
                     primer_alignments[al.query_name].append(al)
                     
         if len(primer_alignments) != 2:
-            raise ValueError(f'At least one primer could not be located in {self.genome}')
+            raise ValueError(f'At least one primer from pair {self.primers_name} could not be located in {self.genome}')
 
         shutil.rmtree(primers_dir)
 
@@ -643,7 +643,7 @@ class TargetInfoBuilder:
         for primer_name, primer in self.primers.items():
             primer_alignments[primer_name] = mapper.seed_and_extend(primer, len(primer) - 10, len(primer), primer_name)
             if not primer_alignments[primer_name]:
-                raise ValueError(f'At least one primer could not be located in {self.genome}')
+                raise ValueError(f'At least one primer from pair {self.primers_name} could not be located in {self.genome}')
             
         return primer_alignments
 
