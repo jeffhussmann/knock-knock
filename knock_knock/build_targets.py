@@ -287,8 +287,12 @@ class TargetInfoBuilder:
         amplicon_end = right_al.reference_end
         amplicon_sequence = self.region_fetcher(ref_name, amplicon_start, amplicon_end).upper()
 
+        sgRNAs = self.info['sgRNAs']
+        if sgRNAs is None:
+            sgRNAs = []
+
         protospacer_features_in_amplicon = {}
-        for sgRNA_name, components in sorted(self.info['sgRNAs']):
+        for sgRNA_name, components in sorted(sgRNAs):
             try:
                 protospacer_feature = pegRNAs.identify_protospacer_in_target(amplicon_sequence, components['protospacer'], components['effector'])
                 protospacer_features_in_amplicon[sgRNA_name] = protospacer_feature
@@ -377,10 +381,10 @@ class TargetInfoBuilder:
 
         if has_donor:
             if not self.defer_HA_identification:
-                if len(self.info['sgRNAs']) > 1:
+                if len(sgRNAs) > 1:
                     raise ValueError
 
-                sgRNA_name, components = self.info['sgRNAs'][0]
+                sgRNA_name, components = sgRNAs[0]
 
                 protospacer_feature = protospacer_features[0]
                 effector = target_info.effectors[components['effector']]
@@ -418,7 +422,7 @@ class TargetInfoBuilder:
 
             gb_records[donor_name] = donor_record
 
-        sgRNAs_with_extensions = [(name, components) for name, components in self.info['sgRNAs'] if components['extension'] != '']
+        sgRNAs_with_extensions = [(name, components) for name, components in sgRNAs if components['extension'] != '']
 
         if len(sgRNAs_with_extensions) > 0:
 
@@ -561,7 +565,7 @@ class TargetInfoBuilder:
         ti = target_info.TargetInfo(self.base_dir, self.name, gb_records=gb_records)
 
         sgRNAs_df = load_sgRNAs(self.base_dir, process=False)
-        sgRNA_names = sorted([name for name, _ in self.info['sgRNAs']])
+        sgRNA_names = sorted([name for name, _ in sgRNAs])
         sgRNAs_df.loc[sgRNA_names].to_csv(ti.fns['sgRNAs'])
 
         ti.make_protospacer_fastas()
@@ -839,11 +843,12 @@ def build_target_infos_from_csv(base_dir, defer_HA_identification=False):
             'donor_type': lookup(row, 'donor_sequence', 'donor_type', validate_sequence=False),
         }
 
-        for sgRNA_name, sgRNA_components in info['sgRNAs']:
-            if sgRNA_name is None:
-                # Because of how lookup works, sgRNA_components will hold value of 
-                # name that wasn't found.
-                raise ValueError(f'{sgRNA_components} not found')
+        if info['sgRNAs'] is not None:
+            for sgRNA_name, sgRNA_components in info['sgRNAs']:
+                if sgRNA_name is None:
+                    # Because of how lookup works, sgRNA_components will hold value of 
+                    # name that wasn't found.
+                    raise ValueError(f'{sgRNA_components} not found')
 
         if row.get('extra_genbanks') is not None:
             info['extra_genbanks'] = row['extra_genbanks'].split(';')

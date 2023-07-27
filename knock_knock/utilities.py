@@ -14,7 +14,12 @@ def read_and_sanitize_csv(csv_fn, index_col=None):
 
     df.columns = df.columns.str.strip()
 
-    df = df.dropna(axis='index', how='all').dropna(axis='columns', how='all').fillna('')
+    df = df.dropna(axis='index', how='all')
+    
+    if not df.empty:
+        df = df.dropna(axis='columns', how='all')
+        
+    df = df.fillna('')
 
     if index_col is not None:
         df = df.set_index(index_col)
