@@ -2605,6 +2605,7 @@ class Layout(layout.Categorizer):
 
         if self.target_info.pegRNA_names is not None and len(self.target_info.pegRNA_names) > 0:
             target_als = self.duplications_from_each_read_edge[self.target_info.non_pegRNA_side]
+
             if len(target_als) == 1:
                 covered_after_deletion = interval.get_disjoint_covered(target_als)
 
@@ -2616,9 +2617,12 @@ class Layout(layout.Categorizer):
                     uncovered = self.whole_read_minus_edges(2) - combined_covered
                 
                     if uncovered.total_length == 0:
-                        deletions = self.extract_indels_from_alignments(target_als)
-                        if len(deletions) == 1:
-                            deletion = deletions[0][0]
+                        not_programmed_indels = [indel for indel, _ in self.extract_indels_from_alignments(target_als) if indel != self.target_info.pegRNA_programmed_deletion]
+                        
+                        not_programmed_deletions = [indel for indel in not_programmed_indels if indel.kind == 'D']
+                        
+                        if len(not_programmed_indels) == 1 and len(not_programmed_deletions) == 1:
+                            deletion = not_programmed_deletions[0]                        
 
         return deletion
 
