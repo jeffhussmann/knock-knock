@@ -345,7 +345,7 @@ class pegRNA:
         for alignment in alignments:
             print(trim_excess_target_from_alignment(alignment))
 
-    def extract_edits_from_alignment(self, verbose=False):
+    def extract_edits_from_alignment(self):
         ''' Align the intended flap sequence to genomic sequence downstream
         of the nick using Biopython's dynamic programming.
         Return representations of SNVs, deletions, insertions, and
@@ -355,94 +355,90 @@ class pegRNA:
 
         alignments = self.align_RTT_to_target()
 
-        best_alignment = alignments[0]
-
-        # Trim off excess target sequence to make text representation
-        # of the alignment clearer.  
-        max_flap_column = best_alignment.inverse_indices[0][-1]
-        best_alignment = best_alignment[:, :max_flap_column + 1 + 10]
-
-        if verbose:
-            print(best_alignment)
+        best_alignment = trim_excess_target_from_alignment(alignments[0])
 
         SNVs = {}
         deletions = []
         insertions = []
+        HA_RT = None
 
         flap_subsequences, target_subsequences = best_alignment.aligned
+        
+        # Do completely non-homologous flaps always produce len 0?
+        if len(flap_subsequences) > 0 and len(target_subsequences) > 0:
 
-        # flap_subsequences and target_subsequences are arrays of length-2 arrays
-        # that indicate the start and (exclusive) ends of subsequences of the flap
-        # and target that are aligned to each other.
+            # flap_subsequences and target_subsequences are arrays of length-2 arrays
+            # that indicate the start and (exclusive) ends of subsequences of the flap
+            # and target that are aligned to each other.
 
-        # Track mismatch positions within each subsequence to allow definition
-        # of the exactly-matching HA_RT section of the final subsequence later.
-        mismatches_in_subsequences = []
+            # Track mismatch positions within each subsequence to allow definition
+            # of the exactly-matching HA_RT section of the final subsequence later.
+            mismatches_in_subsequences = []
 
-        # Compare the sequences of each aligned flap and target subsequences to
-        # identify programmed SNVs.
-        for flap_subsequence, target_subsequence in zip(flap_subsequences, target_subsequences):
-            flap_ps = range(*flap_subsequence)
-            target_ps = range(*target_subsequence)
-            
-            mismatches = [-1]
-            
-            for i, (flap_p, target_p) in enumerate(zip(flap_ps, target_ps)):
-                flap_b = self.intended_flap_sequence[flap_p]
-                target_b = self.target_downstream_of_nick[target_p]
-                if flap_b != target_b:
-                    mismatches.append(i)
-                    
-                    SNV_name = f'SNV_{target_p}_{target_b}_{flap_p}_{flap_b}'
-                    SNVs[SNV_name] = {
-                        'flap': flap_p,
-                        'target_downstream': target_p,
-                    }
-                    
-            mismatches_in_subsequences.append(mismatches)
-            
-        after_last_mismatch_offset = mismatches_in_subsequences[-1][-1] + 1
+            # Compare the sequences of each aligned flap and target subsequences to
+            # identify programmed SNVs.
+            for flap_subsequence, target_subsequence in zip(flap_subsequences, target_subsequences):
+                flap_ps = range(*flap_subsequence)
+                target_ps = range(*target_subsequence)
+                
+                mismatches = [-1]
+                
+                for i, (flap_p, target_p) in enumerate(zip(flap_ps, target_ps)):
+                    flap_b = self.intended_flap_sequence[flap_p]
+                    target_b = self.target_downstream_of_nick[target_p]
+                    if flap_b != target_b:
+                        mismatches.append(i)
+                        
+                        SNV_name = f'SNV_{target_p}_{target_b}_{flap_p}_{flap_b}'
+                        SNVs[SNV_name] = {
+                            'flap': flap_p,
+                            'target_downstream': target_p,
+                        }
+                        
+                mismatches_in_subsequences.append(mismatches)
+                
+            after_last_mismatch_offset = mismatches_in_subsequences[-1][-1] + 1
 
-        # HA_RT is the part of the last subsequence following the last mismatch,
-        # or the entire last subsequence if it doesn't contain a mismatch.
+            # HA_RT is the part of the last subsequence following the last mismatch,
+            # or the entire last subsequence if it doesn't contain a mismatch.
 
-        HA_RT = {
-            'flap': (flap_subsequences[-1][0] + after_last_mismatch_offset, flap_subsequences[-1][1] - 1),
-            'target_downstream': (target_subsequences[-1][0] + after_last_mismatch_offset, target_subsequences[-1][1] - 1),
-        }
-
-        # Insertions are gaps between consecutive flap subsequences. If the
-        # first subsequence doesn't start at 0, the flap begins with an insertion.
-
-        if flap_subsequences[0][0] != 0:
-            insertion = {
-                'start_in_flap': 0,
-                'end_in_flap': flap_subsequences[0][0] - 1,
-                'starts_after_in_downstream': -1,
-                'ends_before_in_downstream': 0,
+            HA_RT = {
+                'flap': (flap_subsequences[-1][0] + after_last_mismatch_offset, flap_subsequences[-1][1] - 1),
+                'target_downstream': (target_subsequences[-1][0] + after_last_mismatch_offset, target_subsequences[-1][1] - 1),
             }
-            insertions.append(insertion)
-            
-        for (_, left_flap_end), (right_flap_start, _), (_, left_target_end), (right_target_start, _) in zip(flap_subsequences, flap_subsequences[1:], target_subsequences, target_subsequences[1:]):
-            if left_flap_end != right_flap_start:
+
+            # Insertions are gaps between consecutive flap subsequences. If the
+            # first subsequence doesn't start at 0, the flap begins with an insertion.
+
+            if flap_subsequences[0][0] != 0:
                 insertion = {
-                    'start_in_flap': left_flap_end,
-                    'end_in_flap': right_flap_start - 1,
-                    'starts_after_in_downstream': left_target_end - 1,
-                    'ends_before_in_downstream': right_target_start,
+                    'start_in_flap': 0,
+                    'end_in_flap': flap_subsequences[0][0] - 1,
+                    'starts_after_in_downstream': -1,
+                    'ends_before_in_downstream': 0,
                 }
                 insertions.append(insertion)
-
-        # Deletions are gaps between consecutive target subsequences. If the
-        # first subsequence doesn't start at 0, sequence immediately after the
-        # nick is deleted.
-
-        if target_subsequences[0][0] != 0:
-            deletions.append((0, target_subsequences[0][0] - 1))
                 
-        for (_, left_target_end), (right_target_start, _) in zip(target_subsequences, target_subsequences[1:]):
-            if left_target_end != right_target_start:
-                deletions.append((left_target_end, right_target_start - 1))
+            for (_, left_flap_end), (right_flap_start, _), (_, left_target_end), (right_target_start, _) in zip(flap_subsequences, flap_subsequences[1:], target_subsequences, target_subsequences[1:]):
+                if left_flap_end != right_flap_start:
+                    insertion = {
+                        'start_in_flap': left_flap_end,
+                        'end_in_flap': right_flap_start - 1,
+                        'starts_after_in_downstream': left_target_end - 1,
+                        'ends_before_in_downstream': right_target_start,
+                    }
+                    insertions.append(insertion)
+
+            # Deletions are gaps between consecutive target subsequences. If the
+            # first subsequence doesn't start at 0, sequence immediately after the
+            # nick is deleted.
+
+            if target_subsequences[0][0] != 0:
+                deletions.append((0, target_subsequences[0][0] - 1))
+                    
+            for (_, left_target_end), (right_target_start, _) in zip(target_subsequences, target_subsequences[1:]):
+                if left_target_end != right_target_start:
+                    deletions.append((left_target_end, right_target_start - 1))
                 
         return SNVs, deletions, insertions, HA_RT, (flap_subsequences, target_subsequences)
 
@@ -540,8 +536,9 @@ class pegRNA:
             else:
                 return self.cut_after - downstream_p
 
-        starts['pegRNA', 'HA_RT'], ends['pegRNA', 'HA_RT'] = sorted(map(convert_flap_to_pegRNA_coordinates, HA_RT['flap']))
-        starts['target', 'HA_RT'], ends['target', 'HA_RT'] = sorted(map(convert_downstream_of_nick_to_target_coordinates, HA_RT['target_downstream']))
+        if HA_RT is not None:
+            starts['pegRNA', 'HA_RT'], ends['pegRNA', 'HA_RT'] = sorted(map(convert_flap_to_pegRNA_coordinates, HA_RT['flap']))
+            starts['target', 'HA_RT'], ends['target', 'HA_RT'] = sorted(map(convert_downstream_of_nick_to_target_coordinates, HA_RT['target_downstream']))
 
         if len(insertions) > 0:
             if len(insertions) > 1:
@@ -695,14 +692,15 @@ class pegRNA:
         HA_PBS.attribute['ID'] = HA_PBS_name
         new_features[self.target_name, HA_PBS_name] = HA_PBS
 
-        HA_RT = gff.Feature.from_fields(seqname=self.target_name,
-                                        start=starts['target', 'HA_RT'],
-                                        end=ends['target', 'HA_RT'],
-                                        strand=HA_PBS.strand,
-                                        ID=HA_RT_name,
-                                       )
-        HA_RT.attribute['color'] = default_feature_colors['RTT']
-        new_features[self.target_name, HA_RT_name] = HA_RT
+        if HA_RT is not None:
+            target_HA_RT = gff.Feature.from_fields(seqname=self.target_name,
+                                                   start=starts['target', 'HA_RT'],
+                                                   end=ends['target', 'HA_RT'],
+                                                   strand=HA_PBS.strand,
+                                                   ID=HA_RT_name,
+                                                  )
+            target_HA_RT.attribute['color'] = default_feature_colors['RTT']
+            new_features[self.target_name, HA_RT_name] = target_HA_RT
 
         # Make pegRNA HA features.
 
@@ -710,14 +708,15 @@ class pegRNA:
         HA_PBS.attribute['ID'] = HA_PBS_name
         new_features[names['pegRNA'], HA_PBS_name] = HA_PBS
 
-        HA_RT = gff.Feature.from_fields(seqname=names['pegRNA'],
-                                        start=starts['pegRNA', 'HA_RT'],
-                                        end=ends['pegRNA', 'HA_RT'],
-                                        strand='-',
-                                        ID=HA_RT_name,
-                                       )
-        HA_RT.attribute['color'] = default_feature_colors['RTT']
-        new_features[names['pegRNA'], HA_RT_name] = HA_RT
+        if HA_RT is not None:
+            pegRNA_HA_RT = gff.Feature.from_fields(seqname=names['pegRNA'],
+                                                   start=starts['pegRNA', 'HA_RT'],
+                                                   end=ends['pegRNA', 'HA_RT'],
+                                                   strand='-',
+                                                   ID=HA_RT_name,
+                                                  )
+            pegRNA_HA_RT.attribute['color'] = default_feature_colors['RTT']
+            new_features[names['pegRNA'], HA_RT_name] = pegRNA_HA_RT
 
         self.features.update(new_features)
 

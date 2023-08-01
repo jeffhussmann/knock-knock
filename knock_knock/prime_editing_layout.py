@@ -1297,7 +1297,7 @@ class Layout(layout.Categorizer):
                 scaffold_overlap = 0
 
             # Insist on overlapping HA_RT to prevent false positive from protospacer alignment.            
-            if not sam.overlaps_feature(al, self.HA_RT, require_same_strand=False):
+            if self.HA_RT is not None and sam.overlaps_feature(al, self.HA_RT, require_same_strand=False):
                 scaffold_overlap = 0
 
         return scaffold_overlap
@@ -1309,7 +1309,7 @@ class Layout(layout.Categorizer):
     @memoized_property
     def HA_RT(self):
         pegRNA_name = self.target_info.pegRNA_names[0]
-        return self.target_info.features[pegRNA_name, f'HA_RT_{pegRNA_name}']
+        return self.target_info.features.get((pegRNA_name, f'HA_RT_{pegRNA_name}'))
 
     def interesting_and_uninteresting_indels(self, als):
         indels = self.extract_indels_from_alignments(als)
