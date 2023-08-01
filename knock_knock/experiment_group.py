@@ -298,49 +298,50 @@ class ExperimentGroup:
                    ]
         outcomes = fs.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
 
-        grid = knock_knock.visualize.stacked.DiagramGrid(outcomes, 
-                                                         ti,
-                                                         draw_wild_type_on_top=True,
-                                                         window=window,
-                                                         block_alpha=0.1,
-                                                         color_overrides=color_overrides,
-                                                         draw_all_sequence=0.1,
-                                                        )
+        if len(outcomes) > 0:
+            grid = knock_knock.visualize.stacked.DiagramGrid(outcomes, 
+                                                            ti,
+                                                            draw_wild_type_on_top=True,
+                                                            window=window,
+                                                            block_alpha=0.1,
+                                                            color_overrides=color_overrides,
+                                                            draw_all_sequence=0.1,
+                                                            )
 
-        grid.add_ax('fractions', width_multiple=12, title='% of reads')
-        grid.add_ax('log10_fractions', width_multiple=12, gap_multiple=2, title='% of reads (log scale)')
+            grid.add_ax('fractions', width_multiple=12, title='% of reads')
+            grid.add_ax('log10_fractions', width_multiple=12, gap_multiple=2, title='% of reads (log scale)')
 
-        for ax, transform in [('fractions', 'percentage'),
-                              ('log10_fractions', 'log10'),
-                             ]:
+            for ax, transform in [('fractions', 'percentage'),
+                                ('log10_fractions', 'log10'),
+                                ]:
 
-            for condition in fs:
-                grid.plot_on_ax(ax, fs[condition],
-                                transform=transform,
-                                color='black',
-                                line_alpha=0.75,
-                                linewidth=1.5,
-                                markersize=7,
-                                fill=0,
-                                )
+                for condition in fs:
+                    grid.plot_on_ax(ax, fs[condition],
+                                    transform=transform,
+                                    color='black',
+                                    line_alpha=0.75,
+                                    linewidth=1.5,
+                                    markersize=7,
+                                    fill=0,
+                                    )
 
-        grid.style_frequency_ax('fractions')
+            grid.style_frequency_ax('fractions')
 
-        grid.set_xlim('fractions', (0,))
-        x_max = (grid.axs_by_name['fractions'].get_xlim()[1] / 100) * 1.01
+            grid.set_xlim('fractions', (0,))
+            x_max = (grid.axs_by_name['fractions'].get_xlim()[1] / 100) * 1.01
 
-        grid.set_xlim('log10_fractions', (np.log10(0.49 * frequency_cutoff), np.log10(x_max)))
-        grid.style_log10_frequency_ax('log10_fractions')
+            grid.set_xlim('log10_fractions', (np.log10(0.49 * frequency_cutoff), np.log10(x_max)))
+            grid.style_log10_frequency_ax('log10_fractions')
 
-        for pegRNA_i, pegRNA_name in enumerate(ti.pegRNA_names):
-            grid.diagrams.draw_pegRNA(ti.name, pegRNA_name, y_offset=pegRNA_i + 1, label_features=False)
+            for pegRNA_i, pegRNA_name in enumerate(ti.pegRNA_names):
+                grid.diagrams.draw_pegRNA(ti.name, pegRNA_name, y_offset=pegRNA_i + 1, label_features=False)
 
-        grid.plot_pegRNA_conversion_fractions_above(self, conditions=conditions)
-        grid.style_pegRNA_conversion_plot('pegRNA_conversion_fractions')
+            grid.plot_pegRNA_conversion_fractions_above(self, conditions=conditions)
+            grid.style_pegRNA_conversion_plot('pegRNA_conversion_fractions')
 
-        grid.fig.savefig(self.fns['partial_incorporation_figure'], bbox_inches='tight')
+            grid.fig.savefig(self.fns['partial_incorporation_figure'], bbox_inches='tight')
 
-        return grid.fig
+            return grid.fig
 
     def make_deletion_boundaries_figure(self,
                                         frequency_cutoff=5e-4,
@@ -350,6 +351,8 @@ class ExperimentGroup:
                                         condition_to_color=None,
                                        ):
         ti = self.target_info
+        if ti.primary_protospacer is None:
+            return
 
         if conditions is None:
             conditions = self.full_conditions

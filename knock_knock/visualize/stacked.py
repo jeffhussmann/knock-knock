@@ -1018,6 +1018,7 @@ class StackedDiagrams:
                     
         if not self.preserve_x_lims:
             # Some uses don't want x lims to be changed.
+            window_left, window_right = self.windows[self.single_source_name]
             x_lims = [window_left - 0.5, window_right + 0.5]
             if self.flip[self.single_source_name]:
                 self.ax.set_xlim(*x_lims[::-1])
