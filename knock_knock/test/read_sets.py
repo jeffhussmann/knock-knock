@@ -4,7 +4,6 @@ and regression testing these categorizations.
 '''
 
 import shutil
-import textwrap
 from pathlib import Path
 
 import yaml
@@ -172,8 +171,6 @@ def build_pooled_screen_read_set(set_name):
     pool = repair_seq.pooled_screen.get_pool(manual_details['base_dir'], manual_details['pool_name'])
     exp = pool.single_guide_experiment(manual_details['fixed_guide'], manual_details['variable_guide'])
 
-    # Note: might prefer to have exp-specific target_info, but these have symlinks that would need
-    # to be resolved. Instead, just use the pool target_info.
     new_target_info_dir = base_dir / 'targets' / pool.target_info.name
     existing_target_info_dir = pool.target_info.dir
 
@@ -187,7 +184,7 @@ def build_pooled_screen_read_set(set_name):
 
     shutil.copytree(existing_target_info_dir, new_target_info_dir)
 
-    # Pools may specify specialized values for some target_info
+    # Pool experiments specify specialized values for some target_info
     # parameters that need to be passed along.
     possible_target_info_kwargs_keys = [
         'sgRNAs',
