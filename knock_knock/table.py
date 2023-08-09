@@ -261,7 +261,7 @@ def make_table(base_dir,
         df = df.groupby(axis=1, level=0, sort=False).sum()
 
     if arrayed:
-        exps = knock_knock.arrayed_experiment_group.get_all_experiments(base_dir)
+        exps = knock_knock.arrayed_experiment_group.get_all_experiments(base_dir, conditions=conditions)
     else:
         exps = knock_knock.experiment.get_all_experiments(base_dir, conditions=conditions, as_dictionary=True)
 

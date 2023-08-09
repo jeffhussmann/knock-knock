@@ -70,46 +70,52 @@ def process(args):
                                                        )
 
 def make_tables(args):
-    results_dir = args.project_directory / 'results'
-
-    if args.group:
-        groups = args.group.split(',')
-
-        conditions = {
-            'batch': groups,
-        }
-
-        if args.experiment_type is not None:
-            conditions['experiment_type'] = args.experiment_type
-
-        knock_knock.table.make_self_contained_zip(args.project_directory,
-                                                  conditions,
-                                                  args.title,
-                                                  sort_samples=not args.unsorted,
-                                                  arrayed=args.arrayed,
-                                                  vmax_multiple=args.vmax_multiple,
-                                                 )
+    if args.batches:
+        batches_to_include = args.batches.split(',')
     else:
-        if args.arrayed:
-            batches = knock_knock.arrayed_experiment_group.get_all_batches(args.project_directory)
+        batches_to_include = None
 
-            for batch_name, batch in batches.items():
-                experiment_types = {group.experiment_type for group in batch.groups.values()}
-                for experiment_type in experiment_types:
-                    logging.info(f'Making {batch_name} {experiment_type}')
+    if args.arrayed:
+        batches = knock_knock.arrayed_experiment_group.get_all_batches(args.project_directory)
 
-                    conditions = {
-                        'batch': batch_name,
-                        'experiment_type': experiment_type,
-                    }
+        if batches_to_include is not None:
+            batches = {name: batch for name, batch in batches.items() if name in batches_to_include}
 
-                    knock_knock.table.make_self_contained_zip(args.project_directory,
-                                                              conditions,
-                                                              f'{batch_name}_{experiment_type}',
-                                                              sort_samples=not args.unsorted,
-                                                              arrayed=True,
-                                                              vmax_multiple=args.vmax_multiple,
-                                                             )
+        for batch_name, batch in batches.items():
+            experiment_types = {group.experiment_type for group in batch.groups.values()}
+            for experiment_type in experiment_types:
+                logging.info(f'Making {batch_name} {experiment_type}')
+
+                conditions = {
+                    'batch': [batch_name],
+                    'experiment_type': experiment_type,
+                }
+
+                knock_knock.table.make_self_contained_zip(args.project_directory,
+                                                          conditions,
+                                                          f'{batch_name}_{experiment_type}',
+                                                          sort_samples=not args.unsorted,
+                                                          arrayed=True,
+                                                          vmax_multiple=args.vmax_multiple,
+                                                         )
+
+    else:
+        if batches_to_include is not None:
+
+            conditions = {
+                'batch': batches_to_include,
+            }
+
+            if args.experiment_type is not None:
+                conditions['experiment_type'] = args.experiment_type
+
+            knock_knock.table.make_self_contained_zip(args.project_directory,
+                                                      conditions,
+                                                      args.title,
+                                                      sort_samples=not args.unsorted,
+                                                      arrayed=args.arrayed,
+                                                      vmax_multiple=args.vmax_multiple,
+                                                     )
         else:
             batches = knock_knock.experiment.get_all_batches(args.project_directory)
 
@@ -205,7 +211,7 @@ if __name__ == '__main__':
 
     parser_table = subparsers.add_parser('table', help='generate tables of outcome frequencies')
     add_project_directory_arg(parser_table)
-    parser_table.add_argument('--group', help='if specified, a comma-separated list groups to include; if not specified, all groups will be generated')
+    parser_table.add_argument('--batches', help='if specified, a comma-separated list of batches to include; if not specified, all batches in project_directory will be generated')
     parser_table.add_argument('--title', default='knock_knock_table', help='if specified, a title for output files')
     parser_table.add_argument('--unsorted', action='store_true', help='don\'t sort samples')
     parser_table.add_argument('--arrayed', action='store_true', help='samples are organized as arrayed_experiment_groups')
