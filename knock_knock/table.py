@@ -593,13 +593,13 @@ def make_self_contained_zip(base_dir,
     base_dir = Path(base_dir)
     results_dir = base_dir / 'results'
     fn_prefix = results_dir / table_name
-    fns_to_zip = []
+    fns_to_zip = set()
 
     logging.info('Generating csv table...')
     csv_fn = fn_prefix.with_suffix('.csv')
     df = load_counts(base_dir, conditions, exclude_empty=False, arrayed=arrayed).T
     df.to_csv(csv_fn)
-    fns_to_zip.append(csv_fn)
+    fns_to_zip.add(csv_fn)
 
     logging.info('Generating high-level html table...')
     html_fn = fn_prefix.with_suffix('.html')
@@ -610,7 +610,7 @@ def make_self_contained_zip(base_dir,
                   arrayed=arrayed,
                   vmax_multiple=vmax_multiple,
                  )
-    fns_to_zip.append(html_fn)
+    fns_to_zip.add(html_fn)
 
     if include_details:
         logging.info('Generating detailed html table...')
@@ -622,13 +622,13 @@ def make_self_contained_zip(base_dir,
                       arrayed=arrayed,
                       vmax_multiple=vmax_multiple,
                      )
-        fns_to_zip.append(html_fn)
+        fns_to_zip.add(html_fn)
 
     logging.info('Generating performance metrics...')
     pms_fn = fn_prefix.parent / (f'{fn_prefix.name}_performance_metrics.csv')
     pms = calculate_performance_metrics(base_dir, conditions, arrayed=arrayed)
     pms.to_csv(pms_fn)
-    fns_to_zip.append(pms_fn)
+    fns_to_zip.add(pms_fn)
 
     if arrayed:
         exps = knock_knock.arrayed_experiment_group.get_all_experiments(base_dir, conditions=conditions)
@@ -645,9 +645,12 @@ def make_self_contained_zip(base_dir,
                 else:
                     if fn.is_dir():
                         for child_fn in fn.iterdir():
-                            fns_to_zip.append(child_fn)
+                            fns_to_zip.add(child_fn)
                     else:
-                        fns_to_zip.append(fn)
+                        fns_to_zip.add(fn)
+
+            add_fn(exp.experiment_group.fns['partial_incorporation_figure'])
+            add_fn(exp.experiment_group.fns['deletion_boundaries_figure'])
             
             add_fn(exp.fns['outcome_browser'])
             add_fn(exp.fns['lengths_figure'])

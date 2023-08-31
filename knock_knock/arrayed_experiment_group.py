@@ -738,31 +738,47 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         return conversion_fractions
 
     @memoized_property
-    def outcomes_containing_pegRNA_SNVs(self):
-        if self.target_info.pegRNA_SNVs is None:
-            outcomes_containing_pegRNA_SNVs = {}
-        else:
+    def outcomes_containing_pegRNA_programmed_edits(self):
+        outcomes_containing_pegRNA_programmed_edits = {}
+        if self.target_info.pegRNA_SNVs is not None:
             SNVs = self.target_info.pegRNA_SNVs[self.target_info.target]
-            outcomes_containing_pegRNA_SNVs = {SNV_name: [] for SNV_name in SNVs}
-            
-            for c, s, d  in self.outcome_fractions.index:
-                if c in {'intended edit', 'partial replacement', 'partial edit'}:
-                    outcome = knock_knock.outcome.ProgrammedEditOutcome.from_string(d)
+            # Note: sorting SNVs is critical here to match the order in outcome.SNV_read_bases.
+            SNV_order = sorted(SNVs)
 
-                    # Note: sorting SNVs is critical here to match the order in outcome.SNV_read_bases.
-                    for SNV_name, read_base in zip(sorted(SNVs), outcome.SNV_read_bases):
+            for SNV_name in SNVs:
+                outcomes_containing_pegRNA_programmed_edits[SNV_name] = []
+
+        else:
+            SNVs = None
+        
+        if self.target_info.pegRNA_programmed_insertion is not None:
+            insertion = self.target_info.pegRNA_programmed_insertion
+            outcomes_containing_pegRNA_programmed_edits[str(insertion)] = []
+
+        else:
+            insertion = None
+            
+        for c, s, d  in self.outcome_fractions.index:
+            if c in {'intended edit', 'partial replacement', 'partial edit'}:
+                outcome = knock_knock.outcome.ProgrammedEditOutcome.from_string(d)
+
+                if SNVs is not None:
+                    for SNV_name, read_base in zip(SNV_order, outcome.SNV_read_bases):
                         SNV = SNVs[SNV_name]
                         if read_base == SNV['alternative_base']:
-                            outcomes_containing_pegRNA_SNVs[SNV_name].append((c, s, d))
+                            outcomes_containing_pegRNA_programmed_edits[SNV_name].append((c, s, d))
 
-        return outcomes_containing_pegRNA_SNVs
+                if insertion is not None and insertion in outcome.insertions:
+                    outcomes_containing_pegRNA_programmed_edits[str(insertion)].append((c, s, d))
+
+        return outcomes_containing_pegRNA_programmed_edits
 
     @memoized_property
     def pegRNA_conversion_fractions(self):
         fs = {}
 
-        for SNV_name, outcomes in self.outcomes_containing_pegRNA_SNVs.items():
-            fs[SNV_name] = self.outcome_fractions.loc[outcomes].sum()
+        for edit_name, outcomes in self.outcomes_containing_pegRNA_programmed_edits.items():
+            fs[edit_name] = self.outcome_fractions.loc[outcomes].sum()
 
         fs_df = pd.DataFrame.from_dict(fs, orient='index')
 

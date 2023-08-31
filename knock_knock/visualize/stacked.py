@@ -1551,15 +1551,26 @@ class DiagramGrid:
         plot_kwargs.setdefault('markersize', 7)
         plot_kwargs.setdefault('color', 'black')
 
-        def SNV_name_to_x(SNV_name):
+        def edit_name_to_x(edit_name):
             SNVs = group.target_info.pegRNA_SNVs[group.target_info.target]
-            p = SNVs[SNV_name]['position']
+            if edit_name in SNVs:
+                p = SNVs[edit_name]['position']
+            else:
+                indel = knock_knock.target_info.degenerate_indel_from_string(edit_name)
+                if indel.kind == 'D':
+                    deletion = knock_knock.outcome.DeletionOutcome(indel).undo_anchor_shift(group.target_info.anchor).deletion
+                    p = deletions.starts_ats[0]
+                else:
+                    insertion = knock_knock.outcome.InsertionOutcome(indel).undo_anchor_shift(group.target_info.anchor).insertion
+                    p = insertion.starts_afters[0] + 0.5
+
             x = p - group.target_info.cut_after
+
             return x
         
         pegRNA_conversion_fractions = group.pegRNA_conversion_fractions.copy()
 
-        xs = pegRNA_conversion_fractions.index.map(SNV_name_to_x)
+        xs = pegRNA_conversion_fractions.index.map(edit_name_to_x)
         pegRNA_conversion_fractions.index = xs
         pegRNA_conversion_fractions = pegRNA_conversion_fractions.sort_index()
         
@@ -1571,7 +1582,7 @@ class DiagramGrid:
                 continue
 
             self.plot_on_ax_above('pegRNA_conversion_fractions',
-                                  xs,
+                                  fs.index,
                                   fs * 100,
                                   label=condition,
                                   **plot_kwargs,

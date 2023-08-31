@@ -300,12 +300,12 @@ class ExperimentGroup:
 
         if len(outcomes) > 0:
             grid = knock_knock.visualize.stacked.DiagramGrid(outcomes, 
-                                                            ti,
-                                                            draw_wild_type_on_top=True,
-                                                            window=window,
-                                                            block_alpha=0.1,
-                                                            color_overrides=color_overrides,
-                                                            draw_all_sequence=0.1,
+                                                             ti,
+                                                             draw_wild_type_on_top=True,
+                                                             window=window,
+                                                             block_alpha=0.1,
+                                                             color_overrides=color_overrides,
+                                                             draw_all_sequence=0.1,
                                                             )
 
             grid.add_ax('fractions', width_multiple=12, title='% of reads')
@@ -323,7 +323,7 @@ class ExperimentGroup:
                                     linewidth=1.5,
                                     markersize=7,
                                     fill=0,
-                                    )
+                                   )
 
             grid.style_frequency_ax('fractions')
 
