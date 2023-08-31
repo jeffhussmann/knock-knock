@@ -19,16 +19,33 @@ idx = pd.IndexSlice
 
 class Categorizer:
     def __init__(self, alignments, target_info, **kwargs):
-        self.alignments = alignments
+        self.alignments = [al for al in alignments if not al.is_unmapped]
         self.target_info = target_info
 
         alignment = alignments[0]
+
         self.name = alignment.query_name
         self.query_name = self.name
+
         self.seq = sam.get_original_seq(alignment)
+        if self.seq is None:
+            self.seq = ''
+        self.seq_bytes = self.seq.encode()
+
+        # Note: don't try to make qual anything but a python array.
+        # pysam will internally try to evaluate it's truth status
+        # and fail.
         self.qual = sam.get_original_qual(alignment)
 
         self.read = sam.mapping_to_Read(alignment)
+
+        self.read_length = len(self.read)
+
+        self.primary_ref_names = set(self.target_info.reference_sequences)
+
+        self.relevant_alignments = self.alignments
+
+        self.categorized = False
 
     @memoized_property
     def whole_read(self):

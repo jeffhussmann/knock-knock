@@ -120,38 +120,14 @@ class Layout(layout.Categorizer):
     ]
 
     def __init__(self, alignments, target_info, error_corrected=False, mode=None):
-        self.alignments = [al for al in alignments if not al.is_unmapped]
-
-        self.target_info = target_info
-        
-        alignment = alignments[0]
-
-        self.query_name = alignment.query_name
-
-        self.seq = sam.get_original_seq(alignment)
-        if self.seq is None:
-            self.seq = ''
-
-        self.seq_bytes = self.seq.encode()
-
-        # Note: don't try to make this anything but a python array.
-        # pysam will internally try to evaluate it's truth status
-        # and fail.
-        self.qual = sam.get_original_qual(alignment)
-
-        self.primary_ref_names = set(self.target_info.reference_sequences)
+        super().__init__(alignments, target_info)
 
         self.special_alignment = None
-        
-        self.relevant_alignments = self.alignments
-
         self.ins_size_to_split_at = 1
         self.del_size_to_split_at = 1
 
         self.error_corrected = error_corrected
         self.mode = mode
-
-        self.categorized = False
 
     @classmethod
     def from_read(cls, read, target_info):
@@ -1410,10 +1386,6 @@ class Layout(layout.Categorizer):
                 nonredundant.append(al)
 
         return nonredundant
-
-    @memoized_property
-    def read(self):
-        return fastq.Read(self.query_name, self.seq, fastq.encode_sanger(self.qual))
 
     def seed_and_extend(self, on, query_start, query_end):
         extender = self.target_info.seed_and_extender[on]
