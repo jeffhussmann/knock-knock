@@ -175,7 +175,7 @@ def build_pooled_screen_read_set(set_name):
     existing_target_info_dir = pool.target_info.dir
 
     if new_target_info_dir.is_dir():
-        approved_deletion = input(f'Deleting target directory {new_target_info_dir}, proceed?') == 'y'
+        approved_deletion = input(f'Deleting target directory {new_target_info_dir}, proceed? ') == 'y'
 
         if approved_deletion:
             shutil.rmtree(new_target_info_dir)
@@ -271,7 +271,7 @@ def build_arrayed_group_read_set(set_name, source_dir=None, prompt=True):
 
     if new_target_info_dir.is_dir():
         if prompt:
-            approved_deletion = input(f'Deleting target directory {new_target_info_dir}, proceed?') == 'y'
+            approved_deletion = input(f'Deleting target directory {new_target_info_dir}, proceed? ') == 'y'
         else:
             approved_deletion = True
 
