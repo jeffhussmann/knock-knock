@@ -697,24 +697,19 @@ class StackedDiagrams:
                              va='bottom',
                             )
 
+
         PBS_seq = hits.utilities.reverse_complement(components['PBS'])
+        # PBS_seq should now match the PBS_covered part of the protospacer.
 
+        # xs go from the 5' end to the 3' end of the PBS-covered part of the protospacer.
         if self.guide[source_name].strand == '+':
-            xs = end + np.arange(-len(PBS_seq) + 1, 1)
+            xs = start + np.arange(len(PBS_seq))
         else:
-            xs = start + np.arange(len(PBS_seq) - 1, -1, -1)
-            PBS_seq = hits.utilities.complement(PBS_seq)
+            xs = end - np.arange(len(PBS_seq))
 
-        if self.flip[source_name]:
-            if PBS.strand == '-':
-                PBS_seq = hits.utilities.complement(PBS_seq)
-            else:
-                PBS_seq = PBS_seq[::-1]
-        else:
-            if PBS.strand == '+':
-                PBS_seq = hits.utilities.complement(PBS_seq)
-            else:
-                PBS_seq = PBS_seq[::-1]
+        # If the reverse of the protospacer is being drawn, need to flip (back) PBS_seq.
+        if (self.flip[source_name] and PBS.strand == '+') or (not self.flip[source_name] and PBS.strand == '-'):
+            PBS_seq = hits.utilities.reverse_complement(PBS_seq)
 
         for x, b in zip(xs, PBS_seq):
             self.ax.annotate(b,
@@ -762,7 +757,16 @@ class StackedDiagrams:
             self.draw_rect(source_name, rect_start, rect_end, bottom, top, 0.8, color)
 
         del_bottom, del_top = self.get_bottom_and_top(y, StackedDiagrams.del_multiple)
-        for (_, previous_end), (next_start, _) in zip(target_subsequences, target_subsequences[1:]):
+
+        del_boundaries = [(previous_end, next_start) for (_, previous_end), (next_start, _) in zip(target_subsequences, target_subsequences[1:])]
+        # If there is a deletion immediately after the nick, it needs to be manually added here.
+        if target_subsequences[0][0] != 0:
+            del_boundaries = [(0, target_subsequences[0][0])] + del_boundaries
+
+        if PBS.strand == '-':
+            del_boundaries = [(-previous_end, -next_start) for previous_end, next_start in del_boundaries]
+
+        for previous_end, next_start in del_boundaries:
             self.draw_rect(source_name, previous_end + 1 - 0.5, next_start + 1 - 0.5, del_bottom, del_top, 0.4, color='black')
 
         seq = self.seqs[source_name]
