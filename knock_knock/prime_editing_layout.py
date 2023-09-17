@@ -1276,7 +1276,7 @@ class Layout(layout.Categorizer):
                 scaffold_overlap = 0
 
             # Insist on overlapping HA_RT to prevent false positive from protospacer alignment.            
-            if self.HA_RT is not None and sam.overlaps_feature(al, self.HA_RT, require_same_strand=False):
+            if self.HA_RT is not None and not sam.overlaps_feature(al, self.HA_RT, require_same_strand=False):
                 scaffold_overlap = 0
 
         return scaffold_overlap
