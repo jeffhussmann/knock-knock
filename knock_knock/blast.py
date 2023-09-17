@@ -18,12 +18,14 @@ def blast(ref_fn,
           max_insertion_length=None,
           manual_temp_dir=None,
           return_alignments=False,
+          ref_name_prefix_to_append=None,
          ):
     ''' ref_fn: either a path to a fasta file, or a dictionary of reference sequences
         reads: either a path to a fastq/fastq.gz file, or a list of such paths, or an iterator over hits.fastq.Read objects
         bam_fn: path to write reference coordinate-sorted alignments
         bam_by_name_fn: path to write query name-sorted alignments
         max_insertion_length: If not None, any alignments with insertions longer than max_insertion_length will be split into multiple alignments.
+        ref_name_prefix_to_append: If not None, prefix to append before reference names in header.
     '''
     saved_verbosity = pysam.set_verbosity(0)
 
@@ -46,7 +48,7 @@ def blast(ref_fn,
             '-': {},
         }
 
-        if isinstance(reads, list) and isinstance(reads[0], fastq.Read):
+        if isinstance(reads, list) and (len(reads) == 0 or isinstance(reads[0], fastq.Read)):
             # Need to exempt lists of Reads from being passed to fastq.reads below
             pass
         elif isinstance(reads, (str, Path, list)):
@@ -107,34 +109,68 @@ def blast(ref_fn,
             unal.query_qualities = read.query_qualities
             return unal
 
+        # Any references that were not aligned to appear to be ommitted from the 
+        # header of the sam file emitted by blastn. For some applications,
+        # it is convenient to guarantee that the header will contain all
+        # references in a defined order. If the emitted header doesn't match
+        # this canonical header, re-register every alignment relative to
+        # the canonical header. If it does, skip this to avoid unnecssesary overhead.
+        canonical_header = sam.header_from_fasta(ref_fn)
+
+        if ref_name_prefix_to_append:
+            new_references = [f'{ref_name_prefix_to_append}_{ref}' for ref in canonical_header.references]
+            canonical_header = pysam.AlignmentHeader.from_references(new_references, canonical_header.lengths)
+
+        # If there are no alignments, blastn appears to emit an empty file (i.e.
+        # without a header). Ensure that sam_fn holds a valid (possibly empty)
+        # SAM file.
         try:
-            sam_fh = pysam.AlignmentFile(str(sam_fn))
-            header = sam_fh.header
-        except ValueError:
+            sam.get_header(sam_fn)
+        except:
             # blast had no output
-            header = sam.header_from_fasta(ref_fn)
-            pysam.AlignmentFile(str(sam_fn), 'wb', header=header).close()
-            sam_fh = pysam.AlignmentFile(str(sam_fn))
+            with pysam.AlignmentFile(sam_fn, 'w', header=canonical_header) as fh:
+                pass
+
+        emitted_header = sam.get_header(sam_fn)
+
+        need_to_standardize_header = (canonical_header.references != emitted_header.references)
+
+        if need_to_standardize_header:
+            header_to_use = canonical_header
+        else:
+            header_to_use = emitted_header
+
+        def possibly_standardize_header(al):
+            if need_to_standardize_header:
+                al_dict = al.to_dict()
+                if ref_name_prefix_to_append:
+                    al_dict['ref_name'] = f"{ref_name_prefix_to_append}_{al_dict['ref_name']}"
+                al = pysam.AlignedSegment.from_dict(al_dict, header=header_to_use)
+            return al
 
         if bam_fn is not None:
-            sorter = sam.AlignmentSorter(bam_fn, header)
+            sorter = sam.AlignmentSorter(bam_fn, header_to_use)
         else:
             sorter = contextlib.nullcontext()
 
         if bam_by_name_fn is not None:
-            by_name_sorter = sam.AlignmentSorter(bam_by_name_fn, header, by_name=True)
+            by_name_sorter = sam.AlignmentSorter(bam_by_name_fn, header_to_use, by_name=True)
         else:
             by_name_sorter = contextlib.nullcontext()
 
         alignments = []
 
-        with sorter, by_name_sorter:
+        with sorter, by_name_sorter, pysam.AlignmentFile(sam_fn) as sam_fh:
+
             aligned_names = set()
             for al in sam_fh:
                 aligned_names.add(al.query_name)
 
                 undo_hard_clipping(al)
 
+                al = possibly_standardize_header(al)
+
+                # TODO: can this be removed since layout will take care of it?
                 if max_insertion_length is not None:
                     split_als = sam.split_at_large_insertions(al, max_insertion_length + 1)
                 else:
