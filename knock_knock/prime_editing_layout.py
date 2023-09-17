@@ -111,10 +111,13 @@ class Layout(layout.Categorizer):
              'bosTau7',
              'e_coli',
              'b_subtilis',
-             'phiX',
              'primer dimer',
              'short unknown',
              'extra sequence',
+            ),
+        ),
+        ('phiX',
+            ('phiX',
             ),
         ),
     ]
@@ -1524,8 +1527,6 @@ class Layout(layout.Categorizer):
 
                     if not_covered_by_any_target_als.total_length >= 100:
                         ref_seqs = {**self.target_info.reference_sequences}
-                        if 'phiX' in self.target_info.supplemental_indices:
-                            ref_seqs.update(self.target_info.supplemental_reference_sequences('phiX'))
 
                         for al in self.supplemental_alignments:
                             covered_by_al = interval.get_covered(al)
@@ -1536,13 +1537,35 @@ class Layout(layout.Categorizer):
                                     covering_als.append(al)
 
                 if len(covering_als) > 0:
-                    valid = True
-                    results['covering_als'] = covering_als
+                    # Exclude phiX reads, which can rarely have spurious alignments to the forward primer
+                    # close to the start of the read that overlap the forward primer.
+                    if any('phiX' in al.reference_name for al in covering_als):
+                        valid = False
+                    else:
+                        valid = True
+                        results['covering_als'] = covering_als
 
         if not valid:
             results = None
 
         return results
+
+    @memoized_property
+    def longest_phiX_alignment(self):
+        # Note: hard-coding of phiX reference is not ideal here.
+        # Should really use doubled phiX
+        phiX_alignments = [al for al in self.supplemental_alignments if al.reference_name == 'phiX_phix']
+
+        if len(phiX_alignments) == 0:
+            longest_phiX_alignment = None
+        else:
+            longest_phiX_alignment = max(phiX_alignments, key=lambda al: al.query_alignment_length)
+
+        return longest_phiX_alignment
+
+    @memoized_property
+    def aligns_to_phiX(self):
+        return self.longest_phiX_alignment is not None and self.longest_phiX_alignment.query_alignment_length >= 100
 
     def register_intended_edit(self, single_target_alignment_without_indels=False):
         self.category = 'intended edit'
@@ -2297,6 +2320,13 @@ class Layout(layout.Categorizer):
 
         elif self.original_target_alignment_has_only_relevant_indels:
             self.register_simple_indels()
+
+        elif self.aligns_to_phiX:
+            self.category = 'phiX'
+            self.subcategory = 'phiX'
+            self.details = 'n/a'
+
+            self.relevant_alignments = [self.longest_phiX_alignment]
 
         elif self.genomic_insertion is not None:
             self.register_genomic_insertion()
