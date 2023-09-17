@@ -152,7 +152,6 @@ def fig_to_png_URI(fig):
 
 link_template = '''\
 <a 
-    id="{id}"
     data-toggle="popover" 
     data-trigger="hover"
     data-html="true"
@@ -197,6 +196,15 @@ modal_template = '''\
 </div>
 '''
 
+outcome_browser_link_template = '''\
+<a
+    href="{URI}"
+    target="_blank"
+>
+    {sample_name}
+</a>
+'''
+
 class ModalMaker(object):
     def __init__(self):
         self.current_number = 0
@@ -209,7 +217,12 @@ class ModalMaker(object):
     def make_length(self, exp, outcome=None, inline_images=True):
         modal_id = self.get_next_id()
         
-        svg_text = knock_knock.svg.length_plot_with_popovers(exp, outcome=outcome, container_selector=f'#{modal_id}', inline_images=inline_images)
+        svg_text = knock_knock.svg.length_plot_with_popovers(exp,
+                                                             outcome=outcome,
+                                                             container_selector=f'#{modal_id}',
+                                                             inline_images=inline_images,
+                                                            )
+
         modal_div = modal_template.format(modal_id=modal_id, contents=svg_text, title=exp.name)
         
         return modal_div, modal_id
@@ -241,15 +254,15 @@ def make_table(base_dir,
         totals_row_label = totals_all_row_label
     else:
         totals_row_label = totals_relevant_row_label
+
     totals_row_label_collapsed = totals_row_label[1]
 
     totals = df.loc[totals_row_label]
 
     df = df.T
 
-    # Hack to give the html the information it needs to build links to diagram htmls
     if arrayed:
-        df.index = pd.MultiIndex.from_tuples([(b, f'{b}/{g}/{s}') for b, g, s in df.index.values])
+        df.index = pd.MultiIndex.from_tuples([(batch, (batch, group, sample)) for batch, group, sample in df.index.values])
     else:
         df.index = pd.MultiIndex.from_tuples([(g, f'{g}/{n}') for g, n in df.index.values])
     
@@ -258,7 +271,7 @@ def make_table(base_dir,
         level_0[0] = totals_row_label[1]
         df.columns = df.columns.set_levels(level_0, level=0)
 
-        df = df.groupby(axis=1, level=0, sort=False).sum()
+        df = df.T.groupby(level=0, sort=False).sum().T
 
     if arrayed:
         exps = knock_knock.arrayed_experiment_group.get_all_experiments(base_dir, conditions=conditions)
@@ -267,9 +280,7 @@ def make_table(base_dir,
 
     modal_maker = ModalMaker()
 
-    def link_maker(val, outcome, name_tuple_string):
-        name_tuple = tuple(name_tuple_string.split('/'))
-
+    def link_maker(val, outcome, name_tuple):
         if val == 0:
             html = ''
         else:
@@ -295,13 +306,12 @@ def make_table(base_dir,
                         width, height = 100, 100
 
                     link = link_without_modal_template.format(text=text,
-                                                             URI=hover_URI,
-                                                             width=width,
-                                                             height=height,
-                                                            )
+                                                              URI=hover_URI,
+                                                              width=width,
+                                                              height=height,
+                                                             )
                 else:
                     link = bare_link_template.format(text=text)
-
 
                 html = link
 
@@ -329,8 +339,7 @@ def make_table(base_dir,
 
                     modal_div, modal_id = modal_maker.make_outcome()
 
-                    link = link_template.format(id=f'{"_".join(name_tuple)}_{outcome}',
-                                                text=text,
+                    link = link_template.format(text=text,
                                                 modal_id=modal_id,
                                                 iframe_URL=relative_path,
                                                 URI=hover_URI,
@@ -346,35 +355,47 @@ def make_table(base_dir,
 
         return html
     
-    def bind_link_maker(name_tuple_string):
+    def bind_link_maker(name_tuple):
         bound = {}
         for outcome in df:
-            bound[outcome] = functools.partial(link_maker, outcome=outcome, name_tuple_string=name_tuple_string)
+            bound[outcome] = functools.partial(link_maker, outcome=outcome, name_tuple=name_tuple)
 
         return bound
 
     styled = df.style
 
-    for exp_group, name_tuple_string in df.index:
-        # rsplit here is future-proofing against handling ArrayedGroup/screens better.
-        sl = pd.IndexSlice[[(exp_group, name_tuple_string)], :]
-        styled.format(bind_link_maker(name_tuple_string), subset=sl)
+    for exp_group, name_tuple in df.index:
+        sl = pd.IndexSlice[[(exp_group, name_tuple)], :]
+        styled.format(bind_link_maker(name_tuple), subset=sl)
     
-    for exp_group, name_tuple_string in df.index:
-        name_tuple = tuple(name_tuple_string.split('/'))
+    for exp_group, name_tuple in df.index:
         exp = exps[name_tuple]
         # Note: as of pandas 0.22, col needs to be in brackets here so that
         # apply is ultimately called on a df, not a series, to prevent
         # TypeError: _bar_left() got an unexpected keyword argument 'axis'
 
-        subset_slice = pd.IndexSlice[[(exp_group, name_tuple_string)], :]
+        subset_slice = pd.IndexSlice[[(exp_group, name_tuple)], :]
 
         styled.bar(subset=subset_slice,
                    axis=1,
                    color=exp.color,
                    vmin=0,
-                   vmax=df.loc[exp_group, name_tuple_string].max() * vmax_multiple,
+                   vmax=df.loc[subset_slice].max(axis=None) * vmax_multiple,
                   )
+
+    def make_outcome_browswer_link(name_tuple):
+        sample_name = name_tuple[-1]
+
+        exp = exps[name_tuple]
+        outcome_browser_fn = exp.fns['outcome_browser']
+        relative_path = outcome_browser_fn.relative_to(exp.base_dir / 'results')
+
+        return outcome_browser_link_template.format(URI=relative_path, sample_name=sample_name)
+
+    styled.format_index(axis=0,
+                        level=1,
+                        formatter=make_outcome_browswer_link,
+                       )
 
     styled.set_table_attributes('style="border-collapse: separate"')
 
@@ -503,7 +524,6 @@ def make_table(base_dir,
         
     styled.set_sticky(axis=1)
     styled.set_sticky(axis=0, levels=1)
-
 
     styled.set_table_styles(post_styles, overwrite=False)
 
@@ -641,7 +661,7 @@ def make_self_contained_zip(base_dir,
         for exp in exps.values():
             def add_fn(fn):
                 if not fn.exists():
-                    exps_missing_files[exp.group, exp.sample_name].append(fn)
+                    exps_missing_files[exp.group_name, exp.sample_name].append(fn)
                 else:
                     if fn.is_dir():
                         for child_fn in fn.iterdir():

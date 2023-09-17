@@ -21,7 +21,8 @@ before_svg_template = '''\
 
 </head>
 <body>
-<div style="height:5000px;text-align:center">\
+<div style="height:5000px;text-align:center">
+<h1>{title}</h1>
 '''.format
 
 after_svg = '''\
@@ -66,6 +67,7 @@ after_svg = '''\
 
 </body>\
 '''
+
 toggle_function_template = '''\
 javascript:(function(){{
     $all_ranges = $('[id^=length_range]');
@@ -193,7 +195,7 @@ def decorate_outcome_browser(exp, min_total_to_label=0.1):
 
     for element in d.iter(f'{{{default_namespace}}}g'):
         if 'id' in element.attrib:
-            match = re.match('axes_(?P<panel_i_plus_one>\d+)', element.attrib['id'])
+            match = re.match(r'axes_(?P<panel_i_plus_one>\d+)', element.attrib['id'])
             if match:
                 panel_i = int(match.group('panel_i_plus_one')) - 1
                 if panel_i > 0:
@@ -216,7 +218,7 @@ def decorate_outcome_browser(exp, min_total_to_label=0.1):
             'stroke-opacity': '0.00',
         })
         
-        match = re.match('length_range_(?P<outcome>.+)_(?P<start>\d+)_(?P<end>\d+)', group.attrib['id'])
+        match = re.match(r'length_range_(?P<outcome>.+)_(?P<start>\d+)_(?P<end>\d+)', group.attrib['id'])
         
         sanitized_outcome, start, end = match.groups()
 

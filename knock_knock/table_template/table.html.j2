@@ -62,17 +62,6 @@
                 .find('th[rowspan]')
                 .removeClass("hover");
         });
-
-        // Make links to outcome browser htmls.
-        $(".row_heading.level1").html(function() {
-            contents = $( this ).text();
-            new_name = contents.split("/").slice(-1);
-            {% if nb.metadata['include_images'] %}
-            return "<a href='" + contents + "/outcome_browser.html' target='_blank'>" + new_name + "</a>";
-            {% else %}
-            return new_name;
-            {% endif %}
-        });
     });
 </script>
 
