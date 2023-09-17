@@ -244,6 +244,9 @@ class TargetInfoBuilder:
         else:
             self.target_name = self.primers_name
 
+        # self.target_name will used as a path component, so can't have a forward slash.
+        self.target_name = self.target_name.replace('/', '_SLASH_')
+
     def build(self, generate_pegRNA_genbanks=False):
         donor_info = self.info.get('donor_sequence')
         if donor_info is None:
@@ -832,6 +835,9 @@ def build_target_infos_from_csv(base_dir, defer_HA_identification=False):
         return looked_up
 
     for target_name, row in targets_df.iterrows():
+        if '/' in target_name:
+            raise ValueError(f'target names cannot contain a forward slash: {target_name}')
+
         info = {
             'name': target_name,
             'genome': row['genome'],
