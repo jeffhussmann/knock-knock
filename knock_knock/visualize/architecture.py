@@ -69,6 +69,7 @@ class ReadDiagram():
                  mode='normal',
                  layout_mode='illumina',
                  label_differences=False,
+                 label_dimples=True,
                  label_overrides=None,
                  split_at_indels=False,
                  only_target_and_donor=False,
@@ -85,11 +86,13 @@ class ReadDiagram():
                  hide_xticks=False,
                  inferred_amplicon_length=None,
                  manual_anchors=None,
+                 manual_ref_extents=None,
                  manual_fade=None,
                  refs_to_draw=None,
                  parallelogram_alpha=0.05,
                  supplementary_reference_sequences=None,
                  invisible_references=None,
+                 high_resolution_parallelograms=True,
                  **kwargs,
                 ):
 
@@ -129,9 +132,11 @@ class ReadDiagram():
         self.inferred_amplicon_length = inferred_amplicon_length
         self.manual_fade = manual_fade
         self.label_differences = label_differences
+        self.label_dimples = label_dimples
         self.draw_arrowheads = kwargs.get('draw_arrowheads', True)
         self.refs_to_draw = refs_to_draw
         self.parallelogram_alpha = parallelogram_alpha
+        self.high_resolution_parallelograms = high_resolution_parallelograms
 
         self.target_info = target_info
 
@@ -162,6 +167,10 @@ class ReadDiagram():
         if manual_anchors is None:
             manual_anchors = {}
         self.manual_anchors = manual_anchors
+
+        if manual_ref_extents is None:
+            manual_ref_extents = {}
+        self.manual_ref_extents = manual_ref_extents
 
         # If query_interval is initially None, will be set
         # to whole query after alignments are cleaned up.
@@ -253,7 +262,7 @@ class ReadDiagram():
             self.target_and_donor_y_gap = kwargs.get('target_and_donor_y_gap', 0.03)
             self.initial_alignment_y_offset = kwargs.get('initial_alignment_y_offset', 5)
             self.feature_line_width = 0.005
-            self.gap_between_als = 0.003
+            self.gap_between_als = kwargs.get('gap_between_als', 0.003)
             self.label_cut = False
 
             if self.label_left:
@@ -295,7 +304,7 @@ class ReadDiagram():
             self.target_and_donor_y_gap = kwargs.get('target_and_donor_y_gap', 0.01)
             self.initial_alignment_y_offset = 3
             self.feature_line_width = 0.004
-            self.gap_between_als = 0.003
+            self.gap_between_als = kwargs.get('gap_between_als', 0.003)
             self.label_cut = kwargs.get('label_cut', False)
 
             if self.label_left:
@@ -568,6 +577,7 @@ class ReadDiagram():
 
     def draw_alignments(self, alignments, is_R2=False):
         ax = self.ax
+        ti = self.target_info
 
         # Copy before possibly fiddling with is_reverse below.
         alignments = copy.deepcopy([al for al in alignments if not al.is_unmapped])
@@ -579,9 +589,13 @@ class ReadDiagram():
             x_offset = 0
 
         # Ensure that target and donor are closest to the read, followed by other references.
-        reference_order = [self.target_info.target, self.target_info.donor]
-        other_refs = sorted(set(al.reference_name for al in alignments if al.reference_name not in reference_order))
-        reference_order += other_refs
+        reference_order = [ti.target, ti.donor]
+
+        reference_order.extend([ref_name for ref_name in ti.reference_sequences if ti not in reference_order])
+        reference_order.extend(ti.all_supplemental_reference_names)
+
+        references_seen = set(al.reference_name for al in alignments)
+        reference_order = [ref_name for ref_name in reference_order if ref_name in references_seen]
 
         by_reference_name = defaultdict(list)
         for al in sorted(alignments, key=lambda al: (reference_order.index(al.reference_name), sam.query_interval(al))):
@@ -591,9 +605,9 @@ class ReadDiagram():
         by_reference_name = dict(by_reference_name)
         
         if self.ref_centric:
-            rnames_below = [self.target_info.target]
+            rnames_below = [ti.target]
             if self.donor_below:
-                rnames_below.append(self.target_info.donor)
+                rnames_below.append(ti.donor)
 
             rnames_below += self.manual_refs_below
 
@@ -618,11 +632,11 @@ class ReadDiagram():
         for ref_name, ref_alignments in by_reference_name.items():
 
             hide_multiplier = 1
-            if self.hide_non_target_alignments and ref_name != self.target_info.target:
+            if self.hide_non_target_alignments and ref_name != ti.target:
                 hide_multiplier = 0
-            if self.hide_target_alignments and ref_name == self.target_info.target:
+            if self.hide_target_alignments and ref_name == ti.target:
                 hide_multiplier = 0
-            if self.hide_donor_alignments and ref_name == self.target_info.donor:
+            if self.hide_donor_alignments and ref_name == ti.donor:
                 hide_multiplier = 0
 
             if reverse_complement:
@@ -683,8 +697,8 @@ class ReadDiagram():
                 
                 # Annotate the ends of alignments with reference position numbers and vertical lines.
                 r_start, r_end = alignment.reference_start, alignment.reference_end - 1
-                if ref_name == self.target_info.reference_name_in_genome_source:
-                    converted_coords = self.target_info.convert_genomic_alignment_to_target_coordinates(alignment)
+                if ref_name == ti.reference_name_in_genome_source:
+                    converted_coords = ti.convert_genomic_alignment_to_target_coordinates(alignment)
                     if converted_coords:
                         r_start = converted_coords['start']
                         r_end = converted_coords['end'] - 1
@@ -774,7 +788,7 @@ class ReadDiagram():
                         # Cap how wide the loop can be.
                         capped_length = min(max_length, length)
                         
-                        width = self.query_length * 0.001
+                        width = self.width_per_unit
                         height = 0.003
 
                         indel_xs = [
@@ -797,15 +811,16 @@ class ReadDiagram():
 
                         indel_ys = [y, y + height, y + height, y]
 
-                        ax.annotate(label,
-                                    xy=(middle_offset(centered_at), y + height),
-                                    xytext=(0, 1),
-                                    textcoords='offset points',
-                                    ha='center',
-                                    va='bottom',
-                                    size=6,
-                                    alpha=1 * alpha_multiplier,
-                                   )
+                        if self.label_dimples:
+                            ax.annotate(label,
+                                        xy=(middle_offset(centered_at), y + height),
+                                        xytext=(0, 1),
+                                        textcoords='offset points',
+                                        ha='center',
+                                        va='bottom',
+                                        size=6,
+                                        alpha=1 * alpha_multiplier,
+                                    )
 
                     elif kind == 'insertion':
                         starts_at, ends_at = info
@@ -815,15 +830,16 @@ class ReadDiagram():
                         min_height = 0.0015
                         height = min_height * min(length**0.5, 3)
 
-                        ax.annotate(str(length),
-                                    xy=(centered_at, y - height),
-                                    xytext=(0, -1),
-                                    textcoords='offset points',
-                                    ha='center',
-                                    va='top',
-                                    size=6,
-                                    alpha=1 * alpha_multiplier,
-                                   )
+                        if self.label_dimples:
+                            ax.annotate(str(length),
+                                        xy=(centered_at, y - height),
+                                        xytext=(0, -1),
+                                        textcoords='offset points',
+                                        ha='center',
+                                        va='top',
+                                        size=6,
+                                        alpha=1 * alpha_multiplier,
+                                    )
 
                         indel_xs = [starts_at - 0.5, centered_at, ends_at + 0.5]
                         alignment_edge_xs.extend([starts_at - 1, ends_at + 1])
@@ -862,6 +878,10 @@ class ReadDiagram():
                 else:
                     alignment_edge_ref_ps.append(alignment.reference_end - 1)
 
+                if not self.high_resolution_parallelograms:
+                    alignment_edge_xs = [alignment_edge_xs[0], alignment_edge_xs[-1]]
+                    alignment_edge_ref_ps = [alignment_edge_ref_ps[0], alignment_edge_ref_ps[-1]]
+
                 coordinates = [
                     [
                         (middle_offset(x1), middle_offset(x2)),
@@ -870,7 +890,9 @@ class ReadDiagram():
                         sam.get_strand(alignment),
                         alpha_multiplier,
                     ]
-                    for (x1, x2), (ref_p_1, ref_p_2) in zip(utilities.list_chunks(alignment_edge_xs, 2), utilities.list_chunks(alignment_edge_ref_ps, 2))
+                    for (x1, x2), (ref_p_1, ref_p_2) in zip(utilities.list_chunks(alignment_edge_xs, 2),
+                                                            utilities.list_chunks(alignment_edge_ref_ps, 2),
+                                                           )
                 ]
 
                 self.alignment_coordinates[ref_name].extend(coordinates)
@@ -914,17 +936,17 @@ class ReadDiagram():
                 if self.highlight_SNPs:
                     SNVs = {}
 
-                    if self.target_info.pegRNA_SNVs is not None:
-                        if ref_name in self.target_info.pegRNA_SNVs:
-                            SNVs = self.target_info.pegRNA_SNVs[ref_name]
+                    if ti.pegRNA_SNVs is not None:
+                        if ref_name in ti.pegRNA_SNVs:
+                            SNVs = ti.pegRNA_SNVs[ref_name]
                     
-                    elif self.target_info.donor is not None:
-                        donor_name = self.target_info.donor
+                    elif ti.donor is not None:
+                        donor_name = ti.donor
 
                         if ref_name == donor_name:
-                            SNVs = self.target_info.donor_SNVs['donor']
-                        elif ref_name == self.target_info.target:
-                            SNVs = self.target_info.donor_SNVs['target']
+                            SNVs = ti.donor_SNVs['donor']
+                        elif ref_name == ti.target:
+                            SNVs = ti.donor_SNVs['target']
 
                     if len(SNVs) == 1:
                         box_half_width = self.cross_x * 1.5
@@ -952,7 +974,7 @@ class ReadDiagram():
                         ax.add_patch(patch)
 
                         if self.label_differences:
-                            if ref_name == self.target_info.donor:
+                            if ref_name == ti.donor:
                                 ax.annotate('edit\nposition',
                                             xy=(q, y + box_half_height),
                                             xycoords='data',
@@ -1010,7 +1032,7 @@ class ReadDiagram():
                                                 va=va,
                                             )
                             
-                            if query_extent[1] - query_extent[0] > 18 or feature.attribute['ID'] == self.target_info.sgRNA:
+                            if query_extent[1] - query_extent[0] > 18 or feature.attribute['ID'] == ti.sgRNA:
                                 label = feature.attribute['ID']
 
                                 label_offset = self.label_offsets.get(label, 0)
@@ -1057,7 +1079,7 @@ class ReadDiagram():
 
         if self.title is None:
             if self.label_layout:
-                layout = knock_knock.layout.Layout(self.alignments, self.target_info)
+                layout = knock_knock.layout.Layout(self.alignments, ti)
                 cat, subcat, details = layout.categorize()
                 title = f'{self.query_name}\n{cat}, {subcat}, {details}'
             else:
@@ -1300,6 +1322,9 @@ class ReadDiagram():
         else:
             fade_left = (ref_start > 0)
             fade_right = (ref_end < ref_edge)
+
+        if ref_name in self.manual_ref_extents:
+            ref_start, ref_end = self.manual_ref_extents[ref_name]
 
         new_left = ref_p_to_x(ref_start)
         new_right = ref_p_to_x(ref_end)
