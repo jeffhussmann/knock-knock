@@ -2280,7 +2280,8 @@ def locate_supplemental_indices(base_dir):
                     locations[d.name] = {
                         'STAR': d / 'STAR',
                         'fasta': d / 'fasta',
-                        'minimap2': d / f'minimap2/{d.name}.mmi',
+                        'minimap2': d / 'minimap2' / f'{d.name}.mmi',
+                        'minimap2_ont': d / 'minimap2_ont' / f'{d.name}.mmi',
                     }
 
     return locations

@@ -2943,7 +2943,7 @@ def comprehensively_split_alignment(al, target_info, mode,
                     if cropped_al is not None and cropped_al.query_alignment_length >= 5:
                         split_als.append(cropped_al)
 
-    elif mode == 'pacbio':
+    elif mode in ['pacbio', 'ont']:
         # Empirically, for Pacbio data, it is hard to find a threshold for number of edits within a window that
         # doesn't produce a lot of false positive splits, so don't try to split at edit clusters.
 
