@@ -184,6 +184,9 @@ class Explorer:
         else:
             als = exp.get_read_alignments(read_id, read_type=self.read_type)
 
+        if als is None or len(als) == 0:
+            raise ValueError
+
         return als
 
     def plot(self, read_id, **plot_kwargs):
@@ -215,7 +218,11 @@ class Explorer:
                 ]
 
                 if self.by_outcome:
-                    layout = exp.categorizer(als, exp.target_info, mode=exp.layout_mode, error_corrected=exp.has_UMIs)
+                    layout = exp.categorizer(als,
+                                             exp.target_info,
+                                             mode=exp.layout_mode,
+                                             error_corrected=exp.has_UMIs,
+                                            )
 
             if self.by_outcome:
                 layout.categorize()
