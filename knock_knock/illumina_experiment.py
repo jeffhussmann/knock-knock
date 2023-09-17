@@ -48,42 +48,29 @@ class IlluminaExperiment(Experiment):
         self.paired_end = 'R2' in self.description
 
         if self.paired_end:
-            self.read_types = [
+            self.read_types = {
                 'stitched',
-                'stitched_by_name',
-                'nonredundant',
                 'R1_no_overlap',
                 'R2_no_overlap',
-            ]
+            }
+
+            self.preprocessed_read_type = 'stitched'
+
         else:
-            self.read_types = [
+            self.read_types = {
                 'trimmed',
-                'trimmed_by_name',
-                'nonredundant',
-            ]
+            }
 
-    @property
-    def preprocessed_read_type(self):
-        if self.paired_end:
-            read_type = 'stitched_by_name'
-        else:
-            read_type = 'trimmed_by_name'
-        return read_type
+            self.preprocessed_read_type = 'trimmed'
 
-    @property
-    def default_read_type(self):
-        if self.paired_end:
-            read_type = 'stitched_by_name'
-        else:
-            read_type = 'trimmed_by_name'
-        return read_type
+        self.uncommon_read_type = self.preprocessed_read_type
 
     @property
     def read_types_to_align(self):
         return [
-            'stitched_by_name',
-            'R1_no_overlap',
-            'R2_no_overlap',
+            self.uncommon_read_type,
+            #'R1_no_overlap',
+            #'R2_no_overlap',
         ]
 
     @property
@@ -251,6 +238,8 @@ class IlluminaExperiment(Experiment):
     def trim_reads(self):
         ''' Trim a (potentially variable-length) barcode from the beginning of a read
         by searching for the expected sequence that the amplicon should begin with.
+
+        Sort reads by name.
         '''
 
         ti = self.target_info
@@ -267,33 +256,35 @@ class IlluminaExperiment(Experiment):
         prefix = prefix.upper()
 
         fns = self.fns_by_read_type['fastq']
-        with gzip.open(fns['trimmed'], 'wt', compresslevel=1) as trimmed_fh, \
-             open(self.fns['too_short_outcome_list'], 'w') as too_short_fh:
 
+        trimmed_reads = []
+        too_short_outcomes = []
+
+        for read in self.progress(self.reads, desc='Trimming reads'):
+            try:
+                start = read.seq.index(prefix, 0, 30)
+            except ValueError:
+                start = 0
+
+            end = adapters.trim_by_local_alignment(adapters.truseq_R2_rc, read.seq)
+
+            trimmed = read[start:end]
+
+            if len(trimmed) == 0:
+                outcome = self.final_Outcome(trimmed.name, len(trimmed), 'nonspecific amplification', 'primer dimer', 'n/a')
+                too_short_outcomes.append(outcome)
+            else:
+                trimmed_reads.append(trimmed)
+
+
+        with gzip.open(fns['trimmed'], 'wt', compresslevel=1) as trimmed_fh:
+            for read in sorted(trimmed_reads, key=lambda read: read.name):
+                trimmed_fh.write(str(read))
+
+        with open(self.fns['too_short_outcome_list'], 'w') as too_short_fh:
             too_short_fh.write(f'## Generated at {utilities.current_time_string()}\n')
-
-            for read in self.progress(self.reads, desc='Trimming reads'):
-                try:
-                    start = read.seq.index(prefix, 0, 30)
-                except ValueError:
-                    start = 0
-
-                end = adapters.trim_by_local_alignment(adapters.truseq_R2_rc, read.seq)
-
-                trimmed = read[start:end]
-
-                if len(trimmed) == 0:
-                    outcome = self.final_Outcome(trimmed.name, len(trimmed), 'nonspecific amplification', 'primer dimer', 'n/a')
-                    too_short_fh.write(f'{outcome}\n')
-                else:
-                    trimmed_fh.write(str(trimmed))
-
-    def sort_trimmed_reads(self):
-        reads = sorted(self.reads_by_type('trimmed'), key=lambda read: read.name)
-        fn = self.fns_by_read_type['fastq']['trimmed_by_name']
-        with gzip.open(fn, 'wt', compresslevel=1) as sorted_fh:
-            for read in reads:
-                sorted_fh.write(str(read))
+            for outcome in sorted(too_short_outcomes, key=lambda outcome: outcome.query_name):
+                too_short_fh.write(f'{outcome}\n')
 
     def stitch_read_pairs(self):
         before_R1 = adapters.primers[self.sequencing_primers]['R1']
@@ -316,82 +307,94 @@ class IlluminaExperiment(Experiment):
 
         fns = self.fns_by_read_type['fastq']
 
-        with gzip.open(fns['stitched'], 'wt', compresslevel=1) as stitched_fh, \
-             gzip.open(fns['R1_no_overlap'], 'wt', compresslevel=1) as R1_fh, \
-             gzip.open(fns['R2_no_overlap'], 'wt', compresslevel=1) as R2_fh, \
-             open(self.fns['too_short_outcome_list'], 'w') as too_short_fh:
+        stitched_reads = []
+        no_overlap_read_pairs = []
+        too_short_outcomes = []
 
+        description = 'Stitching read pairs'
+        for R1, R2 in self.progress(self.read_pairs, desc=description):
+            if R1.name != R2.name:
+                print(f'Error: read pairs are out of sync in {self.group} {self.name}.')
+                R1_fns = ','.join(str(fn) for fn in self.fns['R1'])
+                R2_fns = ','.join(str(fn) for fn in self.fns['R2'])
+                print(f'R1 file name: {R1_fns}')
+                print(f'R2 file name: {R2_fns}')
+                print(f'R1 read {R1.name} paired with R2 read {R2.name}.')
+                sys.exit(1)
+
+            stitched = sw.stitch_read_pair(R1, R2, before_R1, before_R2, indel_penalty=-1000)
+
+            if len(stitched) == len(R1) + len(R2):
+                # No overlap was detected.
+
+                no_overlap_read_pairs.append((R1, R2))
+
+            elif len(stitched) <= 10:
+                # 22.07.18: Should this check be done on the final trimmed read instead?
+                outcome = self.final_Outcome(stitched.name, len(stitched), 'nonspecific amplification', 'primer dimer', 'n/a')
+                too_short_outcomes.append(outcome)
+
+            else:
+                # Trim after stitching to leave adapters in expected place during stitching.
+
+                try:
+                    start = stitched.seq.index(prefix, 0, window_size)
+                except ValueError:
+                    start = 0
+
+                try:
+                    min_possible_end = len(stitched) - window_size
+                    end = stitched.seq.index(suffix, min_possible_end, len(stitched)) + match_length_required
+                except ValueError:
+                    end = len(stitched)
+
+                trimmed = stitched[start:end]
+
+                stitched_reads.append(trimmed)
+
+        with gzip.open(fns['stitched'], 'wt', compresslevel=1) as stitched_fh:
+            for read in sorted(stitched_reads, key=lambda read: read.name):
+                stitched_fh.write(str(read))
+             
+
+        with (gzip.open(fns['R1_no_overlap'], 'wt', compresslevel=1) as R1_fh,
+              gzip.open(fns['R2_no_overlap'], 'wt', compresslevel=1) as R2_fh,
+             ):
+
+             for R1, R2, in sorted(no_overlap_read_pairs, key=lambda read_pair: read_pair[0].name):
+                R1_fh.write(str(R1))
+                R2_fh.write(str(R2))
+        
+        with open(self.fns['too_short_outcome_list'], 'w') as too_short_fh:
             too_short_fh.write(f'## Generated at {utilities.current_time_string()}\n')
-
-            description = 'Stitching read pairs'
-            for R1, R2 in self.progress(self.read_pairs, desc=description):
-                if R1.name != R2.name:
-                    print(f'Error: read pairs are out of sync in {self.group} {self.name}.')
-                    R1_fns = ','.join(str(fn) for fn in self.fns['R1'])
-                    R2_fns = ','.join(str(fn) for fn in self.fns['R2'])
-                    print(f'R1 file name: {R1_fns}')
-                    print(f'R2 file name: {R2_fns}')
-                    print(f'R1 read {R1.name} paired with R2 read {R2.name}.')
-                    sys.exit(1)
-
-                stitched = sw.stitch_read_pair(R1, R2, before_R1, before_R2, indel_penalty=-1000)
-
-                if len(stitched) == len(R1) + len(R2):
-                    # No overlap was detected.
-                    R1_fh.write(str(R1))
-                    R2_fh.write(str(R2))
-
-                elif len(stitched) <= 10:
-                    # 22.07.18: Should this check be done on the final trimmed read instead?
-                    outcome = self.final_Outcome(stitched.name, len(stitched), 'nonspecific amplification', 'primer dimer', 'n/a')
-                    too_short_fh.write(f'{outcome}\n')
-
-                else:
-                    # Trim after stitching to leave adapters in expected place during stitching.
-
-                    try:
-                        start = stitched.seq.index(prefix, 0, window_size)
-                    except ValueError:
-                        start = 0
-
-                    try:
-                        min_possible_end = len(stitched) - window_size
-                        end = stitched.seq.index(suffix, min_possible_end, len(stitched)) + match_length_required
-                    except ValueError:
-                        end = len(stitched)
-
-                    trimmed = stitched[start:end]
-
-                    stitched_fh.write(str(trimmed))
-
-    def sort_stitched_reads(self):
-        reads = sorted(self.reads_by_type('stitched'), key=lambda read: read.name)
-        fn = self.fns_by_read_type['fastq']['stitched_by_name']
-        with gzip.open(fn, 'wt', compresslevel=1) as sorted_fh:
-            for read in reads:
-                sorted_fh.write(str(read))
+            for outcome in sorted(too_short_outcomes, key=lambda outcome: outcome.query_name):
+                too_short_fh.write(f'{outcome}\n')
 
     def preprocess(self):
         if self.paired_end:
             self.stitch_read_pairs()
-            self.sort_stitched_reads()
         else:
             self.trim_reads()
-            self.sort_trimmed_reads()
 
     def align(self):
-        self.make_nonredundant_sequence_fastq()
+        self.extract_reads_with_uncommon_sequences()
 
         for read_type in self.read_types_to_align:
-            self.generate_alignments(read_type)
+            self.generate_alignments_with_blast(read_type=read_type)
 
             if 'phiX' in self.supplemental_index_names:
-                self.generate_supplemental_alignments_with_blast('phiX', read_type)
+                self.generate_alignments_with_blast(read_type=read_type,
+                                                    supplemental_index_name='phiX',
+                                                   )
 
-            self.generate_supplemental_alignments_with_STAR(read_type)
+            self.generate_supplemental_alignments_with_STAR(read_type=read_type,
+                                                            min_length=20,
+                                                           )
+
             self.combine_alignments(read_type)
 
     def categorize(self):
+        self.check_combined_read_length()
         self.categorize_outcomes()
 
         self.generate_outcome_counts()

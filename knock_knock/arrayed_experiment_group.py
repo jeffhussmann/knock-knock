@@ -2,7 +2,6 @@ import gzip
 import itertools
 import logging
 import shutil
-import time
 import warnings
 
 from pathlib import Path
@@ -10,20 +9,22 @@ from collections import defaultdict, Counter
 
 import numpy as np
 import pandas as pd
-import pysam
 
 import knock_knock.build_targets
 import knock_knock.experiment_group
 import knock_knock.outcome
 import knock_knock.target_info
+import knock_knock.utilities
 
-from hits import utilities, sam, fastq
+from hits import utilities, fastq
 
 memoized_property = utilities.memoized_property
 memoized_with_kwargs = utilities.memoized_with_kwargs
 
 class Batch:
-    def __init__(self, base_dir, batch,
+    def __init__(self,
+                 base_dir,
+                 batch_name,
                  category_groupings=None,
                  baseline_condition=None,
                  add_pseudocount=False,
@@ -31,8 +32,8 @@ class Batch:
                  progress=None,
                 ):
         self.base_dir = Path(base_dir)
-        self.batch = batch
-        self.data_dir = self.base_dir / 'data' / batch
+        self.batch_name = batch_name
+        self.data_dir = self.base_dir / 'data' / self.batch_name
 
         if progress is None or getattr(progress, '_silent', False):
             def ignore_kwargs(x, **kwargs):
@@ -60,14 +61,16 @@ class Batch:
             self.condition_colors = None
 
     def __repr__(self):
-        return f'Batch: {self.batch}, base_dir={self.base_dir}'
+        return f'Batch: {self.batch_name}, base_dir={self.base_dir}'
 
     @property
     def group_names(self):
         return self.sample_sheet['group'].unique()
 
     def group(self, group_name):
-        return ArrayedExperimentGroup(self.base_dir, self.batch, group_name,
+        return ArrayedExperimentGroup(self.base_dir,
+                                      self.batch_name,
+                                      group_name,
                                       category_groupings=self.category_groupings,
                                       baseline_condition=self.baseline_condition,
                                       add_pseudocount=self.add_pseudocount,
@@ -104,7 +107,7 @@ class Batch:
                       include_target_infos=True,
                      ):
         if new_batch_name is None:
-            new_batch_name = self.batch
+            new_batch_name = self.batch_name
 
         if groups_to_include is None:
             groups_to_include = {group_name: group_name for group_name in self.groups}
@@ -231,37 +234,41 @@ def get_all_experiments(base_dir=Path.home() / 'projects' / 'knock_knock', progr
             continue
 
         for sample_name, row in batch.sample_sheet.iterrows():
-            if 'group' in conditions and row['group'] not in conditions['group']:
+            group_name = row['group']
+
+            if 'group' in conditions and group_name not in conditions['group']:
                 continue
 
-            group = batch.groups[row['group']]
+            group = batch.groups[group_name]
 
             if 'experiment_type' in conditions and group.experiment_type not in conditions['experiment_type']:
                 continue
 
-            exps[batch_name, group.group, sample_name] = group.sample_name_to_experiment(sample_name)
+            exps[batch_name, group_name, sample_name] = group.sample_name_to_experiment(sample_name)
 
     return exps
 
 class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
-    def __init__(self, base_dir, batch, group,
+    def __init__(self,
+                 base_dir,
+                 batch_name,
+                 group_name,
                  category_groupings=None,
                  progress=None,
                  baseline_condition=None,
                  add_pseudocount=None,
                  only_edited=False,
                 ):
+
         self.base_dir = Path(base_dir)
-        self.batch = batch
-        self.group = group
+        self.batch_name = batch_name
+        self.group_name = group_name
 
         self.category_groupings = category_groupings
         self.add_pseudocount = add_pseudocount
         self.only_edited = only_edited
 
-        self.group_args = (base_dir, batch, group)
-
-        super().__init__()
+        self.group_args = (base_dir, batch_name, group_name)
 
         if progress is None or getattr(progress, '_silent', False):
             def ignore_kwargs(x, **kwargs):
@@ -272,12 +279,13 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
         self.progress = progress
 
-        self.Batch = Batch(self.base_dir, self.batch)
+        self.batch = Batch(self.base_dir, self.batch_name)
 
-        self.batch_sample_sheet = self.Batch.sample_sheet
-        self.sample_sheet = self.batch_sample_sheet.query('group == @self.group').copy()
+        self.sample_sheet = self.batch.sample_sheet.query('group == @self.group_name').copy()
 
-        self.description = self.Batch.group_descriptions.loc[self.group].copy()
+        self.description = self.batch.group_descriptions.loc[self.group_name].copy()
+
+        self.sanitized_group_name = self.description.get('sanitized_group_name', self.group_name)
 
         if self.description.get('condition_keys') is None:
             self.condition_keys = []
@@ -340,16 +348,20 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
             condition = condition_from_row(row)
             self.condition_to_sample_names[condition].append(sample_name)
 
+        super().__init__()
+
     def __repr__(self):
-        return f'ArrayedExperimentGroup: batch={self.batch}, group={self.group}, base_dir={self.base_dir}'
+        return f'ArrayedExperimentGroup: batch={self.batch_name}, group={self.group_name}, base_dir={self.base_dir}'
 
     @memoized_property
     def data_dir(self):
-        return self.base_dir / 'data' / self.batch
+        d = self.base_dir / 'data' / self.batch_name
+        return d
 
     @memoized_property
     def results_dir(self):
-        return self.base_dir / 'results' / self.batch / self.group
+        d = self.base_dir / 'results' / self.batch_name / self.sanitized_group_name
+        return d
 
     def experiments(self, no_progress=False):
         for sample_name in self.sample_names:
@@ -376,7 +388,10 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         return self.first_experiment.target_info
 
     def common_sequence_chunk_exp_from_name(self, chunk_name):
-        chunk_exp = self.CommonSequencesExperimentType(self.base_dir, self.batch, self.group, chunk_name,
+        chunk_exp = self.CommonSequencesExperimentType(self.base_dir,
+                                                       self.batch_name,
+                                                       self.group_name,
+                                                       chunk_name,
                                                        experiment_group=self,
                                                        description=self.description,
                                                       )
@@ -396,7 +411,13 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         else:
             progress = self.progress
 
-        exp = self.ExperimentType(self.base_dir, self.batch, self.group, sample_name, experiment_group=self, progress=progress)
+        exp = self.ExperimentType(self.base_dir,
+                                  self.batch_name,
+                                  self.group_name,
+                                  sample_name,
+                                  experiment_group=self,
+                                  progress=progress,
+                                 )
         return exp
 
     @memoized_property
@@ -753,6 +774,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         
         if self.target_info.pegRNA_programmed_insertion is not None:
             insertion = self.target_info.pegRNA_programmed_insertion
+
             outcomes_containing_pegRNA_programmed_edits[str(insertion)] = []
 
         else:
@@ -760,7 +782,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
             
         for c, s, d  in self.outcome_fractions.index:
             if c in {'intended edit', 'partial replacement', 'partial edit'}:
-                outcome = knock_knock.outcome.ProgrammedEditOutcome.from_string(d)
+                outcome = knock_knock.outcome.ProgrammedEditOutcome.from_string(d).undo_anchor_shift(self.target_info.anchor)
 
                 if SNVs is not None:
                     for SNV_name, read_base in zip(SNV_order, outcome.SNV_read_bases):
@@ -839,190 +861,49 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         return explorer.layout
 
 class ArrayedExperiment:
-    def __init__(self, base_dir, batch, group, sample_name, experiment_group=None):
+    def __init__(self, base_dir, batch_name, group_name, sample_name, experiment_group=None):
         if experiment_group is None:
-            experiment_group = ArrayedExperimentGroup(base_dir, batch, group)
+            experiment_group = ArrayedExperimentGroup(base_dir, batch_name, group_name)
 
         self.base_dir = Path(base_dir)
-        self.batch = batch
-        self.group = group
+        self.batch_name = batch_name
+        self.group_name = group_name
         self.sample_name = sample_name
         self.experiment_group = experiment_group
 
         self.has_UMIs = False
 
-    @property
-    def default_read_type(self):
-        # None required to trigger check for common sequence in alignment_groups
-        return None
-
     def load_description(self):
-        description = self.experiment_group.sample_sheet.loc[self.sample_name].to_dict()
-        for key, value in self.experiment_group.description.items():
-            description[key] = value
+        description = {
+            **self.experiment_group.description,
+            **self.experiment_group.sample_sheet.loc[self.sample_name],
+        }
         return description
 
     @memoized_property
     def data_dir(self):
         return self.experiment_group.data_dir
 
-    def make_nonredundant_sequence_fastq(self):
+    @memoized_property
+    def results_dir(self):
+        sanitized_sample_name = self.description.get('sanitized_sample_name', self.sample_name)
+        return self.experiment_group.results_dir / sanitized_sample_name
+
+    def extract_reads_with_uncommon_sequences(self):
         # Extract reads with sequences that weren't seen more than once across the group.
-        fn = self.fns_by_read_type['fastq']['nonredundant']
+        fn = self.fns_by_read_type['fastq'][self.uncommon_read_type]
         with gzip.open(fn, 'wt', compresslevel=1) as fh:
             for read in self.reads_by_type(self.preprocessed_read_type):
                 if read.seq not in self.experiment_group.common_sequence_to_outcome:
                     fh.write(str(read))
 
     @memoized_property
-    def results_dir(self):
-        return self.experiment_group.results_dir / self.sample_name
+    def common_sequence_to_outcome(self):
+        return self.experiment_group.common_sequence_to_outcome
 
     @memoized_property
-    def seq_to_outcome(self):
-        seq_to_outcome = self.experiment_group.common_sequence_to_outcome
-        for seq, outcome in seq_to_outcome.items():
-            outcome.special_alignment = self.experiment_group.common_name_to_special_alignment.get(outcome.query_name)
-        return seq_to_outcome
-
-    @memoized_property
-    def seq_to_alignments(self):
+    def common_sequence_to_alignments(self):
         return self.experiment_group.common_sequence_to_alignments
-
-    @memoized_property
-    def combined_header(self):
-        return sam.get_header(self.fns_by_read_type['bam_by_name']['nonredundant'])
-
-    def alignment_groups(self, fn_key='bam_by_name', outcome=None, read_type=None):
-        if read_type is None:
-            nonredundant_alignment_groups = super().alignment_groups(read_type='nonredundant', outcome=outcome)
-            reads = self.reads_by_type(self.preprocessed_read_type)
-
-            if outcome is None:
-                outcome_records = itertools.repeat(None)
-            else:
-                outcome_records = self.outcome_iter()
-
-            for read, outcome_record in zip(reads, outcome_records):
-                if outcome is None or outcome_record.category == outcome or (outcome_record.category, outcome_record.subcategory) == outcome:
-                    if read.seq in self.seq_to_alignments:
-                        name = read.name
-                        als = self.seq_to_alignments[read.seq]
-
-                    else:
-                        name, als = next(nonredundant_alignment_groups)
-
-                        if name != read.name:
-                            raise ValueError('iters out of sync', name, read.name)
-
-                    yield name, als
-        else:
-            yield from super().alignment_groups(fn_key=fn_key, outcome=outcome, read_type=read_type)
-
-    def categorize_outcomes(self, max_reads=None):
-        # Record how long each categorization takes.
-        times_taken = []
-
-        if self.fns['outcomes_dir'].is_dir():
-            shutil.rmtree(str(self.fns['outcomes_dir']))
-
-        self.fns['outcomes_dir'].mkdir()
-
-        outcome_to_qnames = defaultdict(list)
-
-        bam_read_type = 'nonredundant'
-
-        # iter wrap since tqdm objects are not iterators
-        alignment_groups = iter(self.alignment_groups())
-
-        if max_reads is not None:
-            alignment_groups = itertools.islice(alignment_groups, max_reads)
-
-        special_als = defaultdict(list)
-
-        with self.fns['outcome_list'].open('w') as outcome_fh:
-
-            for name, als in self.progress(alignment_groups, desc='Categorizing reads'):
-                seq = als[0].get_forward_sequence()
-
-                # Special handling of empty sequence.
-                if seq is None:
-                    seq = ''
-
-                if seq in self.seq_to_outcome:
-                    layout = self.seq_to_outcome[seq]
-                    layout.query_name = name
-
-                else:
-                    layout = self.categorizer(als, self.target_info,
-                                              error_corrected=self.has_UMIs,
-                                              mode=self.layout_mode,
-                                             )
-
-                    try:
-                        layout.categorize()
-                    except:
-                        print()
-                        print(self.sample_name, name)
-                        raise
-                
-                if layout.special_alignment is not None:
-                    special_als[layout.category, layout.subcategory].append(layout.special_alignment)
-
-                outcome_to_qnames[layout.category, layout.subcategory].append(name)
-
-                try:
-                    outcome = self.final_Outcome.from_layout(layout)
-                except:
-                    print()
-                    print(self.sample_name, name)
-                    raise
-
-                outcome_fh.write(f'{outcome}\n')
-
-                times_taken.append(time.monotonic())
-
-        # To make plotting easier, for each outcome, make a file listing all of
-        # qnames for the outcome and a bam file (sorted by name) with all of the
-        # alignments for these qnames.
-
-        qname_to_outcome = {}
-
-        bam_fn = self.fns_by_read_type['bam_by_name'][bam_read_type]
-        header = sam.get_header(bam_fn)
-
-        alignment_sorters = sam.multiple_AlignmentSorters(header, by_name=True)
-
-        for outcome, qnames in outcome_to_qnames.items():
-            outcome_fns = self.outcome_fns(outcome)
-            outcome_fns['dir'].mkdir()
-
-            alignment_sorters[outcome] = outcome_fns['bam_by_name'][bam_read_type]
-            
-            with outcome_fns['query_names'].open('w') as fh:
-                for qname in qnames:
-                    qname_to_outcome[qname] = outcome
-                    fh.write(qname + '\n')
-            
-        with alignment_sorters:
-            saved_verbosity = pysam.set_verbosity(0)
-            with pysam.AlignmentFile(bam_fn) as full_bam_fh:
-                for al in self.progress(full_bam_fh, desc='Making outcome-specific bams'):
-                    if al.query_name in qname_to_outcome:
-                        outcome = qname_to_outcome[al.query_name]
-                        alignment_sorters[outcome].write(al)
-            pysam.set_verbosity(saved_verbosity)
-
-        # Make special alignments bams.
-        for outcome, als in self.progress(special_als.items(), desc='Making special alignments bams'):
-            outcome_fns = self.outcome_fns(outcome)
-            bam_fn = outcome_fns['special_alignments']
-            sorter = sam.AlignmentSorter(bam_fn, header)
-            with sorter:
-                for al in als:
-                    sorter.write(al)
-
-        return np.array(times_taken)
 
 def arrayed_specialized_experiment_factory(experiment_kind):
     from knock_knock.illumina_experiment import IlluminaExperiment
@@ -1043,20 +924,26 @@ def arrayed_specialized_experiment_factory(experiment_kind):
     SpecializedExperiment = experiment_kind_to_class[experiment_kind]
 
     class ArrayedSpecializedExperiment(ArrayedExperiment, SpecializedExperiment):
-        def __init__(self, base_dir, batch, group, sample_name, experiment_group=None, **kwargs):
-            ArrayedExperiment.__init__(self, base_dir, batch, group, sample_name, experiment_group=experiment_group)
-            SpecializedExperiment.__init__(self, base_dir, (batch, group), sample_name, **kwargs)
+        def __init__(self, base_dir, batch_name, group_name, sample_name, experiment_group=None, **kwargs):
+            ArrayedExperiment.__init__(self, base_dir, batch_name, group_name, sample_name, experiment_group=experiment_group)
+            SpecializedExperiment.__init__(self, base_dir, (batch_name, group_name), sample_name, **kwargs)
+
+            self.uncommon_read_type = f'{self.preprocessed_read_type}_uncommon'
+
+            self.read_types.add(self.uncommon_read_type)
 
         def __repr__(self):
             # 22.06.03: TODO: this doesn't actually call the SpecializedExperiment form of __repr__.
             return f'Arrayed{SpecializedExperiment.__repr__(self)}'
     
     class ArrayedSpecializedCommonSequencesExperiment(knock_knock.experiment_group.CommonSequencesExperiment, ArrayedExperiment, SpecializedExperiment):
-        def __init__(self, base_dir, batch, group, sample_name, experiment_group=None, **kwargs):
+        def __init__(self, base_dir, batch_name, group_name, sample_name, experiment_group=None, **kwargs):
             knock_knock.experiment_group.CommonSequencesExperiment.__init__(self)
-            ArrayedExperiment.__init__(self, base_dir, batch, group, sample_name, experiment_group=experiment_group)
-            SpecializedExperiment.__init__(self, base_dir, (batch, group), sample_name, **kwargs)
-    
+            ArrayedExperiment.__init__(self, base_dir, batch_name, group_name, sample_name, experiment_group=experiment_group)
+            SpecializedExperiment.__init__(self, base_dir, (batch_name, group_name), sample_name, **kwargs)
+
+            self.uncommon_read_type = self.preprocessed_read_type
+
     return ArrayedSpecializedExperiment, ArrayedSpecializedCommonSequencesExperiment
 
 def sanitize_and_validate_sample_sheet(sample_sheet_df):
@@ -1083,7 +970,6 @@ def sanitize_and_validate_sample_sheet(sample_sheet_df):
         bad_names = ', '.join(f'{name} ({count})' for name, count in counts[counts > 1].items())
         raise ValueError(f'Sample names are not unique: {bad_names}')
 
-
     # Since only the final path component of R1 and R2 files will be retained,
     # ensure that these are unique to avoid clobbering.
 
@@ -1094,6 +980,14 @@ def sanitize_and_validate_sample_sheet(sample_sheet_df):
         raise ValueError(f'R2 files do not have unique names')
     
     return sample_sheet_df
+
+def make_default_target_info_name(amplicon_primers, genome):
+    target_info_name = f'{amplicon_primers}_{genome}'
+
+    # Names can't contain a forward slash since they are a path component.
+    target_info_name = target_info_name.replace('/', '_SLASH_')
+
+    return target_info_name
 
 def make_targets(base_dir, df, extra_sequences=None):
     if extra_sequences is None:
@@ -1109,7 +1003,7 @@ def make_targets(base_dir, df, extra_sequences=None):
             if sgRNAs != '':
                 all_sgRNAs.update(sgRNAs.split(';'))
 
-        target_info_name = f'{amplicon_primers}_{genome}'
+        target_info_name = make_default_target_info_name(amplicon_primers, genome)
 
         targets[target_info_name] = {
             'genome': genome,
@@ -1130,6 +1024,8 @@ def make_targets(base_dir, df, extra_sequences=None):
     knock_knock.build_targets.build_target_infos_from_csv(base_dir)
 
 def detect_sequencing_start_feature_names(base_dir, batch_name, df):
+    base_dir = Path(base_dir)
+
     sequencing_start_feature_names = {}
     
     for _, row in df.iterrows():
@@ -1140,7 +1036,7 @@ def detect_sequencing_start_feature_names(base_dir, batch_name, df):
             logging.warning(f"R1 file name {R1_fn} doesn't exist")
             continue
 
-        target_info_name = f"{row['amplicon_primers']}_{row['genome']}"
+        target_info_name = make_default_target_info_name(row['amplicon_primers'], row['genome'])
         ti = knock_knock.target_info.TargetInfo(base_dir, target_info_name) 
 
         primer_sequences = {name: ti.feature_sequence(ti.target, name).upper() for name in ti.primers}
@@ -1174,6 +1070,7 @@ def detect_sequencing_start_feature_names(base_dir, batch_name, df):
     return sequencing_start_feature_names
 
 def make_group_descriptions_and_sample_sheet(base_dir, df, batch_name=None):
+    base_dir = Path(base_dir)
     df = df.copy()
 
     if 'donor' not in df.columns:
@@ -1224,11 +1121,20 @@ def make_group_descriptions_and_sample_sheet(base_dir, df, batch_name=None):
 
     grouped = df.groupby(['amplicon_primers', 'genome', 'sgRNAs', 'donor', 'sequencing_start_feature_name'])
 
-    for group_i, ((amplicon_primers, genome, sgRNAs, donor, sequencing_start_feature_name), group_rows) in enumerate(grouped, 1):
-        target_info_name = f'{amplicon_primers}_{genome}'
+    for group_i, ((amplicon_primers, genome, sgRNAs, donor, sequencing_start_feature_name), group_rows) in enumerate(grouped):
+        target_info_name = make_default_target_info_name(amplicon_primers, genome)
 
         group_name = f'{target_info_name}_{sgRNAs}_{donor}'
         group_name = group_name.replace(';', '+')
+
+        sanitized_group_name = f'group{group_i:05d}'
+
+        sanitized_sample_names = {}
+        for sample_i, (_, row) in enumerate(group_rows.iterrows()):
+            sample_name = row['sample_name']
+            sanitized_sample_name = f'sample{sample_i:05d}'
+
+            sanitized_sample_names[sample_name] = sanitized_sample_name
 
         ti = knock_knock.target_info.TargetInfo(base_dir, target_info_name, sgRNAs=sgRNAs)
         
@@ -1249,6 +1155,7 @@ def make_group_descriptions_and_sample_sheet(base_dir, df, batch_name=None):
         supplemental_indices = [name for name in {genome, 'hg38', 'phiX'} if name in valid_supplemental_indices]
 
         groups[group_name] = {
+            'sanitized_group_name': sanitized_group_name,
             'supplemental_indices': ';'.join(supplemental_indices),
             'experiment_type': experiment_type,
             'target_info': target_info_name,
@@ -1263,30 +1170,38 @@ def make_group_descriptions_and_sample_sheet(base_dir, df, batch_name=None):
         if len(condition_columns) > 0:
             for condition_i, (condition, condition_rows) in enumerate(group_rows.groupby(condition_columns), 1):
                 for rep_i, (_, row) in enumerate(condition_rows.iterrows(), 1):
-                    samples[row['sample_name']] = {
+                    sample_name = row['sample_name']
+
+                    samples[sample_name] = {
+                        'sanitized_sample_name': sanitized_sample_names[sample_name],
                         'R1': Path(row['R1']).name,
                         'group': group_name,
                         'replicate': rep_i,
-                        'color': (condition_i * 10 + group_i), 
+                        'color': (condition_i * 10 + group_i + 1), 
                     }
+
                     if 'R2' in row:
-                        samples[row['sample_name']]['R2'] = Path(row['R2']).name
+                        samples[sample_name]['R2'] = Path(row['R2']).name
 
                     for full, short in zip(condition_columns, shortened_condition_columns):
-                        samples[row['sample_name']][short] = row[full]
+                        samples[sample_name][short] = row[full]
 
         else:
             for rep_i, (_, row) in enumerate(group_rows.iterrows(), 1):
-                samples[row['sample_name']] = {
+                sample_name = row['sample_name']
+
+                samples[sample_name] = {
+                    'sanitized_sample_name': sanitized_sample_names[sample_name],
                     'R1': Path(row['R1']).name,
                     'group': group_name,
                     'replicate': rep_i,
-                    'color': group_i,
+                    'color': group_i + 1,
                 }
-                if 'R2' in row:
-                    samples[row['sample_name']]['R2'] = Path(row['R2']).name
 
-    batch_dir = Path(base_dir) / 'data' / batch_name
+                if 'R2' in row:
+                    samples[sample_name]['R2'] = Path(row['R2']).name
+
+    batch_dir = base_dir / 'data' / batch_name
     batch_dir.mkdir(parents=True, exist_ok=True)
 
     groups_df = pd.DataFrame.from_dict(groups, orient='index')

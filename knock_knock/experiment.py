@@ -70,9 +70,8 @@ def ensure_list(possibly_list):
     return definitely_list
 
 class Experiment:
-    def __init__(self, base_dir, batch, sample_name, description=None, progress=None):
-        self.batch = batch
-        self.group = batch # hack for now
+    def __init__(self, base_dir, batch_name, sample_name, description=None, progress=None):
+        self.batch_name = batch_name
         self.sample_name = sample_name
 
         if progress is None or getattr(progress, '_silent', False):
@@ -107,7 +106,7 @@ class Experiment:
 
         # When checking if an Experiment meets filtering conditions, want to be
         # able to just test description.
-        self.description['batch'] = batch
+        self.description['batch'] = batch_name
         self.description['sample_name'] = sample_name
 
         self.fns = {
@@ -153,8 +152,12 @@ class Experiment:
 
         self.has_UMIs = False
 
+        self.outcome_fn_keys = [
+            'outcome_list',
+        ]
+
     def __repr__(self):
-        return f'{self.__class__.__name__}: batch={self.batch}, sample_name={self.sample_name}, base_dir={self.base_dir}'
+        return f'{self.__class__.__name__}: batch_name={self.batch_name}, sample_name={self.sample_name}, base_dir={self.base_dir}'
 
     @memoized_property
     def length_to_store_unknown(self):
@@ -165,7 +168,7 @@ class Experiment:
         return outcome_record.OutcomeRecord
 
     def load_description(self):
-        return load_sample_sheet(self.base_dir, self.batch)[self.sample_name]
+        return load_sample_sheet(self.base_dir, self.batch_name)[self.sample_name]
 
     @property
     def categorizer(self):
@@ -176,23 +179,25 @@ class Experiment:
     def results_dir(self):
         d = self.base_dir / 'results' 
 
-        if isinstance(self.batch, tuple):
-            for level in self.batch:
+        if isinstance(self.batch_name, tuple):
+            for level in self.batch_name:
                 d /= level
         else:
-            d /= self.batch
+            d /= self.batch_name
 
-        return d / self.sample_name
+        d /= self.sample_name
+
+        return d 
 
     @memoized_property
     def data_dir(self):
         d = self.base_dir / 'data'
 
-        if isinstance(self.batch, tuple):
-            for level in self.batch:
+        if isinstance(self.batch_name, tuple):
+            for level in self.batch_name:
                 d /= level
         else:
-            d /= self.batch
+            d /= self.batch_name
 
         return d
 
@@ -292,7 +297,7 @@ class Experiment:
                 missing_file = True
 
         if missing_file:
-            logging.warning(f'{self.group}, {self.sample_name} {read_type} not found')
+            logging.warning(f'{self.batch_name}, {self.sample_name} {read_type} not found')
             reads = []
         else:
             reads = fastq.reads(fn_source, up_to_space=True)
@@ -302,6 +307,9 @@ class Experiment:
     @memoized_property
     def read_lengths(self):
         return self.outcome_stratified_lengths.lengths_for_all_outcomes
+
+    def extract_reads_with_uncommon_sequences(self):
+        pass
     
     def generate_outcome_counts(self):
         ''' Note that metadata lines start with '#' so category names can't. '''
@@ -353,39 +361,74 @@ class Experiment:
         return pd.DataFrame(ranges, columns=['start', 'end'])
     
     def alignment_groups(self, fn_key='bam_by_name', outcome=None, read_type=None):
-        if read_type is None:
-            read_type = self.default_read_type
+        '''
+            If outcome is not None, yield alignment groups from outcome-stratified
+            bams.
 
-        if isinstance(outcome, str):
-            # outcome is a single category, so need to chain together all relevant
-            # (category, subcategory) pairs.
-            pairs = [(c, s) for c, s in self.categories_by_frequency if c == outcome]
-            pair_groups = [self.alignment_groups(fn_key=fn_key, outcome=pair, read_type=read_type) for pair in pairs]
-            return heapq.merge(*pair_groups)
+            If read_type is not None, yield alignment groups from that
+            read_type.
 
-        else:
+            If both outcome and read_type are None, yields groups that may be looked
+            up from common sequences. 
+        '''
+
+        if outcome is not None:
+            if read_type is None:
+                read_type = self.preprocessed_read_type
+
             if isinstance(outcome, tuple):
                 # outcome is a (category, subcategory) pair
                 fn = self.outcome_fns(outcome)['bam_by_name'][read_type]
-            else:
-                fn = self.fns_by_read_type['bam_by_name'][read_type]
+
+                if fn.exists():
+                    grouped = sam.grouped_by_name(fn)
+                else:
+                    grouped = []
+
+                yield from grouped
+
+            elif isinstance(outcome, str):
+                # outcome is a single category, so need to chain together all relevant
+                # (category, subcategory) pairs.
+                pairs = [(c, s) for c, s in self.categories_by_frequency if c == outcome]
+                pair_groups = [self.alignment_groups(fn_key=fn_key, outcome=pair, read_type=read_type) for pair in pairs]
+                yield from heapq.merge(*pair_groups)
+
+
+        elif read_type is not None:
+            fn = self.fns_by_read_type['bam_by_name'][read_type]
 
             if fn.exists():
                 grouped = sam.grouped_by_name(fn)
             else:
                 grouped = []
 
-            return grouped
+            yield from grouped
+
+        else:
+            uncommon_alignment_groups = self.alignment_groups(read_type=self.uncommon_read_type)
+            all_reads = self.reads_by_type(self.preprocessed_read_type)
+
+            for read in all_reads:
+                if read.seq in self.common_sequence_to_alignments:
+                    name = read.name
+                    als = self.common_sequence_to_alignments[read.seq]
+
+                else:
+                    name, als = next(uncommon_alignment_groups)
+
+                    if name != read.name:
+                        raise ValueError('iters out of sync', name, read.name)
+
+                yield name, als
 
     def query_names(self, read_type=None):
         for qname, als in self.alignment_groups(read_type=read_type):
             yield qname
     
-    def generate_alignments(self, read_type=None):
-        if read_type is None:
-            read_type = self.default_read_type
-
+    def generate_alignments_with_blast(self, read_type=None, supplemental_index_name=None):
         reads = self.reads_by_type(read_type)
+
         if read_type is None:
             description = 'Generating alignments'
         else:
@@ -393,95 +436,41 @@ class Experiment:
 
         reads = self.progress(reads, desc=description)
 
-        bam_fns = []
         bam_by_name_fns = []
 
-        base_bam_fn = self.fns_by_read_type['primary_bam'][read_type]
-        base_bam_by_name_fn = self.fns_by_read_type['primary_bam_by_name'][read_type]
-
-        for i, chunk in enumerate(utilities.chunks(reads, 10000)):
-            suffix = f'.{i:06d}.bam'
-            bam_fn = base_bam_fn.with_suffix(suffix)
-            bam_by_name_fn = base_bam_by_name_fn.with_suffix(suffix)
-
-            knock_knock.blast.blast(self.target_info.reference_sequences,
-                                    chunk,
-                                    bam_fn,
-                                    bam_by_name_fn,
-                                    max_insertion_length=self.max_insertion_length,
-                                   )
-
-            bam_fns.append(bam_fn)
-            bam_by_name_fns.append(bam_by_name_fn)
-
-        if len(bam_fns) == 0:
-            # There weren't any reads. Make empty bam files.
-            for fn in [base_bam_fn, base_bam_by_name_fn]:
-                with pysam.AlignmentFile(fn, 'wb', header=self.target_info.header) as fh:
-                    pass
-
+        if supplemental_index_name is None:
+            bam_key = 'primary_bam_by_name'
+            base_bam_by_name_fn = self.fns_by_read_type['primary_bam_by_name'][read_type]
+            ref_seqs = self.target_info.reference_sequences
         else:
-            sam.merge_sorted_bam_files(bam_fns, base_bam_fn)
-            sam.merge_sorted_bam_files(bam_by_name_fns, base_bam_by_name_fn, by_name=True)
-
-        for fn in bam_fns:
-            fn.unlink()
-            fn.with_suffix('.bam.bai').unlink()
-        
-        for fn in bam_by_name_fns:
-            fn.unlink()
-
-    def generate_supplemental_alignments_with_blast(self, index_name, read_type=None):
-        reads = self.reads_by_type(read_type)
-
-        bam_fns = []
-
-        base_bam_fn = self.fns_by_read_type['supplemental_bam'][read_type, index_name]
-        base_bam_by_name_fn = self.fns_by_read_type['supplemental_bam_by_name'][read_type, index_name]
-
-        fasta_dir = self.supplemental_indices[index_name]['fasta']
-        ref_seqs = genomes.load_entire_genome(fasta_dir)
+            base_bam_by_name_fn = self.fns_by_read_type['supplemental_bam_by_name'][read_type, supplemental_index_name]
+            fasta_dir = self.supplemental_indices[supplemental_index_name]['fasta']
+            ref_seqs = genomes.load_entire_genome(fasta_dir)
 
         for i, chunk in enumerate(utilities.chunks(reads, 10000)):
             suffix = f'.{i:06d}.bam'
-            bam_fn = base_bam_fn.with_suffix(suffix)
+            bam_by_name_fn = base_bam_by_name_fn.with_suffix(suffix)
 
             knock_knock.blast.blast(ref_seqs,
                                     chunk,
-                                    bam_fn,
+                                    bam_by_name_fn=bam_by_name_fn,
                                     max_insertion_length=self.max_insertion_length,
+                                    ref_name_prefix_to_append=supplemental_index_name,
                                    )
 
-            bam_fns.append(bam_fn)
+            bam_by_name_fns.append(bam_by_name_fn)
 
-        if len(bam_fns) == 0:
-            # There weren't any reads. Make empty bam files.
-            for fn in [base_bam_fn]:
-                with pysam.AlignmentFile(fn, 'wb', header=self.target_info.header) as fh:
-                    pass
+        if len(bam_by_name_fns) == 0:
+            # There weren't any reads. Make an empty bam file.
+            with pysam.AlignmentFile(base_bam_by_name_fn, 'wb', header=self.target_info.header) as fh:
+                pass
 
         else:
-            sam.merge_sorted_bam_files(bam_fns, base_bam_fn)
+            sam.merge_sorted_bam_files(bam_by_name_fns, base_bam_by_name_fn, by_name=True)
 
-        for fn in bam_fns:
+        for fn in bam_by_name_fns:
             fn.unlink()
-            fn.with_suffix('.bam.bai').unlink()
 
-        saved_verbosity = pysam.set_verbosity(0)
-
-        with pysam.AlignmentFile(base_bam_fn) as all_mappings:
-            header = all_mappings.header
-            new_references = [f'{index_name}_{ref}' for ref in header.references]
-            new_header = pysam.AlignmentHeader.from_references(new_references, header.lengths)
-
-            by_name_sorter = sam.AlignmentSorter(base_bam_by_name_fn, new_header, by_name=True)
-
-            with by_name_sorter:
-                for al in all_mappings:
-                    by_name_sorter.write(al)
-
-        pysam.set_verbosity(saved_verbosity)
-        
     def generate_supplemental_alignments_with_STAR(self, read_type=None, min_length=None):
         for index_name in self.supplemental_indices:
             if index_name == 'phiX':
@@ -513,7 +502,7 @@ class Experiment:
                         # or that have too many edits (per aligned nt). Keep this in
                         # mind when interpretting short unexplained gaps in reads.
 
-                        if min_length is not None and al.query_alignment_length < min_length:
+                        if min_length is not None and (not al.is_unmapped) and al.query_alignment_length < min_length:
                             continue
 
                         #if al.get_tag('AS') / al.query_alignment_length <= 0.8:
@@ -526,19 +515,36 @@ class Experiment:
 
             Path(bam_fn).unlink()
 
-    def generate_supplemental_alignments_with_minimap2(self, read_type=None):
+    def generate_supplemental_alignments_with_minimap2(self,
+                                                       report_all=True,
+                                                       num_threads=1,
+                                                       read_type=None,
+                                                       use_ont_index=False,
+                                                      ):
+
         for index_name in self.supplemental_indices:
             # Note: this doesn't support multiple intput fastqs.
-            fastq_fn = self.fns_by_read_type['fastq'][read_type][0]
+            fastq_fn = ensure_list(self.fns_by_read_type['fastq'][read_type])[0]
+
+            if use_ont_index:
+                index_type = 'minimap2_ont'
+            else:
+                index_type = 'minimap2'
 
             try:
-                index = self.supplemental_indices[index_name]['minimap2']
+                index = self.supplemental_indices[index_name][index_type]
             except:
-                raise ValueError(index_name, 'minimap2')
+                raise ValueError(index_name, index_type)
 
             temp_bam_fn = self.fns_by_read_type['supplemental_bam_temp'][read_type, index_name]
 
-            mapping_tools.map_minimap2(fastq_fn, index, temp_bam_fn)
+            mapping_tools.map_minimap2(fastq_fn,
+                                       index,
+                                       temp_bam_fn,
+                                       report_all=report_all,
+                                       num_threads=num_threads,
+                                       use_ont_index=use_ont_index,
+                                      )
 
             header = sam.get_header(temp_bam_fn)
             new_references = [f'{index_name}_{ref}' for ref in header.references]
@@ -583,27 +589,17 @@ class Experiment:
             temp_bam_fn.unlink()
 
     def combine_alignments(self, read_type=None):
-        for by_name in [True]:
-            if by_name:
-                suffix = '_by_name'
-            else:
-                suffix = ''
+        fns_to_merge = [self.fns_by_read_type['primary_bam_by_name'][read_type]]
+        for index_name in self.supplemental_indices:
+            fns_to_merge.append(self.fns_by_read_type['supplemental_bam_by_name'][read_type, index_name])
 
-            bam_key = 'primary_bam' + suffix
-            supp_key = 'supplemental_bam' + suffix
-            combined_key = 'bam' + suffix
+        sam.merge_sorted_bam_files(fns_to_merge,
+                                   self.fns_by_read_type['bam_by_name'][read_type],
+                                   by_name=True,
+                                  )
 
-            fns_to_merge = [self.fns_by_read_type[bam_key][read_type]]
-            for index_name in self.supplemental_indices:
-                fns_to_merge.append(self.fns_by_read_type[supp_key][read_type, index_name])
-
-            sam.merge_sorted_bam_files(fns_to_merge,
-                                       self.fns_by_read_type[combined_key][read_type],
-                                       by_name=by_name,
-                                      )
-
-            for fn in fns_to_merge:
-                fn.unlink()
+        for fn in fns_to_merge:
+            fn.unlink()
 
     @memoized_property
     def outcome_counts(self):
@@ -618,10 +614,27 @@ class Experiment:
                                  comment='#',
                                 ).squeeze('columns')
             counts.index.names = self.count_index_levels
+            counts.name = None
+
         except (FileNotFoundError, pd.errors.EmptyDataError):
             counts = None
 
         return counts
+
+    @memoized_property
+    def outcome_fractions(self):
+        if self.outcome_counts is None:
+            return None
+        else:
+            return self.outcome_counts / self.outcome_counts.sum()
+
+    @memoized_property
+    def common_sequence_to_outcome(self):
+        return {}
+
+    @memoized_property
+    def common_sequence_to_alignments(self):
+        return {}
 
     @memoized_property
     def category_counts(self):
@@ -661,23 +674,22 @@ class Experiment:
             for k, v in sorted(sanitized_to_original.items()):
                 fh.write(f'{k}\t{v}\n')
 
-    def categorize_outcomes(self, fn_key='bam_by_name', read_type=None, max_reads=None):
-        self.check_combined_read_length()
+    @memoized_property
+    def combined_header(self):
+        return hits.sam.get_header(self.fns_by_read_type['bam_by_name'][self.uncommon_read_type])
 
+    def categorize_outcomes(self, fn_key='bam_by_name', read_type=None, max_reads=None):
         if self.fns['outcomes_dir'].is_dir():
             shutil.rmtree(str(self.fns['outcomes_dir']))
            
         self.fns['outcomes_dir'].mkdir()
 
-        outcomes = defaultdict(list)
+        outcome_to_qnames = defaultdict(list)
 
-        if read_type is None:
-            read_type = self.default_read_type
+        with self.fns['outcome_list'].open('w') as outcome_fh:
+            outcome_fh.write(f'## Generated at {utilities.current_time_string()}\n')
 
-        with self.fns['outcome_list'].open('w') as fh:
-            fh.write(f'## Generated at {utilities.current_time_string()}\n')
-
-            alignment_groups = self.alignment_groups(fn_key, read_type=read_type)
+            alignment_groups = self.alignment_groups(fn_key=fn_key, read_type=read_type)
 
             if max_reads is not None:
                 alignment_groups = islice(alignment_groups, max_reads)
@@ -692,30 +704,49 @@ class Experiment:
                     # Leave non-overlapping Illumina reads to be handled separately.
                     continue
 
-                try:
-                    layout = self.categorizer(als, self.target_info, mode=self.layout_mode)
-                    layout.categorize()
-                except:
-                    print(self.sample_name, name)
-                    raise
+                seq = als[0].get_forward_sequence()
+
+                # Special handling of empty sequence.
+                if seq is None:
+                    seq = ''
+
+                if seq in self.common_sequence_to_outcome:
+                    layout = self.common_sequence_to_outcome[seq]
+                    layout.query_name = name
+
+                else:
+                    layout = self.categorizer(als,
+                                              self.target_info,
+                                              mode=self.layout_mode,
+                                              error_corrected=self.has_UMIs,
+                                             )
+
+                    try:
+                        layout.categorize()
+                    except:
+                        print()
+                        print(self.sample_name, name)
+                        raise
                 
-                outcomes[layout.category, layout.subcategory].append(name)
+                outcome_to_qnames[layout.category, layout.subcategory].append(name)
 
                 outcome = self.final_Outcome.from_layout(layout)
-                fh.write(f'{outcome}\n')
+                outcome_fh.write(f'{outcome}\n')
 
         # To make plotting easier, for each outcome, make a file listing all of
         # qnames for the outcome and a bam file (sorted by name) with all of the
         # alignments for these qnames.
 
+        if read_type is None:
+            bam_read_type = self.preprocessed_read_type
+        else:
+            bam_read_type = read_type
+
         qname_to_outcome = {}
 
-        full_bam_fn = self.fns_by_read_type[fn_key][read_type]
-        header = sam.get_header(full_bam_fn)
+        alignment_sorters = sam.multiple_AlignmentSorters(self.combined_header, by_name=True)
 
-        alignment_sorters = sam.multiple_AlignmentSorters(header, by_name=True)
-
-        for outcome, qnames in outcomes.items():
+        for outcome, qnames in outcome_to_qnames.items():
             outcome_fns = self.outcome_fns(outcome)
 
             # This shouldn't be necessary due to rmtree of parent directory above
@@ -725,7 +756,7 @@ class Experiment:
 
             outcome_fns['dir'].mkdir()
 
-            alignment_sorters[outcome] = outcome_fns['bam_by_name'][read_type]
+            alignment_sorters[outcome] = outcome_fns['bam_by_name'][bam_read_type]
             
             with outcome_fns['query_names'].open('w') as fh:
                 for qname in qnames:
@@ -733,13 +764,12 @@ class Experiment:
                     fh.write(qname + '\n')
         
         with alignment_sorters:
-            saved_verbosity = pysam.set_verbosity(0)
-            with pysam.AlignmentFile(full_bam_fn) as full_bam_fh:
-                for al in full_bam_fh:
-                    if al.query_name in qname_to_outcome:
-                        outcome = qname_to_outcome[al.query_name]
+            for name, als in self.alignment_groups(fn_key=fn_key, read_type=read_type):
+                for al in als:
+                    if name in qname_to_outcome:
+                        outcome = qname_to_outcome[name]
+                        al.query_name = name
                         alignment_sorters[outcome].write(al)
-            pysam.set_verbosity(saved_verbosity)
 
     def process(self, stage):
         self.results_dir.mkdir(exist_ok=True, parents=True)
@@ -757,15 +787,12 @@ class Experiment:
                 raise ValueError(f'invalid stage: {stage}')
 
         except:
-            print(self.group, self.sample_name)
+            print(self.batch_name, self.sample_name)
             raise
 
     def get_read_alignments(self, read_id, fn_key='bam_by_name', outcome=None, read_type=None):
-        if read_type is None:
-            read_type = self.default_read_type
-
         # iter() necessary because tqdm objects aren't iterators
-        read_groups = iter(self.alignment_groups(fn_key, outcome, read_type))
+        read_groups = iter(self.alignment_groups(fn_key=fn_key, outcome=outcome, read_type=read_type))
 
         if isinstance(read_id, int):
             try:
@@ -888,10 +915,10 @@ class Experiment:
         
         if show_title:
             if outcome is None:
-                title = f'{self.batch}: {self.name}'
+                title = f'{self.batch_name}: {self.sample_name}'
             else:
                 category, subcategory = outcome
-                title = f'{self.batch}: {self.name}\n{category}: {subcategory}'
+                title = f'{self.batch_name}: {self.sample_name}\n{category}: {subcategory}'
 
             ax.set_title(title)
             
@@ -1010,6 +1037,8 @@ class Experiment:
                                                                              self.categorizer,
                                                                              length_ranges=self.length_ranges,
                                                                              expected_lengths=self.expected_lengths,
+                                                                             smooth_window=self.length_plot_smooth_window,
+                                                                             x_tick_multiple=self.x_tick_multiple,
                                                                              **kwargs,
                                                                             )
 

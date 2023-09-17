@@ -28,7 +28,7 @@ class PacbioExperiment(Experiment):
                 #raise ValueError(f'{self.group}: {self.name} specifies non-existent {fn}')
                 pass
 
-        self.read_types = ['CCS']
+        self.read_types = {'CCS'}
         self.default_read_type = 'CCS'
 
         self.outcome_fn_keys = ['outcome_list']
@@ -47,7 +47,7 @@ class PacbioExperiment(Experiment):
         if outcome is None:
             lengths = self.read_lengths
         else:
-            lengths = self.outcome_stratified_lengths[outcome]
+            lengths = self.outcome_stratified_lengths.outcome_length_arrays[outcome]
 
         ranges = []
         for start in starts:

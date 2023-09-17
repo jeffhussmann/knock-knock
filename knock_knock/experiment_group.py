@@ -110,7 +110,9 @@ class ExperimentGroup:
 
         logger.info('Collecting outcome counts')
         self.make_outcome_counts()
-        self.make_group_figures()
+
+        if generate_figures:
+            self.make_group_figures()
 
         logger.info('Done!')
 
@@ -213,7 +215,7 @@ class ExperimentGroup:
     def common_sequence_to_alignments(self):
         common_sequence_to_alignments = {}
         for chunk_exp in self.common_sequence_chunk_exps():
-            for common_name, als in chunk_exp.alignment_groups(read_type='nonredundant'):
+            for common_name, als in chunk_exp.alignment_groups():
                 seq = self.common_name_to_common_sequence[common_name]
                 common_sequence_to_alignments[seq] = als
         return common_sequence_to_alignments
@@ -224,7 +226,7 @@ class ExperimentGroup:
 
         chunk = self.name_to_chunk(name)
 
-        als = chunk.get_read_alignments(name, read_type='nonredundant')
+        als = chunk.get_read_alignments(name)
 
         return als
 
@@ -581,24 +583,13 @@ class CommonSequencesExperiment:
         return self.experiment_group.fns['common_sequences_dir'] / self.sample_name
 
     @memoized_property
-    def seq_to_outcome(self):
+    def common_sequence_to_outcome(self):
         return {}
 
     @memoized_property
-    def seq_to_alignments(self):
+    def common_sequence_to_alignments(self):
         return {}
 
-    @memoized_property
-    def names_with_common_seq(self):
-        return {}
-
-    @property
-    def preprocessed_read_type(self):
-        return 'nonredundant'
-
-    @property
-    def read_types_to_align(self):
-        return ['nonredundant']
-
-    def make_nonredundant_sequence_fastq(self):
+    def extract_reads_with_uncommon_sequences(self):
+        ''' Overload to prevent from overwriting its own sequences. '''
         pass

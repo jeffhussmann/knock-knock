@@ -36,7 +36,7 @@ class CommonSequenceSplitter:
 
             chunk_exp = self.experiment_group.common_sequence_chunk_exp_from_name(chunk_name)
             chunk_exp.results_dir.mkdir()
-            fn = chunk_exp.fns_by_read_type['fastq']['nonredundant']
+            fn = chunk_exp.fns_by_read_type['fastq'][chunk_exp.preprocessed_read_type]
             self.current_chunk_fh = gzip.open(fn, 'wt', compresslevel=1)
             
     def write_read(self, i, read):
