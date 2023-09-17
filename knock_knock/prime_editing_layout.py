@@ -894,7 +894,7 @@ class Layout(layout.Categorizer):
             covered = interval.get_covered(al)
 
             if covered.total_length >= 10:
-                if covered.start <= 5 or self.overlaps_primer(al, 'left'):
+                if covered.start <= 5 or (self.overlaps_primer(al, 'left') and covered.start < 25):
                     edge_alignments['left'].append(al)
                 
                 if covered.end >= len(self.seq) - 1 - 5 or self.overlaps_primer(al, 'right'):
