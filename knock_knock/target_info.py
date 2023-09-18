@@ -249,6 +249,14 @@ class TargetInfo():
         return ref_seqs
 
     @memoized_property
+    def all_supplemental_reference_names(self):
+        names = []
+        for index_name, header in self.supplemental_headers.items():
+            for ref_name in header.references:
+                names.append(f'{index_name}_{ref_name}')
+        return names
+
+    @memoized_property
     def protospacer_names(self):
         ''' Names of all features representing protospacers at which cutting was expected to occur '''
         if self.sgRNA_components is None:
