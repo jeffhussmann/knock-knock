@@ -1177,7 +1177,7 @@ class Experiment:
                 </head>
                 <body>
                 '''))
-            fh.write(f'<h2>{self.batch}: {self.sample_name}</h1>\n')
+            fh.write(f'<h2>{self.batch_name}: {self.sample_name}</h1>\n')
             fh.write(f'<h2>{description}</h2>\n')
             
             fig = self.length_distribution_figure(outcome=outcome)
