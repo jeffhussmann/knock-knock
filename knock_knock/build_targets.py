@@ -642,16 +642,8 @@ class TargetInfoBuilder:
     def align_primers_to_extra_sequence(self):
         seq = self.region_fetcher(self.genome, None, None).upper()
 
-        header = pysam.AlignmentHeader.from_references([self.genome], [len(seq)])
+        primer_alignments = sw.align_primers_to_sequence(self.primers, self.genome, seq)
 
-        mapper = sw.SeedAndExtender(seq, 10, header, self.genome)
-
-        primer_alignments = {}
-        for primer_name, primer in self.primers.items():
-            primer_alignments[primer_name] = mapper.seed_and_extend(primer, len(primer) - 10, len(primer), primer_name)
-            if not primer_alignments[primer_name]:
-                raise ValueError(f'At least one primer from pair {self.primers_name} could not be located in {self.genome}')
-            
         return primer_alignments
 
     def identify_concordant_primer_alignment_pair(self, primer_alignments, max_length=10000):
