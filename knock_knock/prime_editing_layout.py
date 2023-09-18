@@ -595,6 +595,20 @@ class Layout(layout.Categorizer):
         return extension_als
 
     @memoized_property
+    def pegRNA_extension_als_from_either_side_list(self):
+        ''' For when an extension al might not get called on both sides
+        because of e.g. an indel disrupting the target edge alignment
+        it would need to extend.
+        '''
+        pegRNA_als = []
+        for side in ['left', 'right']:
+            for key in ['pegRNA', 'first pegRNA', 'second pegRNA']:
+                if (pegRNA_al := self.extension_chains_by_side[side]['alignments'].get(key)) is not None:
+                    pegRNA_als.append(pegRNA_al)
+
+        return pegRNA_als
+
+    @memoized_property
     def is_intended_deletion(self):
         is_intended_deletion = False
 
@@ -677,7 +691,7 @@ class Layout(layout.Categorizer):
     def supplemental_alignments(self):
         supp_als = [
             al for al in self.alignments
-            if al.reference_name not in self.primary_ref_names
+            if (not al.is_unmapped) and al.reference_name not in self.primary_ref_names
         ]
 
         split_als = []
@@ -1571,10 +1585,17 @@ class Layout(layout.Categorizer):
         self.category = 'intended edit'
 
         # For recodes, target als can sometimes be redundant.
-        chain_als = self.extension_chain['alignments']
-        relevant_alignments = interval.make_parsimonious([chain_als[k] for k in ['first target', 'second target'] if k in chain_als])
-        if 'pegRNA' in chain_als:
-            relevant_alignments.append(chain_als['pegRNA'])
+        chain_als = []
+        for side, extension_chain in self.extension_chains_by_side.items():
+            for k in ['first target', 'second target']:
+                if (al := extension_chain['alignments'].get(k)) is not None:
+                    chain_als.append(al)
+
+        relevant_alignments = interval.make_parsimonious(chain_als)
+
+        if (al := self.extension_chain['alignments'].get('pegRNA')) is not None:
+            relevant_alignments.append(al)
+
         self.relevant_alignments = relevant_alignments
 
         if self.intended_edit_type == 'combination':
@@ -1732,7 +1753,11 @@ class Layout(layout.Categorizer):
     def register_edit_plus_indel(self, subcategory, indels):
         self.category = 'edit + indel'
         self.subcategory = subcategory
-        als = interval.make_parsimonious(self.split_target_alignments) + self.pegRNA_extension_als_list
+
+        # Can't just use self.pegRNA_extension_als_list since indel
+        # might cut off extension chain on one side.
+
+        als = interval.make_parsimonious(self.split_target_alignments) + self.pegRNA_extension_als_from_either_side_list
         als = sam.merge_any_adjacent_pairs(als, self.target_info.reference_sequences, max_insertion_length=2)
         self.relevant_alignments = als
 
@@ -1748,13 +1773,13 @@ class Layout(layout.Categorizer):
         ''' There is RT'ed sequence, and the extension chains cover the whole read.
         '''
         # Note difference from twin prime here - excludes RT'ed + annealing-extended.
-        contains_RTed_sequence = (chains[self.target_info.pegRNA_side]['description'] == 'RT\'ed') and \
-                                 (chains[self.target_info.non_pegRNA_side]['description'] == 'not RT\'ed')
+        contains_RTed_sequence = (chains[self.target_info.pegRNA_side]['description'] == 'RT\'ed')
 
-        left_covered = chains['left']['query_covered']
-        right_covered = chains['right']['query_covered']
+        empty = interval.DisjointIntervals([interval.Interval.empty()])
+        pegRNA_side_covered = chains[self.target_info.pegRNA_side]['query_covered_incremental'].get('pegRNA', empty)
+        non_pegRNA_side_covered = chains[self.target_info.non_pegRNA_side]['query_covered_incremental'].get('first target', empty)
 
-        combined_covered = left_covered | right_covered
+        combined_covered = pegRNA_side_covered | non_pegRNA_side_covered
         uncovered = self.not_covered_by_primers - combined_covered
 
         # Allow failure to explain the last few nts of the read.
@@ -1801,13 +1826,15 @@ class Layout(layout.Categorizer):
 
         self.outcome = UnintendedRejoiningOutcome(chain_edges['left'], chain_edges['right'], chain_junction_MH)
 
-        als_by_ref = defaultdict(list)
-        for al in list(chains['left']['alignments'].values()) + list(chains['right']['alignments'].values()):
-            als_by_ref[al.reference_name].append(al)
-
         self.relevant_alignments = []
-        for ref_name, als in als_by_ref.items():
-            self.relevant_alignments.extend(sam.make_noncontained(als))
+
+        for side, key in [
+            (self.target_info.pegRNA_side, 'first target'),
+            (self.target_info.pegRNA_side, 'pegRNA'),
+            (self.target_info.non_pegRNA_side, 'first target'),
+        ]:
+            if key in chains[side]['alignments']:
+                self.relevant_alignments.append(chains[side]['alignments'][key])
 
     @memoized_property
     def pegRNA_alignments_cover_target_gap(self):
@@ -2246,7 +2273,7 @@ class Layout(layout.Categorizer):
                 self.category = 'edit + indel'
                 self.subcategory = 'duplication'
 
-            self.relevant_alignments = self.pegRNA_extension_als_list + merged_als
+            self.relevant_alignments = self.pegRNA_extension_als_from_either_side_list + merged_als
 
         elif self.inversion:
             self.category = 'inversion'
@@ -2283,7 +2310,7 @@ class Layout(layout.Categorizer):
                     self.category = 'edit + indel'
                     self.subcategory = 'duplication'
 
-                self.relevant_alignments = self.pegRNA_extension_als_list + merged_als
+                self.relevant_alignments = self.pegRNA_extension_als_from_either_side_list + merged_als
 
             elif len(indels) == 1 and indels[0].kind == 'D':
                 indel = indels[0]
@@ -2297,7 +2324,7 @@ class Layout(layout.Categorizer):
                 deletion_outcome = DeletionOutcome(indels[0])
                 duplication_outcome = DuplicationOutcome(ref_junctions)
                 self.outcome = DeletionPlusDuplicationOutcome(deletion_outcome, duplication_outcome)
-                self.relevant_alignments = self.pegRNA_extension_als_list + merged_als
+                self.relevant_alignments = self.pegRNA_extension_als_from_either_side_list + merged_als
 
             elif len(indels) == 1 and indels[0].kind == 'I':
                 indel = indels[0]
