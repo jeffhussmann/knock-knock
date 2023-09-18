@@ -117,6 +117,7 @@ class ProgrammedEditOutcome(Outcome):
         return f'{self.SNV_read_bases};{indels_string}'
 
     def perform_anchor_shift(self, anchor):
+        # Note: doesn't touch SNVs.
         shifted_deletions = [DeletionOutcome(d).perform_anchor_shift(anchor).deletion for d in self.deletions]
         shifted_insertions = [InsertionOutcome(i).perform_anchor_shift(anchor).insertion for i in self.insertions]
         return type(self)(self.SNV_read_bases, shifted_deletions + shifted_insertions)

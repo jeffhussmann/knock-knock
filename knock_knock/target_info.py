@@ -1984,6 +1984,7 @@ class TargetInfo():
     def pegRNA_programmed_insertion(self):
         ''' Returns an expanded DegenerateInsertion representing the insertion
         programmed by a single pegRNA.
+        Note: NOT anchor shifted.
         '''
         if len(self.pegRNA_programmed_insertion_features) != 1:
             insertion = None
@@ -2049,7 +2050,7 @@ def degenerate_indel_from_string(details_string):
 class DegenerateDeletion():
     def __init__(self, starts_ats, length):
         self.kind = 'D'
-        self.starts_ats = tuple(starts_ats)
+        self.starts_ats = tuple(sorted(starts_ats))
         self.num_MH_nts = len(self.starts_ats) - 1
         self.length = length
         self.ends_ats = [s + self.length - 1 for s in self.starts_ats]
@@ -2108,6 +2109,9 @@ class DegenerateDeletion():
 class DegenerateInsertion():
     def __init__(self, starts_afters, seqs):
         self.kind = 'I'
+        order = np.argsort(starts_afters)
+        starts_afters = [starts_afters[i] for i in order]
+        seqs = [seqs[i] for i in order]
         self.starts_afters = tuple(starts_afters)
         self.seqs = tuple(seqs)
         
