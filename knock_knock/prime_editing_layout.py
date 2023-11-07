@@ -132,21 +132,6 @@ class Layout(layout.Categorizer):
         self.error_corrected = error_corrected
         self.mode = mode
 
-    @classmethod
-    def from_read(cls, read, target_info):
-        al = pysam.AlignedSegment(target_info.header)
-        al.query_sequence = read.seq
-        al.query_qualities = read.qual
-        al.query_name = read.name
-        return cls([al], target_info)
-    
-    @classmethod
-    def from_seq(cls, seq, target_info):
-        al = pysam.AlignedSegment(target_info.header)
-        al.query_sequence = seq
-        al.query_qualities = [41]*len(seq)
-        return cls([al], target_info)
-
     @memoized_property
     def intended_edit_type(self):
         if len(self.target_info.pegRNA_names) != 1:

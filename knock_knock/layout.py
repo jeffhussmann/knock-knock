@@ -41,15 +41,36 @@ class Categorizer:
 
         self.read_length = len(self.read)
 
-        self.primary_ref_names = set(self.target_info.reference_sequences)
 
         self.relevant_alignments = self.alignments
 
         self.categorized = False
 
+    @property
+    def primary_ref_names(self):
+        return set(self.target_info.reference_sequences)
+
     @memoized_property
     def whole_read(self):
         return interval.Interval(0, len(self.seq) - 1)
+
+    def whole_read_minus_edges(self, edge_length):
+        return interval.Interval(edge_length, len(self.seq) - 1 - edge_length)
+
+    @classmethod
+    def from_read(cls, read, target_info):
+        al = pysam.AlignedSegment(target_info.header)
+        al.query_sequence = read.seq
+        al.query_qualities = read.qual
+        al.query_name = read.name
+        return cls([al], target_info)
+    
+    @classmethod
+    def from_seq(cls, seq, target_info):
+        al = pysam.AlignedSegment(target_info.header)
+        al.query_sequence = seq
+        al.query_qualities = [41]*len(seq)
+        return cls([al], target_info)
 
     @classmethod
     def full_index(cls):
@@ -366,6 +387,102 @@ class Categorizer:
             extended_al = None
 
         return extended_al
+
+    def realign_edges_to_primers(self, read_side):
+        if self.seq is None:
+            return []
+
+        buffer_length = 5
+
+        target_seq = self.target_info.target_sequence
+
+        edge_als = []
+
+        for amplicon_side in [5, 3]:
+            primer = self.target_info.primers_by_side_of_target[amplicon_side]
+
+            if amplicon_side == 5:
+                amplicon_slice = idx[primer.start:primer.end + 1 + buffer_length]
+            else:
+                amplicon_slice = idx[primer.start - buffer_length:primer.end + 1]
+
+            amplicon_side_seq = target_seq[amplicon_slice]
+
+            if read_side == 5:
+                read_slice = idx[:len(primer) + buffer_length]
+            else:
+                read_slice = idx[-(len(primer) + buffer_length):]
+
+            if amplicon_side == 5:
+                alignment_type = 'fixed_start'
+            else:
+                alignment_type = 'fixed_end'
+
+            read = self.read[read_slice]
+            if amplicon_side != read_side:
+                read = read.reverse_complement()
+
+            soft_clip_length = len(self.seq) - len(read)
+
+            targets = [('amplicon_side', amplicon_side_seq)]
+            temp_header = pysam.AlignmentHeader.from_references([n for n, s in targets], [len(s) for n, s in targets])
+
+            als = sw.align_read(read, targets, 5, temp_header,
+                                alignment_type=alignment_type,
+                                max_alignments_per_target=1,
+                                both_directions=False,
+                                min_score_ratio=0,
+                               )
+
+            # The fixed edge alignment strategy used can produce alignments that start or 
+            # end with a deletion. Remove these.
+            als = [sam.remove_terminal_deletions(al) for al in als]
+
+            if len(als) > 0:
+                al = als[0]
+
+                if amplicon_side == 5:
+                    ref_start_offset = primer.start
+                    new_cigar = al.cigar + [(sam.BAM_CSOFT_CLIP, soft_clip_length)]
+                else:
+                    ref_start_offset = primer.start - buffer_length
+                    new_cigar = [(sam.BAM_CSOFT_CLIP, soft_clip_length)] + al.cigar
+
+                if read_side == 5:
+                    primer_query_interval = interval.Interval(0, len(primer) - 1)
+                elif read_side == 3:
+                    # can't just use buffer_length as start in case read is shorter than primer + buffer_length
+                    primer_query_interval = interval.Interval(len(read) - len(primer), np.inf)
+
+                if amplicon_side != read_side:
+                    al = sam.flip_alignment(al)
+
+                edits_in_primer = sam.edit_distance_in_query_interval(al, primer_query_interval, ref_seq=amplicon_side_seq)
+
+                if edits_in_primer <= 5:
+                    al.reference_start = al.reference_start + ref_start_offset
+                    al.cigar = sam.collapse_soft_clip_blocks(new_cigar)
+                    if al.is_reverse:
+                        seq = utilities.reverse_complement(self.seq)
+                        qual = self.qual[::-1]
+                    else:
+                        seq = self.seq
+                        qual = self.qual
+                    al.query_sequence = seq
+                    al.query_qualities = qual
+                    al_dict = al.to_dict()
+                    al_dict['ref_name'] = self.target_info.target
+                    edge_al = pysam.AlignedSegment.from_dict(al_dict, self.target_info.header)
+                    edge_als.append((edits_in_primer, edge_al))
+
+        edge_als = sorted(edge_als, key=lambda t: t[0])
+        if len(edge_als) == 0:
+            edge_al = None
+        else:
+            edge_al = edge_als[0][1]
+            
+        return edge_al
+
 
 class Layout(Categorizer):
     category_order = [
@@ -1003,101 +1120,6 @@ class Layout(Categorizer):
         else:
             return fastq.Read(self.name, self.seq, fastq.encode_sanger(self.qual))
     
-    def realign_edges_to_primers(self, read_side):
-        if self.seq is None:
-            return []
-
-        buffer_length = 5
-
-        target_seq = self.target_info.target_sequence
-
-        edge_als = []
-
-        for amplicon_side in [5, 3]:
-            primer = self.target_info.primers_by_side_of_target[amplicon_side]
-
-            if amplicon_side == 5:
-                amplicon_slice = idx[primer.start:primer.end + 1 + buffer_length]
-            else:
-                amplicon_slice = idx[primer.start - buffer_length:primer.end + 1]
-
-            amplicon_side_seq = target_seq[amplicon_slice]
-
-            if read_side == 5:
-                read_slice = idx[:len(primer) + buffer_length]
-            else:
-                read_slice = idx[-(len(primer) + buffer_length):]
-
-            if amplicon_side == 5:
-                alignment_type = 'fixed_start'
-            else:
-                alignment_type = 'fixed_end'
-
-            read = self.read[read_slice]
-            if amplicon_side != read_side:
-                read = read.reverse_complement()
-
-            soft_clip_length = len(self.seq) - len(read)
-
-            targets = [('amplicon_side', amplicon_side_seq)]
-            temp_header = pysam.AlignmentHeader.from_references([n for n, s in targets], [len(s) for n, s in targets])
-
-            als = sw.align_read(read, targets, 5, temp_header,
-                                alignment_type=alignment_type,
-                                max_alignments_per_target=1,
-                                both_directions=False,
-                                min_score_ratio=0,
-                               )
-
-            # The fixed edge alignment strategy used can produce alignments that start or 
-            # end with a deletion. Remove these.
-            als = [sam.remove_terminal_deletions(al) for al in als]
-
-            if len(als) > 0:
-                al = als[0]
-
-                if amplicon_side == 5:
-                    ref_start_offset = primer.start
-                    new_cigar = al.cigar + [(sam.BAM_CSOFT_CLIP, soft_clip_length)]
-                else:
-                    ref_start_offset = primer.start - buffer_length
-                    new_cigar = [(sam.BAM_CSOFT_CLIP, soft_clip_length)] + al.cigar
-
-                if read_side == 5:
-                    primer_query_interval = interval.Interval(0, len(primer) - 1)
-                elif read_side == 3:
-                    # can't just use buffer_length as start in case read is shorter than primer + buffer_length
-                    primer_query_interval = interval.Interval(len(read) - len(primer), np.inf)
-
-                if amplicon_side != read_side:
-                    al = sam.flip_alignment(al)
-
-                edits_in_primer = sam.edit_distance_in_query_interval(al, primer_query_interval, ref_seq=amplicon_side_seq)
-
-                if edits_in_primer <= 5:
-                    al.reference_start = al.reference_start + ref_start_offset
-                    al.cigar = sam.collapse_soft_clip_blocks(new_cigar)
-                    if al.is_reverse:
-                        seq = utilities.reverse_complement(self.seq)
-                        qual = self.qual[::-1]
-                    else:
-                        seq = self.seq
-                        qual = self.qual
-                    al.query_sequence = seq
-                    al.query_qualities = qual
-                    al_dict = al.to_dict()
-                    al_dict['ref_name'] = self.target_info.target
-                    edge_al = pysam.AlignedSegment.from_dict(al_dict, self.target_info.header)
-                    edge_als.append((edits_in_primer, edge_al))
-
-        edge_als = sorted(edge_als, key=lambda t: t[0])
-        if len(edge_als) == 0:
-            edge_al = None
-        else:
-            edge_al = edge_als[0][1]
-            
-        return edge_al
-
     @memoized_property
     def all_primer_alignments(self):
         ''' Get all alignments that contain the amplicon primers. '''
@@ -2377,7 +2399,7 @@ class Layout(Categorizer):
 
         return diagram
 
-class NonoverlappingPairLayout():
+class NonoverlappingPairLayout:
     def __init__(self, R1_als, R2_als, target_info):
         self.target_info = target_info
         self.layouts = {
