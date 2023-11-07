@@ -11,13 +11,13 @@ import pysam
 import numpy as np
 
 import Bio.SeqIO
-import Bio.SeqUtils
 
 import hits.visualize
 from hits import fasta, genomes, gff, utilities, mapping_tools, interval, sam, sw
 
 import knock_knock.pegRNAs
 import knock_knock.integrases
+from knock_knock.effector import effectors
 
 memoized_property = utilities.memoized_property
 memoized_with_args = utilities.memoized_with_args
@@ -27,86 +27,10 @@ other_side = {
     'right': 'left',
 }
 
-class Effector():
-    def __init__(self, name, PAM_pattern, PAM_side, cut_after_offset):
-        self.name = name
-        self.PAM_pattern = PAM_pattern
-        self.PAM_side = PAM_side
-        # cut_after_offset is relative to the 5'-most nt of the PAM
-        self.cut_after_offset = cut_after_offset
-
-    def __repr__(self):
-        return f"{type(self).__name__}('{self.name}', '{self.PAM_pattern}', {self.PAM_side}, {self.cut_after_offset})"
-
-    def PAM_slice(self, protospacer_feature):
-        before_slice = slice(protospacer_feature.start - len(self.PAM_pattern), protospacer_feature.start)
-        after_slice = slice(protospacer_feature.end + 1, protospacer_feature.end + 1 + len(self.PAM_pattern))
-
-        if (protospacer_feature.strand == '+' and self.PAM_side == 5) or (protospacer_feature.strand == '-' and self.PAM_side == 3):
-            PAM_slice = before_slice
-        else:
-            PAM_slice = after_slice
-
-        return PAM_slice
-
-    def PAM_matches_pattern(self, protospacer_feature, target_sequence):
-        PAM_seq = target_sequence[self.PAM_slice(protospacer_feature)].upper()
-        if protospacer_feature.strand == '-':
-            PAM_seq = utilities.reverse_complement(PAM_seq)
-
-        pattern, *matches = Bio.SeqUtils.nt_search(PAM_seq, self.PAM_pattern) 
-
-        return 0 in matches
-
-    def cut_afters(self, protospacer_feature):
-        ''' Returns a dictionary of {strand: position after which nick is made} '''
-
-        if protospacer_feature.strand == '+':
-            offset_strand_order = '+-'
-        else:
-            offset_strand_order = '-+'
-
-        if len(set(self.cut_after_offset)) == 1:
-            # Blunt DSB
-            offsets = list(set(self.cut_after_offset))
-            strands = ['both']
-        else:
-            offsets = [offset for offset in self.cut_after_offset if offset is not None]
-            strands = [strand for strand, offset in zip(offset_strand_order, self.cut_after_offset) if offset is not None]
-
-        cut_afters = {}
-        PAM_slice = self.PAM_slice(protospacer_feature)
-
-        for offset, strand in zip(offsets, strands):
-            if protospacer_feature.strand == '+':
-                PAM_5 = PAM_slice.start
-                cut_after = PAM_5 + offset
-            else:
-                PAM_5 = PAM_slice.stop - 1
-                # -1 extra because cut_after is on the other side of the cut
-                cut_after = PAM_5 - offset - 1
-            
-            cut_afters[strand] = cut_after
-
-        return cut_afters
-
-effectors = {
-    'SpCas9': Effector('SpCas9', 'NGG', 3, (-4, -4)),
-    'SpCas9H840A': Effector('SpCas9H840A', 'NGG', 3, (-4, None)),
-    'SpCas9N863A': Effector('SpCas9N863A', 'NGG', 3, (-4, None)),
-    'SpCas9H840A_VRQR': Effector('SpCas9H840A_VRQR', 'NGA', 3, (-4, None)),
-    'SaCas9': Effector('SaCas9', 'NNGRRT', 3, (-4, -4)),
-    'SaCas9H840A': Effector('SaCas9H840A', 'NNGRRT', 3, (-4, None)),
-    'Cpf1': Effector('Cpf1', 'TTTN', 5, (20, 25)),
-    'AsCas12a': Effector('AsCas12a', 'TTTN', 5, (20, 25)),
-}
-
-# Hack because 'sgRNA_SaCas9H840A' is one character too long for genbank format.
-effectors['SaCas9H840'] = effectors['SaCas9H840A']
-effectors['SpCas9H840'] = effectors['SpCas9H840A']
-
-class TargetInfo():
-    def __init__(self, base_dir, name,
+class TargetInfo:
+    def __init__(self,
+                 base_dir,
+                 name,
                  primer_names=None,
                  sgRNAs=None,
                  donor=None,
@@ -663,10 +587,8 @@ class TargetInfo():
         if self.sgRNA_components is not None:
             for name, components in self.sgRNA_components.items():
                 try:
-                    feature = knock_knock.pegRNAs.identify_protospacer_in_target(self.target_sequence,
-                                                                                 components['protospacer'],
-                                                                                 components['effector'],
-                                                                                )
+                    effector = effectors[components['effector']]
+                    feature = effector.identify_protospacer_in_target(self.target_sequence, components['protospacer'])
                     feature.seqname = self.target
                     ps_name = knock_knock.pegRNAs.protospacer_name(name)
                     feature.attribute['ID'] = ps_name

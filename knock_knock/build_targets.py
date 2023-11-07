@@ -21,7 +21,8 @@ from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
 from hits import fasta, fastq, genomes, interval, mapping_tools, sam, sw, utilities
-from knock_knock import target_info, pegRNAs
+import knock_knock.effector
+from knock_knock import target_info, pegRNAs 
 
 import knock_knock.utilities
 
@@ -216,7 +217,10 @@ class TargetInfoBuilder:
         extra_sequences
     '''
 
-    def __init__(self, base_dir, info, index_locations,
+    def __init__(self,
+                 base_dir,
+                 info,
+                 index_locations,
                  defer_HA_identification=False,
                 ):
 
@@ -297,7 +301,8 @@ class TargetInfoBuilder:
         protospacer_features_in_amplicon = {}
         for sgRNA_name, components in sorted(sgRNAs):
             try:
-                protospacer_feature = pegRNAs.identify_protospacer_in_target(amplicon_sequence, components['protospacer'], components['effector'])
+                effector = knock_knock.effector.effectors[components['effector']]
+                protospacer_feature = effector.identify_protospacer_in_target(amplicon_sequence, components['protospacer'])
                 protospacer_features_in_amplicon[sgRNA_name] = protospacer_feature
             except ValueError:
                 logging.warning(f'No valid location for {sgRNA_name} {components["effector"]} protospacer: {components["protospacer"]} in target {ref_name}:{left_al.reference_start:,}-{right_al.reference_end:,}')

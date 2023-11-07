@@ -9,7 +9,11 @@ import pysam
 from hits import gff, interval, sam, sw, utilities
 
 import knock_knock.utilities
+import knock_knock.integrases
+import knock_knock.effector
 from knock_knock import target_info
+
+memoized_property = utilities.memoized_property
 
 def read_csv(csv_fn, process=True):
     df = knock_knock.utilities.read_and_sanitize_csv(csv_fn, index_col='name')
@@ -58,61 +62,18 @@ def protospacer_name(pegRNA_name):
 def extract_pegRNA_name(PBS_name):
     return PBS_name.rsplit('_', 1)[0]
 
-def identify_protospacer_in_target(target_sequence, protospacer, effector):
-    ''' Find an occurence of protospacer on either strand of target_sequence
-    that has a PAM for effector positioned appropriately. If there is more
-    than one such occurence, raise a ValueError. 
-    Because the first nt of protospacer might be a non-matching G, first
-    look for the whole protospacer. If no match is found, look for the
-    protospacer with the first nt removed.
-    '''
-
-    if isinstance(effector, str):
-        effector = target_info.effectors[effector]
-
-    def find(protospacer_suffix):
-        valid_features = []
-        for strand, ps_seq in [('+', protospacer_suffix), ('-', utilities.reverse_complement(protospacer_suffix))]:
-            protospacer_starts = utilities.find_all_substring_starts(target_sequence, ps_seq)
-            
-            for protospacer_start in protospacer_starts:
-                protospacer_end = protospacer_start + len(ps_seq) - 1
-                target_protospacer_feature = gff.Feature.from_fields(start=protospacer_start,
-                                                                     end=protospacer_end,
-                                                                     strand=strand,
-                                                                     feature='sgRNA', 
-                                                                     attribute_string=gff.make_attribute_string({
-                                                                         'color': default_feature_colors['protospacer'],
-                                                                         'effector': effector.name,
-                                                                     }),
-                                                                    )
-                
-                if effector.PAM_matches_pattern(target_protospacer_feature, target_sequence):
-                    valid_features.append(target_protospacer_feature)
-
-        return valid_features
-                
-    valid_features = find(protospacer)
-
-    if len(valid_features) == 0:
-        valid_features = find(protospacer[1:])
-
-    if len(valid_features) != 1:
-        raise ValueError(f'{len(valid_features)} valid locations for protospacer {protospacer} in target {target_sequence if len(target_sequence) < 1000 else ">1kb long"}')
-    else:
-        valid_feature = valid_features[0]
-        return valid_feature
-
 def get_RTT_aligner(match_score=2,
                     mismatch_score=-3,
                     open_gap_score=-12,
                     extend_gap_score=-0.1,
                    ):
-    aligner = Bio.Align.PairwiseAligner(match_score=match_score,
-                                        mismatch_score=mismatch_score,
-                                        open_gap_score=open_gap_score,
-                                        extend_gap_score=extend_gap_score,
-                                       )
+
+    aligner = Bio.Align.PairwiseAligner(
+        match_score=match_score,
+        mismatch_score=mismatch_score,
+        open_gap_score=open_gap_score,
+        extend_gap_score=extend_gap_score,
+    )
 
     # Idea: 'global' mode with no penalty for target right gaps
     # requires the entire flap to be aligned without penalizing
@@ -171,9 +132,9 @@ class pegRNA:
         protospacer = self.components['protospacer']
         scaffold = self.components['scaffold']
         pegRNA_sequence = self.components['full_sequence']
-        effector = target_info.effectors[self.components['effector']]
+        effector = knock_knock.effector.effectors[self.components['effector']]
 
-        target_protospacer_feature = identify_protospacer_in_target(self.target_sequence, protospacer, effector)
+        target_protospacer_feature = effector.identify_protospacer_in_target(self.target_sequence, protospacer)
         target_protospacer_feature.attribute['ID'] = self.protospacer_name
         target_protospacer_feature.seqname = self.target_name
         strand = target_protospacer_feature.strand
@@ -315,7 +276,7 @@ class pegRNA:
 
         return cut_after
 
-    @utilities.memoized_property
+    @memoized_property
     def target_downstream_of_nick(self):
         protospacer = self.features[self.target_name, self.protospacer_name]
 
@@ -380,7 +341,7 @@ class pegRNA:
             for flap_subsequence, target_subsequence in zip(flap_subsequences, target_subsequences):
                 flap_ps = range(*flap_subsequence)
                 target_ps = range(*target_subsequence)
-                
+
                 mismatches = [-1]
                 
                 for i, (flap_p, target_p) in enumerate(zip(flap_ps, target_ps)):
