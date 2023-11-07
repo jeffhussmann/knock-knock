@@ -5,8 +5,9 @@ from collections import Counter
 from hits import fastq
 
 class CommonSequenceSplitter:
-    def __init__(self, experiment_group, reads_per_chunk=1000):
+    def __init__(self, experiment_group, max_sequences=None, reads_per_chunk=1000):
         self.experiment_group = experiment_group
+        self.max_sequences = max_sequences
         self.reads_per_chunk = reads_per_chunk
         self.current_chunk_fh = None
         self.seq_counts = Counter()
@@ -45,21 +46,17 @@ class CommonSequenceSplitter:
         
     def write_files(self):
         # Include one value outside of the solexa range to allow automatic detection.
-        quals = {
-            0: '',
-        }
-        for length in range(1, 1000):
-            quals[length] = fastq.encode_sanger([25] + [40] * (length - 1))
+        qual = fastq.unambiguous_sanger_Q40(1000)
    
         tuples = []
 
         i = 0 
-        for seq, count in self.seq_counts.most_common():
+        for seq, count in self.seq_counts.most_common(self.max_sequences):
             distinct_samples = self.distinct_samples_per_seq[seq]
 
             if count > 1:
                 name = f'{i:010}_{count:010}'
-                read = fastq.Read(name, seq, quals[len(seq)])
+                read = fastq.Read(name, seq, qual[:len(seq)])
                 self.write_read(i, read)
                 i += 1
             else:

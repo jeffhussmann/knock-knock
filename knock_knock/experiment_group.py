@@ -124,7 +124,7 @@ class ExperimentGroup:
         reads for all experiments in the group and write them into common sequences
         experiments to be categorized.
         '''
-        splitter = knock_knock.common_sequences.CommonSequenceSplitter(self)
+        splitter = knock_knock.common_sequences.CommonSequenceSplitter(self, max_sequences=20000)
 
         description = 'Collecting common sequences'
         exps = self.experiments(no_progress=True)
