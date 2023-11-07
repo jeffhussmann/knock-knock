@@ -24,7 +24,13 @@ class IlluminaExperiment(Experiment):
             'too_short_outcome_list': self.results_dir / 'too_short_outcome_list.txt',
         })
 
-        self.sequencing_primers = self.description.get('sequencing_primers', 'truseq')
+        sequencing_primers = self.description.get('sequencing_primers', 'truseq')
+        if '_' in sequencing_primers:
+            R1, R2 = sequencing_primers.split('_')
+        else:
+            R1, R2 = sequencing_primers, sequencing_primers
+        self.sequencing_primers = {'R1': R1, 'R2': R2}
+
         self.x_tick_multiple = 100
 
         self.layout_mode = 'illumina'
@@ -287,8 +293,8 @@ class IlluminaExperiment(Experiment):
                 too_short_fh.write(f'{outcome}\n')
 
     def stitch_read_pairs(self):
-        before_R1 = adapters.primers[self.sequencing_primers]['R1']
-        before_R2 = adapters.primers[self.sequencing_primers]['R2']
+        before_R1 = adapters.primers[self.sequencing_primers['R1']]['R1']
+        before_R2 = adapters.primers[self.sequencing_primers['R2']]['R2']
 
         # Setup for post-stitching trimming process. 
         match_length_required = 6
