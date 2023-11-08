@@ -13,6 +13,10 @@ import pandas as pd
 import knock_knock.build_targets
 import knock_knock.experiment_group
 import knock_knock.outcome
+import knock_knock.illumina_experiment
+import knock_knock.prime_editing_layout
+import knock_knock.twin_prime_layout
+import knock_knock.Bxb1_layout
 import knock_knock.target_info
 import knock_knock.utilities
 
@@ -306,8 +310,6 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
         self.experiment_type = self.description['experiment_type']
 
-        self.ExperimentType, self.CommonSequencesExperimentType = arrayed_specialized_experiment_factory(self.experiment_type)
-
         self.outcome_index_levels = ('category', 'subcategory', 'details')
         self.outcome_column_levels = self.full_condition_keys
 
@@ -351,7 +353,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         super().__init__()
 
     def __repr__(self):
-        return f'ArrayedExperimentGroup: batch={self.batch_name}, group={self.group_name}, base_dir={self.base_dir}'
+        return f'ArrayedExperimentGroup: batch={self.batch_name}, group={self.group_name}, type={self.experiment_type}, base_dir={self.base_dir}'
 
     @memoized_property
     def data_dir(self):
@@ -388,13 +390,14 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         return self.first_experiment.target_info
 
     def common_sequence_chunk_exp_from_name(self, chunk_name):
-        chunk_exp = self.CommonSequencesExperimentType(self.base_dir,
-                                                       self.batch_name,
-                                                       self.group_name,
-                                                       chunk_name,
-                                                       experiment_group=self,
-                                                       description=self.description,
-                                                      )
+        chunk_exp = ArrayedCommonSequencesExperiment(self.base_dir,
+                                                     self.batch_name,
+                                                     self.group_name,
+                                                     chunk_name,
+                                                     self.experiment_type,
+                                                     experiment_group=self,
+                                                     description=self.description,
+                                                    )
         return chunk_exp
 
     @memoized_property
@@ -411,13 +414,14 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         else:
             progress = self.progress
 
-        exp = self.ExperimentType(self.base_dir,
-                                  self.batch_name,
-                                  self.group_name,
-                                  sample_name,
-                                  experiment_group=self,
-                                  progress=progress,
-                                 )
+        exp = ArrayedExperiment(self.base_dir,
+                                self.batch_name,
+                                self.group_name,
+                                sample_name,
+                                self.experiment_type,
+                                experiment_group=self,
+                                progress=progress,
+                               )
         return exp
 
     @memoized_property
@@ -860,18 +864,44 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         explorer = knock_knock.explore.ArrayedGroupExplorer(self, **kwargs)
         return explorer.layout
 
-class ArrayedExperiment:
-    def __init__(self, base_dir, batch_name, group_name, sample_name, experiment_group=None):
+class ArrayedExperiment(knock_knock.illumina_experiment.IlluminaExperiment):
+    def __init__(self, base_dir, batch_name, group_name, sample_name, experiment_type, experiment_group=None, **kwargs):
         if experiment_group is None:
             experiment_group = ArrayedExperimentGroup(base_dir, batch_name, group_name)
 
-        self.base_dir = Path(base_dir)
+        self.experiment_group = experiment_group
+        self.experiment_type = experiment_type
+
+        super().__init__(base_dir, (batch_name, group_name), sample_name, **kwargs)
+
         self.batch_name = batch_name
         self.group_name = group_name
         self.sample_name = sample_name
-        self.experiment_group = experiment_group
 
-        self.has_UMIs = False
+        self.read_types.add(self.uncommon_read_type)
+
+    @property
+    def uncommon_read_type(self):
+        return f'{self.preprocessed_read_type}_uncommon'
+
+    @memoized_property
+    def categorizer(self):
+        experiment_type_to_categorizer = {
+            'prime_editing': knock_knock.prime_editing_layout.Layout,
+            'twin_prime': knock_knock.twin_prime_layout.Layout,
+            'Bxb1_twin_prime': knock_knock.Bxb1_layout.Layout,
+        }
+
+        aliases = {
+            'single_flap': 'prime_editing',
+            'dual_flap': 'twin_prime',
+            'Bxb1_dual_flap': 'Bxb1_twin_prime',
+        }
+
+        for alias, original_name in aliases.items():
+            experiment_type_to_categorizer[alias] = experiment_type_to_categorizer[original_name]
+
+        return experiment_type_to_categorizer[self.experiment_type]
 
     def load_description(self):
         description = {
@@ -905,51 +935,27 @@ class ArrayedExperiment:
     def common_sequence_to_alignments(self):
         return self.experiment_group.common_sequence_to_alignments
 
-def arrayed_specialized_experiment_factory(experiment_kind):
-    from knock_knock.illumina_experiment import IlluminaExperiment
-    from knock_knock.prime_editing_experiment import PrimeEditingExperiment
-    from knock_knock.prime_editing_experiment import TwinPrimeExperiment
-    from knock_knock.prime_editing_experiment import Bxb1TwinPrimeExperiment
+class ArrayedCommonSequencesExperiment(knock_knock.experiment_group.CommonSequencesExperiment, ArrayedExperiment):
+    def __init__(self, base_dir, batch_name, group_name, sample_name, experiment_type, experiment_group=None, **kwargs):
+        knock_knock.experiment_group.CommonSequencesExperiment.__init__(self)
+        ArrayedExperiment.__init__(self, base_dir, batch_name, group_name, sample_name, experiment_type, experiment_group=experiment_group)
 
-    experiment_kind_to_class = {
-        'illumina': IlluminaExperiment,
-        'prime_editing': PrimeEditingExperiment,
-        'single_flap': PrimeEditingExperiment,
-        'twin_prime': TwinPrimeExperiment,
-        'dual_flap': TwinPrimeExperiment,
-        'Bxb1_twin_prime': Bxb1TwinPrimeExperiment,
-        'Bxb1_dual_flap': Bxb1TwinPrimeExperiment,
-    }
+    @property
+    def uncommon_read_type(self):
+        return self.preprocessed_read_type
 
-    SpecializedExperiment = experiment_kind_to_class[experiment_kind]
+    def load_description(self):
+        return self.experiment_group.description
 
-    class ArrayedSpecializedExperiment(ArrayedExperiment, SpecializedExperiment):
-        def __init__(self, base_dir, batch_name, group_name, sample_name, experiment_group=None, **kwargs):
-            ArrayedExperiment.__init__(self, base_dir, batch_name, group_name, sample_name, experiment_group=experiment_group)
-            SpecializedExperiment.__init__(self, base_dir, (batch_name, group_name), sample_name, **kwargs)
+def sanitize_and_validate_sample_sheet(sample_sheet_fn):
+    sample_sheet_df = knock_knock.utilities.read_and_sanitize_csv(sample_sheet_fn)
 
-            self.uncommon_read_type = f'{self.preprocessed_read_type}_uncommon'
-
-            self.read_types.add(self.uncommon_read_type)
-
-        def __repr__(self):
-            # 22.06.03: TODO: this doesn't actually call the SpecializedExperiment form of __repr__.
-            return f'Arrayed{SpecializedExperiment.__repr__(self)}'
-    
-    class ArrayedSpecializedCommonSequencesExperiment(knock_knock.experiment_group.CommonSequencesExperiment, ArrayedExperiment, SpecializedExperiment):
-        def __init__(self, base_dir, batch_name, group_name, sample_name, experiment_group=None, **kwargs):
-            knock_knock.experiment_group.CommonSequencesExperiment.__init__(self)
-            ArrayedExperiment.__init__(self, base_dir, batch_name, group_name, sample_name, experiment_group=experiment_group)
-            SpecializedExperiment.__init__(self, base_dir, (batch_name, group_name), sample_name, **kwargs)
-
-            self.uncommon_read_type = self.preprocessed_read_type
-
-    return ArrayedSpecializedExperiment, ArrayedSpecializedCommonSequencesExperiment
-
-def sanitize_and_validate_sample_sheet(sample_sheet_df):
     # Default to hg38 if genome column isn't present.
     if 'genome' not in sample_sheet_df.columns:
         sample_sheet_df['genome'] = 'hg38'
+
+    if 'extra_sequences' not in sample_sheet_df.columns:
+        sample_sheet_df['extra_sequences'] = ''
 
     # Confirm mandatory columns are present.
 
@@ -959,6 +965,7 @@ def sanitize_and_validate_sample_sheet(sample_sheet_df):
         'amplicon_primers',
         'sgRNAs',
         'genome',
+        'extra_sequences',
     ]
     
     missing_columns = [col for col in mandatory_columns if col not in sample_sheet_df.columns]
@@ -981,35 +988,35 @@ def sanitize_and_validate_sample_sheet(sample_sheet_df):
     
     return sample_sheet_df
 
-def make_default_target_info_name(amplicon_primers, genome):
+def make_default_target_info_name(amplicon_primers, genome, extra_sequences):
     target_info_name = f'{amplicon_primers}_{genome}'
+
+    if extra_sequences != '':
+        target_info_name = f'{target_info_name}_{extra_sequences}'
 
     # Names can't contain a forward slash since they are a path component.
     target_info_name = target_info_name.replace('/', '_SLASH_')
 
     return target_info_name
 
-def make_targets(base_dir, df, extra_sequences=None):
-    if extra_sequences is None:
-        extra_sequences = []
-
+def make_targets(base_dir, df):
     targets = {}
 
-    grouped = df.groupby(['amplicon_primers', 'genome'])
+    grouped = df.groupby(['amplicon_primers', 'genome', 'extra_sequences'])
 
-    for (amplicon_primers, genome), rows in grouped:
+    for (amplicon_primers, genome, extra_sequences), rows in grouped:
         all_sgRNAs = set()
         for sgRNAs in rows['sgRNAs']:
             if sgRNAs != '':
                 all_sgRNAs.update(sgRNAs.split(';'))
 
-        target_info_name = make_default_target_info_name(amplicon_primers, genome)
+        target_info_name = make_default_target_info_name(amplicon_primers, genome, extra_sequences)
 
         targets[target_info_name] = {
             'genome': genome,
             'amplicon_primers': amplicon_primers,
             'sgRNAs': ';'.join(all_sgRNAs),
-            'extra_sequences': ';'.join(extra_sequences),
+            'extra_sequences': extra_sequences,
         }
 
     targets_df = pd.DataFrame.from_dict(targets, orient='index')
@@ -1023,12 +1030,12 @@ def make_targets(base_dir, df, extra_sequences=None):
 
     knock_knock.build_targets.build_target_infos_from_csv(base_dir)
 
-def detect_sequencing_start_feature_names(base_dir, batch_name, df):
+def detect_sequencing_start_feature_names(base_dir, batch_name, sample_sheet_df):
     base_dir = Path(base_dir)
 
     sequencing_start_feature_names = {}
     
-    for _, row in df.iterrows():
+    for _, row in sample_sheet_df.iterrows():
         R1_name = Path(row['R1']).name
         R1_fn = base_dir / 'data' / batch_name / R1_name
 
@@ -1036,7 +1043,7 @@ def detect_sequencing_start_feature_names(base_dir, batch_name, df):
             logging.warning(f"R1 file name {R1_fn} doesn't exist")
             continue
 
-        target_info_name = make_default_target_info_name(row['amplicon_primers'], row['genome'])
+        target_info_name = make_default_target_info_name(row['amplicon_primers'], row['genome'], row['extra_sequences'])
         ti = knock_knock.target_info.TargetInfo(base_dir, target_info_name) 
 
         primer_sequences = {name: ti.feature_sequence(ti.target, name).upper() for name in ti.primers}
@@ -1069,15 +1076,15 @@ def detect_sequencing_start_feature_names(base_dir, batch_name, df):
         
     return sequencing_start_feature_names
 
-def make_group_descriptions_and_sample_sheet(base_dir, df, batch_name=None):
+def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_name=None):
     base_dir = Path(base_dir)
-    df = df.copy()
+    sample_sheet_df = sample_sheet_df.copy()
 
-    if 'donor' not in df.columns:
-        df['donor'] = ''
+    if 'donor' not in sample_sheet_df.columns:
+        sample_sheet_df['donor'] = ''
 
     if batch_name is None:
-        fn_parents = {Path(fn).parent for fn in df['R1']}
+        fn_parents = {Path(fn).parent for fn in sample_sheet_df['R1']}
 
         batch_names = {fn_parent.parts[3] for fn_parent in fn_parents}
         if len(batch_names) > 1:
@@ -1085,14 +1092,22 @@ def make_group_descriptions_and_sample_sheet(base_dir, df, batch_name=None):
         else:
             batch_name = batch_names.pop()
 
-    sequencing_start_feature_names = detect_sequencing_start_feature_names(base_dir, batch_name, df)
+    sequencing_start_feature_names = detect_sequencing_start_feature_names(base_dir, batch_name, sample_sheet_df)
 
     # For each set of target info parameter values, assign the most common
     # sequencing_start_feature_name to all samples.
 
-    grouped = df.groupby(['amplicon_primers', 'genome', 'sgRNAs', 'donor'])
+    group_keys = [
+        'amplicon_primers',
+        'genome',
+        'sgRNAs',
+        'donor',
+        'extra_sequences',
+    ]
 
-    for (amplicon_primers, genome, sgRNAs, donor), rows in grouped:
+    grouped = sample_sheet_df.groupby(group_keys)
+
+    for (amplicon_primers, genome, sgRNAs, donor, extra_sequences), rows in grouped:
         orientations = Counter()
         
         for _, row in rows.iterrows():
@@ -1109,20 +1124,29 @@ def make_group_descriptions_and_sample_sheet(base_dir, df, batch_name=None):
                 if row['sample_name'] not in sequencing_start_feature_names:
                     sequencing_start_feature_names[row['sample_name']] = feature_name
 
-    df['sequencing_start_feature_name'] = df['sample_name'].map(sequencing_start_feature_names)
+    sample_sheet_df['sequencing_start_feature_name'] = sample_sheet_df['sample_name'].map(sequencing_start_feature_names)
 
     valid_supplemental_indices = sorted(knock_knock.target_info.locate_supplemental_indices(base_dir))
 
     groups = {}
     samples = {}
 
-    condition_columns = [column for column in df.columns if column.startswith('condition:')]
+    condition_columns = [column for column in sample_sheet_df.columns if column.startswith('condition:')]
     shortened_condition_columns = [column[len('condition:'):] for column in condition_columns]
 
-    grouped = df.groupby(['amplicon_primers', 'genome', 'sgRNAs', 'donor', 'sequencing_start_feature_name'])
+    group_keys = [
+        'amplicon_primers',
+        'genome',
+        'sgRNAs',
+        'donor',
+        'extra_sequences',
+        'sequencing_start_feature_name',
+    ]
 
-    for group_i, ((amplicon_primers, genome, sgRNAs, donor, sequencing_start_feature_name), group_rows) in enumerate(grouped):
-        target_info_name = make_default_target_info_name(amplicon_primers, genome)
+    grouped = sample_sheet_df.groupby(group_keys)
+
+    for group_i, ((amplicon_primers, genome, sgRNAs, donor, extra_sequences, sequencing_start_feature_name), group_rows) in enumerate(grouped):
+        target_info_name = make_default_target_info_name(amplicon_primers, genome, extra_sequences)
 
         group_name = f'{target_info_name}_{sgRNAs}_{donor}'
         group_name = group_name.replace(';', '+')
