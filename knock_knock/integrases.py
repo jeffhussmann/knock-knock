@@ -78,14 +78,44 @@ def identify_split_recognition_sequences(ref_seqs):
 
                     CD_end = CD_start + 1
 
-                    full_name = f'{source}_{site_name}_CD'
-                    feature = hits.gff.Feature.from_fields(seqname=ref_name,
-                                                           start=CD_start,
-                                                           end=CD_end,
-                                                           ID=full_name,
-                                                           strand=strand,
-                                                          )
+                    if CD_start >= 0 and CD_end < len(ref_seq):
+                        full_name = f'{source}_{site_name}_CD'
+                        feature = hits.gff.Feature.from_fields(seqname=ref_name,
+                                                            start=CD_start,
+                                                            end=CD_end,
+                                                            ID=full_name,
+                                                            strand=strand,
+                                                            )
 
-                    features[ref_name, full_name] = feature
+                        features[ref_name, full_name] = feature
 
+                left = features.get((ref_name, f'{source}_{site_name}_left'))
+                CD = features.get((ref_name, f'{source}_{site_name}_CD'))
+                right = features.get((ref_name, f'{source}_{site_name}_right'))
+
+                full_name = f'{source}_{site_name}'
+
+                if (left is not None and CD is not None and right is not None):
+
+                    if left.strand == '+' and CD.strand == '+' and right.strand == '+':
+
+                        if left.end + 1 == CD.start and CD.end + 1 == right.start:
+                            feature = hits.gff.Feature.from_fields(seqname=ref_name,
+                                                                   start=left.start,
+                                                                   end=right.end,
+                                                                   ID=full_name,
+                                                                   strand='+',
+                                                                  )
+                            features[ref_name, full_name] = feature
+
+                    elif left.strand == '-' and CD.strand == '-' and right.strand == '-':
+                        if left.start == CD.end + 1 and CD.start == right.end + 1:
+                            feature = hits.gff.Feature.from_fields(seqname=ref_name,
+                                                                   start=right.start,
+                                                                   end=left.end,
+                                                                   ID=full_name,
+                                                                   strand='-',
+                                                                  )
+                            features[ref_name, full_name] = feature
+                    
     return features
