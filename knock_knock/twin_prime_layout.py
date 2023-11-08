@@ -115,10 +115,6 @@ class Layout(knock_knock.prime_editing_layout.Layout):
              'extra sequence',
             ),
         ),
-        ('scaffold chimera',
-            ('scaffold chimera',
-            ),
-        ),
     ]
 
     def __init__(self, *args, **kwargs):
@@ -126,10 +122,6 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
         self.ins_size_to_split_at = 1
         self.categorized = False
-
-    @memoized_property
-    def parsimonious_split_target_and_donor_alignments(self):
-        return interval.make_parsimonious(self.split_target_and_donor_alignments)
 
     @memoized_property
     def has_any_pegRNA_extension_al(self):
@@ -143,7 +135,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         als = {}
         for side in ['left', 'right']:
             name = self.target_info.pegRNA_names_by_side_of_read[side]
-            als[side] = self.pegRNA_alignments[name]
+            als[side] = self.pegRNA_alignments_by_pegRNA_name[name]
 
         return als
 
@@ -191,7 +183,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             return None
 
         other_pegRNA_name = self.other_pegRNA_name(pegRNA_al_to_extend.reference_name)
-        candidate_als = self.pegRNA_alignments[other_pegRNA_name] 
+        candidate_als = self.pegRNA_alignments_by_pegRNA_name[other_pegRNA_name] 
 
         manually_extended_al = self.generate_extended_pegRNA_overlap_alignment(pegRNA_al_to_extend)
         if manually_extended_al is not None:
@@ -386,8 +378,10 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
         for side in ['left', 'right']:
             chain = self.extension_chains_by_side[side]
+
             if chain['description'] in ['not seen', 'no target']:
                 last_al = None
+
             else:
                 if chain['description'] == 'RT\'ed + overlap-extended':
                     if 'second target' in chain['alignments']:
@@ -499,7 +493,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
         return status
 
-    def registered_intended_replacement(self):
+    def register_intended_replacement(self):
         if self.pegRNA_SNV_string == self.full_incorporation_pegRNA_SNV_string:
             self.category = 'intended edit'
             self.subcategory = 'replacement'
@@ -565,7 +559,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
         MH_nts = self.extension_chain_junction_microhomology
 
-        self.outcome = knock_knock.prime_editing_layout.UnintendedRejoiningOutcome(left_edge, right_edge, MH_nts)
+        self.outcome = knock_knock.prime_editing_layout.UnintendedRejoiningOutcome(left_edge, right_edge, MH_nts, [])
 
         als_by_ref = defaultdict(list)
         for al in list(chains['left']['alignments'].values()) + list(chains['right']['alignments'].values()):
@@ -578,21 +572,6 @@ class Layout(knock_knock.prime_editing_layout.Layout):
     @memoized_property
     def has_any_flipped_pegRNA_al(self):
         return {side for side in ['left', 'right'] if len(self.flipped_pegRNA_als[side]) > 0}
-
-    @memoized_property
-    def scaffold_chimera(self):
-        ''' Identify any alignments to plasmids that cover the entire scaffold and nearby amplicon primer. '''
-        
-        chimera_als = []
-        
-        for al in self.extra_alignments:
-            primer = self.target_info.features.get((al.reference_name, 'AVA184'))
-            scaffold = self.target_info.features.get((al.reference_name, 'scaffold'))
-            if primer is not None and scaffold is not None:
-                if sam.feature_overlap_length(al, primer) >= 5 and sam.feature_overlap_length(al, scaffold) == len(scaffold):
-                    chimera_als.append(al)
-                    
-        return chimera_als
 
     def categorize(self):
         self.outcome = None
@@ -607,7 +586,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             self.outcome = None
 
         elif self.is_intended_or_partial_replacement:
-            self.registered_intended_replacement()
+            self.register_intended_replacement()
 
         elif self.is_intended_deletion:
             self.category = 'intended edit'
@@ -626,7 +605,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                 if self.starts_at_expected_location:
                     # Need to check in case the intended replacements only involves minimal changes. 
                     if self.is_intended_or_partial_replacement:
-                        self.registered_intended_replacement()
+                        self.register_intended_replacement()
 
                     else:
                         self.category = 'wild type'
@@ -703,12 +682,6 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
             self.subcategory = subcategory
             self.relevant_alignments = merged_als
-
-        elif self.scaffold_chimera:
-            self.category = 'scaffold chimera'
-            self.subcategory = 'scaffold chimera'
-            self.details = 'n/a'
-            self.relevant_alignments = self.uncategorized_relevant_alignments
 
         elif len(self.has_any_flipped_pegRNA_al) > 0:
             self.category = 'flipped pegRNA incorporation'
@@ -805,7 +778,13 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                 
         return manual_anchors
 
-    def plot(self, relevant=True, manual_alignments=None, annotate_overlap=True, **manual_diagram_kwargs):
+    def plot(self,
+             relevant=True,
+             manual_alignments=None,
+             annotate_overlap=True,
+             label_integrase_features=False,
+             **manual_diagram_kwargs,
+            ):
         if relevant and not self.categorized:
             self.categorize()
 
@@ -849,6 +828,17 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         features_to_show = {*ti.features_to_show}
         features_to_show.update({(ti.target, name) for name in ti.protospacer_names})
         features_to_show.update({(ti.target, name) for name in ti.PAM_features})
+
+        if label_integrase_features:
+            features_to_show.update(ti.integrase_sites)
+            for ref_name, name in ti.integrase_sites:
+                if 'right' in name:
+                    label_offsets[name] = 1
+                if 'left' in name:
+                    label_offsets[name] = 2
+                if 'CD' in name:
+                    label_offsets[name] = 3
+                    label_overrides[name] = None
 
         for pegRNA_name in ti.pegRNA_names:
             PBS_name = knock_knock.pegRNAs.PBS_name(pegRNA_name)

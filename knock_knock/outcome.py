@@ -183,23 +183,26 @@ class DeletionPlusDuplicationOutcome(Outcome):
         shifted_duplication = self.deletion_outcome.perform_anchor_shift(anchor)
         return type(self)(shifted_deletion, shifted_duplication)
 
-class MultipleDeletionOutcome(Outcome):
-    def __init__(self, deletion_outcomes):
+class MultipleIndelOutcome(Outcome):
+    def __init__(self, deletion_outcomes, insertion_outcomes):
         self.deletion_outcomes = deletion_outcomes
+        self.insertion_outcomes = insertion_outcomes
     
     @classmethod
     def from_string(cls, details_string):
-        deletion_strings = details_string.split(';', 1)
-        deletion_outcomes = [DeletionOutcome.from_string(s) for s in deletion_strings]
+        indel_strings = details_string.split(';', 1)
+        deletion_outcomes = [DeletionOutcome.from_string(s) for s in indel_strings if s.startswith('D')]
+        insertion_outcomes = [InsertionOutcome.from_string(s) for s in indel_strings if s.startswith('I')]
 
-        return cls(deletion_outcomes)
+        return cls(deletion_outcomes, insertion_outcomes)
 
     def __str__(self):
-        return ';'.join(map(str, self.deletion_outcomes))
+        return ';'.join(map(str, self.deletion_outcomes + self.insertion_outcomes))
 
     def perform_anchor_shift(self, anchor):
         shifted_deletions = [d.perform_anchor_shift(anchor) for d in self.deletion_outcomes]
-        return type(self)(shifted_deletions)
+        shifted_insertions = [i.perform_anchor_shift(anchor) for i in self.insertion_outcomes]
+        return type(self)(shifted_deletions, shifted_insertions)
 
 class HDRPlusInsertionOutcome(Outcome):
     def __init__(self, HDR_outcome, insertion_outcome):

@@ -20,9 +20,9 @@ expected_values:
     subcategory: no scaffold, no substitution
     note: rejoins at pegRNA-targeted nick
   010288035:0000004846:
-    category: unintended rejoining of RT'ed sequence
-    subcategory: no scaffold, no substitution
-    note: rejoins far downstream
+    category: edit + indel
+    subcategory: deletion
+    note: rejoins far downstream, could be considered unintended rejoining
   010288035:0000001862:
     category: deletion
     subcategory: mismatches
