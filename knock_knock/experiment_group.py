@@ -16,7 +16,7 @@ memoized_property = utilities.memoized_property
 memoized_with_args = utilities.memoized_with_args
 
 import knock_knock.visualize.stacked
-import knock_knock.outcome_record
+import knock_knock.visualize.rejoining_boundaries
 import knock_knock.parallel
 
 import knock_knock.common_sequences
@@ -252,14 +252,27 @@ class ExperimentGroup:
     def make_partial_incorporation_figure(self,
                                           conditions=None,
                                           frequency_cutoff=1e-3,
+                                          show_log_scale=True,
+                                          manual_window=None,
+                                          min_reads=None,
+                                          unique_colors=False,
+                                          **diagram_kwargs,
                                          ):
         ti = self.target_info
 
         if len(ti.pegRNA_names) == 0:
             return
 
+        if unique_colors:
+            colors = {condition: f'C{i}' for i, condition in enumerate(self.full_conditions)}
+        else:
+            colors = self.condition_colors()
+
         if conditions is None:
             conditions = self.full_conditions
+
+        if min_reads is not None:
+            conditions = [c for c in conditions if self.total_valid_reads.loc[c] >= min_reads]
 
         color_overrides = {primer_name: 'grey' for primer_name in ti.primers}
 
@@ -271,7 +284,9 @@ class ExperimentGroup:
             color_overrides[ps_name] = light_color
             color_overrides[PAM_name] = color
 
-        if len(ti.pegRNA_names) == 2:
+        if manual_window is not None:
+            window = manual_window
+        elif len(ti.pegRNA_names) == 2:
             window = (-20, ti.nick_offset + 20 - 1)
         elif len(ti.pegRNA_names) == 1:
             window = (-20, len(ti.sgRNA_components[ti.pegRNA_names[0]]['RTT']) + 4)
@@ -308,23 +323,34 @@ class ExperimentGroup:
                                                              block_alpha=0.1,
                                                              color_overrides=color_overrides,
                                                              draw_all_sequence=0.1,
+                                                             **diagram_kwargs,
                                                             )
 
             grid.add_ax('fractions', width_multiple=12, title='% of reads')
-            grid.add_ax('log10_fractions', width_multiple=12, gap_multiple=2, title='% of reads (log scale)')
 
-            for ax, transform in [('fractions', 'percentage'),
-                                ('log10_fractions', 'log10'),
-                                ]:
+            if show_log_scale:
+                grid.add_ax('log10_fractions', width_multiple=12, gap_multiple=2, title='% of reads (log scale)')
 
+            ax_params = [
+                ('fractions', 'percentage'),
+                ('log10_fractions', 'log10'),
+            ]
+
+            for ax, transform in ax_params:
                 for condition in fs:
-                    grid.plot_on_ax(ax, fs[condition],
+
+                    sample_name = self.full_condition_to_sample_name[condition]
+                    label = f'{" ".join(condition)} ({sample_name}, {self.total_valid_reads[condition]:,} total reads)'
+
+                    grid.plot_on_ax(ax,
+                                    fs[condition],
                                     transform=transform,
-                                    color='black',
+                                    color=colors.get(condition, 'black'),
                                     line_alpha=0.75,
                                     linewidth=1.5,
                                     markersize=7,
                                     fill=0,
+                                    label=label,
                                    )
 
             grid.style_frequency_ax('fractions')
@@ -338,19 +364,31 @@ class ExperimentGroup:
             for pegRNA_i, pegRNA_name in enumerate(ti.pegRNA_names):
                 grid.diagrams.draw_pegRNA(ti.name, pegRNA_name, y_offset=pegRNA_i + 1, label_features=False)
 
-            grid.plot_pegRNA_conversion_fractions_above(self, conditions=conditions)
+            grid.plot_pegRNA_conversion_fractions_above(self.target_info,
+                                                        self.pegRNA_conversion_fractions,
+                                                        conditions=conditions,
+                                                        condition_colors=colors,
+                                                       )
+
             grid.style_pegRNA_conversion_plot('pegRNA_conversion_fractions')
+
+            grid.axs_by_name['pegRNA_conversion_fractions'].set_title(self.group_name, y=1.2)
+
+            grid.ordered_axs[-1].legend(bbox_to_anchor=(1, 1))
 
             grid.fig.savefig(self.fns['partial_incorporation_figure'], bbox_inches='tight')
 
-            return grid.fig
+            return grid
 
     def make_deletion_boundaries_figure(self,
                                         frequency_cutoff=5e-4,
                                         conditions=None,
                                         include_simple_deletions=True,
                                         include_edit_plus_deletions=True,
-                                        condition_to_color=None,
+                                        include_insertions=False,
+                                        include_multiple_indels=False,
+                                        min_reads=None,
+                                        show_log_scale=False,
                                        ):
         ti = self.target_info
         if ti.primary_protospacer is None:
@@ -359,31 +397,40 @@ class ExperimentGroup:
         if conditions is None:
             conditions = self.full_conditions
 
-        if condition_to_color is None:
-            colors = sns.color_palette('husl', len(conditions))
-            condition_to_color = dict(zip(conditions, colors))
+        if min_reads is not None:
+            conditions = [c for c in conditions if self.total_valid_reads.loc[c] >= min_reads]
 
         fs = self.outcome_fractions[conditions]
 
         deletions = fs.xs('deletion', drop_level=False).groupby('details').sum()
         deletions.index = pd.MultiIndex.from_tuples([('deletion', 'collapsed', details) for details in deletions.index])
 
-        edit_plus_deletions = [(c, s, d) for c, s, d in self.outcome_fractions.index
+        insertions = fs.xs('insertion', drop_level=False).groupby('details').sum()
+        insertions.index = pd.MultiIndex.from_tuples([('insertion', 'collapsed', details) for details in insertions.index])
+
+        multiple_indels = fs.xs('multiple indels', level=1, drop_level=False)
+
+        edit_plus_deletions = [(c, s, d) for c, s, d in fs.index
                                if (c, s) == ('edit + indel', 'deletion')
                               ] 
 
         to_concat = []
+
         if include_simple_deletions:
             to_concat.append(deletions)
+
         if include_edit_plus_deletions:
-            to_concat.append(self.outcome_fractions.loc[edit_plus_deletions])
+            to_concat.append(fs.loc[edit_plus_deletions])
 
-        all_deletions = pd.concat(to_concat)
+        if include_insertions:
+            to_concat.append(insertions)
 
-        outcomes = [(c, s, d) for (c, s, d), f_row in all_deletions.iterrows()
+        fs = pd.concat(to_concat)
+
+        outcomes = [(c, s, d) for (c, s, d), f_row in fs.iterrows()
                     if max(f_row) > frequency_cutoff
                    ]
-        outcomes = all_deletions.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
+        outcomes = fs.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
 
         color_overrides = {primer_name: 'grey' for primer_name in ti.primers}
 
@@ -414,24 +461,30 @@ class ExperimentGroup:
                                                         )
 
         grid.add_ax('fractions', width_multiple=12, title='% of reads')
-        #grid.add_ax('log10_fractions', width_multiple=12, gap_multiple=2, title='% of reads (log scale)')
+
+        if show_log_scale:
+            grid.add_ax('log10_fractions', width_multiple=12, gap_multiple=2, title='% of reads (log scale)')
 
         for ax, transform in [('fractions', 'percentage'),
                               ('log10_fractions', 'log10'),
                              ]:
 
-            for condition in all_deletions:
-                grid.plot_on_ax(ax, all_deletions[condition],
+            for condition in fs:
+                label = f'{" ".join(condition)} ({self.total_valid_reads[condition]:,} total reads)'
+
+                grid.plot_on_ax(ax,
+                                fs[condition],
                                 transform=transform,
-                                color=condition_to_color[condition],
+                                color=self.condition_colors()[condition],
                                 line_alpha=0.75,
-                                linewidth=1,
-                                markersize=3,
-                                label=' '.join(condition),
+                                linewidth=1.5,
+                                markersize=7,
+                                label=label,
+                                clip_on=True,
                                )
 
         grid.style_frequency_ax('fractions')
-        grid.axs_by_name['fractions'].legend(bbox_to_anchor=(1, 1), loc='upper left')
+        grid.ordered_axs[-1].legend(bbox_to_anchor=(1, 1), loc='upper left')
 
         grid.set_xlim('fractions', (0,))
         x_max = (grid.axs_by_name['fractions'].get_xlim()[1] / 100) * 1.01
@@ -469,9 +522,10 @@ class ExperimentGroup:
                                       series.index,
                                       series * 100,
                                       markersize=3 if quantity != 'fraction_removed' else 0,
-                                      linewidth=1 if quantity != 'fraction_removed' else 1.5,
-                                      color=condition_to_color[condition],
+                                      linewidth=1 if quantity != 'fraction_removed' else 2,
+                                      color=self.condition_colors()[condition],
                                      )
+
             for cut_after in ti.cut_afters.values():
                 grid.axs_by_name[quantity].axvline(cut_after + 0.5 - grid.diagrams.offsets[ti.name], linestyle='--', color=grid.diagrams.cut_color, linewidth=grid.diagrams.line_widths)
 
@@ -479,15 +533,47 @@ class ExperimentGroup:
             grid.diagrams.draw_pegRNA(ti.name, pegRNA_name, y_offset=pegRNA_i + 1, label_features=False)
 
         grid.axs_by_name['fraction_removed'].set_ylabel('% of reads with\nposition deleted', size=14)
-        grid.axs_by_name[panel_order[1]].set_ylabel('% of reads with\ndeletion starting at', size=14)
-        grid.axs_by_name[panel_order[2]].set_ylabel('% of reads with\ndeletion ending at', size=14)
+        grid.axs_by_name[panel_order[1]].set_ylabel('% of reads\nwith deletion\nstarting at', size=14)
+        grid.axs_by_name[panel_order[2]].set_ylabel('% of reads\nwith deletion\nending at', size=14)
 
         for panel in panel_order:
             grid.axs_by_name[panel].set_ylim(0)
 
         grid.fig.savefig(self.fns['deletion_boundaries_figure'], bbox_inches='tight')
 
-        return grid.fig
+        return grid
+
+    def make_single_flap_extension_chain_edge_figure(self,
+                                                     palette='inferno',
+                                                     conditions=None,
+                                                     **plot_kwargs,
+                                                    ):
+        if conditions is None:
+            conditions = self.conditions
+
+        exp_sets = {}
+
+        for condition in conditions:
+            sample_names = self.condition_to_sample_names[condition]
+            
+            boundaries = knock_knock.visualize.rejoining_boundaries.BoundaryProperties()
+            for sample_name in sample_names:
+                exp = self.sample_name_to_experiment(sample_name)
+                boundaries.count_single_flap_boundaries(exp)
+
+            exp_sets[condition] = {
+                'color': self.condition_colors(palette=palette)[condition],
+                'results': boundaries,
+            }
+
+        fig, axs = knock_knock.visualize.rejoining_boundaries.plot_single_flap_extension_chain_edges(exp.target_info,
+                                                                                                     exp_sets,
+                                                                                                     **plot_kwargs,
+                                                                                                    ) 
+        
+        fig.suptitle(f'{self.target_info.target} - {",".join(self.target_info.sgRNAs)}')
+
+        return fig, axs
 
     def make_outcome_counts(self):
         all_counts = {}

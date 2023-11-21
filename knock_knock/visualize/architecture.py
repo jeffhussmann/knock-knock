@@ -575,6 +575,116 @@ class ReadDiagram():
                          size=self.font_sizes['read_label'],
                         )
 
+
+    @memoized_property
+    def reference_order(self):
+        ti = self.target_info
+
+        # Ensure that target and donor are closest to the read, followed by other references.
+        reference_order = [ti.target, ti.donor]
+
+        reference_order.extend([ref_name for ref_name in ti.reference_sequences if ti not in reference_order])
+        reference_order.extend(ti.all_supplemental_reference_names)
+
+        all_alignments = self.alignments
+        if self.R2_alignments is not None:
+            all_alignments.extend(self.R2_alignments)
+
+        references_seen = set(al.reference_name for al in all_alignments)
+        reference_order = [ref_name for ref_name in reference_order if ref_name in references_seen]
+
+        return reference_order
+
+    @memoized_property
+    def references_below(self):
+        ti = self.target_info
+
+        references_below = []
+
+        if self.ref_centric:
+            if ti.target in self.refs_to_draw:
+                references_below.append(ti.target)
+
+            if self.donor_below and ti.donor in self.refs_to_draw:
+                references_below.append(ti.donor)
+
+            references_below += self.manual_refs_below
+
+        return references_below
+
+    @memoized_property
+    def references_above(self):
+        return [n for n in self.reference_order if n not in self.references_below]
+
+    @memoized_property
+    def reference_offsets(self):
+        by_reference_name = defaultdict(list)
+
+        for al in sorted(self.alignments, key=sam.query_interval):
+            by_reference_name[al.reference_name].append(al)
+
+        if self.R2_alignments is not None:
+            for al in sorted(self.R2_alignments, key=sam.query_interval):
+                by_reference_name[al.reference_name].append(al)
+
+        # Prevent further population of defaultdict.
+        by_reference_name = dict(by_reference_name)
+        
+        if self.ref_centric:
+            initial_offset = self.initial_alignment_y_offset
+        else:
+            initial_offset = 1
+
+        offsets = {}
+        for names, sign in [(self.references_below, -1), (self.references_above, 1)]:
+            block_sizes = [initial_offset] + [len(by_reference_name.get(n, [])) + 1 for n in names]
+            cumulative_block_sizes = np.cumsum(block_sizes)
+            starts = sign * cumulative_block_sizes
+            for name, start in zip(names, starts):
+                offsets[name] = start
+
+        return offsets
+
+    def label_references(self):
+        by_reference_name = defaultdict(list)
+
+        for al in sorted(self.alignments, key=sam.query_interval):
+            by_reference_name[al.reference_name].append(al)
+
+        if self.R2_alignments is not None:
+            for al in sorted(self.R2_alignments, key=sam.query_interval):
+                by_reference_name[al.reference_name].append(al)
+
+        for ref_name, ref_alignments in by_reference_name.items():
+
+            hide_multiplier = 1
+            if self.hide_non_target_alignments and ref_name != ti.target:
+                hide_multiplier = 0
+            if self.hide_target_alignments and ref_name == ti.target:
+                hide_multiplier = 0
+            if self.hide_donor_alignments and ref_name == ti.donor:
+                hide_multiplier = 0
+
+            offset = self.reference_offsets[ref_name]
+            color = self.ref_name_to_color[ref_name]
+
+            average_y = (offset  + 0.5 * (len(ref_alignments) - 1)) * self.gap_between_als
+
+            if (not self.ref_centric) or ref_name not in self.refs_to_draw:
+                label = self.label_overrides.get(ref_name, ref_name)
+
+                self.ax.annotate(label,
+                                 xy=(self.label_x, average_y),
+                                 xycoords=('axes fraction', 'data'),
+                                 xytext=(self.label_x_offset, 0),
+                                 textcoords='offset points',
+                                 color=color,
+                                 ha=self.label_ha,
+                                 va='center',
+                                 alpha=1 * hide_multiplier,
+                                 size=self.font_sizes['ref_label'],
+                                )
+    
     def draw_alignments(self, alignments, is_R2=False):
         ax = self.ax
         ti = self.target_info
@@ -588,47 +698,13 @@ class ReadDiagram():
         else:
             x_offset = 0
 
-        # Ensure that target and donor are closest to the read, followed by other references.
-        reference_order = [ti.target, ti.donor]
-
-        reference_order.extend([ref_name for ref_name in ti.reference_sequences if ti not in reference_order])
-        reference_order.extend(ti.all_supplemental_reference_names)
-
-        references_seen = set(al.reference_name for al in alignments)
-        reference_order = [ref_name for ref_name in reference_order if ref_name in references_seen]
-
         by_reference_name = defaultdict(list)
-        for al in sorted(alignments, key=lambda al: (reference_order.index(al.reference_name), sam.query_interval(al))):
+        for al in sorted(alignments, key=sam.query_interval):
             by_reference_name[al.reference_name].append(al)
 
         # Prevent further population of defaultdict.
         by_reference_name = dict(by_reference_name)
         
-        if self.ref_centric:
-            rnames_below = [ti.target]
-            if self.donor_below:
-                rnames_below.append(ti.donor)
-
-            rnames_below += self.manual_refs_below
-
-            initial_offset = self.initial_alignment_y_offset
-
-        else:
-            rnames_below = []
-            initial_offset = 1
-
-        rnames_above = [n for n in by_reference_name if n not in rnames_below]
-
-        offsets = {}
-        for names, sign in [(rnames_below, -1), (rnames_above, 1)]:
-            block_sizes = [initial_offset] + [len(by_reference_name.get(n, [])) + 1 for n in names]
-            cumulative_block_sizes = np.cumsum(block_sizes)
-            starts = sign * cumulative_block_sizes
-            for name, start in zip(names, starts):
-                offsets[name] = start
-                if is_R2:
-                    offsets[name] += sign
-
         for ref_name, ref_alignments in by_reference_name.items():
 
             hide_multiplier = 1
@@ -639,31 +715,13 @@ class ReadDiagram():
             if self.hide_donor_alignments and ref_name == ti.donor:
                 hide_multiplier = 0
 
+            offset = self.reference_offsets[ref_name]
+            color = self.ref_name_to_color[ref_name]
+
             if reverse_complement:
                 for alignment in ref_alignments:
                     alignment.is_reverse = not alignment.is_reverse
 
-            offset = offsets[ref_name]
-            color = self.ref_name_to_color[ref_name]
-
-            average_y = (offset  + 0.5 * (len(ref_alignments) - 1)) * self.gap_between_als
-
-            if (not self.ref_centric) or ref_name not in self.refs_to_draw:
-
-                label = self.label_overrides.get(ref_name, ref_name)
-
-                ax.annotate(label,
-                            xy=(self.label_x, average_y),
-                            xycoords=('axes fraction', 'data'),
-                            xytext=(self.label_x_offset, 0),
-                            textcoords='offset points',
-                            color=color,
-                            ha=self.label_ha,
-                            va='center',
-                            alpha=1 * hide_multiplier,
-                            size=self.font_sizes['ref_label'],
-                        )
-                        
             for i, alignment in enumerate(ref_alignments):
                 if self.emphasize_parismonious:
                     if alignment in self.alignments:
@@ -1032,8 +1090,8 @@ class ReadDiagram():
                                                 va=va,
                                             )
                             
-                            if query_extent[1] - query_extent[0] > 18 or feature.attribute['ID'] == ti.sgRNA:
-                                label = feature.attribute['ID']
+                            if query_extent[1] - query_extent[0] > 18 or feature.attribute['ID'] == ti.primary_protospacer:
+                                label = self.get_feature_label(feature_reference, feature_name)
 
                                 label_offset = self.label_offsets.get(label, 0)
                                 y_points = -5 - label_offset * self.font_sizes['feature_label']
@@ -1048,7 +1106,7 @@ class ReadDiagram():
                                             color=feature_color,
                                             size=10,
                                             weight='bold',
-                                        )
+                                           )
 
                         if self.features_on_alignments:
                             xs = [query_extent[0] - 0.5 + x_offset, query_extent[1] + 0.5 + x_offset]
@@ -1076,6 +1134,8 @@ class ReadDiagram():
 
             if self.R2_alignments is not None:
                 self.draw_alignments(self.R2_alignments, is_R2=True)
+
+        self.label_references()
 
         if self.title is None:
             if self.label_layout:
@@ -1558,10 +1618,10 @@ class ReadDiagram():
 
         params = []
 
-        if len(self.alignment_coordinates[ti.target]) > 0:
+        if ti.target in self.refs_to_draw and len(self.alignment_coordinates[ti.target]) > 0:
             params.append((ti.target, target_y, self.flip_target))
 
-        if len(self.alignment_coordinates[ti.donor]) > 0:
+        if ti.donor in self.refs_to_draw and len(self.alignment_coordinates[ti.donor]) > 0:
             params.append((ti.donor, donor_y, self.flip_donor))
 
         for ref_name, ref_y, flip in params:

@@ -112,7 +112,7 @@ class BoundaryProperties:
 
         return self
 
-    def get_xs_and_ys(self, side, subcategory_key, cumulative=False, normalize=False):
+    def get_xs_and_ys(self, side, subcategory_key, cumulative=False, normalize=False, from_right=False):
         counts = self.edge_distributions[side, subcategory_key]
 
         if len(counts) == 0:
@@ -125,7 +125,7 @@ class BoundaryProperties:
             ys = ys / ys.sum()
 
         if cumulative:
-            if subcategory_key in ("not RT'ed", 'deletion'):
+            if from_right or subcategory_key in ("not RT'ed", 'deletion'):
                 ys = np.cumsum(ys[::-1])[::-1]
             elif subcategory_key in ("RT'ed", "RT'ed + overlap-extended"):
                 ys = np.cumsum(ys)
@@ -141,6 +141,7 @@ def plot_single_flap_extension_chain_edges(target_info,
                                            target_x_lims=None,
                                            marker_size=2,
                                            line_width=1,
+                                           pegRNA_from_right=False,
                                           ):
     ti = target_info
     features = ti.features
@@ -163,7 +164,12 @@ def plot_single_flap_extension_chain_edges(target_info,
             for set_name, set_details in guide_sets.items():
                 color = set_details['color']
 
-                xs[side], ys[side] = set_details['results'].get_xs_and_ys(side, subcategory_key, cumulative=cumulative, normalize=normalize)
+                xs[side], ys[side] = set_details['results'].get_xs_and_ys(side,
+                                                                          subcategory_key,
+                                                                          cumulative=cumulative,
+                                                                          normalize=normalize,
+                                                                          from_right=pegRNA_from_right and side == 'pegRNA',
+                                                                         )
 
                 if xs[side] is None:
                     continue
@@ -196,6 +202,16 @@ def plot_single_flap_extension_chain_edges(target_info,
                facecolor='C1',
                clip_on=False,
               )
+
+    for x in range(int(np.ceil(start)), int(np.ceil(end))):
+        p = PBS_end - x
+        ax.annotate(ti.reference_sequences[pegRNA_name][p],
+                    xy=(x - 0.5, y_start),
+                    xycoords=('data', 'axes fraction'),
+                    annotation_clip=False,
+                    size=8,
+                    family='monospace',
+                   )
 
     for feature_name in ['PBS', 'RTT', 'scaffold', 'protospacer']:
         feature = ti.features[pegRNA_name, feature_name]

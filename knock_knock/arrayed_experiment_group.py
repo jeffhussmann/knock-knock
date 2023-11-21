@@ -420,6 +420,20 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
     def full_condition_to_experiment(self):
         return {full_condition: self.sample_name_to_experiment(sample_name) for full_condition, sample_name in self.full_condition_to_sample_name.items()}
 
+    @memoized_with_kwargs
+    def condition_colors(self, *, palette='husl'):
+        colors = sns.color_palette(palette, n_colors=len(self.conditions))
+        condition_colors = dict(zip(self.conditions, colors))
+
+        for full_condition in self.full_conditions:
+            condition = full_condition[:-1]
+            if len(condition) == 1:
+                condition = condition[0]
+                
+            condition_colors[full_condition] = condition_colors[condition]
+
+        return condition_colors
+
     def extract_genomic_insertion_length_distributions(self):
         length_distributions = {}
         
@@ -1189,7 +1203,7 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
         }
 
         if len(condition_columns) > 0:
-            for condition_i, (condition, condition_rows) in enumerate(group_rows.groupby(condition_columns), 1):
+            for condition_i, (condition, condition_rows) in enumerate(group_rows.groupby(condition_columns)):
                 for rep_i, (_, row) in enumerate(condition_rows.iterrows(), 1):
                     sample_name = row['sample_name']
 
@@ -1198,7 +1212,7 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
                         'R1': Path(row['R1']).name,
                         'group': group_name,
                         'replicate': rep_i,
-                        'color': (condition_i * 10 + group_i + 1), 
+                        'color': (condition_i * len(groups) + group_i), 
                     }
 
                     if 'R2' in row:

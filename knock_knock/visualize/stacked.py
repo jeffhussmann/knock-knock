@@ -7,6 +7,7 @@ from typing import Any, Union, Optional
 
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 
 import hits.utilities
 import hits.visualize
@@ -78,7 +79,9 @@ class StackedDiagrams:
         self.outcome_order = self.outcome_order[:self.num_outcomes]
 
         if self.ax is None:
-            self.fig, self.ax = plt.subplots(figsize=(self.inches_per_nt * self.window_size, self.inches_per_outcome * self.num_outcomes))
+            width = self.inches_per_nt * self.window_size
+            height = self.inches_per_outcome * max(self.num_outcomes, 1)
+            self.fig, self.ax = plt.subplots(figsize=(width, height))
         else:
             self.fig = self.ax.figure
 
@@ -91,6 +94,8 @@ class StackedDiagrams:
         self.seqs = {}
         self.transform_seqs = {}
         self.windows = {}
+
+        # self.flip indicates whether the minus strand of each source is drawn.
         self.flip = {}
         self.guide = {}
 
@@ -190,6 +195,7 @@ class StackedDiagrams:
                             linewidth=0 if fill else self.line_widths,
                             clip_on=False,
                            )
+
         self.ax.add_patch(patch)
 
     def draw_sequence(self, y, source_name, xs_to_skip=None, alpha=0.1):
@@ -1032,7 +1038,7 @@ class StackedDiagrams:
             self.ax.xaxis.tick_top()
             self.ax.axhline(self.num_outcomes + 0.5 - 1, color='black', alpha=0.75, clip_on=False)
 
-        self.ax.set_ylim(-0.5, self.num_outcomes - 0.5)
+        self.ax.set_ylim(-0.5, max(self.num_outcomes, 1) - 0.5)
         self.ax.set_frame_on(False)
 
         if self.title is not None:
@@ -1543,41 +1549,45 @@ class DiagramGrid:
                 ax.set_xlim(*lims)
 
     def plot_pegRNA_conversion_fractions_above(self,
-                                               group,
+                                               target_info,
+                                               pegRNA_conversion_fractions,
                                                gap=4,
                                                height_multiple=10,
                                                conditions=None,
+                                               condition_colors=None,
                                                **plot_kwargs,
                                               ):
         plot_kwargs = copy.copy(plot_kwargs)
         plot_kwargs.setdefault('line_alpha', 0.75)
         plot_kwargs.setdefault('linewidth', 1.5)
         plot_kwargs.setdefault('markersize', 7)
-        plot_kwargs.setdefault('color', 'black')
+
+        if condition_colors is None:
+            condition_colors = {}
 
         def edit_name_to_x(edit_name):
-            SNVs = group.target_info.pegRNA_SNVs[group.target_info.target]
-            if edit_name in SNVs:
-                p = SNVs[edit_name]['position']
+            SNVs = target_info.pegRNA_SNVs
+            
+            if SNVs is not None and edit_name in SNVs[target_info.target]:
+                p = SNVs[target_info.target][edit_name]['position']
             else:
                 indel = knock_knock.target_info.degenerate_indel_from_string(edit_name)
+                # Note: indels are not anchor shifted, so don't need to be un-shifted.
                 if indel.kind == 'D':
-                    deletion = knock_knock.outcome.DeletionOutcome(indel).undo_anchor_shift(group.target_info.anchor).deletion
-                    p = deletions.starts_ats[0]
+                    p = indel.starts_ats[0]
                 else:
-                    insertion = knock_knock.outcome.InsertionOutcome(indel).undo_anchor_shift(group.target_info.anchor).insertion
-                    p = insertion.starts_afters[0] + 0.5
+                    p = indel.starts_afters[0] + 0.5
 
-            x = p - group.target_info.cut_after
+            x = p - target_info.cut_after
 
             return x
         
-        pegRNA_conversion_fractions = group.pegRNA_conversion_fractions.copy()
+        pegRNA_conversion_fractions = pegRNA_conversion_fractions.copy()
 
         xs = pegRNA_conversion_fractions.index.map(edit_name_to_x)
         pegRNA_conversion_fractions.index = xs
         pegRNA_conversion_fractions = pegRNA_conversion_fractions.sort_index()
-        
+
         if 'pegRNA_conversion_fractions' not in self.axs_by_name:
             self.add_ax_above('pegRNA_conversion_fractions', gap=gap, height_multiple=height_multiple)
         
@@ -1589,6 +1599,7 @@ class DiagramGrid:
                                   fs.index,
                                   fs * 100,
                                   label=condition,
+                                  color=condition_colors.get(condition, 'black'),
                                   **plot_kwargs,
                                  )
 
@@ -1632,3 +1643,126 @@ class DiagramGrid:
 
             ax.spines.left.set_position(('data', x_bounds[0]))
             ax.spines.bottom.set_visible(False)
+
+def make_partial_incorporation_figure(target_info,
+                                      outcome_fractions,
+                                      pegRNA_conversion_fractions,
+                                      conditions=None,
+                                      condition_colors=None,
+                                      frequency_cutoff=1e-3,
+                                      show_log_scale=False,
+                                      manual_window=None,
+                                      **diagram_kwargs,
+                                     ):
+
+    ''' needs access to:
+        target_info
+        outcome_fractions
+        pegRNA_conversion_fractions
+    '''
+
+    ti = target_info
+
+    if len(ti.pegRNA_names) == 0:
+        return
+
+    if isinstance(outcome_fractions, pd.Series):
+        outcome_fractions = outcome_fractions.to_frame()
+
+    if isinstance(pegRNA_conversion_fractions, pd.Series):
+        pegRNA_conversion_fractions = pegRNA_conversion_fractions.to_frame()
+
+    if conditions is None:
+        conditions = outcome_fractions.columns
+
+    outcome_fractions = outcome_fractions[conditions]
+
+    color_overrides = {primer_name: 'grey' for primer_name in ti.primers}
+
+    for pegRNA_name in ti.pegRNA_names:
+        ps_name = knock_knock.pegRNAs.protospacer_name(pegRNA_name)
+        PAM_name = f'{pegRNA_name}_PAM'
+        color = ti.pegRNA_name_to_color[pegRNA_name]
+        light_color = hits.visualize.apply_alpha(color, 0.5)
+        color_overrides[ps_name] = light_color
+        color_overrides[PAM_name] = color
+
+    if manual_window is not None:
+        window = manual_window
+    elif len(ti.pegRNA_names) == 2:
+        window = (-20, ti.nick_offset + 20 - 1)
+    elif len(ti.pegRNA_names) == 1:
+        window = (-20, len(ti.sgRNA_components[ti.pegRNA_names[0]]['RTT']) + 4)
+    else:
+        raise ValueError
+
+    if ti.protospacer_feature.strand == '+':
+        window_interval = hits.interval.Interval(ti.cut_after + window[0], ti.cut_after + window[1])
+    else:
+        window_interval = hits.interval.Interval(ti.cut_after - window[1], ti.cut_after - window[0])
+
+    def mismatch_in_window(d):
+        if d == 'n/a':
+            return False
+        else:
+            SNVs = knock_knock.outcome.MismatchOutcome.from_string(d).undo_anchor_shift(ti.anchor).snvs
+            return any(p in window_interval for p in SNVs.positions)
+
+    outcomes = [(c, s, d) for (c, s, d), f_row in outcome_fractions.iterrows()
+                if (((c, s) in {('wild type', 'mismatches')} and mismatch_in_window(d))
+                    or c in {'intended edit', 'partial replacement', 'partial edit'}
+                    )
+                and max(f_row) > frequency_cutoff
+               ]
+    outcomes = outcome_fractions.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
+
+    if len(outcomes) > 0:
+        grid = knock_knock.visualize.stacked.DiagramGrid(outcomes, 
+                                                         ti,
+                                                         draw_wild_type_on_top=True,
+                                                         window=window,
+                                                         block_alpha=0.1,
+                                                         color_overrides=color_overrides,
+                                                         draw_all_sequence=0.1,
+                                                        )
+
+        grid.add_ax('fractions', width_multiple=12, title='% of reads')
+
+        if show_log_scale:
+            grid.add_ax('log10_fractions', width_multiple=12, gap_multiple=2, title='% of reads (log scale)')
+
+        for ax, transform in [('fractions', 'percentage'),
+                              ('log10_fractions', 'log10'),
+                             ]:
+
+            for condition in outcome_fractions:
+                grid.plot_on_ax(ax,
+                                outcome_fractions[condition],
+                                transform=transform,
+                                color='black',
+                                line_alpha=0.75,
+                                linewidth=1.5,
+                                markersize=7,
+                                fill=0,
+                                )
+
+        grid.style_frequency_ax('fractions')
+
+        grid.set_xlim('fractions', (0,))
+        x_max = (grid.axs_by_name['fractions'].get_xlim()[1] / 100) * 1.01
+
+        grid.set_xlim('log10_fractions', (np.log10(0.49 * frequency_cutoff), np.log10(x_max)))
+        grid.style_log10_frequency_ax('log10_fractions')
+
+        for pegRNA_i, pegRNA_name in enumerate(ti.pegRNA_names):
+            grid.diagrams.draw_pegRNA(ti.name, pegRNA_name, y_offset=pegRNA_i + 1, label_features=False)
+
+        grid.plot_pegRNA_conversion_fractions_above(ti,
+                                                    pegRNA_conversion_fractions,
+                                                    conditions=conditions,
+                                                    condition_colors=condition_colors,
+                                                   )
+
+        grid.style_pegRNA_conversion_plot('pegRNA_conversion_fractions')
+
+        return grid
