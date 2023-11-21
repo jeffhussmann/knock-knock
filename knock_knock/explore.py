@@ -51,7 +51,6 @@ class Explorer:
         }
 
         draw_button_info = [
-            ('ref_centric', True, 'target and donor'),
             ('draw_sequence', True, 'sequence'),
             ('draw_qualities', False, 'qualities'),
             ('draw_mismatches', True, 'mismatches'),
@@ -99,7 +98,7 @@ class Explorer:
             [make_row(selection_widget_keys),
              HBox([HBox([Label('Alignments to show:'), self.non_widgets['alignments_to_show']]),
                    HBox([Label('Alignment registration:'), self.non_widgets['alignment_registration']]),
-                   HBox([Label('Draw:'), VBox([self.draw_buttons[k] for k in ['draw_sequence', 'ref_centric', 'draw_qualities', 'draw_mismatches']])]),
+                   HBox([Label('Draw:'), VBox([self.draw_buttons[k] for k in ['draw_sequence', 'draw_qualities', 'draw_mismatches']])]),
                   ]),
              make_row([k for k, d in toggles]),
              make_row(['file_name', 'save']),
