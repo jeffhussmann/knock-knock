@@ -14,7 +14,6 @@ import nbformat.v4 as nbf
 import PIL
 import tqdm
 
-import knock_knock.arrayed_experiment_group
 import knock_knock.experiment
 import knock_knock.svg
 
@@ -34,6 +33,7 @@ def load_counts(base_dir,
         groups_to_exclude = set()
 
     if arrayed:
+        import knock_knock.arrayed_experiment_group
         exps = knock_knock.arrayed_experiment_group.get_all_experiments(base_dir, conditions=conditions) 
 
     else:
@@ -274,6 +274,7 @@ def make_table(base_dir,
         df = df.T.groupby(level=0, sort=False).sum().T
 
     if arrayed:
+        import knock_knock.arrayed_experiment_group
         exps = knock_knock.arrayed_experiment_group.get_all_experiments(base_dir, conditions=conditions)
     else:
         exps = knock_knock.experiment.get_all_experiments(base_dir, conditions=conditions, as_dictionary=True)
@@ -651,6 +652,7 @@ def make_self_contained_zip(base_dir,
     fns_to_zip.add(pms_fn)
 
     if arrayed:
+        import knock_knock.arrayed_experiment_group
         exps = knock_knock.arrayed_experiment_group.get_all_experiments(base_dir, conditions=conditions)
     else:
         exps = knock_knock.experiment.get_all_experiments(base_dir, conditions)

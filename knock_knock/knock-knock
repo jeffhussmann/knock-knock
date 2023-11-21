@@ -13,7 +13,7 @@ from pathlib import Path
 import yaml
 import tqdm
 
-import knock_knock
+import knock_knock.arrayed_experiment_group
 import knock_knock.build_targets
 import knock_knock.experiment
 import knock_knock.table

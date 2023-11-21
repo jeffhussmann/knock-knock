@@ -7,14 +7,14 @@ from collections import defaultdict
 
 import pysam
 
-from knock_knock.experiment import Experiment, ensure_list
+import knock_knock.experiment
 from knock_knock import visualize
 from knock_knock import layout as layout_module
 
 from hits import adapters, fastq, sam, sw, utilities
 from hits.utilities import memoized_property
 
-class IlluminaExperiment(Experiment):
+class IlluminaExperiment(knock_knock.experiment.Experiment):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         
@@ -43,7 +43,7 @@ class IlluminaExperiment(Experiment):
 
         for k in ['R1', 'R2', 'I1', 'I2']:
             if k in self.description:
-                fastq_fns = ensure_list(self.description[k])
+                fastq_fns = knock_knock.experiment.ensure_list(self.description[k])
                 self.fns[k] = [self.data_dir / name for name in fastq_fns]
         
                 for fn in self.fns[k]:
