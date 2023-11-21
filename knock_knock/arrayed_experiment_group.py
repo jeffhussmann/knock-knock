@@ -1199,7 +1199,15 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
 
         baseline_condition = ';'.join(map(str, tuple(group_rows[condition_columns].iloc[0])))
 
-        supplemental_indices = [name for name in {genome, 'hg38', 'phiX'} if name in valid_supplemental_indices]
+        supplemental_indices = {
+            genome,
+            'phiX',
+        }
+
+        if genome not in {'mm10', 'macFas5'}:
+            supplemental_indices.add('hg38')
+
+        supplemental_indices = [name for name in supplemental_indices if name in valid_supplemental_indices]
 
         groups[group_name] = {
             'sanitized_group_name': sanitized_group_name,
