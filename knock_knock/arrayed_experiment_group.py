@@ -9,6 +9,7 @@ from collections import defaultdict, Counter
 
 import numpy as np
 import pandas as pd
+import seaborn as sns
 
 import knock_knock.build_targets
 import knock_knock.experiment_group
@@ -53,16 +54,10 @@ class Batch:
 
         self.sample_sheet_fn = self.data_dir / 'sample_sheet.csv'
         # Note: set_index after construction is necessary to force dtype=str for the index.
-        self.sample_sheet = pd.read_csv(self.sample_sheet_fn, dtype=str).set_index('sample_name')
+        self.sample_sheet = pd.read_csv(self.sample_sheet_fn, dtype=str).set_index('sample_name').fillna('')
 
         self.group_descriptions_fn = self.data_dir / 'group_descriptions.csv'
         self.group_descriptions = pd.read_csv(self.group_descriptions_fn, index_col='group').replace({np.nan: None})
-
-        self.condition_colors_fn = self.data_dir / 'condition_colors.csv'
-        if self.condition_colors_fn.exists():
-            self.condition_colors = pd.read_csv(self.condition_colors_fn, index_col='perturbation').squeeze()
-        else:
-            self.condition_colors = None
 
     def __repr__(self):
         return f'Batch: {self.batch_name}, base_dir={self.base_dir}'
@@ -70,6 +65,17 @@ class Batch:
     @property
     def group_names(self):
         return self.sample_sheet['group'].unique()
+
+    @memoized_property
+    def sanitized_group_name_to_group_name(self):
+        return utilities.reverse_dictionary(self.group_descriptions['sanitized_group_name'])
+
+    def sanitized_group_name_to_group(self, sanitized_group_name):
+        if isinstance(sanitized_group_name, int):
+            sanitized_group_name = get_sanitized_group_name(sanitized_group_name)
+        group_name = self.sanitized_group_name_to_group_name[sanitized_group_name]
+        group = self.groups[group_name]
+        return group
 
     def group(self, group_name):
         return ArrayedExperimentGroup(self.base_dir,
@@ -1087,6 +1093,12 @@ def detect_sequencing_start_feature_names(base_dir, batch_name, sample_sheet_df)
         
     return sequencing_start_feature_names
 
+def get_sanitized_group_name(group_i):
+    return f'group{group_i:05d}'
+
+def get_sanitized_sample_name(sample_i):
+    return f'sample{sample_i:05d}'
+
 def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_name=None):
     base_dir = Path(base_dir)
     sample_sheet_df = sample_sheet_df.copy()
@@ -1162,12 +1174,12 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
         group_name = f'{target_info_name}_{sgRNAs}_{donor}'
         group_name = group_name.replace(';', '+')
 
-        sanitized_group_name = f'group{group_i:05d}'
+        sanitized_group_name = get_sanitized_group_name(group_i)
 
         sanitized_sample_names = {}
         for sample_i, (_, row) in enumerate(group_rows.iterrows()):
             sample_name = row['sample_name']
-            sanitized_sample_name = f'sample{sample_i:05d}'
+            sanitized_sample_name = get_sanitized_sample_name(sample_i)
 
             sanitized_sample_names[sample_name] = sanitized_sample_name
 
