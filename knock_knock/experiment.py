@@ -175,6 +175,11 @@ class Experiment:
         # This needs to be a property because subclasses use it as one.
         return layout_module.Layout
 
+    @property
+    def uncommon_read_type(self):
+        # Will be overloaded by any subclass that separates out common sequences.
+        return self.preprocessed_read_type
+
     @memoized_property
     def results_dir(self):
         d = self.base_dir / 'results' 
@@ -685,6 +690,7 @@ class Experiment:
         self.fns['outcomes_dir'].mkdir()
 
         outcome_to_qnames = defaultdict(list)
+        outcome_to_no_overlap_qnames = defaultdict(list)
 
         with self.fns['outcome_list'].open('w') as outcome_fh:
             outcome_fh.write(f'## Generated at {utilities.current_time_string()}\n')
@@ -700,35 +706,48 @@ class Experiment:
                 description = f'Categorizing {read_type} reads'
 
             for name, als in self.progress(alignment_groups, desc=description):
-                if isinstance(als, dict):
-                    # Leave non-overlapping Illumina reads to be handled separately.
-                    continue
+                if isinstance(als, list):
+                    seq = als[0].get_forward_sequence()
 
-                seq = als[0].get_forward_sequence()
+                    # Special handling of empty sequence.
+                    if seq is None:
+                        seq = ''
 
-                # Special handling of empty sequence.
-                if seq is None:
-                    seq = ''
+                    if seq in self.common_sequence_to_outcome:
+                        layout = self.common_sequence_to_outcome[seq]
+                        layout.query_name = name
 
-                if seq in self.common_sequence_to_outcome:
-                    layout = self.common_sequence_to_outcome[seq]
-                    layout.query_name = name
+                    else:
+                        layout = self.categorizer(als,
+                                                  self.target_info,
+                                                  mode=self.layout_mode,
+                                                  error_corrected=self.has_UMIs,
+                                                 )
 
-                else:
-                    layout = self.categorizer(als,
-                                              self.target_info,
-                                              mode=self.layout_mode,
-                                              error_corrected=self.has_UMIs,
-                                             )
+                        try:
+                            layout.categorize()
+                        except:
+                            print()
+                            print(self.sample_name, name)
+                            raise
 
+                    outcome_to_qnames[layout.category, layout.subcategory].append(name)
+
+                elif isinstance(als, dict):
+                    layout = self.nonoverlapping_categorizer(als,
+                                                             self.target_info,
+                                                            )
                     try:
                         layout.categorize()
                     except:
                         print()
                         print(self.sample_name, name)
                         raise
+
+                    outcome_to_no_overlap_qnames[layout.category, layout.subcategory].append(name)
                 
-                outcome_to_qnames[layout.category, layout.subcategory].append(name)
+                else:
+                    raise ValueError
 
                 outcome = self.final_Outcome.from_layout(layout)
                 outcome_fh.write(f'{outcome}\n')
@@ -746,9 +765,10 @@ class Experiment:
 
         alignment_sorters = sam.multiple_AlignmentSorters(self.combined_header, by_name=True)
 
-        for outcome, qnames in outcome_to_qnames.items():
-            outcome_fns = self.outcome_fns(outcome)
+        outcomes = set(outcome_to_qnames) | set(outcome_to_no_overlap_qnames)
 
+        for outcome in outcomes:
+            outcome_fns = self.outcome_fns(outcome)
             # This shouldn't be necessary due to rmtree of parent directory above
             # but empirically sometimes is.
             if outcome_fns['dir'].is_dir():
@@ -756,20 +776,45 @@ class Experiment:
 
             outcome_fns['dir'].mkdir()
 
+        for outcome, qnames in outcome_to_qnames.items():
+            outcome_fns = self.outcome_fns(outcome)
+
             alignment_sorters[outcome] = outcome_fns['bam_by_name'][bam_read_type]
-            
+
             with outcome_fns['query_names'].open('w') as fh:
                 for qname in qnames:
                     qname_to_outcome[qname] = outcome
                     fh.write(qname + '\n')
-        
+
+        for outcome, qnames in outcome_to_no_overlap_qnames.items():
+            outcome_fns = self.outcome_fns(outcome)
+
+            for which in ['R1', 'R2']:
+                alignment_sorters[outcome, which] = outcome_fns['bam_by_name'][f'{which}_no_overlap']
+            
+            with outcome_fns['no_overlap_query_names'].open('w') as fh:
+                for qname in qnames:
+                    qname_to_outcome[qname] = outcome
+                    fh.write(qname + '\n')
+
         with alignment_sorters:
             for name, als in self.alignment_groups(fn_key=fn_key, read_type=read_type):
-                for al in als:
-                    if name in qname_to_outcome:
-                        outcome = qname_to_outcome[name]
-                        al.query_name = name
-                        alignment_sorters[outcome].write(al)
+                if name in qname_to_outcome:
+                    outcome = qname_to_outcome[name]
+
+                    if isinstance(als, list):
+                        for al in als:
+                            al.query_name = name
+                            alignment_sorters[outcome].write(al)
+
+                    elif isinstance(als, dict):
+                        for which in ['R1', 'R2']:
+                            for al in als[which]:
+                                al.query_name = name
+                                alignment_sorters[outcome, which].write(al)
+
+                    else:
+                        raise ValueError
 
     def process(self, stage):
         self.results_dir.mkdir(exist_ok=True, parents=True)

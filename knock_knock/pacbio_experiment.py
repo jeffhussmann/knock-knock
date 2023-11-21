@@ -29,7 +29,7 @@ class PacbioExperiment(Experiment):
                 pass
 
         self.read_types = {'CCS'}
-        self.default_read_type = 'CCS'
+        self.preprocessed_read_type = 'CCS'
 
         self.outcome_fn_keys = ['outcome_list']
 

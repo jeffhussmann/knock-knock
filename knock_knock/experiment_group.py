@@ -572,24 +572,3 @@ class ExperimentGroup:
         df = pd.read_csv(self.fns['genomic_insertion_length_distributions'], index_col=[0, 1, 2])
         df.columns = [int(c) for c in df.columns]
         return df
-
-class CommonSequencesExperiment:
-    @property
-    def final_Outcome(self):
-        return knock_knock.outcome_record.CommonSequenceOutcomeRecord
-
-    @memoized_property
-    def results_dir(self):
-        return self.experiment_group.fns['common_sequences_dir'] / self.sample_name
-
-    @memoized_property
-    def common_sequence_to_outcome(self):
-        return {}
-
-    @memoized_property
-    def common_sequence_to_alignments(self):
-        return {}
-
-    def extract_reads_with_uncommon_sequences(self):
-        ''' Overload to prevent from overwriting its own sequences. '''
-        pass

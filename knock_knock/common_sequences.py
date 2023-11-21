@@ -2,7 +2,11 @@ import shutil
 import gzip
 from collections import Counter
 
-from hits import fastq
+import hits.fastq
+import hits.utilities
+import knock_knock.outcome_record
+
+memoized_property = hits.utilities.memoized_property
 
 class CommonSequenceSplitter:
     def __init__(self, experiment_group, max_sequences=None, reads_per_chunk=1000):
@@ -46,7 +50,7 @@ class CommonSequenceSplitter:
         
     def write_files(self):
         # Include one value outside of the solexa range to allow automatic detection.
-        qual = fastq.unambiguous_sanger_Q40(1000)
+        qual = hits.fastq.unambiguous_sanger_Q40(1000)
    
         tuples = []
 
@@ -56,7 +60,7 @@ class CommonSequenceSplitter:
 
             if count > 1:
                 name = f'{i:010}_{count:010}'
-                read = fastq.Read(name, seq, qual[:len(seq)])
+                read = hits.fastq.Read(name, seq, qual[:len(seq)])
                 self.write_read(i, read)
                 i += 1
             else:
@@ -65,3 +69,24 @@ class CommonSequenceSplitter:
             tuples.append((name, seq, count))
 
         self.close()
+
+class CommonSequencesExperiment:
+    @property
+    def final_Outcome(self):
+        return knock_knock.outcome_record.CommonSequenceOutcomeRecord
+
+    @property
+    def uncommon_read_type(self):
+        return self.preprocessed_read_type
+
+    @memoized_property
+    def common_sequence_to_outcome(self):
+        return {}
+
+    @memoized_property
+    def common_sequence_to_alignments(self):
+        return {}
+
+    def extract_reads_with_uncommon_sequences(self):
+        ''' Overload to prevent from overwriting its own sequences. '''
+        pass

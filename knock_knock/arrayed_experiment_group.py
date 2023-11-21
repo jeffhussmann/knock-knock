@@ -390,14 +390,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         return self.first_experiment.target_info
 
     def common_sequence_chunk_exp_from_name(self, chunk_name):
-        chunk_exp = ArrayedCommonSequencesExperiment(self.base_dir,
-                                                     self.batch_name,
-                                                     self.group_name,
-                                                     chunk_name,
-                                                     self.experiment_type,
-                                                     experiment_group=self,
-                                                     description=self.description,
-                                                    )
+        chunk_exp = ArrayedCommonSequencesExperiment(self, chunk_name)
         return chunk_exp
 
     @memoized_property
@@ -418,7 +411,6 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
                                 self.batch_name,
                                 self.group_name,
                                 sample_name,
-                                self.experiment_type,
                                 experiment_group=self,
                                 progress=progress,
                                )
@@ -865,12 +857,12 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         return explorer.layout
 
 class ArrayedExperiment(knock_knock.illumina_experiment.IlluminaExperiment):
-    def __init__(self, base_dir, batch_name, group_name, sample_name, experiment_type, experiment_group=None, **kwargs):
+    def __init__(self, base_dir, batch_name, group_name, sample_name, experiment_group=None, **kwargs):
         if experiment_group is None:
             experiment_group = ArrayedExperimentGroup(base_dir, batch_name, group_name)
 
         self.experiment_group = experiment_group
-        self.experiment_type = experiment_type
+        self.experiment_type = experiment_group.experiment_type
 
         super().__init__(base_dir, (batch_name, group_name), sample_name, **kwargs)
 
@@ -935,14 +927,19 @@ class ArrayedExperiment(knock_knock.illumina_experiment.IlluminaExperiment):
     def common_sequence_to_alignments(self):
         return self.experiment_group.common_sequence_to_alignments
 
-class ArrayedCommonSequencesExperiment(knock_knock.experiment_group.CommonSequencesExperiment, ArrayedExperiment):
-    def __init__(self, base_dir, batch_name, group_name, sample_name, experiment_type, experiment_group=None, **kwargs):
-        knock_knock.experiment_group.CommonSequencesExperiment.__init__(self)
-        ArrayedExperiment.__init__(self, base_dir, batch_name, group_name, sample_name, experiment_type, experiment_group=experiment_group)
+class ArrayedCommonSequencesExperiment(knock_knock.common_sequences.CommonSequencesExperiment, ArrayedExperiment):
+    def __init__(self, experiment_group, chunk_name):
+        ArrayedExperiment.__init__(self,
+                                   experiment_group.base_dir,
+                                   experiment_group.batch_name,
+                                   experiment_group.group_name,
+                                   chunk_name,
+                                   experiment_group=experiment_group,
+                                  )
 
-    @property
-    def uncommon_read_type(self):
-        return self.preprocessed_read_type
+    @memoized_property
+    def results_dir(self):
+        return self.experiment_group.fns['common_sequences_dir'] / self.sample_name
 
     def load_description(self):
         return self.experiment_group.description

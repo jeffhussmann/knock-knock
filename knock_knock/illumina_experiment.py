@@ -69,8 +69,6 @@ class IlluminaExperiment(Experiment):
 
             self.preprocessed_read_type = 'trimmed'
 
-        self.uncommon_read_type = self.preprocessed_read_type
-
     @property
     def read_types_to_align(self):
         return [
