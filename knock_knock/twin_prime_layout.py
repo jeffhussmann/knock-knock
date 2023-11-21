@@ -97,6 +97,11 @@ class Layout(knock_knock.prime_editing_layout.Layout):
              'phiX',
             ),
         ),
+        ('incorporation of extra sequence',
+            ('has RT\'ed extension',
+             'no RT\'ed extension',
+            ),
+        ),
         ('uncategorized',
             ('uncategorized',
             ),
@@ -113,6 +118,10 @@ class Layout(knock_knock.prime_editing_layout.Layout):
              'primer dimer',
              'short unknown',
              'extra sequence',
+            ),
+        ),
+        ('phiX',
+            ('phiX',
             ),
         ),
     ]
@@ -579,6 +588,13 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         if self.nonspecific_amplification:
             self.register_nonspecific_amplification()
 
+        elif self.aligns_to_phiX:
+            self.category = 'phiX'
+            self.subcategory = 'phiX'
+            self.details = 'n/a'
+
+            self.relevant_alignments = [self.longest_phiX_alignment]
+
         elif self.no_alignments_detected:
             self.category = 'uncategorized'
             self.subcategory = 'uncategorized'
@@ -698,6 +714,9 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
         elif self.original_target_alignment_has_only_relevant_indels:
             self.register_simple_indels()
+
+        elif self.nonredundant_extra_alignments:
+            self.register_incorporation_of_extra_sequence()
 
         else:
             self.category = 'uncategorized'

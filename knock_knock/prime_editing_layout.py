@@ -90,7 +90,8 @@ class Layout(layout.Categorizer):
             ),
         ),
         ('incorporation of extra sequence',
-            ('n/a',
+            ('has RT\'ed extension',
+             'no RT\'ed extension',
             ),
         ),
         ('complex incorporation of RT\'ed sequence',
@@ -295,7 +296,14 @@ class Layout(layout.Categorizer):
 
     @memoized_property
     def non_protospacer_pegRNA_alignments(self):
-        return [al for al in self.split_pegRNA_alignments if not self.is_pegRNA_protospacer_alignment(al)]
+        return [al for al in self.pegRNA_alignments if not self.is_pegRNA_protospacer_alignment(al)]
+
+    @memoized_property
+    def initial_gap(self):
+        # Would like to use self.not_covered_by_primers here, but unfortunately that is a
+        # circular dependence. As a crude replacement, just exclude the first 10 nts of the read.
+        exclude_start = interval.Interval(10, self.read_length)
+        return exclude_start & self.not_covered_by_split_target_or_pegRNA_alignments & self.not_covered_by_extra_alignments
 
     @memoized_property
     def partial_gap_perfect_alignments(self):
@@ -310,7 +318,7 @@ class Layout(layout.Categorizer):
         targets = ['target'] + self.target_info.pegRNA_names
 
         for target_name in targets:
-            for gap in self.not_covered_by_split_target_or_pegRNA_alignments:
+            for gap in self.initial_gap:
                 # Note: interval end is the last base, but seed_and_extend wants one past
                 start = gap.start
                 end = gap.end + 1
@@ -349,7 +357,7 @@ class Layout(layout.Categorizer):
         
         target_interval = ti.amplicon_interval
         
-        for gap in self.not_covered_by_split_target_or_pegRNA_alignments:
+        for gap in self.initial_gap:
             start = max(0, gap.start - 5)
             end = min(len(self.seq) - 1, gap.end + 5)
             extended_gap = interval.Interval(start, end)
@@ -1445,8 +1453,12 @@ class Layout(layout.Categorizer):
 
     @memoized_property
     def not_covered_by_primary_alignments(self):
-        relevant_als = self.primary_alignments
-        covered = interval.get_disjoint_covered(relevant_als)
+        covered = interval.get_disjoint_covered(self.primary_alignments)
+        return self.whole_read - covered
+
+    @memoized_property
+    def not_covered_by_extra_alignments(self):
+        covered = interval.get_disjoint_covered(self.extra_alignments)
         return self.whole_read - covered
 
     @memoized_property
@@ -1460,8 +1472,12 @@ class Layout(layout.Categorizer):
         nonredundant = []
         
         for al in self.supplemental_alignments:
+            # phiX alignments are handled elsewhere
+            if 'phiX' in al.reference_name:
+                continue
+
             covered = interval.get_covered(al)
-            novel_covered = covered & self.not_covered_by_split_target_or_pegRNA_alignments & self.not_covered_by_primary_alignments
+            novel_covered = covered & self.not_covered_by_split_target_or_pegRNA_alignments & self.not_covered_by_extra_alignments
             if novel_covered:
                 nonredundant.append(al)
 
@@ -1586,7 +1602,12 @@ class Layout(layout.Categorizer):
             if target_nts_past_primer['left'] <= 10 and target_nts_past_primer['right'] <= 10:
                 covering_als = []
 
-                for al in self.supplemental_alignments + self.split_pegRNA_alignments + self.extra_alignments:
+                # Exclude phiX reads, which can rarely have spurious alignments to the forward primer
+                # close to the start of the read that overlap the forward primer.
+                relevant_alignments = self.supplemental_alignments + self.split_pegRNA_alignments + self.extra_alignments
+                relevant_alignments = [al for al in relevant_alignments if 'phiX' not in al.reference_name]
+
+                for al in relevant_alignments:
                     covered_by_al = interval.get_covered(al)
                     if (need_to_cover - covered_by_al).total_length == 0:
                         covering_als.append(al)
@@ -1598,7 +1619,12 @@ class Layout(layout.Categorizer):
                 if not_covered_by_any_target_als.total_length >= 100:
                     ref_seqs = {**self.target_info.reference_sequences}
 
-                    for al in self.supplemental_alignments:
+                    # Exclude phiX reads, which can rarely have spurious alignments to the forward primer
+                    # close to the start of the read that overlap the forward primer.
+                    relevant_alignments = self.supplemental_alignments
+                    relevant_alignments = [al for al in relevant_alignments if 'phiX' not in al.reference_name]
+
+                    for al in relevant_alignments:
                         covered_by_al = interval.get_covered(al)
                         if (need_to_cover - covered_by_al).total_length == 0:
                             cropped_al = sam.crop_al_to_query_int(al, self.not_covered_by_primers.start, self.not_covered_by_primers.end)
@@ -1607,8 +1633,6 @@ class Layout(layout.Categorizer):
                                 covering_als.append(al)
 
             if len(covering_als) > 0:
-                # Exclude phiX reads, which can rarely have spurious alignments to the forward primer
-                # close to the start of the read that overlap the forward primer.
                 if any('phiX' in al.reference_name for al in covering_als):
                     valid = False
                 else:
@@ -1640,7 +1664,7 @@ class Layout(layout.Categorizer):
 
     @memoized_property
     def aligns_to_phiX(self):
-        return self.longest_phiX_alignment is not None and self.longest_phiX_alignment.query_alignment_length >= 100
+        return self.longest_phiX_alignment is not None and self.longest_phiX_alignment.query_alignment_length >= 50
 
     def register_intended_edit(self, single_target_alignment_without_indels=False):
         self.category = 'intended edit'
@@ -1899,6 +1923,23 @@ class Layout(layout.Categorizer):
         ]:
             if key in chains[side]['alignments']:
                 self.relevant_alignments.append(chains[side]['alignments'][key])
+
+    def register_incorporation_of_extra_sequence(self):
+        self.category = 'incorporation of extra sequence'
+
+        if any(self.extension_chains_by_side[side]['description'].startswith('RT') for side in ['left', 'right']):
+            self.subcategory = 'has RT\'ed extension'
+        else:
+            self.subcategory = 'no RT\'ed extension'
+
+        self.details = 'n/a'
+
+        alignments = (
+            interval.make_parsimonious(self.target_alignments + self.pegRNA_alignments + self.nonredundant_extra_alignments) + 
+            self.pegRNA_extension_als_list
+        )
+
+        self.relevant_alignments = sam.make_nonredundant(alignments)
 
     @memoized_property
     def pegRNA_alignments_cover_target_gap(self):
@@ -2194,6 +2235,13 @@ class Layout(layout.Categorizer):
         elif self.nonspecific_amplification:
             self.register_nonspecific_amplification()
 
+        elif self.aligns_to_phiX:
+            self.category = 'phiX'
+            self.subcategory = 'phiX'
+            self.details = 'n/a'
+
+            self.relevant_alignments = [self.longest_phiX_alignment]
+
         elif self.is_intended_edit:
             self.register_intended_edit()
 
@@ -2346,12 +2394,8 @@ class Layout(layout.Categorizer):
 
             self.relevant_alignments = self.target_edge_alignments_list + self.inversion
 
-        elif self.contains_extra_sequence:
-            self.category = 'incorporation of extra sequence'
-            self.subcategory = 'n/a'
-            self.details = 'n/a'
-
-            self.relevant_alignments = self.uncategorized_relevant_alignments
+        elif self.nonredundant_extra_alignments:
+            self.register_incorporation_of_extra_sequence()
 
         elif self.original_target_alignment_has_no_indels:
             self.category = 'wild type'
@@ -2412,13 +2456,6 @@ class Layout(layout.Categorizer):
         elif self.original_target_alignment_has_only_relevant_indels:
             self.register_simple_indels()
 
-        elif self.aligns_to_phiX:
-            self.category = 'phiX'
-            self.subcategory = 'phiX'
-            self.details = 'n/a'
-
-            self.relevant_alignments = [self.longest_phiX_alignment]
-
         elif self.genomic_insertion is not None:
             self.register_genomic_insertion()
 
@@ -2455,7 +2492,7 @@ class Layout(layout.Categorizer):
         return self.category, self.subcategory, self.details, self.outcome
 
     @memoized_property
-    def contains_extra_sequence(self):
+    def nonredundant_extra_alignments(self):
         ''' Alignments from extra sequences that explain a substantial portion
         of the read not covered by target or pegRNA alignemnts.
         '''
@@ -2463,7 +2500,11 @@ class Layout(layout.Categorizer):
 
         need_to_cover = self.not_covered_by_split_target_or_pegRNA_alignments & self.not_covered_by_target_edge_alignments
 
-        potentially_relevant_als = [al for al in self.extra_alignments if (interval.get_covered(al) & need_to_cover).total_length > 0]
+        potentially_relevant_als = [
+            al for al in self.extra_alignments
+            if ((interval.get_covered(al) & need_to_cover).total_length > 0)
+            and (sam.total_edit_distance(al, self.target_info.reference_sequences[al.reference_name]) < 5)
+        ]
 
         if len(potentially_relevant_als) > 0:
             covered = interval.get_disjoint_covered(potentially_relevant_als)
@@ -2743,9 +2784,7 @@ class Layout(layout.Categorizer):
 
     @memoized_property
     def uncategorized_relevant_alignments(self):
-        als = self.target_alignments + self.pegRNA_alignments + interval.make_parsimonious(self.nonredundant_supplemental_alignments)
-        if self.contains_extra_sequence:
-            als.extend(self.contains_extra_sequence)
+        als = self.target_alignments + self.pegRNA_alignments + self.extra_alignments + interval.make_parsimonious(self.nonredundant_supplemental_alignments)
 
         als = [al for al in als if not self.is_pegRNA_protospacer_alignment(al)]
 
