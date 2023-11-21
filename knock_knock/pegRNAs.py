@@ -4,6 +4,7 @@ import logging
 from collections import defaultdict
 
 import Bio.Align
+import numpy as np
 import pysam
 
 from hits import gff, interval, sam, sw, utilities
@@ -298,6 +299,18 @@ class pegRNA:
         aligner = get_RTT_aligner()
 
         alignments = aligner.align(self.intended_flap_sequence, self.target_downstream_of_nick)
+
+        min_aligned_nts = 5
+        best_alignment = alignments[0]
+        gaps, identities, mismatches = best_alignment.counts()
+        if identities + mismatches < min_aligned_nts:
+            sequences = [self.intended_flap_sequence, self.target_downstream_of_nick]
+            coordinates = np.array([[0, len(self.intended_flap_sequence), len(self.intended_flap_sequence)],
+                                    [0, 0, len(self.target_downstream_of_nick)]
+                                   ],
+                                  )
+            unaligned = Bio.Align.Alignment(sequences, coordinates)
+            alignments = [unaligned]
 
         return alignments
 
