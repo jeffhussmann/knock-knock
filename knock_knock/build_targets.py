@@ -485,19 +485,13 @@ class TargetInfoBuilder:
         gb_records[self.target_name] = target_record
 
         if self.info.get('extra_sequences') is not None:
+            extra_genbank_records = load_extra_genbank_records(self.base_dir)
             for extra_seq_name, extra_seq in self.info['extra_sequences']:
-                record = SeqRecord(Seq(extra_seq), name=extra_seq_name, annotations={'molecule_type': 'DNA'})
+                if extra_seq_name in extra_genbank_records:
+                    record = extra_genbank_records[extra_seq_name]
+                else:
+                    record = SeqRecord(Seq(extra_seq), name=extra_seq_name, annotations={'molecule_type': 'DNA'})
                 gb_records[extra_seq_name] = record
-
-        if self.info.get('extra_genbanks') is not None:
-            for gb_fn in self.info['extra_genbanks']:
-                full_gb_fn = self.base_dir / 'targets' / gb_fn
-
-                if not full_gb_fn.exists():
-                    raise ValueError(f'{full_gb_fn} does not exist')
-
-                for record in Bio.SeqIO.parse(full_gb_fn, 'genbank'):
-                    gb_records[record.name] = record
 
         # Note: for debugging convenience, genbank files can be written for pegRNAs,
         # but these are NOT supplied as genbank records to make the final TargetInfo,
@@ -744,19 +738,29 @@ def load_extra_sequences(base_dir):
 
         extra_sequences.update(records)
 
+    extra_genbank_records = load_extra_genbank_records(base_dir)
+    duplicates = set(extra_sequences) & set(extra_genbank_records)
+    if len(duplicates) > 0:
+        raise ValueError(f'multiple records for {duplicates}')
+
+    extra_sequences.update({name: str(record.seq).upper() for name, record in extra_genbank_records.items()})
+
+    return extra_sequences
+
+def load_extra_genbank_records(base_dir):
+    records = {}
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', category=BiopythonWarning)
 
         genbank_fns = sorted((base_dir / 'targets').glob('*.gb'))
         for genbank_fn in genbank_fns:
-            records = {record.name: str(record.seq).upper() for record in Bio.SeqIO.parse(genbank_fn, 'gb')}
-            duplicates = set(extra_sequences) & set(records)
-            if len(duplicates) > 0:
-                raise ValueError(f'multiple records for {duplicates}')
+            for record in Bio.SeqIO.parse(genbank_fn, 'gb'):
+                if record.name in records:
+                    raise ValueError(f'multiple records for {record.name}')
 
-            extra_sequences.update(records)
+                records[record.name] = record
 
-    return extra_sequences
+    return records
 
 def build_component_registry(base_dir):
     registry = {}
@@ -852,9 +856,6 @@ def build_target_infos_from_csv(base_dir, defer_HA_identification=False):
                     # Because of how lookup works, sgRNA_components will hold value of 
                     # name that wasn't found.
                     raise ValueError(f'{sgRNA_components} not found')
-
-        if row.get('extra_genbanks') is not None:
-            info['extra_genbanks'] = row['extra_genbanks'].split(';')
 
         logging.info(f'Building {target_name}...')
 
