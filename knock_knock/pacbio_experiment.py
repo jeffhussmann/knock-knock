@@ -109,7 +109,7 @@ class PacbioExperiment(Experiment):
 
     def align(self):
         for read_type in self.read_types:
-            self.generate_alignments(read_type=read_type)
+            self.generate_alignments_with_blast(read_type=read_type)
             self.generate_supplemental_alignments_with_minimap2(read_type=read_type)
             self.combine_alignments(read_type=read_type)
 
