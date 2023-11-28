@@ -28,7 +28,7 @@ def read_csv(csv_fn, process=True):
             if component not in df.columns:
                 df[component] = ''
 
-            df[component] = df[component].str.upper()
+            df[component] = df[component].str.upper().str.replace('U', 'T')
 
         full_sequences = []
         for _, row in df.iterrows():
@@ -261,14 +261,18 @@ class pegRNA:
             (self.target_name, self.protospacer_name): target_protospacer_feature,
         })
 
-    @utilities.memoized_property
+    @property
+    def strand(self):
+        return self.features[self.target_name, self.PBS_name].strand
+
+    @memoized_property
     def intended_flap_sequence(self):
         return utilities.reverse_complement(self.components['RTT'])
 
-    @utilities.memoized_property
+    @memoized_property
     def cut_after(self):
         protospacer = self.features[self.target_name, self.protospacer_name]
-        effector = target_info.effectors[protospacer.attribute['effector']]
+        effector = knock_knock.effector.effectors[protospacer.attribute['effector']]
         try:
             cut_after = effector.cut_afters(protospacer)[protospacer.strand]
         except KeyError:
@@ -517,7 +521,6 @@ class pegRNA:
         if len(insertions) > 0:
             if len(insertions) > 1:
                 logging.warning('multiple insertions')
-                #raise NotImplementedError
             
             insertion = insertions[0]
             flap_coords = (insertion['start_in_flap'], insertion['end_in_flap'])
@@ -574,8 +577,6 @@ class pegRNA:
                 'flap': {},
                 'target_downstream': {},
             }
-
-            self.SNV_name_to_alternative_coordinates = {}
 
             for SNV in SNVs.values():
                 positions = {
@@ -694,48 +695,469 @@ class pegRNA:
 
         self.features.update(new_features)
 
-class TwinPrimePegRNA_pair:
-    def __init__(self):
-        pass
+def get_pegRNAs_by_strand(pegRNAs):
+    pegRNAs_by_strand = {}
 
-def PBS_names_by_side_of_target(pegRNA_names,
-                                target_name,
-                                existing_features,
-                               ):
-    PBS_features_by_strand = {}
-
-    for pegRNA_name in pegRNA_names:
-        PBS_feature = existing_features[target_name, PBS_name(pegRNA_name)]
-        if PBS_feature.strand in PBS_features_by_strand:
+    for pegRNA_ in pegRNAs:
+        if pegRNA_.strand in pegRNAs_by_strand:
             raise ValueError('pegRNAs target same strand')
         else:
-            PBS_features_by_strand[PBS_feature.strand] = PBS_feature
+            pegRNAs_by_strand[pegRNA_.strand] = pegRNA_
+    
+    return pegRNAs_by_strand
 
-    if len(PBS_features_by_strand) == 2:
-        if PBS_features_by_strand['+'].start > PBS_features_by_strand['-'].end:
-            logging.warning('pegRNAs not in PAM-in configuration')
+def get_PBS_features_by_strand(pegRNAs):
+    by_strand = {}
 
-    by_side = {}
+    for strand, pegRNA_ in get_pegRNAs_by_strand(pegRNAs).items():
+        by_strand[strand] = pegRNA_.features[pegRNA_.target_name, pegRNA_.PBS_name]
+
+    return by_strand
+
+def get_pegRNAs_by_side_of_target(pegRNAs):
+    ''' assumes a PAM-in configuration '''
 
     strand_to_side = {
         '+': 5,
         '-': 3,
     }
 
-    for strand, side in strand_to_side.items():
-        if strand in PBS_features_by_strand:
-            by_side[side] = PBS_features_by_strand[strand].attribute['ID']
+    by_side = {}
+
+    for strand, pegRNA_ in get_pegRNAs_by_strand(pegRNAs).items():
+        side = strand_to_side[strand]
+        by_side[side] = pegRNA_
 
     return by_side
 
-def pegRNA_names_by_side_of_target(pegRNA_names,
-                                   target_name,
-                                   existing_features,
-                                  ):
-    PBS_names = PBS_names_by_side_of_target(pegRNA_names, target_name, existing_features)
-    return {side: extract_pegRNA_name(PBS_name) for side, PBS_name in PBS_names.items()}
+def get_PBS_names_by_side_of_target(pegRNAs):
+    return {side: pegRNA_.PBS_name for side, pegRNA_ in get_pegRNAs_by_side_of_target(pegRNAs).items()}
 
-def infer_twin_pegRNA_features(pegRNA_names,
+def get_pegRNA_names_by_side_of_target(pegRNAs):
+    return {side: pegRNA_.name for side, pegRNA_ in get_pegRNAs_by_side_of_target(pegRNAs).items()}
+
+class pegRNA_pair:
+    ''' features:
+            PBS
+            RTT
+            overlap
+    '''
+    def __init__(self, pegRNAs):
+        if len(pegRNAs) != 2:
+            raise ValueError
+        else:
+            self.pegRNAs = pegRNAs
+
+        target_names = set(pegRNA_.target_name for pegRNA_ in pegRNAs)
+        if len(target_names) != 1:
+            raise ValueError('pegRNAs in pair must have same target_name')
+        else:
+            self.target_name = list(target_names)[0]
+
+        target_sequences = set(pegRNA_.target_sequence for pegRNA_ in pegRNAs)
+        if len(target_sequences) != 1:
+            raise ValueError('pegRNAs in pair must have same target_sequence')
+        else:
+            self.target_sequence = list(target_sequences)[0]
+
+        self.features = {}
+        for pegRNA_ in self.pegRNAs:
+            self.features.update(pegRNA_.features)
+
+        self.infer_overlap_features()
+
+    @memoized_property
+    def best_RT_extended_sequences_alignment(self):
+        ''' Align RT'ed flaps to each other. Include target sequence that precedes flaps
+            to allow for flaps to align to opposite R-loop (or past it).
+        '''
+
+        flap_aligner = Bio.Align.PairwiseAligner(
+            match_score=2,
+            mismatch_score=-3,
+            open_gap_score=-12,
+            extend_gap_score=-0.1,
+            mode='global',
+            query_left_open_gap_score=0,
+            query_left_extend_gap_score=0,
+            target_right_open_gap_score=0,
+            target_right_extend_gap_score=0,
+        )
+
+        alignments = flap_aligner.align(self.RT_extended_target_sequence['+'],
+                                        self.RT_extended_target_sequence['-'],
+                                       )
+        best_alignment = next(alignments)
+
+        return best_alignment
+
+    @memoized_property
+    def pegRNAs_by_strand(self):
+        return get_pegRNAs_by_strand(self.pegRNAs)
+
+    @memoized_property
+    def target_PBSs(self):
+        return get_PBS_features_by_strand(self.pegRNAs)
+
+    @memoized_property
+    def target_sequence_up_to_nick(self):
+        ''' Target sequence from the start up to the + nick
+        and from the - nick to the end.
+        '''
+        target_sequence_up_to_nick = {
+            '+': self.target_sequence[:self.target_PBSs['+'].end + 1],
+            '-': self.target_sequence[self.target_PBSs['-'].start:],
+        }
+
+        return target_sequence_up_to_nick
+
+    @memoized_property
+    def RTed_sequence(self):
+        return {
+            '+': self.pegRNAs_by_strand['+'].intended_flap_sequence,
+            '-': utilities.reverse_complement(self.pegRNAs_by_strand['-'].intended_flap_sequence),
+        }
+
+    @memoized_property
+    def RT_extended_target_sequence(self):
+        return {
+            '+': self.target_sequence_up_to_nick['+'] + self.RTed_sequence['+'],
+            '-': self.RTed_sequence['-'] + self.target_sequence_up_to_nick['-'],
+        }
+
+    @memoized_property
+    def RTed_interval_in_extended_target(self):
+        return {
+            '+': interval.Interval(len(self.target_sequence_up_to_nick['+']), len(self.RT_extended_target_sequence['+']) - 1),
+            '-': interval.Interval(0, len(self.RTed_sequence['-']) - 1),
+        }
+
+    @memoized_property
+    def RT_extended_target_coords_to_pegRNA_coords(self):
+        mapping = {
+            '+': {},
+            '-': {},
+        }
+
+        components = self.pegRNAs_by_strand['+'].components
+
+        extension_start = len(components['protospacer'] + components['scaffold'])
+        PBS_and_RTT_length = len(components['PBS'] + components['RTT'])
+
+        for offset in range(PBS_and_RTT_length):
+            target_with_RTed_p = len(self.RT_extended_target_sequence['+']) - 1 - offset
+            pegRNA_p = extension_start + offset
+
+            mapping['+'][target_with_RTed_p] = pegRNA_p
+
+        components = self.pegRNAs_by_strand['-'].components
+
+        extension_start = len(components['protospacer'] + components['scaffold'])
+        PBS_and_RTT_length = len(components['PBS'] + components['RTT'])
+
+        for offset in range(PBS_and_RTT_length):
+            target_with_RTed_p = offset
+            pegRNA_p = extension_start + offset
+
+            mapping['-'][target_with_RTed_p] = pegRNA_p
+
+        return mapping
+
+    @memoized_property
+    def edit_coords_to_RT_extended_target_coords(self):
+        pass
+
+    @memoized_property
+    def WT_between_nick_coords_to_target_coords(self):
+        target_ps = range(self.target_PBSs['+'].end + 1, self.target_PBSs['-'].start)
+        return dict(enumerate(target_ps))
+
+    @memoized_property
+    def aligned_RT_extended_positions(self):
+        mapping = {
+            '+ to -': {},
+            '- to +': {},
+        }
+
+        for plus_subsequence, minus_subsequence in zip(*self.best_RT_extended_sequences_alignment.aligned):
+            for plus_p, minus_p in zip(range(*plus_subsequence), range(*minus_subsequence)):
+                mapping['+ to -'][plus_p] = minus_p
+                mapping['- to +'][minus_p] = plus_p
+
+        return mapping
+
+    @memoized_property
+    def WT_sequence_between_nicks(self):
+        return ''.join(self.target_sequence[target_p] for between_nicks_p, target_p in sorted(self.WT_between_nick_coords_to_target_coords.items()))
+
+    @memoized_property
+    def RT_extended_target_coords_to_edit_coords(self):
+        # for +, start after PBS and continue to the end of RTT
+        # or to the position that aligns to the last base before the
+        # PBS of the -, whichever come first
+        
+        before_overlap_start = self.RTed_interval_in_extended_target['+'].start
+        before_overlap_end = self.overlap_interval_in_RTed_for_both['+'].start
+        
+        mapping = {
+            '+': {},
+            '-': {},
+        }
+
+        for edit_p, RT_extended_p in enumerate(range(before_overlap_start, before_overlap_end)):
+            mapping['+'][RT_extended_p] = edit_p
+
+        overlap_start = self.overlap_interval_in_RTed_for_both['+'].start
+        overlap_end = self.overlap_interval_in_RTed_for_both['+'].end + 1
+
+        overlap_start_in_edit = max(mapping['+'].values(), default=-1) + 1
+
+        for edit_p, RT_extended_p in enumerate(range(overlap_start, overlap_end), overlap_start_in_edit):
+            mapping['+'][RT_extended_p] = edit_p
+
+        overlap_start = self.overlap_interval_in_RTed_for_both['-'].start
+        overlap_end = self.overlap_interval_in_RTed_for_both['-'].end + 1
+
+        for edit_p, RT_extended_p in enumerate(range(overlap_start, overlap_end), overlap_start_in_edit):
+            mapping['-'][RT_extended_p] = edit_p
+
+        after_overlap_start = self.overlap_interval_in_RTed_for_both['-'].end + 1
+        after_overlap_end = self.RTed_interval_in_extended_target['-'].end + 1
+
+        after_overlap_start_in_edit = max(mapping['-'].values()) + 1
+
+        for edit_p, RT_extended_p in enumerate(range(after_overlap_start, after_overlap_end), after_overlap_start_in_edit):
+            mapping['-'][RT_extended_p] = edit_p
+
+        return mapping
+
+    @memoized_property
+    def edit_coords_to_RT_extended_target_coords(self):
+        return {
+            strand: utilities.reverse_dictionary(self.RT_extended_target_coords_to_edit_coords[strand])
+            for strand in ['+', '-']
+        }
+
+    @memoized_property
+    def edit_coords_to_pegRNA_coords(self):
+        edit_coords_to_pegRNA_coords = {}
+
+        for strand in ['+', '-']:
+            mapping = {}
+            
+            for edit_p, RT_extended_p in self.edit_coords_to_RT_extended_target_coords[strand].items():
+                pegRNA_p = self.RT_extended_target_coords_to_pegRNA_coords[strand][RT_extended_p]
+                mapping[edit_p] = pegRNA_p
+                
+            edit_coords_to_pegRNA_coords[strand] = mapping
+
+        return edit_coords_to_pegRNA_coords
+
+    @memoized_property
+    def intended_edit_between_nicks(self):
+        edit_bs = [[] for _ in range(max(self.edit_coords_to_RT_extended_target_coords['-']) + 1)]
+
+        for strand, mapping in self.edit_coords_to_RT_extended_target_coords.items():
+            for edit_p, RT_extended_p in mapping.items():
+                edit_bs[edit_p].append(self.RT_extended_target_sequence[strand][RT_extended_p])
+                
+        for i in range(len(edit_bs)):
+            if len(set(edit_bs[i])) != 1:
+                raise ValueError
+            else:
+                edit_bs[i] = edit_bs[i][0]
+                
+        intended_edit_between_nicks = ''.join(edit_bs)
+        
+        return intended_edit_between_nicks
+
+    @memoized_property
+    def overlap_interval(self):
+        aligned_ps = self.aligned_RT_extended_positions
+        return {
+            '+': interval.Interval(min(aligned_ps['+ to -']), max(aligned_ps['+ to -'])),
+            '-': interval.Interval(min(aligned_ps['- to +']), max(aligned_ps['- to +'])),
+        }
+
+    @memoized_property
+    def overlap_interval_in_RTed(self):
+        return {
+            strand: self.overlap_interval[strand] & self.RTed_interval_in_extended_target[strand]
+            for strand in ['+', '-']
+        }
+
+    @memoized_property
+    def overlap_interval_in_RTed_for_both(self):
+        ps = {
+            '+': set(),
+            '-': set(),
+        }
+        
+        for plus_p in self.overlap_interval_in_RTed['+']:
+            minus_p = self.aligned_RT_extended_positions['+ to -'].get(plus_p, -1)
+            if minus_p in self.overlap_interval_in_RTed['-']:
+                ps['+'].add(plus_p)
+                
+        for minus_p in self.overlap_interval_in_RTed['-']:
+            plus_p = self.aligned_RT_extended_positions['- to +'].get(minus_p, -1)
+            if plus_p in self.overlap_interval_in_RTed['+']:
+                ps['-'].add(minus_p)
+                
+        return {
+            strand: interval.Interval(min(ps[strand]), max(ps[strand]))
+            for strand in ['+', '-']
+        }
+
+    @memoized_property
+    def overlap_interval_outside_RTed(self):
+        return {
+            strand: self.overlap_interval[strand] - self.RTed_interval_in_extended_target[strand]
+            for strand in ['+', '-']
+        }
+
+    @memoized_property
+    def is_prime_del(self):
+        # prime del if any RT'ed sequence from one flap is aligned to non-RT'ed sequence from the other.
+        return any(self.overlap_interval_outside_RTed.values())
+
+    def RT_extended_interval_to_pegRNA_interval(self, RT_extended_interval, strand):
+        mapping = self.RT_extended_target_coords_to_pegRNA_coords[strand]
+        start, end = sorted([mapping[RT_extended_interval.start], mapping[RT_extended_interval.end]])
+        return interval.Interval(start, end)
+
+    def infer_overlap_features(self):
+        for strand in ['+', '-']:
+            pegRNA_ = self.pegRNAs_by_strand[strand]
+
+            if not self.overlap_interval_in_RTed[strand].is_empty:
+                pegRNA_interval = self.RT_extended_interval_to_pegRNA_interval(self.overlap_interval_in_RTed[strand], strand)
+
+                opposite_strand = '-' if strand == '+' else '+'
+
+                overlap_feature = gff.Feature.from_fields(seqname=pegRNA_.name,
+                                                          feature='overlap',
+                                                          start=pegRNA_interval.start,
+                                                          end=pegRNA_interval.end,
+                                                          strand=opposite_strand,
+                                                          attribute_string=gff.make_attribute_string({
+                                                              'ID': 'overlap',
+                                                              'color': default_feature_colors['overlap'],
+                                                              'short_name': 'overlap',
+                                                          }),
+                                                         )
+
+                self.features[pegRNA_.name, 'overlap'] = overlap_feature
+
+    @memoized_property
+    def best_alignment_of_edit_to_WT_between_nicks(self):
+        edit_aligner = Bio.Align.PairwiseAligner(
+            match_score=2,
+            mismatch_score=-3,
+            open_gap_score=-12,
+            extend_gap_score=-0.1,
+            mode='global',
+        )
+        
+        alignments = edit_aligner.align(self.intended_edit_between_nicks, self.WT_sequence_between_nicks)
+
+        best_alignment = next(alignments)
+
+        if best_alignment.score <= 0:
+            best_alignment = None
+
+        return best_alignment
+
+    def extract_edits(self):
+
+        self.SNVs = {
+            self.target_name: {},
+            self.pegRNAs[0].name: {},
+            self.pegRNAs[1].name: {},
+        }
+
+        self.insertions = []
+
+        if self.best_alignment_of_edit_to_WT_between_nicks is not None:
+            edit_subsequences, WT_subsequences = self.best_alignment_of_edit_to_WT_between_nicks.aligned
+
+            # *_subsequences are arrays of length-2 arrays
+            # that indicate the start and (exclusive) ends of subsequences of edit
+            # and target that are aligned to each other.
+
+            # Identify substitutions.
+            for edit_subsequence, WT_subsequence in zip(edit_subsequences, WT_subsequences):
+                edit_ps = range(*edit_subsequence)
+                WT_ps = range(*WT_subsequence)
+
+                for edit_p, WT_between_nicks_p in zip(edit_ps, WT_ps):
+                    edit_b = self.intended_edit_between_nicks[edit_p]
+                    target_b = self.WT_sequence_between_nicks[WT_between_nicks_p]
+
+                    target_p = self.WT_between_nick_coords_to_target_coords[WT_between_nicks_p]
+
+                    if edit_b != target_b:
+                        SNV_name = f'SNV_{target_p}_{target_b}-{edit_b}'
+
+                        self.SNVs[self.target_name][SNV_name] = {
+                            'position': target_p,
+                            'strand': '+',
+                            'base': target_b,
+                            'alternative_base': edit_b,
+                        }
+
+                        for pegRNA_strand, mapping in self.edit_coords_to_pegRNA_coords.items():
+                            if edit_p in mapping:
+                                pegRNA_p = mapping[edit_p]
+                                pegRNA_b = self.pegRNAs_by_strand[pegRNA_strand].components['full_sequence'][pegRNA_p]
+
+                                target_b_effective = target_b if pegRNA_strand == '-' else utilities.reverse_complement(target_b)
+
+                                opposite_strand = '-' if pegRNA_strand == '+' else '+'
+
+                                self.SNVs[self.pegRNAs_by_strand[pegRNA_strand].name][SNV_name] = {
+                                    'position': pegRNA_p,
+                                    'strand': opposite_strand,
+                                    'base': pegRNA_b,
+                                    'alternative_base': target_b_effective,
+                                }
+
+            print(self.SNVs)
+
+            # Insertions are gaps between consecutive edit subsequences. If the
+            # first subsequence doesn't start at 0, the edit begins with an insertion.
+
+            if edit_subsequences[0][0] != 0:
+                insertion = {
+                    'start_in_edit': 0,
+                    'end_in_edit': edit_subsequences[0][0] - 1,
+                    'starts_after_in_downstream': -1,
+                    'ends_before_in_downstream': 0,
+                }
+                self.insertions.append(insertion)
+                
+            for (_, left_edit_end), (right_edit_start, _), (_, left_WT_end), (right_WT_start, _) in zip(edit_subsequences, edit_subsequences[1:], WT_subsequences, WT_subsequences[1:]):
+                if left_edit_end != right_edit_start:
+                    insertion = {
+                        'start_in_edit': left_edit_end,
+                        'end_in_edit': right_edit_start - 1,
+                        'starts_after_in_WT': left_WT_end - 1,
+                        'ends_before_in_WT': right_WT_start,
+                    }
+                    self.insertions.append(insertion)
+
+            ## Deletions are gaps between consecutive target subsequences. If the
+            ## first subsequence doesn't start at 0, sequence immediately after the
+            ## nick is deleted.
+
+            #if target_subsequences[0][0] != 0:
+            #    deletions.append((0, target_subsequences[0][0] - 1))
+            #        
+            #for (_, left_target_end), (right_target_start, _) in zip(target_subsequences, target_subsequences[1:]):
+            #    if left_target_end != right_target_start:
+            #        deletions.append((left_target_end, right_target_start - 1))
+                
+
+def infer_twin_pegRNA_features(pegRNAs,
                                target_name,
                                existing_features,
                                reference_sequences,
@@ -743,8 +1165,10 @@ def infer_twin_pegRNA_features(pegRNA_names,
 
     target_seq = reference_sequences[target_name]
 
-    PBS_names_by_side = PBS_names_by_side_of_target(pegRNA_names, target_name, existing_features)
-    pegRNA_names_by_side = pegRNA_names_by_side_of_target(pegRNA_names, target_name, existing_features)
+    PBS_names_by_side = get_PBS_names_by_side_of_target(pegRNAs)
+    pegRNA_names_by_side = get_pegRNA_names_by_side_of_target(pegRNAs)
+
+    pegRNA_names = [pegRNA_.name for pegRNA_ in pegRNAs]
 
     pegRNA_seqs = {side: reference_sequences[pegRNA_names_by_side[side]] for side in [5, 3]}
 

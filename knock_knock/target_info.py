@@ -412,6 +412,13 @@ class TargetInfo:
             return self.pegRNAs[0]
 
     @memoized_property
+    def pegRNA_pair(self):
+        if len(self.pegRNAs) != 2:
+            return None
+        else:
+            return knock_knock.pegRNAs.pegRNA_pair(self.pegRNAs)
+
+    @memoized_property
     def features(self):
         fasta_records, gff_features = self.fasta_records_and_gff_features
 
@@ -420,14 +427,8 @@ class TargetInfo:
         for pegRNA in self.pegRNAs:
             features.update(pegRNA.features)
 
-        if len(self.pegRNA_names) == 2:
-            results = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
-                                                                        self.target,
-                                                                        features,
-                                                                        self.reference_sequences,
-                                                                    )
-
-            features.update(results['new_features'])
+        if self.pegRNA_pair is not None:
+            features.update(self.pegRNA_pair.features)
         
         features.update(self.integrase_sites)
 
@@ -1681,13 +1682,10 @@ class TargetInfo:
 
     @memoized_property
     def PBS_names_by_side_of_target(self):
-        if len(self.pegRNA_names) == 0:
+        if len(self.pegRNAs) == 0:
             by_side = {}
         else:
-            by_side = knock_knock.pegRNAs.PBS_names_by_side_of_target(self.pegRNA_names,
-                                                                      self.target,
-                                                                      self.features,
-                                                                     )
+            by_side = knock_knock.pegRNAs.get_PBS_names_by_side_of_target(self.pegRNAs)
 
         return by_side
 
@@ -1755,7 +1753,7 @@ class TargetInfo:
             deletion = self.pegRNAs[0].deletion
 
         elif len(self.pegRNA_names) == 2:
-            results = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
+            results = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNAs,
                                                                      self.target,
                                                                      self.features,
                                                                      self.reference_sequences,
@@ -1769,7 +1767,7 @@ class TargetInfo:
     @memoized_property
     def is_prime_del(self):
         if len(self.pegRNA_names) == 2:
-            results = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
+            results = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNAs,
                                                                      self.target,
                                                                      self.features,
                                                                      self.reference_sequences,
@@ -1813,7 +1811,7 @@ class TargetInfo:
             SNVs = self.pegRNAs[0].SNVs
 
         elif len(self.pegRNA_names) == 2:
-            results = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
+            results = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNAs,
                                                                      self.target,
                                                                      self.features,
                                                                      self.reference_sequences,
