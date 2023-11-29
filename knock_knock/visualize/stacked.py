@@ -544,8 +544,7 @@ class StackedDiagrams:
 
         bottom, top = self.get_bottom_and_top(y)
 
-        # TODO: remove use of fingerprints here
-        SNP_ps = sorted(p for (s, p), b in ti.fingerprints[ti.target])
+        SNP_ps = sorted(SNV['position'] for SNV_name, SNV in ti.pegRNA_SNVs[ti.target].items())
 
         p_to_i = SNP_ps.index
         i_to_p = dict(enumerate(SNP_ps))

@@ -389,10 +389,16 @@ class ExperimentGroup:
                                         include_multiple_indels=False,
                                         min_reads=None,
                                         show_log_scale=False,
+                                        unique_colors=False,
                                        ):
         ti = self.target_info
         if ti.primary_protospacer is None:
             return
+
+        if unique_colors:
+            colors = {condition: f'C{i}' for i, condition in enumerate(self.full_conditions)}
+        else:
+            colors = self.condition_colors()
 
         if conditions is None:
             conditions = self.full_conditions
@@ -402,11 +408,17 @@ class ExperimentGroup:
 
         fs = self.outcome_fractions[conditions]
 
-        deletions = fs.xs('deletion', drop_level=False).groupby('details').sum()
-        deletions.index = pd.MultiIndex.from_tuples([('deletion', 'collapsed', details) for details in deletions.index])
+        if 'deletion' in fs.index.levels[0]:
+            deletions = fs.xs('deletion', drop_level=False).groupby('details').sum()
+            deletions.index = pd.MultiIndex.from_tuples([('deletion', 'collapsed', details) for details in deletions.index])
+        else:
+            deletions = None
 
-        insertions = fs.xs('insertion', drop_level=False).groupby('details').sum()
-        insertions.index = pd.MultiIndex.from_tuples([('insertion', 'collapsed', details) for details in insertions.index])
+        if 'insertion' in fs.index.levels[0]:
+            insertions = fs.xs('insertion', drop_level=False).groupby('details').sum()
+            insertions.index = pd.MultiIndex.from_tuples([('insertion', 'collapsed', details) for details in insertions.index])
+        else:
+            insertions = None
 
         multiple_indels = fs.xs('multiple indels', level=1, drop_level=False)
 
@@ -416,13 +428,13 @@ class ExperimentGroup:
 
         to_concat = []
 
-        if include_simple_deletions:
+        if include_simple_deletions and deletions is not None:
             to_concat.append(deletions)
 
         if include_edit_plus_deletions:
             to_concat.append(fs.loc[edit_plus_deletions])
 
-        if include_insertions:
+        if include_insertions and insertions is not None:
             to_concat.append(insertions)
 
         fs = pd.concat(to_concat)
@@ -475,7 +487,7 @@ class ExperimentGroup:
                 grid.plot_on_ax(ax,
                                 fs[condition],
                                 transform=transform,
-                                color=self.condition_colors()[condition],
+                                color=colors.get(condition, 'black'),
                                 line_alpha=0.75,
                                 linewidth=1.5,
                                 markersize=7,
@@ -523,7 +535,7 @@ class ExperimentGroup:
                                       series * 100,
                                       markersize=3 if quantity != 'fraction_removed' else 0,
                                       linewidth=1 if quantity != 'fraction_removed' else 2,
-                                      color=self.condition_colors()[condition],
+                                      color=colors.get(condition, 'black'),
                                      )
 
             for cut_after in ti.cut_afters.values():

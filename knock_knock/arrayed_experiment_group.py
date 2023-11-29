@@ -433,7 +433,9 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
         for full_condition in self.full_conditions:
             condition = full_condition[:-1]
-            if len(condition) == 1:
+            if len(condition) == 0:
+                continue
+            elif len(condition) == 1:
                 condition = condition[0]
                 
             condition_colors[full_condition] = condition_colors[condition]
