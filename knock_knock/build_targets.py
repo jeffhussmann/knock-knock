@@ -439,8 +439,8 @@ class TargetInfoBuilder:
             for name, components in sgRNAs_with_extensions:
                 try:
                     pegRNA = pegRNAs.pegRNA(name, components, self.target_name, target_sequence)
-                except:
-                    bad_pegRNAs.append(name)
+                except Exception as err:
+                    bad_pegRNAs.append((name, str(err)))
                     continue
 
                 pegRNA_SeqFeatures = [
@@ -467,7 +467,13 @@ class TargetInfoBuilder:
                 gb_records[name] = pegRNA_record
 
             if len(bad_pegRNAs) > 0:
-                raise ValueError(f'Can\'t identify PBS for pegRNAs {bad_pegRNAs}')
+                full_error_message = ['Error identifying valid protospacer/PBS for pegRNA(s):']
+                for name, error_message in bad_pegRNAs:
+                    full_error_message.append(f'{name}: {error_message}')
+
+                full_error_message = '\n'.join(full_error_message)
+
+                raise ValueError(full_error_message)
             
         if has_nh_donor:
             nh_donor_Seq = Seq(nh_donor_seq)

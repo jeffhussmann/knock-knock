@@ -184,15 +184,15 @@ class pegRNA:
         if len(valid_alignments) == 0:
             seed_sequence = self.target_bytes[seed_start:seed_start + seed_length]
             starts = [al.reference_start for al in valid_alignments]
-            warning_message = [
+            error_message = [
                 f'{self.name}: {len(valid_alignments)} valid PBS alignment(s) for {seed_sequence}:'
             ]
             for al in alignments:
-                warning_message.append(
+                error_message.append(
                     f'\tlength: {al.query_alignment_length}, start in pegRNA: {al.reference_start} {sam.get_strand(al)}, start in target: {al.query_alignment_start}'
                 )
-            warning_message = '\n'.join(warning_message)
-            logging.warning(warning_message)
+            error_message = '\n'.join(error_message)
+            raise ValueError(error_message)
             
         PBS_alignment = valid_alignments[0]
 
@@ -246,14 +246,14 @@ class pegRNA:
 
         target_PBS_start, target_PBS_end = sam.query_interval(PBS_alignment)
         target_PBS_feature = gff.Feature.from_fields(seqname=self.target_name,
-                                                    start=target_PBS_start,
-                                                    end=target_PBS_end,
-                                                    strand=strand,
-                                                    feature='misc', 
-                                                    attribute_string=gff.make_attribute_string({
-                                                        'ID': self.PBS_name,
-                                                        'color': default_feature_colors['PBS'],
-                                                    }),
+                                                     start=target_PBS_start,
+                                                     end=target_PBS_end,
+                                                     strand=strand,
+                                                     feature='misc', 
+                                                     attribute_string=gff.make_attribute_string({
+                                                         'ID': self.PBS_name,
+                                                         'color': default_feature_colors['PBS'],
+                                                     }),
                                                     )
 
         self.features.update({
