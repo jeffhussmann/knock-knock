@@ -25,7 +25,6 @@ class PacbioExperiment(Experiment):
 
         for fn in self.fns['CCS_fastqs']:
             if not fn.exists():
-                #raise ValueError(f'{self.group}: {self.name} specifies non-existent {fn}')
                 pass
 
         self.read_types = {'CCS'}

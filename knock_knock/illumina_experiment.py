@@ -49,7 +49,6 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
                 for fn in self.fns[k]:
                     if not fn.exists():
                         pass
-                        #logging.warning(f'{self.group} {self.sample_name} specifies non-existent {fn}')
 
         self.paired_end = 'R2' in self.description
 
@@ -105,7 +104,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
         if self.paired_end:
             combined_read_length = self.R1_read_length + self.R2_read_length
             if combined_read_length < self.target_info.amplicon_length:
-                logging.warning(f'Warning: {self.group} {self.name} combined read length ({combined_read_length}) less than expected amplicon length ({self.target_info.amplicon_length:,}).')
+                logging.warning(f'Warning: {self.batch_name} {self.sample_name} combined read length ({combined_read_length}) less than expected amplicon length ({self.target_info.amplicon_length:,}).')
 
     @memoized_property
     def max_relevant_length(self):
@@ -318,7 +317,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
         description = 'Stitching read pairs'
         for R1, R2 in self.progress(self.read_pairs, desc=description):
             if R1.name != R2.name:
-                print(f'Error: read pairs are out of sync in {self.group} {self.name}.')
+                print(f'Error: read pairs are out of sync in {self.batch_name} {self.sample_name}.')
                 R1_fns = ','.join(str(fn) for fn in self.fns['R1'])
                 R2_fns = ','.join(str(fn) for fn in self.fns['R2'])
                 print(f'R1 file name: {R1_fns}')
