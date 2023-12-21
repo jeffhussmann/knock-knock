@@ -921,8 +921,6 @@ class TargetInfo:
         if self.donor is not None and len(self.pegRNA_names) > 0:
             # integrase
             donor = None
-        elif self.donor is None and len(self.pegRNA_names) == 1:
-            donor = self.pegRNA_names[0]
         else:
             donor = self.donor
 
