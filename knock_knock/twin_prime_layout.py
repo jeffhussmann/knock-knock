@@ -626,7 +626,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                     else:
                         self.category = 'wild type'
 
-                        if len(self.non_pegRNA_SNVs) == 0 and len(uninteresting_indels) == 0:
+                        if len(self.non_pegRNA_mismatches) == 0 and len(uninteresting_indels) == 0:
                             self.subcategory = 'clean'
                             self.outcome = Outcome('n/a')
 
@@ -648,7 +648,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
                         else:
                             self.subcategory = 'mismatches'
-                            self.outcome = MismatchOutcome(self.non_pegRNA_SNVs)
+                            self.outcome = MismatchOutcome(self.non_pegRNA_mismatches)
 
                         self.relevant_alignments = [target_alignment]
 
@@ -662,7 +662,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             elif len(interesting_indels) == 1:
                 indel = interesting_indels[0]
 
-                if len(self.non_pegRNA_SNVs) > 0:
+                if len(self.non_pegRNA_mismatches) > 0:
                     self.subcategory = 'mismatches'
                 else:
                     self.subcategory = 'clean'

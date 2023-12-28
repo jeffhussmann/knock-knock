@@ -46,6 +46,15 @@ class Categorizer:
 
         self.categorized = False
 
+    @memoized_property
+    def Q30_fractions(self):
+        at_least_30 = np.array(self.qual) >= 30
+        fracs = {
+            'all': np.mean(at_least_30),
+            'second_half': np.mean(at_least_30[len(at_least_30) // 2:]),
+        }
+        return fracs
+
     @property
     def primary_ref_names(self):
         return set(self.target_info.reference_sequences)

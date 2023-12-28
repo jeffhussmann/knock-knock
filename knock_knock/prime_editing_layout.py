@@ -1086,17 +1086,7 @@ class Layout(layout.Categorizer):
         edge_al = self.target_edge_alignments['left']
         return edge_al is not None and self.overlaps_primer(edge_al, 'left')
 
-    @memoized_property
-    def Q30_fractions(self):
-        at_least_30 = np.array(self.qual) >= 30
-        fracs = {
-            'all': np.mean(at_least_30),
-            'second_half': np.mean(at_least_30[len(at_least_30) // 2:]),
-        }
-        return fracs
-
-    @memoized_property
-    def SNVs_summary(self):
+    def summarize_mismatches_in_alignments(self, relevant_alignments):
         ''' Record bases seen at programmed SNV positions relative to target +. '''
         SNVs = self.target_info.pegRNA_SNVs
 
@@ -1110,19 +1100,9 @@ class Layout(layout.Categorizer):
 
         read_bases_at_SNV_locii = {name: [] for name in position_to_SNV_name.values()}
 
-        non_pegRNA_SNVs = []
+        non_pegRNA_mismatches = []
 
-        # Don't want to consider probably spurious alignments to parts of the query that
-        # should have been trimmed. 
-
-        relevant_als  = [
-            al for al in self.target_alignments
-            if (interval.get_covered(al) & self.not_covered_by_primers).total_length >= 10
-        ]
-
-        relevant_als.extend(self.pegRNA_extension_als_list)
-
-        for al in relevant_als:
+        for al in relevant_alignments:
             is_pegRNA_al = al.reference_name in self.target_info.pegRNA_names
 
             ref_seq = self.target_info.reference_sequences[al.reference_name]
@@ -1159,16 +1139,30 @@ class Layout(layout.Categorizer):
 
                     if not matches_pegRNA:
                         SNV = knock_knock.target_info.SNV(ref_i, read_b)
-                        non_pegRNA_SNVs.append(SNV)
+                        non_pegRNA_mismatches.append(SNV)
 
-        non_pegRNA_SNVs = knock_knock.target_info.SNVs(non_pegRNA_SNVs)
+        non_pegRNA_mismatches = knock_knock.target_info.SNVs(non_pegRNA_mismatches)
 
-        return read_bases_at_SNV_locii, non_pegRNA_SNVs
+        return read_bases_at_SNV_locii, non_pegRNA_mismatches
 
     @memoized_property
-    def non_pegRNA_SNVs(self):
-        _, non_pegRNA_SNVs = self.SNVs_summary
-        return non_pegRNA_SNVs
+    def mismatches_summary(self):
+        # Don't want to consider probably spurious alignments to parts of the query that
+        # should have been trimmed. 
+
+        relevant_alignments  = [
+            al for al in self.target_alignments
+            if (interval.get_covered(al) & self.not_covered_by_primers).total_length >= 10
+        ]
+
+        relevant_alignments.extend(self.pegRNA_extension_als_list)
+
+        return self.summarize_mismatches_in_alignments(relevant_alignments)
+
+    @memoized_property
+    def non_pegRNA_mismatches(self):
+        _, non_pegRNA_mismatches = self.mismatches_summary
+        return non_pegRNA_mismatches
 
     def specific_to_pegRNA(self, al):
         ''' Does al contain a pegRNA-specific SNV? '''
@@ -1200,7 +1194,7 @@ class Layout(layout.Categorizer):
         if SNVs is None:
             string_summary = ''
         else:
-            pegRNA_SNV_locii, _ = self.SNVs_summary
+            pegRNA_SNV_locii, _ = self.mismatches_summary
 
             target = self.target_info.target
             
@@ -1252,10 +1246,6 @@ class Layout(layout.Categorizer):
     def pegRNAs_that_explain_all_SNVs(self):
         _, pegRNAs_that_explain_all_SNVs, _ = self.pegRNA_SNV_locii_summary
         return pegRNAs_that_explain_all_SNVs
-
-    @memoized_property
-    def has_any_SNV(self):
-        return self.has_pegRNA_SNV or (len(self.non_pegRNA_SNVs) > 0)
 
     @memoized_property
     def pegRNA_SNV_string(self):
@@ -1729,7 +1719,7 @@ class Layout(layout.Categorizer):
                 self.category = 'partial edit'
                 self.subcategory = 'partial incorporation'
 
-    def register_simple_indels(self):
+    def register_indels_in_original_alignment(self):
         relevant_indels, other_indels = self.indels_in_original_target_covering_alignment
 
         if len(relevant_indels) == 1:
@@ -1764,7 +1754,7 @@ class Layout(layout.Categorizer):
                         self.outcome = InsertionOutcome(indel)
                         self.relevant_alignments = [self.original_target_covering_alignment] + self.non_protospacer_pegRNA_alignments
 
-                    if len(self.non_pegRNA_SNVs) > 0:
+                    if len(self.mismatches_in_original_target_covering_alignment) > 0:
                         self.subcategory = 'mismatches'
                     else:
                         self.subcategory = 'clean'
@@ -2226,14 +2216,14 @@ class Layout(layout.Categorizer):
     def categorize(self):
         self.outcome = None
 
-        if self.no_alignments_detected:
+        if self.nonspecific_amplification:
+            self.register_nonspecific_amplification()
+
+        elif self.no_alignments_detected:
             self.category = 'uncategorized'
             self.subcategory = 'no alignments detected'
             self.details = 'n/a'
             self.outcome = None
-
-        elif self.nonspecific_amplification:
-            self.register_nonspecific_amplification()
 
         elif self.aligns_to_phiX:
             self.category = 'phiX'
@@ -2256,7 +2246,7 @@ class Layout(layout.Categorizer):
                     else:
                         self.category = 'wild type'
 
-                        if len(self.non_pegRNA_SNVs) == 0 and len(uninteresting_indels) == 0:
+                        if len(self.non_pegRNA_mismatches) == 0 and len(uninteresting_indels) == 0:
                             self.subcategory = 'clean'
                             self.outcome = Outcome('n/a')
 
@@ -2278,7 +2268,7 @@ class Layout(layout.Categorizer):
 
                         else:
                             self.subcategory = 'mismatches'
-                            self.outcome = MismatchOutcome(self.non_pegRNA_SNVs)
+                            self.outcome = MismatchOutcome(self.non_pegRNA_mismatches)
 
                         self.relevant_alignments = [target_alignment]
 
@@ -2308,8 +2298,8 @@ class Layout(layout.Categorizer):
                         self.details = 'n/a'
                         self.relevant_alignments = self.uncategorized_relevant_alignments
 
-                else: # no pegRNA SNVs
-                    if len(self.non_pegRNA_SNVs) > 0:
+                else: # no pegRNA mismatches
+                    if len(self.non_pegRNA_mismatches) > 0:
                         self.subcategory = 'mismatches'
                     else:
                         self.subcategory = 'clean'
@@ -2401,7 +2391,7 @@ class Layout(layout.Categorizer):
             self.category = 'wild type'
             # Assume clean would have been caught before.
             self.subcategory = 'mismatches'
-            self.details = 'n/a'
+            self.outcome = MismatchOutcome(self.mismatches_in_original_target_covering_alignment)
             self.relevant_alignments = [self.original_target_covering_alignment]
 
         elif self.duplication is not None:
@@ -2454,7 +2444,7 @@ class Layout(layout.Categorizer):
             self.register_edit_plus_indel('deletion', [deletion])
 
         elif self.original_target_alignment_has_only_relevant_indels:
-            self.register_simple_indels()
+            self.register_indels_in_original_alignment()
 
         elif self.genomic_insertion is not None:
             self.register_genomic_insertion()
@@ -2731,6 +2721,22 @@ class Layout(layout.Categorizer):
                     other_indels.append(indel)
 
         return relevant_indels, other_indels
+
+    @memoized_property
+    def mismatches_in_original_target_covering_alignment(self):
+        # Don't want to consider probably spurious alignments to parts of the query that
+        # should have been trimmed. 
+
+        relevant_alignments  = [self.original_target_covering_alignment] + self.pegRNA_extension_als_list
+
+        _, non_pegRNA_mismatches = self.summarize_mismatches_in_alignments(relevant_alignments)
+
+        return non_pegRNA_mismatches
+
+    @memoized_property
+    def non_pegRNA_mismatches(self):
+        _, non_pegRNA_mismatches = self.mismatches_summary
+        return non_pegRNA_mismatches
 
     @memoized_property
     def original_target_alignment_has_no_indels(self):
