@@ -274,11 +274,10 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
             trimmed = read[start:end]
 
             if len(trimmed) == 0:
-                outcome = self.final_Outcome(trimmed.name, len(trimmed), 'nonspecific amplification', 'primer dimer', 'n/a')
+                outcome = self.final_Outcome(trimmed.name, len(trimmed), 0, 'nonspecific amplification', 'primer dimer', 'n/a')
                 too_short_outcomes.append(outcome)
             else:
                 trimmed_reads.append(trimmed)
-
 
         with gzip.open(fns['trimmed'], 'wt', compresslevel=1) as trimmed_fh:
             for read in sorted(trimmed_reads, key=lambda read: read.name):

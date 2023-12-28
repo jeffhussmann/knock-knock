@@ -708,6 +708,7 @@ class Experiment:
             for name, als in self.progress(alignment_groups, desc=description):
                 if isinstance(als, list):
                     seq = als[0].get_forward_sequence()
+                    Q30_fraction = np.mean(np.array(als[0].query_qualities) >=30)
 
                     # Special handling of empty sequence.
                     if seq is None:
@@ -715,7 +716,6 @@ class Experiment:
 
                     if seq in self.common_sequence_to_outcome:
                         layout = self.common_sequence_to_outcome[seq]
-                        layout.query_name = name
 
                     else:
                         layout = self.categorizer(als,
@@ -749,7 +749,7 @@ class Experiment:
                 else:
                     raise ValueError
 
-                outcome = self.final_Outcome.from_layout(layout)
+                outcome = self.final_Outcome.from_layout(layout, query_name=name, Q30_fraction=Q30_fraction)
                 outcome_fh.write(f'{outcome}\n')
 
         # To make plotting easier, for each outcome, make a file listing all of
