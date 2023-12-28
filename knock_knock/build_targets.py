@@ -285,9 +285,7 @@ class TargetInfoBuilder:
         else:
             has_nh_donor = True
 
-        primer_alignments = self.align_primers()
-
-        left_al, right_al = self.identify_concordant_primer_alignment_pair(primer_alignments)
+        left_al, right_al = self.align_primers()
 
         ref_name = left_al.reference_name
         amplicon_start = left_al.reference_start
@@ -421,11 +419,11 @@ class TargetInfoBuilder:
                 donor_features = []
 
             donor_record = SeqRecord(donor_Seq,
-                                    name=donor_name,
-                                    features=donor_features,
-                                    annotations={
-                                        'molecule_type': 'DNA',
-                                    },
+                                     name=donor_name,
+                                     features=donor_features,
+                                     annotations={
+                                         'molecule_type': 'DNA',
+                                     },
                                     )
 
             gb_records[donor_name] = donor_record
@@ -596,13 +594,20 @@ class TargetInfoBuilder:
 
     def align_primers(self):
         if self.genome in self.index_locations:
-            primer_alignments = self.align_primers_to_reference_genome()
+            try:
+                primer_alignments = self.align_primers_to_reference_genome_with_STAR()
+                left_al, right_al = self.identify_concordant_primer_alignment_pair(primer_alignments)
+            except ValueError:
+                # Try to fall back to manual.
+                primer_alignments = self.align_primers_to_reference_genome_manually()
+                left_al, right_al = self.identify_concordant_primer_alignment_pair(primer_alignments)
         else:
             primer_alignments = self.align_primers_to_extra_sequence()
+            left_al, right_al = self.identify_concordant_primer_alignment_pair(primer_alignments)
 
-        return primer_alignments
+        return left_al, right_al
 
-    def align_primers_to_reference_genome(self):
+    def align_primers_to_reference_genome_with_STAR(self):
         if self.genome not in self.index_locations:
             raise ValueError(f'Can\'t locate indices for {self.genome}')
 
@@ -641,6 +646,16 @@ class TargetInfoBuilder:
             raise ValueError(f'At least one primer from pair {self.primers_name} could not be located in {self.genome}')
 
         shutil.rmtree(primers_dir)
+
+        return primer_alignments
+
+    def align_primers_to_reference_genome_manually(self):
+        if self.genome not in self.index_locations:
+            raise ValueError(f'Can\'t locate indices for {self.genome}')
+
+        genome_dictionary = genomes.load_entire_genome(self.index_locations[self.genome]['fasta'])
+
+        primer_alignments = sw.align_primers_to_genome(self.primers, genome_dictionary, suffix_length=18)
 
         return primer_alignments
 
