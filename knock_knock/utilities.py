@@ -1,3 +1,5 @@
+import datetime
+import logging
 import pandas as pd
 
 def read_and_sanitize_csv(csv_fn, index_col=None):
@@ -27,3 +29,21 @@ def read_and_sanitize_csv(csv_fn, index_col=None):
     possibly_series = df.squeeze(axis='columns')
 
     return possibly_series
+
+def configure_standard_logger(results_dir):
+    log_fn = results_dir / f'log_{datetime.datetime.now():%y%m%d-%H%M%S}.out'
+
+    logger = logging.getLogger(__name__)
+    logger.propagate = False
+    logger.setLevel(logging.DEBUG)
+    file_handler = logging.FileHandler(log_fn)
+    formatter = logging.Formatter(fmt='%(asctime)s: %(message)s',
+                                    datefmt='%y-%m-%d %H:%M:%S',
+                                    )
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(logging.DEBUG)
+    logger.addHandler(file_handler)
+
+    print(f'Logging in {log_fn}')
+
+    return logger, file_handler
