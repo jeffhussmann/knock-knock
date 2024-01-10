@@ -12,7 +12,12 @@ def read_and_sanitize_csv(csv_fn, index_col=None):
             - squeezes to a Series if 1D
     '''
 
-    df = pd.read_csv(csv_fn, dtype=str, comment='#')
+    try:
+        df = pd.read_csv(csv_fn, dtype=str, comment='#')
+    except UnicodeDecodeError:
+        # It is likely that an excel file has been provided
+        # instead of a csv.
+        df = pd.read_excel(csv_fn, dtype=str, comment='#')
 
     df.columns = df.columns.str.strip()
 
