@@ -713,7 +713,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             self.relevant_alignments = self.target_edge_alignments_list + self.flipped_pegRNA_als['left'] + self.flipped_pegRNA_als['right']
 
         elif self.original_target_alignment_has_only_relevant_indels:
-            self.register_simple_indels()
+            self.register_indels_in_original_alignment()
 
         elif self.nonredundant_extra_alignments:
             self.register_incorporation_of_extra_sequence()
