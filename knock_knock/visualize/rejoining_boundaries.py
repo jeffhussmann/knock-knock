@@ -142,6 +142,7 @@ def plot_single_flap_extension_chain_edges(target_info,
                                            marker_size=2,
                                            line_width=1,
                                            pegRNA_from_right=False,
+                                           draw_sequence=False,
                                           ):
     ti = target_info
     features = ti.features
@@ -203,15 +204,17 @@ def plot_single_flap_extension_chain_edges(target_info,
                clip_on=False,
               )
 
-    for x in range(int(np.ceil(start)), int(np.ceil(end))):
-        p = PBS_end - x
-        ax.annotate(ti.reference_sequences[pegRNA_name][p],
-                    xy=(x - 0.5, y_start),
-                    xycoords=('data', 'axes fraction'),
-                    annotation_clip=False,
-                    size=8,
-                    family='monospace',
-                   )
+    if draw_sequence:
+        for x in range(int(np.ceil(start)), int(np.ceil(end))):
+            p = PBS_end - x
+            if 0 <= p < len(ti.reference_sequences[pegRNA_name]):
+                ax.annotate(ti.reference_sequences[pegRNA_name][p],
+                            xy=(x - 0.5, y_start),
+                            xycoords=('data', 'axes fraction'),
+                            annotation_clip=False,
+                            size=8,
+                            family='monospace',
+                           )
 
     for feature_name in ['PBS', 'RTT', 'scaffold', 'protospacer']:
         feature = ti.features[pegRNA_name, feature_name]

@@ -558,25 +558,46 @@ class ExperimentGroup:
     def make_single_flap_extension_chain_edge_figure(self,
                                                      palette='inferno',
                                                      conditions=None,
+                                                     aggregate_replicates=True,
                                                      **plot_kwargs,
                                                     ):
-        if conditions is None:
-            conditions = self.conditions
 
-        exp_sets = {}
+        if aggregate_replicates:
+            if conditions is None:
+                conditions = self.conditions
 
-        for condition in conditions:
-            sample_names = self.condition_to_sample_names[condition]
-            
-            boundaries = knock_knock.visualize.rejoining_boundaries.BoundaryProperties()
-            for sample_name in sample_names:
-                exp = self.sample_name_to_experiment(sample_name)
+            exp_sets = {}
+
+            for condition in conditions:
+                sample_names = self.condition_to_sample_names[condition]
+                
+                boundaries = knock_knock.visualize.rejoining_boundaries.BoundaryProperties()
+                for sample_name in sample_names:
+                    exp = self.sample_name_to_experiment(sample_name)
+                    boundaries.count_single_flap_boundaries(exp)
+
+                exp_sets[condition] = {
+                    'color': self.condition_colors(palette=palette)[condition],
+                    'results': boundaries,
+                }
+        else:
+            if conditions is None:
+                conditions = self.full_conditions
+
+            exp_sets = {}
+
+            for condition in conditions:
+                exp = self.full_condition_to_experiment[condition]
+                
+                boundaries = knock_knock.visualize.rejoining_boundaries.BoundaryProperties()
                 boundaries.count_single_flap_boundaries(exp)
 
-            exp_sets[condition] = {
-                'color': self.condition_colors(palette=palette)[condition],
-                'results': boundaries,
-            }
+                key = f'{",".join(condition)} ({exp.sample_name})'
+
+                exp_sets[key] = {
+                    'color': self.condition_colors(palette=palette)[condition],
+                    'results': boundaries,
+                }
 
         fig, axs = knock_knock.visualize.rejoining_boundaries.plot_single_flap_extension_chain_edges(exp.target_info,
                                                                                                      exp_sets,

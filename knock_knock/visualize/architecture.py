@@ -51,6 +51,7 @@ class ReadDiagram():
                  flip_target=False,
                  read_label='sequencing read',
                  donor_below=False,
+                 target_above=False,
                  manual_refs_below=None,
                  features_on_alignments=True,
                  ax=None,
@@ -100,6 +101,7 @@ class ReadDiagram():
         self.emphasize_parismonious = emphasize_parsimonious
         self.ref_centric = ref_centric
         self.donor_below = donor_below
+        self.target_above = target_above
         self.manual_refs_below = manual_refs_below
         self.size_multiple = size_multiple
         self.draw_qualities = draw_qualities
@@ -255,7 +257,7 @@ class ReadDiagram():
                 'ref_label': 10,
                 'feature_label': 10,
                 'number': 6,
-                'sequence': 3.5 * self.size_multiple,
+                'sequence': min(3.5 * self.size_multiple, 12),
                 'title': 16,
             }
 
@@ -602,7 +604,7 @@ class ReadDiagram():
         references_below = []
 
         if self.ref_centric:
-            if ti.target in self.refs_to_draw:
+            if (not self.target_above) and ti.target in self.refs_to_draw:
                 references_below.append(ti.target)
 
             if self.donor_below and ti.donor in self.refs_to_draw:
@@ -983,7 +985,7 @@ class ReadDiagram():
                     draw_arrow = False
 
                 if draw_arrow:
-                    ax.plot(arrow_xs, arrow_ys, clip_on=False, **kwargs)
+                    ax.plot(arrow_xs, arrow_ys, **kwargs)
 
                 q_to_r = {
                     sam.true_query_position(q, alignment): r
@@ -1205,7 +1207,7 @@ class ReadDiagram():
 
             # Drawing sequences for very long (i.e. Pabcio) reads is not
             # useful, and takes a long time.
-            if len(seq_to_draw) <= 1000:
+            if len(seq_to_draw) <= 2000:
 
                 seq_kwargs = dict(family='monospace',
                                 size=self.font_sizes['sequence'],
@@ -1609,7 +1611,10 @@ class ReadDiagram():
 
         ti = self.target_info
         
-        target_y = self.min_y - self.target_and_donor_y_gap
+        if self.target_above:
+            target_y = self.max_y + self.target_and_donor_y_gap
+        else:
+            target_y = self.min_y - self.target_and_donor_y_gap
 
         if self.donor_below:
             donor_y = target_y - self.target_and_donor_y_gap

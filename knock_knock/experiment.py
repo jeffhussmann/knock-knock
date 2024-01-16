@@ -1078,11 +1078,13 @@ class Experiment:
         return expected_lengths
 
     def plot_outcome_stratified_lengths(self, **kwargs):
+        kwargs = kwargs.copy()
+        kwargs.setdefault('smooth_window', self.length_plot_smooth_window)
+
         return knock_knock.visualize.lengths.plot_outcome_stratified_lengths(self.outcome_stratified_lengths,
                                                                              self.categorizer,
                                                                              length_ranges=self.length_ranges,
                                                                              expected_lengths=self.expected_lengths,
-                                                                             smooth_window=self.length_plot_smooth_window,
                                                                              x_tick_multiple=self.x_tick_multiple,
                                                                              **kwargs,
                                                                             )
