@@ -157,22 +157,24 @@ def identify_homology_arms(donor_seq, donor_type, target_seq, cut_after, require
 
     donor_features = [
         SeqFeature(location=FeatureLocation(donor_starts[feature_name], donor_ends[feature_name], strand=donor_strand),
-                    id=feature_name,
-                    type='misc_feature',
-                    qualifiers={'label': feature_name,
-                                'ApEinfo_fwdcolor': feature_colors[feature_name],
-                               },
+                   id=feature_name,
+                   type='misc_feature',
+                   qualifiers={
+                       'label': feature_name,
+                       'ApEinfo_fwdcolor': feature_colors[feature_name],
+                   },
                   )
         for feature_name in donor_starts
     ]
 
     target_features = ([
         SeqFeature(location=FeatureLocation(target_starts[feature_name], target_ends[feature_name], strand=target_strand),
-                    id=feature_name,
-                    type='misc_feature',
-                    qualifiers={'label': feature_name,
-                                'ApEinfo_fwdcolor': feature_colors[feature_name],
-                               },
+                   id=feature_name,
+                   type='misc_feature',
+                   qualifiers={
+                       'label': feature_name,
+                       'ApEinfo_fwdcolor': feature_colors[feature_name],
+                   },
                   )
         for feature_name in target_starts
     ])
@@ -598,7 +600,7 @@ class TargetInfoBuilder:
                 primer_alignments = self.align_primers_to_reference_genome_with_STAR()
                 left_al, right_al = self.identify_concordant_primer_alignment_pair(primer_alignments)
             except ValueError:
-                # Try to fall back to manual.
+                logging.warning('Failed to find concordant primer alignments with STAR, falling back to manual search.')
                 primer_alignments = self.align_primers_to_reference_genome_manually()
                 left_al, right_al = self.identify_concordant_primer_alignment_pair(primer_alignments)
         else:

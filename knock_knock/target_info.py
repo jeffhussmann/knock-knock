@@ -236,7 +236,7 @@ class TargetInfo:
             gb_fns = [self.dir / (source + '.gb') for source in self.sources]
 
             for fn in gb_fns:
-                if not fn.exists():
+                if not fn.exists() and not fn.with_suffix('.fasta').exists():
                     logging.warning(f'{self.name}: {fn} does not exist')
 
             gb_fns = [fn for fn in gb_fns if fn.exists()]
@@ -2176,7 +2176,7 @@ def parse_benchling_genbank(gb_record):
             attribute[k] = v
 
         if 'label' in attribute:
-            attribute['ID'] = attribute.pop('label')
+            attribute['ID'] = attribute['label']
 
         if 'ApEinfo_fwdcolor' in attribute:
             attribute['color'] = attribute.pop('ApEinfo_fwdcolor')

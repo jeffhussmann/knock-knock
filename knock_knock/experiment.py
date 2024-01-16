@@ -229,7 +229,8 @@ class Experiment:
 
     @memoized_property
     def target_name(self):
-        return self.description['target_info']
+        # Cast to str because yaml parsing produce a non-string.
+        return str(self.description['target_info'])
 
     def check_combined_read_length(self):
         pass

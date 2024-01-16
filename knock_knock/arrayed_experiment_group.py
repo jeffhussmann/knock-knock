@@ -511,6 +511,10 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         return self.outcome_counts.sum()
 
     @memoized_property
+    def total_reads(self):
+        return self.outcome_counts_with_bad.sum()
+
+    @memoized_property
     def outcome_fractions(self):
         fractions = self.outcome_counts / self.total_valid_reads
         order = fractions[self.baseline_condition].mean(axis='columns').sort_values(ascending=False).index
@@ -1018,10 +1022,10 @@ def make_default_target_info_name(amplicon_primers, genome, extra_sequences):
 
     return target_info_name
 
-def make_targets(base_dir, df):
+def make_targets(base_dir, sample_sheet_df):
     targets = {}
 
-    grouped = df.groupby(['amplicon_primers', 'genome', 'extra_sequences'])
+    grouped = sample_sheet_df.groupby(['amplicon_primers', 'genome', 'extra_sequences'])
 
     for (amplicon_primers, genome, extra_sequences), rows in grouped:
         all_sgRNAs = set()
