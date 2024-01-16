@@ -60,6 +60,15 @@ class Categorizer:
         return set(self.target_info.reference_sequences)
 
     @memoized_property
+    def primary_alignments(self):
+        p_als = [
+            al for al in self.alignments
+            if al.reference_name in self.primary_ref_names
+        ]
+        
+        return p_als
+
+    @memoized_property
     def whole_read(self):
         return interval.Interval(0, len(self.seq) - 1)
 

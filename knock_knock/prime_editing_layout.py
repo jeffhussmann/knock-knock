@@ -168,15 +168,6 @@ class Layout(layout.Categorizer):
         return als
 
     @memoized_property
-    def primary_alignments(self):
-        p_als = [
-            al for al in self.alignments
-            if al.reference_name in self.primary_ref_names
-        ]
-        
-        return p_als
-
-    @memoized_property
     def extra_alignments(self):
         # Any alignments not to the target or pegRNAs.
 
