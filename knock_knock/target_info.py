@@ -44,6 +44,7 @@ class TargetInfo:
                  manifest=None,
                  manual_sgRNA_components=None,
                  max_programmed_deletion_length=None,
+                 additional_attributes=None,
                 ):
         self.name = name
 
@@ -111,6 +112,10 @@ class TargetInfo:
         self.max_programmed_deletion_length = max_programmed_deletion_length
 
         self.min_relevant_length = min_relevant_length
+
+        if additional_attributes is not None:
+            for key, value in additional_attributes.items():
+                setattr(self, key, value)
 
     def __repr__(self):
         if len(self.pegRNA_names) > 0:
