@@ -13,10 +13,8 @@ from pathlib import Path
 import yaml
 import tqdm
 
-import knock_knock.arrayed_experiment_group
-import knock_knock.build_targets
-import knock_knock.experiment
-import knock_knock.table
+import knock_knock
+import knock_knock.utilities
 
 def check_blastn(require_precise_version=False):
     try:
@@ -29,6 +27,8 @@ def check_blastn(require_precise_version=False):
         sys.exit(1)
 
 def parallel(args):
+    import knock_knock.experiment
+
     check_blastn()
 
     if args.group:
@@ -56,6 +56,8 @@ def parallel(args):
         process_stage(stage)
 
 def process(args):
+    import knock_knock.experiment
+
     check_blastn()
 
     stages = args.stages.split(',')
@@ -69,7 +71,38 @@ def process(args):
                                                         print_timestamps=True,
                                                        )
 
+def process_arrayed(args):
+    import knock_knock.arrayed_experiment_group
+
+    batch = knock_knock.arrayed_experiment_group.get_batch(args.project_directory, args.batch_name)
+    group = batch.groups[args.group_name]
+    group.process(num_processes=args.max_procs, verbose=not args.silent, generate_figures=args.generate_figures)
+
+def parallel_arrayed(args):
+    import knock_knock.arrayed_experiment_group
+
+    batch = knock_knock.arrayed_experiment_group.get_batch(args.project_directory, args.batch_name)
+
+    parallel_command = [
+        'parallel',
+        '--bar',
+        '--max-procs', str(args.max_procs),
+        'knock-knock', 'arrayed', 'process',
+        args.project_directory,
+        args.batch_name,
+        '--max_procs', str(args.max_procs_per_group),
+        '--generate_figures' if args.generate_figures else '',
+        '--silent',
+        ':::',
+    ] + sorted(batch.groups)
+
+    subprocess.run(parallel_command)
+
 def make_tables(args):
+    import knock_knock.arrayed_experiment_group
+    import knock_knock.experiment
+    import knock_knock.table
+
     if args.batches:
         batches_to_include = args.batches.split(',')
     else:
@@ -134,17 +167,25 @@ def make_tables(args):
 
 
 def build_targets(args):
+    import knock_knock.build_targets
+
     knock_knock.build_targets.build_target_infos_from_csv(args.project_directory,
                                                           defer_HA_identification=args.defer_HA_identification,
                                                          )
 
 def build_manual_target(args):
+    import knock_knock.build_targets
+
     knock_knock.build_targets.build_manual_target(args.project_directory, args.target_name)
 
 def design_primers(args):
+    import knock_knock.build_targets
+
     knock_knock.build_targets.design_amplicon_primers_from_csv(args.project_directory, args.genome)
 
 def build_indices(args):
+    import knock_knock.build_targets
+
     knock_knock.build_targets.download_genome_and_build_indices(args.project_directory,
                                                                 args.genome_name,
                                                                 args.num_threads
@@ -177,11 +218,6 @@ def print_citation(args):
     print(textwrap.dedent(citation))
 
 if __name__ == '__main__':
-    logging.basicConfig(format='%(asctime)s: %(message)s',
-                        datefmt='%y-%m-%d %H:%M:%S',
-                        level=logging.INFO,
-                       )
-
     parser = argparse.ArgumentParser(prog='knock-knock')
 
     parser.add_argument('--version', action='version', version=knock_knock.__version__)
@@ -246,5 +282,27 @@ if __name__ == '__main__':
     parser_citation = subparsers.add_parser('whos-there', help='print citation information')
     parser_citation.set_defaults(func=print_citation)
 
+    parser_arrayed = subparsers.add_parser('arrayed', help='process using ArrayedExperimentGroups')
+    parser_arrayed_subparsers = parser_arrayed.add_subparsers(dest='subcommand', title='subcommands')
+    parser_arrayed_subparsers.required = True
+
+    parser_arrayed_process = parser_arrayed_subparsers.add_parser('process', help='process a group')
+    add_project_directory_arg(parser_arrayed_process)
+    parser_arrayed_process.add_argument('batch_name')
+    parser_arrayed_process.add_argument('group_name')
+    parser_arrayed_process.add_argument('--max_procs', type=int, default=6)
+    parser_arrayed_process.add_argument('--silent', action='store_true')
+    parser_arrayed_process.add_argument('--generate_figures', action='store_true')
+    parser_arrayed_process.set_defaults(func=process_arrayed)
+
+    parser_arrayed_parallel = parser_arrayed_subparsers.add_parser('parallel', help='process groups in parallel')
+    add_project_directory_arg(parser_arrayed_parallel)
+    parser_arrayed_parallel.add_argument('batch_name')
+    parser_arrayed_parallel.add_argument('--max_procs', type=int, default=10)
+    parser_arrayed_parallel.add_argument('--max_procs_per_group', type=int, default=3)
+    parser_arrayed_parallel.add_argument('--generate_figures', action='store_true')
+    parser_arrayed_parallel.set_defaults(func=parallel_arrayed)
+
     args = parser.parse_args()
+
     args.func(args)

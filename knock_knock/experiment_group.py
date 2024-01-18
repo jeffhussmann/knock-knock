@@ -54,21 +54,8 @@ class ExperimentGroup:
 
     def process(self, generate_figures=False, num_processes=18, verbose=True, use_logger_thread=False):
         self.results_dir.mkdir(exist_ok=True, parents=True)
-        log_fn = self.results_dir / f'log_{datetime.datetime.now():%y%m%d-%H%M%S}.out'
 
-        logger = logging.getLogger(__name__)
-        logger.propagate = False
-        logger.setLevel(logging.INFO)
-        file_handler = logging.FileHandler(log_fn)
-        formatter = logging.Formatter(fmt='%(asctime)s: %(message)s',
-                                      datefmt='%y-%m-%d %H:%M:%S',
-                                     )
-        file_handler.setFormatter(formatter)
-        file_handler.setLevel(logging.INFO)
-        logger.addHandler(file_handler)
-
-        if verbose:
-            print(f'Logging in {log_fn}')
+        logger, file_handler = knock_knock.utilities.configure_standard_logger(self.results_dir, verbose=verbose)
 
         if use_logger_thread:
             pool = knock_knock.parallel.PoolWithLoggerThread(num_processes, logger)

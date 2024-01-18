@@ -35,7 +35,7 @@ def read_and_sanitize_csv(csv_fn, index_col=None):
 
     return possibly_series
 
-def configure_standard_logger(results_dir):
+def configure_standard_logger(results_dir, verbose=True):
     log_fn = results_dir / f'log_{datetime.datetime.now():%y%m%d-%H%M%S}.out'
 
     logger = logging.getLogger(__name__)
@@ -49,6 +49,7 @@ def configure_standard_logger(results_dir):
     file_handler.setLevel(logging.DEBUG)
     logger.addHandler(file_handler)
 
-    print(f'Logging in {log_fn}')
+    if verbose:
+        print(f'Logging in {log_fn}')
 
     return logger, file_handler
