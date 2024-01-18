@@ -85,7 +85,6 @@ def parallel_arrayed(args):
 
     parallel_command = [
         'parallel',
-        '--bar',
         '--max-procs', str(args.max_procs),
         'knock-knock', 'arrayed', 'process',
         args.project_directory,
@@ -95,6 +94,9 @@ def parallel_arrayed(args):
         '--silent',
         ':::',
     ] + sorted(batch.groups)
+
+    if args.progress_bar:
+        parallel_command.insert(1, '--bar')
 
     subprocess.run(parallel_command)
 
@@ -301,6 +303,7 @@ if __name__ == '__main__':
     parser_arrayed_parallel.add_argument('--max_procs', type=int, default=10)
     parser_arrayed_parallel.add_argument('--max_procs_per_group', type=int, default=3)
     parser_arrayed_parallel.add_argument('--generate_figures', action='store_true')
+    parser_arrayed_parallel.add_argument('--progress_bar', action='store_true')
     parser_arrayed_parallel.set_defaults(func=parallel_arrayed)
 
     args = parser.parse_args()
