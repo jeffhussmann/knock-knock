@@ -601,10 +601,8 @@ class ExperimentGroup:
         description = 'Loading outcome counts'
         items = self.progress(self.full_condition_to_experiment.items(), desc=description)
         for condition, exp in items:
-            try:
+            if exp.outcome_counts is not None:
                 all_counts[condition] = exp.outcome_counts
-            except (FileNotFoundError, pd.errors.EmptyDataError):
-                pass
 
         all_outcomes = set()
 
