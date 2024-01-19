@@ -99,7 +99,11 @@ class ExperimentGroup:
         self.make_outcome_counts()
 
         if generate_figures:
-            self.make_group_figures()
+            try:
+                self.make_group_figures()
+            except:
+                print(self)
+                raise
 
         logger.info('Done!')
 

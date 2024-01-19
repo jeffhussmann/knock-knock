@@ -680,7 +680,13 @@ class StackedDiagrams:
         else:
             pegRNA_name = ti.pegRNA_names[0]
             _, _, _, _, (flap_subsequences, target_subsequences) = ti.pegRNA.extract_edits_from_alignment()
+
             components = ti.sgRNA_components[pegRNA_name]
+
+            if len(target_subsequences) == 0:
+                # If the flap has no homology anywhere, just draw it right after the PBS.
+                flap_subsequences = [(0, len(components['RTT']))]
+                target_subsequences = [(0, len(components['RTT']))]
 
         PBS = ti.features[ti.target, f'{pegRNA_name}_PBS']
 
