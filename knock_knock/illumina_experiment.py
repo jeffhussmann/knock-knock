@@ -333,7 +333,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
             elif len(stitched) <= 10:
                 # 22.07.18: Should this check be done on the final trimmed read instead?
-                outcome = self.final_Outcome(stitched.name, len(stitched), 'nonspecific amplification', 'primer dimer', 'n/a')
+                outcome = self.final_Outcome(stitched.name, len(stitched), 0, 'nonspecific amplification', 'primer dimer', 'n/a')
                 too_short_outcomes.append(outcome)
 
             else:
