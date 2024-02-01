@@ -427,20 +427,34 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         return {full_condition: self.sample_name_to_experiment(sample_name) for full_condition, sample_name in self.full_condition_to_sample_name.items()}
 
     @memoized_with_kwargs
-    def condition_colors(self, *, palette='husl'):
-        colors = sns.color_palette(palette, n_colors=len(self.conditions))
-        condition_colors = dict(zip(self.conditions, colors))
+    def condition_colors(self, *, palette='husl', unique=False):
+        if unique:
+            condition_colors = {condition: f'C{i}' for i, condition in enumerate(self.full_conditions)}
+        else:
+            colors = sns.color_palette(palette, n_colors=len(self.conditions))
+            condition_colors = dict(zip(self.conditions, colors))
 
-        for full_condition in self.full_conditions:
-            condition = full_condition[:-1]
-            if len(condition) == 0:
-                continue
-            elif len(condition) == 1:
-                condition = condition[0]
-                
-            condition_colors[full_condition] = condition_colors[condition]
+            for full_condition in self.full_conditions:
+                condition = full_condition[:-1]
+                if len(condition) == 0:
+                    continue
+                elif len(condition) == 1:
+                    condition = condition[0]
+                    
+                condition_colors[full_condition] = condition_colors[condition]
 
         return condition_colors
+
+    @memoized_property
+    def condition_labels(self):
+        condition_labels = {}
+
+        for condition in self.full_conditions:
+            sample_name = self.full_condition_to_sample_name[condition]
+            label = f'{" ".join(condition)} ({sample_name}, {self.total_valid_reads[condition]:,} total reads)'
+            condition_labels[condition] = label
+
+        return condition_labels
 
     def extract_genomic_insertion_length_distributions(self):
         length_distributions = {}

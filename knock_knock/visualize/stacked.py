@@ -1570,6 +1570,9 @@ class DiagramGrid:
         plot_kwargs.setdefault('linewidth', 1.5)
         plot_kwargs.setdefault('markersize', 7)
 
+        if isinstance(pegRNA_conversion_fractions, pd.Series):
+            pegRNA_conversion_fractions = pegRNA_conversion_fractions.to_frame()
+
         if condition_colors is None:
             condition_colors = {}
 
@@ -1611,7 +1614,7 @@ class DiagramGrid:
                                   **plot_kwargs,
                                  )
 
-    def style_pegRNA_conversion_plot(self, ax_name, y_max=None):
+    def style_pegRNA_conversion_plot(self, ax_name='pegRNA_conversion_fractions', y_max=None):
         if 'diagram' not in self.axs_by_name or ax_name not in self.axs_by_name:
             return
 
@@ -1654,17 +1657,17 @@ class DiagramGrid:
 
 def make_deletion_boundaries_figure(target_info,
                                     outcome_fractions,
+                                    deletion_boundaries_retriever,
                                     frequency_cutoff=5e-4,
                                     conditions=None,
                                     condition_colors=None,
+                                    condition_labels=None,
                                     include_simple_deletions=True,
                                     include_edit_plus_deletions=True,
                                     include_insertions=False,
                                     include_multiple_indels=False,
-                                    min_reads=None,
                                     show_log_scale=False,
-                                    unique_colors=False,
-                                    ):
+                                   ):
     ti = target_info
 
     if ti.primary_protospacer is None:
@@ -1673,42 +1676,34 @@ def make_deletion_boundaries_figure(target_info,
     if isinstance(outcome_fractions, pd.Series):
         outcome_fractions = outcome_fractions.to_frame()
 
-    if isinstance(pegRNA_conversion_fractions, pd.Series):
-        pegRNA_conversion_fractions = pegRNA_conversion_fractions.to_frame()
-
     if conditions is None:
         conditions = outcome_fractions.columns
 
-    if unique_colors:
-        colors = {condition: f'C{i}' for i, condition in enumerate(self.full_conditions)}
-    else:
-        colors = self.condition_colors()
+    if condition_colors is None:
+        condition_colors = {}
 
-    if conditions is None:
-        conditions = self.full_conditions
+    if condition_labels is None:
+        condition_labels = {}
 
-    if min_reads is not None:
-        conditions = [c for c in conditions if self.total_valid_reads.loc[c] >= min_reads]
+    outcome_fractions = outcome_fractions[conditions]
 
-    fs = self.outcome_fractions[conditions]
-
-    if 'deletion' in fs.index.levels[0]:
-        deletions = fs.xs('deletion', drop_level=False).groupby('details').sum()
+    if 'deletion' in outcome_fractions.index.levels[0]:
+        deletions = outcome_fractions.xs('deletion', drop_level=False).groupby('details').sum()
         deletions.index = pd.MultiIndex.from_tuples([('deletion', 'collapsed', details) for details in deletions.index])
     else:
         deletions = None
 
-    if 'insertion' in fs.index.levels[0]:
-        insertions = fs.xs('insertion', drop_level=False).groupby('details').sum()
+    if 'insertion' in outcome_fractions.index.levels[0]:
+        insertions = outcome_fractions.xs('insertion', drop_level=False).groupby('details').sum()
         insertions.index = pd.MultiIndex.from_tuples([('insertion', 'collapsed', details) for details in insertions.index])
     else:
         insertions = None
 
-    multiple_indels = fs.xs('multiple indels', level=1, drop_level=False)
+    multiple_indels = outcome_fractions.xs('multiple indels', level=1, drop_level=False)
 
-    edit_plus_deletions = [(c, s, d) for c, s, d in fs.index
-                            if (c, s) == ('edit + indel', 'deletion')
-                            ] 
+    edit_plus_deletions = [(c, s, d) for c, s, d in outcome_fractions.index
+                           if (c, s) == ('edit + indel', 'deletion')
+                          ] 
 
     to_concat = []
 
@@ -1716,17 +1711,17 @@ def make_deletion_boundaries_figure(target_info,
         to_concat.append(deletions)
 
     if include_edit_plus_deletions:
-        to_concat.append(fs.loc[edit_plus_deletions])
+        to_concat.append(outcome_fractions.loc[edit_plus_deletions])
 
     if include_insertions and insertions is not None:
         to_concat.append(insertions)
 
-    fs = pd.concat(to_concat)
+    outcome_fractions = pd.concat(to_concat)
 
-    outcomes = [(c, s, d) for (c, s, d), f_row in fs.iterrows()
+    outcomes = [(c, s, d) for (c, s, d), f_row in outcome_fractions.iterrows()
                 if max(f_row) > frequency_cutoff
-                ]
-    outcomes = fs.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
+               ]
+    outcomes = outcome_fractions.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
 
     color_overrides = {primer_name: 'grey' for primer_name in ti.primers}
 
@@ -1748,12 +1743,12 @@ def make_deletion_boundaries_figure(target_info,
     window = (window[0] - 5, window[1] + 5)
         
     grid = knock_knock.visualize.stacked.DiagramGrid(outcomes, 
-                                                        ti,
-                                                        draw_wild_type_on_top=True,
-                                                        window=window,
-                                                        block_alpha=0.1,
-                                                        color_overrides=color_overrides,
-                                                        features_to_draw=sorted(ti.primers), 
+                                                     ti,
+                                                     draw_wild_type_on_top=True,
+                                                     window=window,
+                                                     block_alpha=0.1,
+                                                     color_overrides=color_overrides,
+                                                     features_to_draw=sorted(ti.primers), 
                                                     )
 
     grid.add_ax('fractions', width_multiple=12, title='% of reads')
@@ -1762,20 +1757,18 @@ def make_deletion_boundaries_figure(target_info,
         grid.add_ax('log10_fractions', width_multiple=12, gap_multiple=2, title='% of reads (log scale)')
 
     for ax, transform in [('fractions', 'percentage'),
-                            ('log10_fractions', 'log10'),
-                            ]:
+                          ('log10_fractions', 'log10'),
+                         ]:
 
-        for condition in fs:
-            label = f'{" ".join(condition)} ({self.total_valid_reads[condition]:,} total reads)'
-
+        for condition in outcome_fractions:
             grid.plot_on_ax(ax,
-                            fs[condition],
+                            outcome_fractions[condition],
                             transform=transform,
-                            color=colors.get(condition, 'black'),
+                            color=condition_colors.get(condition, 'black'),
                             line_alpha=0.75,
                             linewidth=1.5,
                             markersize=7,
-                            label=label,
+                            label=condition_labels.get(condition, condition),
                             clip_on=True,
                             )
 
@@ -1801,9 +1794,9 @@ def make_deletion_boundaries_figure(target_info,
             'stops',
         ]
 
-    deletion_boundaries = self.deletion_boundaries(include_simple_deletions=include_simple_deletions,
-                                                    include_edit_plus_deletions=include_edit_plus_deletions,
-                                                    )
+    deletion_boundaries = deletion_boundaries_retriever(include_simple_deletions=include_simple_deletions,
+                                                        include_edit_plus_deletions=include_edit_plus_deletions,
+                                                       )
 
     for quantity in panel_order:
         grid.add_ax_above(quantity,
@@ -1815,12 +1808,12 @@ def make_deletion_boundaries_figure(target_info,
             series = deletion_boundaries[quantity][condition].copy()
             series.index = series.index.values - grid.diagrams.offsets[ti.name]
             grid.plot_on_ax_above(quantity,
-                                    series.index,
-                                    series * 100,
-                                    markersize=3 if quantity != 'fraction_removed' else 0,
-                                    linewidth=1 if quantity != 'fraction_removed' else 2,
-                                    color=colors.get(condition, 'black'),
-                                    )
+                                  series.index,
+                                  series * 100,
+                                  markersize=3 if quantity != 'fraction_removed' else 0,
+                                  linewidth=1 if quantity != 'fraction_removed' else 2,
+                                  color=condition_colors.get(condition, 'black'),
+                                 )
 
         for cut_after in ti.cut_afters.values():
             grid.axs_by_name[quantity].axvline(cut_after + 0.5 - grid.diagrams.offsets[ti.name], linestyle='--', color=grid.diagrams.cut_color, linewidth=grid.diagrams.line_widths)
@@ -1835,8 +1828,6 @@ def make_deletion_boundaries_figure(target_info,
     for panel in panel_order:
         grid.axs_by_name[panel].set_ylim(0)
 
-    grid.fig.savefig(self.fns['deletion_boundaries_figure'], bbox_inches='tight')
-
     return grid
 
 def make_partial_incorporation_figure(target_info,
@@ -1844,6 +1835,7 @@ def make_partial_incorporation_figure(target_info,
                                       pegRNA_conversion_fractions,
                                       conditions=None,
                                       condition_colors=None,
+                                      condition_labels=None,
                                       frequency_cutoff=1e-3,
                                       show_log_scale=False,
                                       manual_window=None,
@@ -1865,11 +1857,14 @@ def make_partial_incorporation_figure(target_info,
     if isinstance(outcome_fractions, pd.Series):
         outcome_fractions = outcome_fractions.to_frame()
 
-    if isinstance(pegRNA_conversion_fractions, pd.Series):
-        pegRNA_conversion_fractions = pegRNA_conversion_fractions.to_frame()
-
     if conditions is None:
         conditions = outcome_fractions.columns
+
+    if condition_colors is None:
+        condition_colors = {}
+
+    if condition_labels is None:
+        condition_labels = {}
 
     outcome_fractions = outcome_fractions[conditions]
 
@@ -1927,6 +1922,7 @@ def make_partial_incorporation_figure(target_info,
                                                          block_alpha=0.1,
                                                          color_overrides=color_overrides,
                                                          draw_all_sequence=0.1,
+                                                         **diagram_kwargs,
                                                         )
 
         grid.add_ax('fractions', width_multiple=12, title='% of reads')
@@ -1934,10 +1930,12 @@ def make_partial_incorporation_figure(target_info,
         if show_log_scale:
             grid.add_ax('log10_fractions', width_multiple=12, gap_multiple=2, title='% of reads (log scale)')
 
-        for ax, transform in [('fractions', 'percentage'),
-                              ('log10_fractions', 'log10'),
-                             ]:
+        ax_params = [
+            ('fractions', 'percentage'),
+            ('log10_fractions', 'log10'),
+        ]
 
+        for ax, transform in ax_params:
             for condition in outcome_fractions:
                 grid.plot_on_ax(ax,
                                 outcome_fractions[condition],
@@ -1947,6 +1945,7 @@ def make_partial_incorporation_figure(target_info,
                                 linewidth=1.5,
                                 markersize=7,
                                 fill=0,
+                                label=condition_labels.get(condition, condition)
                                )
 
         grid.style_frequency_ax('fractions')
@@ -1967,5 +1966,7 @@ def make_partial_incorporation_figure(target_info,
                                                    )
 
         grid.style_pegRNA_conversion_plot('pegRNA_conversion_fractions')
+
+        grid.ordered_axs[-1].legend(bbox_to_anchor=(1, 1))
 
         return grid

@@ -1,5 +1,4 @@
 import bisect
-import datetime
 import logging
 import multiprocessing
 import os
@@ -8,9 +7,7 @@ import numpy as np
 import pandas as pd
 import pysam
 import scipy.sparse
-import seaborn as sns
 
-import hits.visualize
 from hits import utilities
 memoized_property = utilities.memoized_property
 memoized_with_args = utilities.memoized_with_args
@@ -241,309 +238,46 @@ class ExperimentGroup:
         self.make_deletion_boundaries_figure()
 
     def make_partial_incorporation_figure(self,
-                                          conditions=None,
-                                          frequency_cutoff=1e-3,
-                                          show_log_scale=True,
-                                          manual_window=None,
-                                          min_reads=None,
                                           unique_colors=False,
-                                          **diagram_kwargs,
+                                          min_reads=None,
+                                          conditions=None,
                                          ):
-        ti = self.target_info
-
-        if len(ti.pegRNA_names) == 0:
-            return
-
-        if unique_colors:
-            colors = {condition: f'C{i}' for i, condition in enumerate(self.full_conditions)}
-        else:
-            colors = self.condition_colors()
-
         if conditions is None:
             conditions = self.full_conditions
 
         if min_reads is not None:
             conditions = [c for c in conditions if self.total_valid_reads.loc[c] >= min_reads]
 
-        color_overrides = {primer_name: 'grey' for primer_name in ti.primers}
-
-        for pegRNA_name in ti.pegRNA_names:
-            ps_name = knock_knock.pegRNAs.protospacer_name(pegRNA_name)
-            PAM_name = f'{pegRNA_name}_PAM'
-            color = ti.pegRNA_name_to_color[pegRNA_name]
-            light_color = hits.visualize.apply_alpha(color, 0.5)
-            color_overrides[ps_name] = light_color
-            color_overrides[PAM_name] = color
-
-        if manual_window is not None:
-            window = manual_window
-        elif len(ti.pegRNA_names) == 2:
-            window = (-20, ti.nick_offset + 20 - 1)
-        elif len(ti.pegRNA_names) == 1:
-            window = (-20, len(ti.sgRNA_components[ti.pegRNA_names[0]]['RTT']) + 4)
-        else:
-            raise ValueError
-
-        if ti.protospacer_feature.strand == '+':
-            window_interval = hits.interval.Interval(ti.cut_after + window[0], ti.cut_after + window[1])
-        else:
-            window_interval = hits.interval.Interval(ti.cut_after - window[1], ti.cut_after - window[0])
-
-        def mismatch_in_window(d):
-            if d == 'n/a':
-                return False
-            else:
-                SNVs = knock_knock.outcome.MismatchOutcome.from_string(d).undo_anchor_shift(ti.anchor).snvs
-                return any(p in window_interval for p in SNVs.positions)
-
-        fs = self.outcome_fractions[conditions]
-
-        outcomes = [(c, s, d) for (c, s, d), f_row in fs.iterrows()
-                    if (((c, s) in {('wild type', 'mismatches')} and mismatch_in_window(d))
-                        or c in {'intended edit', 'partial replacement', 'partial edit'}
-                       )
-                    and max(f_row) > frequency_cutoff
-                   ]
-        outcomes = fs.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
-
-        if len(outcomes) > 0:
-            grid = knock_knock.visualize.stacked.DiagramGrid(outcomes, 
-                                                             ti,
-                                                             draw_wild_type_on_top=True,
-                                                             window=window,
-                                                             block_alpha=0.1,
-                                                             color_overrides=color_overrides,
-                                                             draw_all_sequence=0.1,
-                                                             **diagram_kwargs,
-                                                            )
-
-            grid.add_ax('fractions', width_multiple=12, title='% of reads')
-
-            if show_log_scale:
-                grid.add_ax('log10_fractions', width_multiple=12, gap_multiple=2, title='% of reads (log scale)')
-
-            ax_params = [
-                ('fractions', 'percentage'),
-                ('log10_fractions', 'log10'),
-            ]
-
-            for ax, transform in ax_params:
-                for condition in fs:
-
-                    sample_name = self.full_condition_to_sample_name[condition]
-                    label = f'{" ".join(condition)} ({sample_name}, {self.total_valid_reads[condition]:,} total reads)'
-
-                    grid.plot_on_ax(ax,
-                                    fs[condition],
-                                    transform=transform,
-                                    color=colors.get(condition, 'black'),
-                                    line_alpha=0.75,
-                                    linewidth=1.5,
-                                    markersize=7,
-                                    fill=0,
-                                    label=label,
-                                   )
-
-            grid.style_frequency_ax('fractions')
-
-            grid.set_xlim('fractions', (0,))
-            x_max = (grid.axs_by_name['fractions'].get_xlim()[1] / 100) * 1.01
-
-            grid.set_xlim('log10_fractions', (np.log10(0.49 * frequency_cutoff), np.log10(x_max)))
-            grid.style_log10_frequency_ax('log10_fractions')
-
-            for pegRNA_i, pegRNA_name in enumerate(ti.pegRNA_names):
-                grid.diagrams.draw_pegRNA(ti.name, pegRNA_name, y_offset=pegRNA_i + 1, label_features=False)
-
-            grid.plot_pegRNA_conversion_fractions_above(self.target_info,
-                                                        self.pegRNA_conversion_fractions,
-                                                        conditions=conditions,
-                                                        condition_colors=colors,
-                                                       )
-
-            grid.style_pegRNA_conversion_plot('pegRNA_conversion_fractions')
-
-            grid.axs_by_name['pegRNA_conversion_fractions'].set_title(self.group_name, y=1.2)
-
-            grid.ordered_axs[-1].legend(bbox_to_anchor=(1, 1))
-
-            grid.fig.savefig(self.fns['partial_incorporation_figure'], bbox_inches='tight')
-
-            return grid
+        grid = knock_knock.visualize.stacked.make_partial_incorporation_figure(self.target_info,
+                                                                               self.outcome_fractions,
+                                                                               self.pegRNA_conversion_fractions,
+                                                                               conditions=conditions,
+                                                                               condition_colors=self.condition_colors(unique=unique_colors),
+                                                                               condition_labels=self.condition_labels,
+                                                                              )
+        
+        return grid
 
     def make_deletion_boundaries_figure(self,
-                                        frequency_cutoff=5e-4,
-                                        conditions=None,
-                                        include_simple_deletions=True,
-                                        include_edit_plus_deletions=True,
-                                        include_insertions=False,
-                                        include_multiple_indels=False,
-                                        min_reads=None,
-                                        show_log_scale=False,
                                         unique_colors=False,
+                                        min_reads=None,
+                                        conditions=None,
+                                        **kwargs,
                                        ):
-        ti = self.target_info
-        if ti.primary_protospacer is None:
-            return
-
-        if unique_colors:
-            colors = {condition: f'C{i}' for i, condition in enumerate(self.full_conditions)}
-        else:
-            colors = self.condition_colors()
-
         if conditions is None:
             conditions = self.full_conditions
 
         if min_reads is not None:
             conditions = [c for c in conditions if self.total_valid_reads.loc[c] >= min_reads]
 
-        fs = self.outcome_fractions[conditions]
-
-        if 'deletion' in fs.index.levels[0]:
-            deletions = fs.xs('deletion', drop_level=False).groupby('details').sum()
-            deletions.index = pd.MultiIndex.from_tuples([('deletion', 'collapsed', details) for details in deletions.index])
-        else:
-            deletions = None
-
-        if 'insertion' in fs.index.levels[0]:
-            insertions = fs.xs('insertion', drop_level=False).groupby('details').sum()
-            insertions.index = pd.MultiIndex.from_tuples([('insertion', 'collapsed', details) for details in insertions.index])
-        else:
-            insertions = None
-
-        multiple_indels = fs.xs('multiple indels', level=1, drop_level=False)
-
-        edit_plus_deletions = [(c, s, d) for c, s, d in fs.index
-                               if (c, s) == ('edit + indel', 'deletion')
-                              ] 
-
-        to_concat = []
-
-        if include_simple_deletions and deletions is not None:
-            to_concat.append(deletions)
-
-        if include_edit_plus_deletions:
-            to_concat.append(fs.loc[edit_plus_deletions])
-
-        if include_insertions and insertions is not None:
-            to_concat.append(insertions)
-
-        fs = pd.concat(to_concat)
-
-        outcomes = [(c, s, d) for (c, s, d), f_row in fs.iterrows()
-                    if max(f_row) > frequency_cutoff
-                   ]
-        outcomes = fs.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
-
-        color_overrides = {primer_name: 'grey' for primer_name in ti.primers}
-
-        for pegRNA_name in ti.pegRNA_names:
-            ps_name = knock_knock.pegRNAs.protospacer_name(pegRNA_name)
-            PAM_name = f'{pegRNA_name}_PAM'
-            color = ti.pegRNA_name_to_color[pegRNA_name]
-            light_color = hits.visualize.apply_alpha(color, 0.5)
-            color_overrides[ps_name] = light_color
-            color_overrides[PAM_name] = color
-
-        flip = (ti.features[ti.target, ti.primary_protospacer].strand == '-')
-
-        if flip:
-            window = (ti.cut_after - ti.amplicon_interval.end, ti.cut_after - ti.amplicon_interval.start)
-        else:
-            window = (ti.amplicon_interval.start - ti.cut_after, ti.amplicon_interval.end - ti.cut_after)
-            
-        window = (window[0] - 5, window[1] + 5)
-            
-        grid = knock_knock.visualize.stacked.DiagramGrid(outcomes, 
-                                                         ti,
-                                                         draw_wild_type_on_top=True,
-                                                         window=window,
-                                                         block_alpha=0.1,
-                                                         color_overrides=color_overrides,
-                                                         features_to_draw=sorted(ti.primers), 
-                                                        )
-
-        grid.add_ax('fractions', width_multiple=12, title='% of reads')
-
-        if show_log_scale:
-            grid.add_ax('log10_fractions', width_multiple=12, gap_multiple=2, title='% of reads (log scale)')
-
-        for ax, transform in [('fractions', 'percentage'),
-                              ('log10_fractions', 'log10'),
-                             ]:
-
-            for condition in fs:
-                label = f'{" ".join(condition)} ({self.total_valid_reads[condition]:,} total reads)'
-
-                grid.plot_on_ax(ax,
-                                fs[condition],
-                                transform=transform,
-                                color=colors.get(condition, 'black'),
-                                line_alpha=0.75,
-                                linewidth=1.5,
-                                markersize=7,
-                                label=label,
-                                clip_on=True,
-                               )
-
-        grid.style_frequency_ax('fractions')
-        grid.ordered_axs[-1].legend(bbox_to_anchor=(1, 1), loc='upper left')
-
-        grid.set_xlim('fractions', (0,))
-        x_max = (grid.axs_by_name['fractions'].get_xlim()[1] / 100) * 1.01
-
-        grid.set_xlim('log10_fractions', (np.log10(0.49 * frequency_cutoff), np.log10(x_max)))
-        grid.style_log10_frequency_ax('log10_fractions')
-
-        if flip:
-            panel_order = [
-                'fraction_removed',
-                'stops',
-                'starts',
-            ]
-        else:
-            panel_order = [
-                'fraction_removed',
-                'starts',
-                'stops',
-            ]
-
-        deletion_boundaries = self.deletion_boundaries(include_simple_deletions=include_simple_deletions,
-                                                       include_edit_plus_deletions=include_edit_plus_deletions,
-                                                      )
-
-        for quantity in panel_order:
-            grid.add_ax_above(quantity,
-                              gap=6 if quantity == panel_order[0] else 2,
-                              height_multiple=15 if quantity == 'fraction_removed' else 7,
-                             )
-
-            for condition in conditions:
-                series = deletion_boundaries[quantity][condition].copy()
-                series.index = series.index.values - grid.diagrams.offsets[ti.name]
-                grid.plot_on_ax_above(quantity,
-                                      series.index,
-                                      series * 100,
-                                      markersize=3 if quantity != 'fraction_removed' else 0,
-                                      linewidth=1 if quantity != 'fraction_removed' else 2,
-                                      color=colors.get(condition, 'black'),
-                                     )
-
-            for cut_after in ti.cut_afters.values():
-                grid.axs_by_name[quantity].axvline(cut_after + 0.5 - grid.diagrams.offsets[ti.name], linestyle='--', color=grid.diagrams.cut_color, linewidth=grid.diagrams.line_widths)
-
-        for pegRNA_i, pegRNA_name in enumerate(ti.pegRNA_names):
-            grid.diagrams.draw_pegRNA(ti.name, pegRNA_name, y_offset=pegRNA_i + 1, label_features=False)
-
-        grid.axs_by_name['fraction_removed'].set_ylabel('% of reads with\nposition deleted', size=14)
-        grid.axs_by_name[panel_order[1]].set_ylabel('% of reads\nwith deletion\nstarting at', size=14)
-        grid.axs_by_name[panel_order[2]].set_ylabel('% of reads\nwith deletion\nending at', size=14)
-
-        for panel in panel_order:
-            grid.axs_by_name[panel].set_ylim(0)
-
-        grid.fig.savefig(self.fns['deletion_boundaries_figure'], bbox_inches='tight')
-
+        grid = knock_knock.visualize.stacked.make_deletion_boundaries_figure(self.target_info,
+                                                                             self.outcome_fractions,
+                                                                             self.deletion_boundaries,
+                                                                             conditions=conditions,
+                                                                             condition_colors=self.condition_colors(unique=unique_colors),
+                                                                             condition_labels=self.condition_labels,
+                                                                             **kwargs,
+                                                                            )
         return grid
 
     def make_single_flap_extension_chain_edge_figure(self,
