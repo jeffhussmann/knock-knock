@@ -724,9 +724,16 @@ class TargetInfoBuilder:
         correct_orientation_pairs = sorted(correct_orientation_pairs, key=lambda pair: reference_extent(*pair))
 
         if len(correct_orientation_pairs) > 1:
-            logging.warning(f'Multiple primer alignments found.')
-            for left_al, right_al in correct_orientation_pairs:
+            logging.warning(f'{len(correct_orientation_pairs)} concordant primer alignments found.')
+            for left_al, right_al in correct_orientation_pairs[:10]:
                 logging.warning(f'Found {reference_extent(left_al, right_al):,} nt amplicon on {left_al.reference_name} from {left_al.reference_start:,} to {right_al.reference_end - 1:,}')
+
+            if len(correct_orientation_pairs) > 10:
+                logging.warning(f'... and {len(correct_orientation_pairs) - 10} more')
+
+        short_amplicons = [pair for pair in correct_orientation_pairs if reference_extent(*pair) <= 1000]
+        if len(short_amplicons) > 1:
+            logging.warning(f'{len(short_amplicons)} potential amplicons <= 1kb found. There is a risk the shortest amplicon may not be the intended target.')
             
         left_al, right_al = correct_orientation_pairs[0]
 
