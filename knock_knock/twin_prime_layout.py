@@ -50,6 +50,12 @@ class Layout(knock_knock.prime_editing_layout.Layout):
              'left not seen, right RT\'ed + overlap-extended',
             ),
         ),
+        ('multistep unintended rejoining of RT\'ed sequence',
+            ('left RT\'ed, right RT\'ed',
+             'left RT\'ed, right indel',
+             'left indel, right RT\'ed',
+            ),
+        ),
         ('flipped pegRNA incorporation',
             ('left pegRNA',
              'right pegRNA',
@@ -131,13 +137,6 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
         self.ins_size_to_split_at = 1
         self.categorized = False
-
-    @memoized_property
-    def has_any_pegRNA_extension_al(self):
-        chains = self.extension_chains_by_side
-        contains_RTed_sequence = any(chains[side]['description'].startswith('RT\'ed') for side in ['left', 'right'])
-
-        return contains_RTed_sequence
 
     @memoized_property
     def pegRNA_alignments_by_side_of_read(self):
@@ -534,13 +533,19 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         return target_als + pegRNA_als
 
     @memoized_property
-    def is_unintended_rejoining(self):
-        ''' At least one side has RT'ed sequence, and together the extension
-        chains cover the whole read.
-        '''
+    def contains_RTed_sequence(self):
         chains = self.extension_chains_by_side
 
-        contains_RTed_sequence = any(chains[side]['description'].startswith('RT\'ed') for side in ['left', 'right'])
+        contains_RTed_sequence = {
+            side for side in ['left', 'right']
+            if chains[side]['description'].startswith('RT\'ed')
+        }
+
+        return contains_RTed_sequence
+
+    @memoized_property
+    def uncovered_by_extension_chains(self):
+        chains = self.extension_chains_by_side
 
         left_covered = chains['left']['query_covered']
         right_covered = chains['right']['query_covered']
@@ -551,7 +556,14 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         # Allow failure to explain the last few nts of the read.
         uncovered = uncovered & self.whole_read_minus_edges(2)
 
-        return contains_RTed_sequence and uncovered.total_length == 0
+        return uncovered
+
+    @memoized_property
+    def is_unintended_rejoining(self):
+        ''' At least one side has RT'ed sequence, and together the extension
+        chains cover the whole read.
+        '''
+        return self.contains_RTed_sequence and self.uncovered_by_extension_chains.total_length == 0
 
     def register_unintended_rejoining(self):
         chains = self.extension_chains_by_side
@@ -577,6 +589,38 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         self.relevant_alignments = []
         for ref_name, als in als_by_ref.items():
             self.relevant_alignments.extend(sam.make_noncontained(als))
+
+    @memoized_property
+    def extension_chain_gap_covers(self):
+        def covers_all_uncovered(al):
+            not_covered_by_al = self.uncovered_by_extension_chains - hits.interval.get_covered(al)
+            return not_covered_by_al.total_length == 0
+
+        covers = [al for al in self.target_alignments if covers_all_uncovered(al)]
+
+        return covers
+
+    @memoized_property
+    def is_multistep_unintended_rejoining(self):
+        return self.contains_RTed_sequence and self.uncovered_by_extension_chains.total_length > 0 and len(self.extension_chain_gap_covers) > 0
+
+    def register_multistep_unintended_rejoining(self):
+        self.category = 'multistep unintended rejoining of RT\'ed sequence'
+
+        if 'left' in self.contains_RTed_sequence and 'right' in self.contains_RTed_sequence:
+            self.subcategory = 'left RT\'ed, right RT\'ed'
+        elif 'left' in self.contains_RTed_sequence:
+            self.subcategory = 'left RT\'ed, right indel'
+        elif 'right' in self.contains_RTed_sequence:
+            self.subcategory = 'left indel, right RT\'ed'
+        else:
+            raise ValueError
+
+        self.details = 'n/a'
+
+        self.relevant_alignments = self.extension_chains_by_side['left']['parsimonious_alignments'] + \
+                                   self.extension_chains_by_side['right']['parsimonious_alignments'] + \
+                                   self.extension_chain_gap_covers
 
     @memoized_property
     def has_any_flipped_pegRNA_al(self):
@@ -698,6 +742,9 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
             self.subcategory = subcategory
             self.relevant_alignments = merged_als
+
+        elif self.is_multistep_unintended_rejoining:
+            self.register_multistep_unintended_rejoining()
 
         elif len(self.has_any_flipped_pegRNA_al) > 0:
             self.category = 'flipped pegRNA incorporation'
