@@ -398,6 +398,11 @@ class StackedDiagrams:
         else:
             self.draw_rect(source_name, window_left - 0.5, window_right + 0.5, bottom, top, self.block_alpha)
 
+        self.highlight_programmed_edit_positions(y, source_name)
+
+        if self.draw_all_sequence:
+            self.draw_sequence(y, source_name, alpha=self.sequence_alpha)
+
         if on_top:
             for feature_name in self.features_to_draw:
                 feature = ti.features[ti.target, feature_name]
@@ -536,6 +541,47 @@ class StackedDiagrams:
                              clip_on=False,
                             )
 
+    def draw_non_programmed_mismatches(self, y, details, source_name):
+        ti = self.target_infos[source_name]
+        offset = self.offsets[source_name]
+        transform_seq = self.transform_seqs[source_name]
+        window_left, window_right = self.windows[source_name]
+
+        mismatches = MismatchOutcome.from_string(details).undo_anchor_shift(ti.anchor).snvs
+
+        mismatch_xs = set()
+
+        for mismatch in mismatches:
+            x = mismatch.position - offset
+            mismatch_xs.add(x)
+
+            if window_left <= x <= window_right:
+                b = transform_seq(mismatch.basecall).upper()
+                self.ax.annotate(b,
+                                 xy=(x, y),
+                                 xycoords='data', 
+                                 ha='center',
+                                 va='center',
+                                 size=self.text_size,
+                                 color=hits.visualize.igv_colors[b],
+                                 weight='bold',
+                               )
+
+        return mismatch_xs
+
+    def highlight_programmed_edit_positions(self, y, source_name):
+        ti = self.target_infos[source_name]
+        offset = self.offsets[source_name]
+
+        bottom, top = self.get_bottom_and_top(y)
+
+        for (strand, position), ref_base in ti.fingerprints[ti.target]:
+            color = 'grey'
+            alpha = 0.3
+            left = position - offset - 0.5
+            right = position - offset + 0.5
+            self.draw_rect(source_name, left, right, bottom, top, alpha, color=color)
+
     def draw_programmed_edit(self, y, programmed_edit_outcome, source_name):
         ti = self.target_infos[source_name]
         transform_seq = self.transform_seqs[source_name]
@@ -592,7 +638,7 @@ class StackedDiagrams:
                         letter_alpha = 1
                         letter_weight = 'bold'
 
-                    if read_base != '-' and read_base != '_':
+                    if read_base != '_':
                         self.ax.annotate(transform_seq(read_base),
                                          xy=(x + self.shift_x, y),
                                          xycoords='data', 
@@ -657,9 +703,12 @@ class StackedDiagrams:
                 insertion = InsertionOutcome(insertion).undo_anchor_shift(ti.anchor).insertion
                 insertion = ti.expand_degenerate_indel(insertion)
                 self.draw_insertion(y, insertion, source_name, draw_sequence=True)
+
+        non_programmed_mismatches_string = str(programmed_edit_outcome.non_programmed_mismatches_outcome)
+        mismatch_xs = self.draw_non_programmed_mismatches(y, non_programmed_mismatches_string, source_name)
         
         if self.draw_all_sequence:
-            self.draw_sequence(y, source_name, xs_to_skip=SNP_xs, alpha=self.sequence_alpha)
+            self.draw_sequence(y, source_name, xs_to_skip=SNP_xs | mismatch_xs, alpha=self.sequence_alpha)
 
     def draw_pegRNA(self,
                     source_name,
@@ -828,7 +877,15 @@ class StackedDiagrams:
 
         if label_color is not None:
             window_left, window_right = self.windows[source_name]
-            self.draw_rect(source_name, window_left - 2, window_left - 1, y - 0.4, y + 0.4, 1, clip_to_window=False, color=label_color)
+
+            if self.flip[source_name]:
+                start = window_right + 2
+                end = window_right + 1
+            else:
+                start = window_left - 2
+                end = window_left - 1
+
+            self.draw_rect(source_name, start, end, y - 0.4, y + 0.4, 1, clip_to_window=False, color=label_color)
 
     def draw_outcomes(self):
         for i, (source_name, category, subcategory, details) in enumerate(self.outcome_order):
@@ -874,40 +931,14 @@ class StackedDiagrams:
                 self.draw_deletion(y, deletion, source_name, background_color=background_color)
                     
             elif category == 'mismatches' or (category == 'wild type' and subcategory == 'mismatches'):
-                SNV_xs = set()
                 self.draw_rect(source_name, window_left - 0.5, window_right + 0.5, bottom, top, self.block_alpha)
 
-                if details == 'n/a':
-                    snvs = []
-                else:
-                    snvs = SNVs.from_string(details) 
+                mismatch_xs = self.draw_non_programmed_mismatches(y, details, source_name)
 
-                # Undo anchor shift.
-                snvs = SNVs([SNV(s.position + ti.anchor, s.basecall) for s in snvs])
-
-                for snv in snvs:
-                    x = snv.position - offset
-                    SNV_xs.add(x)
-                    if window_left <= x <= window_right:
-                        self.ax.annotate(transform_seq(snv.basecall),
-                                         xy=(x, y),
-                                         xycoords='data', 
-                                         ha='center',
-                                         va='center',
-                                         size=self.text_size,
-                                         color=hits.visualize.igv_colors[transform_seq(snv.basecall.upper())],
-                                         weight='bold',
-                                        )
-                
-                for (strand, position), ref_base in ti.fingerprints[ti.target]:
-                    color = 'grey'
-                    alpha = 0.3
-                    left = position - offset - 0.5
-                    right = position - offset + 0.5
-                    self.draw_rect(source_name, left, right, bottom, top, alpha, color=color)
+                self.highlight_programmed_edit_positions(y, source_name)
 
                 if self.draw_all_sequence:
-                    self.draw_sequence(y, source_name, xs_to_skip=SNV_xs, alpha=self.sequence_alpha)
+                    self.draw_sequence(y, source_name, xs_to_skip=mismatch_xs, alpha=self.sequence_alpha)
 
             elif category == 'wild type' or category == 'WT':
                 self.draw_wild_type(y, source_name)
@@ -982,9 +1013,11 @@ class StackedDiagrams:
 
             elif category in ['intended edit', 'partial replacement', 'partial edit'] or \
                  (category == 'edit + indel' and subcategory == 'deletion'):
+
                 self.draw_programmed_edit(y, ProgrammedEditOutcome.from_string(details), source_name)
 
             elif category == 'duplication' and subcategory == 'simple':
+
                 duplication_outcome = DuplicationOutcome.from_string(details).undo_anchor_shift(ti.anchor)
                 self.draw_duplication(y, duplication_outcome, source_name)
                 

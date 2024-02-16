@@ -518,7 +518,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             else:
                 raise ValueError
 
-        self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, [])
+        self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, self.non_pegRNA_mismatches_outcome, [])
         self.relevant_alignments = self.intended_edit_relevant_alignments
 
     @memoized_property
@@ -651,7 +651,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         elif self.is_intended_deletion:
             self.category = 'intended edit'
             self.subcategory = 'deletion'
-            self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, [self.target_info.pegRNA_programmed_deletion])
+            self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, self.non_pegRNA_mismatches_outcome, [self.target_info.pegRNA_programmed_deletion])
             self.relevant_alignments = self.intended_edit_relevant_alignments
 
         elif self.is_unintended_rejoining:

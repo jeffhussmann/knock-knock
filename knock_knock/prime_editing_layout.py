@@ -1680,16 +1680,16 @@ class Layout(layout.Categorizer):
                 if self.target_info.pegRNA_programmed_insertion is not None:
                     indels.append(self.target_info.pegRNA_programmed_insertion)
 
-            self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, indels)
+            self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, self.non_pegRNA_mismatches_outcome, indels)
 
         elif self.intended_edit_type == 'insertion':
             self.subcategory = 'insertion'
-            self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, [self.target_info.pegRNA_programmed_insertion])
+            self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, self.non_pegRNA_mismatches_outcome, [self.target_info.pegRNA_programmed_insertion])
 
         elif self.intended_edit_type == 'deletion':
             self.subcategory = 'deletion'
 
-            self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, [self.target_info.pegRNA_programmed_deletion])
+            self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, self.non_pegRNA_mismatches_outcome, [self.target_info.pegRNA_programmed_deletion])
 
         else:
             target_alignment = self.single_read_covering_target_alignment
@@ -1702,7 +1702,7 @@ class Layout(layout.Categorizer):
             else:
                 uninteresting_indels = []
 
-            self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, uninteresting_indels)
+            self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, self.non_pegRNA_mismatches_outcome, uninteresting_indels)
 
             if self.pegRNA_SNV_string == self.full_incorporation_pegRNA_SNV_string:
                 self.subcategory = 'substitution'
@@ -1836,7 +1836,7 @@ class Layout(layout.Categorizer):
         elif self.intended_edit_type == 'deletion':
             indels = indels + [self.target_info.pegRNA_programmed_deletion]
 
-        self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, indels)
+        self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, self.non_pegRNA_mismatches_outcome, indels)
 
     def is_valid_unintended_rejoining(self, chains):
         ''' There is RT'ed sequence, and the extension chains cover the whole read.
@@ -2259,7 +2259,7 @@ class Layout(layout.Categorizer):
 
                         else:
                             self.subcategory = 'mismatches'
-                            self.outcome = MismatchOutcome(self.non_pegRNA_mismatches)
+                            self.outcome = self.non_pegRNA_mismatches_outcome
 
                         self.relevant_alignments = [target_alignment]
 
@@ -2728,6 +2728,10 @@ class Layout(layout.Categorizer):
     def non_pegRNA_mismatches(self):
         _, non_pegRNA_mismatches = self.mismatches_summary
         return non_pegRNA_mismatches
+
+    @memoized_property
+    def non_pegRNA_mismatches_outcome(self):
+        return MismatchOutcome(self.non_pegRNA_mismatches)
 
     @memoized_property
     def original_target_alignment_has_no_indels(self):

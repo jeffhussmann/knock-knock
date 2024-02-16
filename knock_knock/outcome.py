@@ -97,30 +97,38 @@ class InsertionOutcome(Outcome):
         return type(self)(shifted_insertion)
 
 class ProgrammedEditOutcome(Outcome):
-    def __init__(self, SNV_read_bases, indels):
+    def __init__(self, SNV_read_bases, non_programmed_mismatches_outcome, indels):
         self.SNV_read_bases = SNV_read_bases
+
+        self.non_programmed_mismatches_outcome = non_programmed_mismatches_outcome
+
         self.indels = indels
         self.deletions = [indel for indel in self.indels if indel.kind == 'D']
         self.insertions = [indel for indel in self.indels if indel.kind == 'I']
 
     @classmethod
     def from_string(cls, details_string):
-        SNV_string, indels_string = details_string.split(';', 1)
+        SNV_string, non_programmed_mismatches_string, indels_string = details_string.split(';', 2)
+
+        non_programmed_mismatches_outcome = MismatchOutcome.from_string(non_programmed_mismatches_string)
+
         if indels_string == '':
             indels = []
         else:
             indels = [knock_knock.target_info.degenerate_indel_from_string(s) for s in indels_string.split(';')]
-        return cls(SNV_string, indels)
+
+        return cls(SNV_string, non_programmed_mismatches_outcome, indels)
 
     def __str__(self):
         indels_string = ';'.join(str(indel) for indel in self.indels)
-        return f'{self.SNV_read_bases};{indels_string}'
+        return f'{self.SNV_read_bases};{self.non_programmed_mismatches_outcome};{indels_string}'
 
     def perform_anchor_shift(self, anchor):
-        # Note: doesn't touch SNVs.
+        # Note: doesn't touch programmed SNVs.
+        shifted_non_programmed_mismatches = self.non_programmed_mismatches_outcome.perform_anchor_shift(anchor)
         shifted_deletions = [DeletionOutcome(d).perform_anchor_shift(anchor).deletion for d in self.deletions]
         shifted_insertions = [InsertionOutcome(i).perform_anchor_shift(anchor).insertion for i in self.insertions]
-        return type(self)(self.SNV_read_bases, shifted_deletions + shifted_insertions)
+        return type(self)(self.SNV_read_bases, shifted_non_programmed_mismatches, shifted_deletions + shifted_insertions)
 
 class HDROutcome(Outcome):
     def __init__(self, donor_SNV_read_bases, donor_deletions):
