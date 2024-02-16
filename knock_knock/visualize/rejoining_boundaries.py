@@ -143,9 +143,9 @@ def plot_single_flap_extension_chain_edges(target_info,
                                            line_width=1,
                                            pegRNA_from_right=False,
                                            draw_sequence=False,
+                                           include_genome=True,
                                           ):
     ti = target_info
-    features = ti.features
 
     # Common parameters.
     ref_bar_height = 0.04
@@ -175,7 +175,7 @@ def plot_single_flap_extension_chain_edges(target_info,
                 if xs[side] is None:
                     continue
 
-                ax.plot(xs[side], ys[side], 'o-', label=set_name, linewidth=line_width, markersize=marker_size, color=color, alpha=0.8)
+                ax.plot(xs[side], ys[side], 'o-', label=set_name, linewidth=line_width, markersize=marker_size, color=color)
 
     ax = axs[1, 0]
     pegRNA_name = ti.pegRNA_names[0]
@@ -216,7 +216,26 @@ def plot_single_flap_extension_chain_edges(target_info,
                             family='monospace',
                            )
 
-    for feature_name in ['PBS', 'RTT', 'scaffold', 'protospacer']:
+    features_to_annotate = [
+        'protospacer',
+        'scaffold',
+        'PBS',
+    ]
+
+    feature_aliases = {}
+
+    if ti.pegRNA_programmed_insertion_features:
+        for insertion_feature in ti.pegRNA_programmed_insertion_features:
+            features_to_annotate.append(insertion_feature.ID)
+            feature_aliases[insertion_feature.ID] = 'insertion'
+
+        features_to_annotate.append(f'HA_RT_{ti.pegRNA.name}')
+        feature_aliases[f'HA_RT_{ti.pegRNA.name}'] = 'homology\narm'
+
+    else:
+        features_to_annotate.append('RTT')
+
+    for feature_name in features_to_annotate:
         feature = ti.features[pegRNA_name, feature_name]
         color = feature.attribute['color']
 
@@ -230,23 +249,34 @@ def plot_single_flap_extension_chain_edges(target_info,
         start = max(start, pegRNA_x_min)
         end = min(end, pegRNA_x_max)
 
-        ax.axvspan(start, end, y_start + ref_bar_height, y_start + ref_bar_height + feature_height,
+        ax.axvspan(start,
+                   end,
+                   y_start + ref_bar_height,
+                   y_start + ref_bar_height + feature_height,
                    facecolor=color,
                    alpha=0.75,
                    clip_on=False,
                   )
 
         for data_ax in axs[:, 0]:
-            data_ax.axvspan(start, end,
+            data_ax.axvspan(start,
+                            end,
                             facecolor=color,
                             alpha=0.5,
                             clip_on=False,
                            )
 
-        ax.annotate(feature_name,
+        label = feature_aliases.get(feature_name, feature_name)
+
+        if len(label) > 3 and end - start < 10:
+            y_offset = -25
+        else:
+            y_offset = -5
+
+        ax.annotate(label,
                     xy=(np.mean([start, end]), y_start),
                     xycoords=('data', 'axes fraction'),
-                    xytext=(0, -5),
+                    xytext=(0, y_offset),
                     textcoords='offset points',
                     ha='center',
                     va='top',
@@ -259,7 +289,7 @@ def plot_single_flap_extension_chain_edges(target_info,
         ax.set_xlim(pegRNA_x_min, pegRNA_x_max)
         ax.set_ylim(0)
 
-    axs[0, 0].set_title('pegRNA', color='C1')
+    axs[0, 0].set_title(f'pegRNA ({pegRNA_name})', color='C1')
 
     axs[0, 1].set_xticklabels([])
 
@@ -383,10 +413,28 @@ def plot_single_flap_extension_chain_edges(target_info,
     axs[0, 0].set_xticklabels([])
 
     if len(guide_sets) > 1:
-        axs[0, 1].legend(bbox_to_anchor=(1, 1), loc='upper left')
+        if include_genome:
+            ax = axs[0, 1]
+        else:
+            ax = axs[0, 0]
 
-    axs[0, 0].set_ylabel('Cumulative\npercentage of reads', size=12)
-    axs[1, 0].set_ylabel('Percentage of reads', size=12)
+        ax.legend(bbox_to_anchor=(1, 1), loc='upper left')
+
+    if normalize:
+        ylabel = 'Normalized cumulative\npercentage of reads'
+    else:
+        ylabel = 'Cumulative\npercentage of reads'
+    axs[0, 0].set_ylabel(ylabel, size=12)
+
+    if normalize:
+        ylabel = 'Normalized percentage of reads'
+    else:
+        ylabel = 'Percentage of reads'
+    axs[1, 0].set_ylabel(ylabel, size=12)
+
+    if not include_genome:
+        for ax in axs[:, 1]:
+            fig.delaxes(ax)
 
     return fig, axs
 
