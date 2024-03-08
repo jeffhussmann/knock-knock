@@ -36,9 +36,12 @@ class Batch:
                  only_edited=False,
                  progress=None,
                 ):
+
         self.base_dir = Path(base_dir)
         self.batch_name = batch_name
+
         self.data_dir = self.base_dir / 'data' / self.batch_name
+        self.results_dir = self.base_dir / 'results' / self.batch_name
 
         if progress is None or getattr(progress, '_silent', False):
             def ignore_kwargs(x, **kwargs):

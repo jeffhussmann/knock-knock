@@ -1,10 +1,10 @@
 import gzip
 import logging
-import sys
 from itertools import chain, islice
 
-from collections import defaultdict
+from collections import defaultdict, Counter
 
+import numpy as np
 import pysam
 
 import knock_knock.experiment
@@ -22,6 +22,8 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
             'no_overlap_outcome_counts': self.results_dir / 'no_overlap_outcome_counts.csv',
             'no_overlap_outcome_list': self.results_dir / 'no_overlap_outcome_list.txt',
             'too_short_outcome_list': self.results_dir / 'too_short_outcome_list.txt',
+
+            'stitched_lengths': self.results_dir / 'stitched_lengths.csv',
         })
 
         sequencing_primers = self.description.get('sequencing_primers', 'truseq')
@@ -313,6 +315,8 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
         no_overlap_read_pairs = []
         too_short_outcomes = []
 
+        stitched_lengths = Counter()
+
         description = 'Stitching read pairs'
         for R1, R2 in self.progress(self.read_pairs, desc=description):
             if R1.name != R2.name:
@@ -322,7 +326,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
                 print(f'R1 file name: {R1_fns}')
                 print(f'R2 file name: {R2_fns}')
                 print(f'R1 read {R1.name} paired with R2 read {R2.name}.')
-                sys.exit(1)
+                raise ValueError
 
             stitched = sw.stitch_read_pair(R1, R2, before_R1, before_R2, indel_penalty=-1000)
 
@@ -331,10 +335,14 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
                 no_overlap_read_pairs.append((R1, R2))
 
+                stitched_lengths[self.length_to_store_unknown] += 1
+
             elif len(stitched) <= 10:
                 # 22.07.18: Should this check be done on the final trimmed read instead?
                 outcome = self.final_Outcome(stitched.name, len(stitched), 0, 'nonspecific amplification', 'primer dimer', 'n/a')
                 too_short_outcomes.append(outcome)
+
+                stitched_lengths[len(stitched)] += 1
 
             else:
                 # Trim after stitching to leave adapters in expected place during stitching.
@@ -352,13 +360,14 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
                 trimmed = stitched[start:end]
 
+                stitched_lengths[len(stitched)] += 1
+
                 stitched_reads.append(trimmed)
 
         with gzip.open(fns['stitched'], 'wt', compresslevel=1) as stitched_fh:
             for read in sorted(stitched_reads, key=lambda read: read.name):
                 stitched_fh.write(str(read))
              
-
         with (gzip.open(fns['R1_no_overlap'], 'wt', compresslevel=1) as R1_fh,
               gzip.open(fns['R2_no_overlap'], 'wt', compresslevel=1) as R2_fh,
              ):
@@ -371,6 +380,13 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
             too_short_fh.write(f'## Generated at {utilities.current_time_string()}\n')
             for outcome in sorted(too_short_outcomes, key=lambda outcome: outcome.query_name):
                 too_short_fh.write(f'{outcome}\n')
+
+        stitched_lengths = utilities.counts_to_array(stitched_lengths)
+        np.savetxt(self.fns['stitched_lengths'], stitched_lengths, fmt='%i')
+
+    @memoized_property
+    def stitched_lengths(self):
+        return np.loadtxt(self.fns['stitched_lengths'])
 
     def preprocess(self):
         if self.paired_end:
