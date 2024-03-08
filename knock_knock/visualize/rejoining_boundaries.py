@@ -30,8 +30,27 @@ class BoundaryProperties:
 
         self.joint_array = hits.utilities.counts_to_array(counts, dim=2) / self.total_outcomes
 
-    def count_single_flap_boundaries(self, exp):
+    def count_single_flap_boundaries(self, exp, include_intended_edit=False):
         ti = exp.target_info
+
+        pegRNA_name = ti.pegRNA.name
+        pegRNA_HA_RT = ti.features[pegRNA_name, f'HA_RT_{pegRNA_name}']
+        pegRNA_PBS = ti.features[pegRNA_name, 'PBS']
+        last_HA_RT_nt_in_pegRNA = pegRNA_PBS.end - pegRNA_HA_RT.start
+
+        target_PBS_name = ti.PBS_names_by_side_of_read[ti.pegRNA_side]
+        target_PBS = ti.features[ti.target, target_PBS_name]
+        target_HA_RT = ti.features[ti.target, f'HA_RT_{pegRNA_name}']
+
+        # By definition, the nt on the PAM-distal side of the nick
+        # is zero in the coordinate system, and postive values go towards
+        # the PAM.
+
+        if target_PBS.strand == '+':
+            first_nt_after_HA_RT_in_genome = target_HA_RT.end + 1 - (target_PBS.end + 1)
+        else:
+            # TODO: confirm that there are no off-by-one errors here.
+            first_nt_after_HA_RT_in_genome = (target_PBS.start - 1) - (target_HA_RT.start - 1)
 
         for outcome in exp.outcome_iter():
             if outcome.category != 'nonspecific amplification':
@@ -54,6 +73,10 @@ class BoundaryProperties:
 
                 joint_key = (outcome.subcategory, ur_outcome.edges['left'], ur_outcome.edges['right'])
                 self.joint_distribution[joint_key] += 1
+
+            elif include_intended_edit and outcome.category == 'intended edit':
+                self.edge_distributions['pegRNA', 'RT\'ed'][last_HA_RT_nt_in_pegRNA] += 1
+                self.edge_distributions['target', 'RT\'ed'][first_nt_after_HA_RT_in_genome] += 1
 
         return self
 
