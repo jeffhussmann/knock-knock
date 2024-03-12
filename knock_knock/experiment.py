@@ -400,7 +400,6 @@ class Experiment:
                 pair_groups = [self.alignment_groups(fn_key=fn_key, outcome=pair, read_type=read_type) for pair in pairs]
                 yield from heapq.merge(*pair_groups)
 
-
         elif read_type is not None:
             fn = self.fns_by_read_type['bam_by_name'][read_type]
 
@@ -652,7 +651,7 @@ class Experiment:
     @memoized_property
     def categories_by_frequency(self):
         if self.category_counts is None:
-            return None
+            return []
         else:
             return list(self.category_counts.sort_values(ascending=False).index)
 

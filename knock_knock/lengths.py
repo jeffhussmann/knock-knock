@@ -58,7 +58,11 @@ class OutcomeStratifiedLengths:
 
     @memoized_property
     def lengths_for_all_outcomes(self):
-        return sum(self.outcome_length_arrays.values())
+        if len(self.outcome_length_arrays) == 0:
+            lengths = np.array([], dtype=int)
+        else:
+            lengths = sum(self.outcome_length_arrays.values())
+        return lengths
 
     @memoized_property
     def total_reads(self):

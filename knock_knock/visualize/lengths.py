@@ -29,6 +29,9 @@ def plot_outcome_stratified_lengths(outcome_stratified_lengths,
     highest_points = outcome_stratified_lengths.outcome_highest_points(smooth_window=smooth_window)
     outcome_to_color = outcome_stratified_lengths.outcome_to_color(smooth_window=smooth_window)
 
+    if total_reads == 0:
+        return
+
     if x_lims is None:
         ys = list(length_arrays.values())[0]
         x_max = int(len(ys) * 1.005)

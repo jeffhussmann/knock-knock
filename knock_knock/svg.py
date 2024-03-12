@@ -159,6 +159,10 @@ def decorate_outcome_browser(exp, min_total_to_label=0.1):
     import knock_knock.table
 
     fig = exp.plot_outcome_stratified_lengths(min_total_to_label=min_total_to_label)
+
+    if fig is None:
+        return 
+
     num_panels = len(fig.axes)
 
     # Write matplotlib svg to a string.
