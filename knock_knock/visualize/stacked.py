@@ -728,7 +728,8 @@ class StackedDiagrams:
             target_subsequences = [(0, len(components['RTT']))]
         else:
             pegRNA_name = ti.pegRNA_names[0]
-            _, _, _, _, (flap_subsequences, target_subsequences) = ti.pegRNA.extract_edits_from_alignment()
+            flap_subsequences = ti.pegRNA.edit_properties['flap_subsequences']
+            target_subsequences = ti.pegRNA.edit_properties['target_subsequences']
 
             components = ti.sgRNA_components[pegRNA_name]
 

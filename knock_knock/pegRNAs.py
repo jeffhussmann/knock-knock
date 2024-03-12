@@ -323,7 +323,8 @@ class pegRNA:
         for alignment in alignments:
             print(trim_excess_target_from_alignment(alignment))
 
-    def extract_edits_from_alignment(self):
+    @memoized_property
+    def edit_properties(self):
         ''' Align the intended flap sequence to genomic sequence downstream
         of the nick using Biopython's dynamic programming.
         Return representations of SNVs, deletions, insertions, and
@@ -417,8 +418,18 @@ class pegRNA:
             for (_, left_target_end), (right_target_start, _) in zip(target_subsequences, target_subsequences[1:]):
                 if left_target_end != right_target_start:
                     deletions.append((left_target_end, right_target_start - 1))
+
+        properties = {
+            'SNVs': SNVs,
+            'deletions': deletions,
+            'insertions': insertions,
+            'HA_RT': HA_RT,
+            'HA_RT_length': HA_RT['flap'][1] - HA_RT['flap'][0] + 1,
+            'flap_subsequences': flap_subsequences,
+            'target_subsequences': target_subsequences,
+        }
                 
-        return SNVs, deletions, insertions, HA_RT, (flap_subsequences, target_subsequences)
+        return properties
 
     def infer_edit_features(self):
         ''' 
@@ -488,17 +499,15 @@ class pegRNA:
 
         # Align the intended flap sequence to the target downstream of the nick.
 
-        SNVs, deletions, insertions, HA_RT, _ = self.extract_edits_from_alignment()
-
-        if len(SNVs) > 0:
-            if len(deletions) == 0 and len(insertions) == 0:
+        if len(self.edit_properties['SNVs']) > 0:
+            if len(self.edit_properties['deletions']) == 0 and len(self.edit_properties['insertions']) == 0:
                 self.edit_type = 'substitution(s)'
             else:
                 self.edit_type = 'combination'
         else:
-            if len(deletions) == 1 and len(insertions) == 0:
+            if len(self.edit_properties['deletions']) == 1 and len(self.edit_properties['insertions']) == 0:
                 self.edit_type = 'deletion'
-            elif len(deletions) == 0 and len(insertions) == 1:
+            elif len(self.edit_properties['deletions']) == 0 and len(self.edit_properties['insertions']) == 1:
                 self.edit_type = 'insertion'
             else:
                 self.edit_type = 'combination'
@@ -514,15 +523,15 @@ class pegRNA:
             else:
                 return self.cut_after - downstream_p
 
-        if HA_RT is not None:
-            starts['pegRNA', 'HA_RT'], ends['pegRNA', 'HA_RT'] = sorted(map(convert_flap_to_pegRNA_coordinates, HA_RT['flap']))
-            starts['target', 'HA_RT'], ends['target', 'HA_RT'] = sorted(map(convert_downstream_of_nick_to_target_coordinates, HA_RT['target_downstream']))
+        if self.edit_properties['HA_RT'] is not None:
+            starts['pegRNA', 'HA_RT'], ends['pegRNA', 'HA_RT'] = sorted(map(convert_flap_to_pegRNA_coordinates, self.edit_properties['HA_RT']['flap']))
+            starts['target', 'HA_RT'], ends['target', 'HA_RT'] = sorted(map(convert_downstream_of_nick_to_target_coordinates, self.edit_properties['HA_RT']['target_downstream']))
 
-        if len(insertions) > 0:
-            if len(insertions) > 1:
+        if len(self.edit_properties['insertions']) > 0:
+            if len(self.edit_properties['insertions']) > 1:
                 logging.warning('multiple insertions')
             
-            insertion = insertions[0]
+            insertion = self.edit_properties['insertions'][0]
             flap_coords = (insertion['start_in_flap'], insertion['end_in_flap'])
             downstream_coords = (insertion['starts_after_in_downstream'], insertion['ends_before_in_downstream'])
             starts['pegRNA', 'insertion'], ends['pegRNA', 'insertion'] = sorted(map(convert_flap_to_pegRNA_coordinates, flap_coords))
@@ -549,12 +558,12 @@ class pegRNA:
 
             self.insertion = insertion
 
-        if len(deletions) > 0:
-            if len(deletions) > 1:
+        if len(self.edit_properties['deletions']) > 0:
+            if len(self.edit_properties['deletions']) > 1:
                 logging.warning('multiple deletions')
                 #raise NotImplementedError
 
-            deletion = deletions[0]
+            deletion = self.edit_properties['deletions'][0]
             starts['target', 'deletion'], ends['target', 'deletion'] = sorted(map(convert_downstream_of_nick_to_target_coordinates, deletion))
             deletion_length = ends['target', 'deletion'] - starts['target', 'deletion'] + 1
 
@@ -570,7 +579,7 @@ class pegRNA:
             deletion_feature.attribute['color'] = default_feature_colors['deletion']
             new_features[names['target'], deletion_name] = deletion_feature
 
-        if len(SNVs) > 0:
+        if len(self.edit_properties['SNVs']) > 0:
             self.SNVs = {
                 self.target_name: {},
                 self.name: {},
@@ -578,7 +587,7 @@ class pegRNA:
                 'target_downstream': {},
             }
 
-            for SNV in SNVs.values():
+            for SNV in self.edit_properties['SNVs'].values():
                 positions = {
                     'pegRNA': convert_flap_to_pegRNA_coordinates(SNV['flap']),
                     'target': convert_downstream_of_nick_to_target_coordinates(SNV['target_downstream']),
@@ -667,7 +676,7 @@ class pegRNA:
         HA_PBS.attribute['ID'] = HA_PBS_name
         new_features[self.target_name, HA_PBS_name] = HA_PBS
 
-        if HA_RT is not None:
+        if self.edit_properties['HA_RT'] is not None:
             target_HA_RT = gff.Feature.from_fields(seqname=self.target_name,
                                                    start=starts['target', 'HA_RT'],
                                                    end=ends['target', 'HA_RT'],
@@ -683,7 +692,7 @@ class pegRNA:
         HA_PBS.attribute['ID'] = HA_PBS_name
         new_features[names['pegRNA'], HA_PBS_name] = HA_PBS
 
-        if HA_RT is not None:
+        if self.edit_properties['HA_RT'] is not None:
             pegRNA_HA_RT = gff.Feature.from_fields(seqname=names['pegRNA'],
                                                    start=starts['pegRNA', 'HA_RT'],
                                                    end=ends['pegRNA', 'HA_RT'],
@@ -694,6 +703,27 @@ class pegRNA:
             new_features[names['pegRNA'], HA_RT_name] = pegRNA_HA_RT
 
         self.features.update(new_features)
+
+    @memoized_property    
+    def edit_description(self):
+        strings = []
+
+        for name, details in self.edit_properties['SNVs'].items():
+            genome_base = self.target_downstream_of_nick[details['target_downstream']]
+            edit_base = self.intended_flap_sequence[details['flap']]
+            strings.append(f"+{details['target_downstream'] + 1}{genome_base}→{edit_base}")
+
+        for insertion in self.edit_properties['insertions']:
+            sequence = self.intended_flap_sequence[insertion['start_in_flap']:insertion['end_in_flap'] + 1]
+            position = insertion['starts_after_in_downstream'] + 1
+            strings.append(f'+{position}ins{sequence}')
+
+        for deletion in self.edit_properties['deletions']: 
+            sequence = self.target_downstream_of_nick[deletion[0]:deletion[1] + 1]
+            position = deletion[0] + 1
+            strings.append(f'+{position}del{sequence}')
+
+        return ','.join(strings)
 
 def get_pegRNAs_by_strand(pegRNAs):
     pegRNAs_by_strand = {}
