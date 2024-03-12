@@ -42,6 +42,7 @@ class ExperimentGroup:
 
             'total_outcome_counts': self.results_dir / 'total_outcome_counts.txt',
             'outcome_counts': self.results_dir  / 'outcome_counts.npz',
+            'pegRNA_conversion_fractions': self.results_dir / 'pegRNA_conversion_fractions.csv',
 
             'genomic_insertion_length_distributions': self.results_dir / 'genomic_insertion_length_distribution.txt',
              
@@ -94,6 +95,7 @@ class ExperimentGroup:
 
         logger.info('Collecting outcome counts')
         self.make_outcome_counts()
+        self.write_pegRNA_conversion_fractions()
 
         if generate_figures:
             try:

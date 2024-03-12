@@ -843,7 +843,34 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
         fs_df = pd.DataFrame.from_dict(fs, orient='index')
 
+        fs_df.columns.names = self.full_condition_keys
+        fs_df.index.name = 'edit_name'
+
         return fs_df
+
+    def write_pegRNA_conversion_fractions(self):
+        if self.target_info.pegRNA is not None:
+            SNVs = self.target_info.pegRNA.SNVs
+            
+            def name_to_description(name):
+                if name in SNVs['flap']:
+                    position = SNVs['flap'][name]['position'] + 1
+                    genome_base = SNVs['target_downstream'][name]['base']
+                    flap_base = SNVs['flap'][name]['base']
+                    description = f'+{position}{genome_base}→{flap_base}'
+                else:
+                    raise NotImplementedError
+                
+                return description
+
+            df = self.pegRNA_conversion_fractions.copy()
+
+            df.index = df.index.map(name_to_description)
+
+            df.columns = df.columns.map(self.full_condition_to_sample_name)
+            df.columns.name = 'sample'
+
+            df.T.to_csv(self.fns['pegRNA_conversion_fractions'])
 
     @memoized_with_kwargs
     def deletion_boundaries(self, *, include_simple_deletions=True, include_edit_plus_deletions=False):
