@@ -1024,6 +1024,9 @@ def sanitize_and_validate_sample_sheet(sample_sheet_fn):
     if 'extra_sequences' not in sample_sheet_df.columns:
         sample_sheet_df['extra_sequences'] = ''
 
+    if 'donor' not in sample_sheet_df.columns:
+        sample_sheet_df['donor'] = ''
+
     # Confirm mandatory columns are present.
 
     mandatory_columns = [
@@ -1033,6 +1036,7 @@ def sanitize_and_validate_sample_sheet(sample_sheet_fn):
         'sgRNAs',
         'genome',
         'extra_sequences',
+        'donor',
     ]
     
     missing_columns = [col for col in mandatory_columns if col not in sample_sheet_df.columns]
@@ -1153,9 +1157,6 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
     base_dir = Path(base_dir)
     sample_sheet_df = sample_sheet_df.copy()
 
-    if 'donor' not in sample_sheet_df.columns:
-        sample_sheet_df['donor'] = ''
-
     if batch_name is None:
         fn_parents = {Path(fn).parent for fn in sample_sheet_df['R1']}
 
@@ -1164,6 +1165,9 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
             raise ValueError(batch_names)
         else:
             batch_name = batch_names.pop()
+
+    batch_dir = base_dir / 'data' / batch_name
+    batch_dir.mkdir(parents=True, exist_ok=True)
 
     sequencing_start_feature_names = detect_sequencing_start_feature_names(base_dir, batch_name, sample_sheet_df)
 
@@ -1198,6 +1202,53 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
                     sequencing_start_feature_names[row['sample_name']] = feature_name
 
     sample_sheet_df['sequencing_start_feature_name'] = sample_sheet_df['sample_name'].map(sequencing_start_feature_names)
+
+    # If unedited controls are annotated, make virtual samples.
+
+    if 'is_unedited_control' in sample_sheet_df:
+        sample_sheet_df['is_unedited_control'] = sample_sheet_df['is_unedited_control'] == 'unedited'
+
+        amplicon_keys = ['amplicon_primers', 'genome']
+        strategy_keys = ['sgRNAs', 'donor', 'extra_sequences']
+
+        grouped_by_amplicon = sample_sheet_df.groupby(amplicon_keys)
+
+        new_rows = []
+
+        for _, amplicon_rows in grouped_by_amplicon:
+            grouped_by_editing_strategy = amplicon_rows.groupby(strategy_keys)
+
+            for strategy_i, (strategy, strategy_rows) in enumerate(grouped_by_editing_strategy):
+                for _, row in amplicon_rows.query('is_unedited_control').iterrows():
+                    augmented_sample_name = f"{row['sample_name']}_{'_'.join(strategy)}"
+                    existing_name = Path(row['R1']).name
+                    existing_name_stem, extension = existing_name.split('.', 1)
+                    link_name = f'{existing_name_stem}_{strategy_i}.{extension}'
+
+                    existing_path = batch_dir / existing_name
+                    link = batch_dir / link_name
+
+                    if link.exists():
+                        if not link.is_symlink():
+                            raise ValueError(link)
+
+                        link.unlink()
+
+                    link.symlink_to(existing_path)
+
+                    new_row = row.copy()
+                    new_row['R1'] = str(link)
+                    new_row['sample_name'] = augmented_sample_name
+
+                    for key, value in zip(strategy_keys, strategy):
+                        new_row[key] = value
+
+                    new_rows.append(new_row)
+
+        new_rows = pd.DataFrame(new_rows)        
+
+        existing_unedited_idxs = sample_sheet_df.query('is_unedited_control').index
+        sample_sheet_df = pd.concat([sample_sheet_df.drop(existing_unedited_idxs), new_rows])
 
     valid_supplemental_indices = sorted(knock_knock.target_info.locate_supplemental_indices(base_dir))
 
@@ -1305,9 +1356,6 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
 
                 if 'R2' in row:
                     samples[sample_name]['R2'] = Path(row['R2']).name
-
-    batch_dir = base_dir / 'data' / batch_name
-    batch_dir.mkdir(parents=True, exist_ok=True)
 
     groups_df = pd.DataFrame.from_dict(groups, orient='index')
     groups_df.index.name = 'group'
