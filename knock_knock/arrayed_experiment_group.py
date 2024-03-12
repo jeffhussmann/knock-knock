@@ -645,15 +645,15 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
             # all columns will be grouped together. Making
             # this constant value 'all' means that will be
             # the name of eventual aggregated column. 
-            kwargs = dict(axis='columns', by=lambda x: 'all')
+            kwargs = dict(by=lambda x: 'all')
         else:
-            kwargs = dict(axis='columns', level=self.condition_keys)
+            kwargs = dict(level=self.condition_keys)
 
-        return df.groupby(**kwargs)
+        return df.T.groupby(**kwargs)
 
     @memoized_property
     def category_fraction_condition_means(self):
-        return self.group_by_condition(self.category_fractions).mean()
+        return self.group_by_condition(self.category_fractions).mean().T
 
     @memoized_property
     def category_fraction_baseline_means(self):
@@ -661,7 +661,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
     @memoized_property
     def category_fraction_condition_stds(self):
-        return self.group_by_condition(self.category_fractions).std()
+        return self.group_by_condition(self.category_fractions).std().T
 
     @memoized_property
     def categories_by_baseline_frequency(self):
@@ -673,11 +673,11 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
     @memoized_property
     def category_fraction_difference_condition_means(self):
-        return self.group_by_condition(self.category_fraction_differences).mean()
+        return self.group_by_condition(self.category_fraction_differences).mean().T
 
     @memoized_property
     def category_fraction_difference_condition_stds(self):
-        return self.group_by_condition(self.category_fraction_differences).std()
+        return self.group_by_condition(self.category_fraction_differences).std().T
 
     @memoized_property
     def category_log2_fold_changes(self):
@@ -716,7 +716,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
     @memoized_property
     def subcategory_fraction_condition_means(self):
-        return self.group_by_condition(self.subcategory_fractions).mean()
+        return self.group_by_condition(self.subcategory_fractions).mean().T
 
     @memoized_property
     def subcategory_fraction_baseline_means(self):
@@ -724,7 +724,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
     @memoized_property
     def subcategory_fraction_condition_stds(self):
-        return self.group_by_condition(self.subcategory_fractions).std()
+        return self.group_by_condition(self.subcategory_fractions).std().T
 
     @memoized_property
     def subcategories_by_baseline_frequency(self):
@@ -736,11 +736,11 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
     @memoized_property
     def subcategory_fraction_difference_condition_means(self):
-        return self.group_by_condition(self.subcategory_fraction_differences).mean()
+        return self.group_by_condition(self.subcategory_fraction_differences).mean().T
 
     @memoized_property
     def subcategory_fraction_difference_condition_stds(self):
-        return self.group_by_condition(self.subcategory_fraction_differences).std()
+        return self.group_by_condition(self.subcategory_fraction_differences).std().T
 
     @memoized_property
     def subcategory_log2_fold_changes(self):
