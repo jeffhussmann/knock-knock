@@ -83,6 +83,8 @@ def parallel_arrayed(args):
 
     batch = knock_knock.arrayed_experiment_group.get_batch(args.project_directory, args.batch_name)
 
+    batch.write_sanitized_group_name_lookup_table()
+
     parallel_command = [
         'parallel',
         '--max-procs', str(args.max_procs),

@@ -62,6 +62,10 @@ class Batch:
         self.group_descriptions_fn = self.data_dir / 'group_descriptions.csv'
         self.group_descriptions = pd.read_csv(self.group_descriptions_fn, index_col='group').replace({np.nan: None})
 
+        self.fns = {
+            'group_name_to_sanitized_group_name': self.results_dir / 'group_name_to_sanitized_group_name.csv',
+        }
+
     def __repr__(self):
         return f'Batch: {self.batch_name}, base_dir={self.base_dir}'
 
@@ -79,6 +83,12 @@ class Batch:
         group_name = self.sanitized_group_name_to_group_name[sanitized_group_name]
         group = self.groups[group_name]
         return group
+
+    def write_sanitized_group_name_lookup_table(self):
+        if 'sanitized_group_name' in self.group_descriptions:
+            table = self.group_descriptions['sanitized_group_name']
+            self.results_dir.mkdir(exist_ok=True, parents=True)
+            table.to_csv(self.fns['group_name_to_sanitized_group_name'])
 
     def group(self, group_name):
         return ArrayedExperimentGroup(self.base_dir,
