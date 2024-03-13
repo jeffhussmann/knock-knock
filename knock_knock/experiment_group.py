@@ -236,8 +236,11 @@ class ExperimentGroup:
         return diagram
 
     def make_group_figures(self):
-        self.make_partial_incorporation_figure()
-        self.make_deletion_boundaries_figure()
+        grid = self.make_partial_incorporation_figure()
+        grid.fig.savefig(self.fns['partial_incorporation_figure'], bbox_inches='tight')
+
+        grid = self.make_deletion_boundaries_figure()
+        grid.fig.savefig(self.fns['deletion_boundaries_figure'], bbox_inches='tight')
 
     def make_partial_incorporation_figure(self,
                                           unique_colors=False,
