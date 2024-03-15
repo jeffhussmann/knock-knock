@@ -793,6 +793,8 @@ def load_extra_genbank_records(base_dir):
     return records
 
 def build_component_registry(base_dir):
+    base_dir = Path(base_dir)
+
     registry = {}
 
     registry['sgRNAs'] = load_sgRNAs(base_dir)
