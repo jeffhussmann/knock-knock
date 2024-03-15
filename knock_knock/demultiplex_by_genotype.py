@@ -21,11 +21,11 @@ def add_suffix_to_fn(fn, suffix, full_extension):
     fn = Path(fn)
     return f'{fn.name[:-len(full_extension)]}_{suffix}{full_extension}'
 
-def get_unique_kmers(genotypes, k=20):
+def get_unique_kmers(genotypes, k=20, relevant_slice=slice(None)):
     def get_kmers(seq, k):
         return {seq[i:i+k] for i in range(0, len(seq) - k)}
 
-    kmers = {name: get_kmers(seq, 20) for name, seq in genotypes.items()}
+    kmers = {name: get_kmers(seq[relevant_slice], 20) for name, seq in genotypes.items()}
 
     unique_kmers = {}
 
@@ -75,7 +75,7 @@ def add_genotypes_to_sample_sheet(base_dir, batch_name, genotypes_fasta_fn):
     knock_knock.arrayed_experiment_group.make_targets(base_dir, suffixed_df)
     knock_knock.arrayed_experiment_group.make_group_descriptions_and_sample_sheet(base_dir, suffixed_df, demultiplexed_batch_name)
 
-def demultiplex(base_dir, batch_name, genotypes_fasta_fn, progress=None):
+def demultiplex(base_dir, batch_name, genotypes_fasta_fn, relevant_slice=slice(None), progress=None):
     base_dir = Path(base_dir)
 
     input_dir = base_dir / 'data' / batch_name
@@ -91,7 +91,7 @@ def demultiplex(base_dir, batch_name, genotypes_fasta_fn, progress=None):
             return x
         progress = ignore_kwargs
 
-    unique_kmers = get_unique_kmers(genotypes)
+    unique_kmers = get_unique_kmers(genotypes, relevant_slice=relevant_slice)
 
     suffixes = sorted(genotypes) + [MATCHES_NONE, MATCHES_MULTIPLE]
 

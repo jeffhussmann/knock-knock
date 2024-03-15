@@ -3,7 +3,7 @@ from collections import Counter, defaultdict
 import numpy as np
 import pysam
 
-from hits import fastq, interval, sam, sw, utilities
+from hits import interval, sam, sw, utilities
 from hits.utilities import memoized_property
 
 import knock_knock.pegRNAs
@@ -1150,11 +1150,6 @@ class Layout(layout.Categorizer):
 
         return self.summarize_mismatches_in_alignments(relevant_alignments)
 
-    @memoized_property
-    def non_pegRNA_mismatches(self):
-        _, non_pegRNA_mismatches = self.mismatches_summary
-        return non_pegRNA_mismatches
-
     def specific_to_pegRNA(self, al):
         ''' Does al contain a pegRNA-specific SNV? '''
         if al is None or al.is_unmapped:
@@ -1531,13 +1526,18 @@ class Layout(layout.Categorizer):
         the region outside of them, which is likely to be the result of incorrect trimming.
         '''
         if self.covered_by_primers.is_empty:
-            return self.whole_read
+            not_covered_by_primers = self.whole_read
         elif self.primer_alignments['left'] and not self.primer_alignments['right']:
-            return interval.Interval(self.covered_by_primers.end, self.whole_read.end)
+            not_covered_by_primers = interval.Interval(self.covered_by_primers.end, self.whole_read.end)
         elif self.primer_alignments['right'] and not self.primer_alignments['left']:
-            return interval.Interval(self.whole_read.start, self.covered_by_primers.start - 1)
+            not_covered_by_primers = interval.Interval(self.whole_read.start, self.covered_by_primers.start - 1)
         else:
-            return interval.Interval(self.covered_by_primers.start, self.covered_by_primers.end) - self.covered_by_primers 
+            not_covered_by_primers = interval.Interval(self.covered_by_primers.start, self.covered_by_primers.end) - self.covered_by_primers 
+
+        if not_covered_by_primers.is_empty:
+            not_covered_by_primers = interval.Interval.empty()
+
+        return not_covered_by_primers
 
     @memoized_property
     def non_primer_nts(self):
@@ -1577,12 +1577,10 @@ class Layout(layout.Categorizer):
 
         need_to_cover = self.whole_read_minus_edges(2) & self.not_covered_by_primers
 
-        if self.primer_alignments['left'] is not None:
+        if need_to_cover.total_length > 0 and self.primer_alignments['left'] is not None:
             covering_als = []
 
             if target_nts_past_primer['left'] <= 10 and target_nts_past_primer['right'] <= 10:
-                covering_als = []
-
                 # Exclude phiX reads, which can rarely have spurious alignments to the forward primer
                 # close to the start of the read that overlap the forward primer.
                 relevant_alignments = self.supplemental_alignments + self.split_pegRNA_alignments + self.extra_alignments
@@ -1680,16 +1678,13 @@ class Layout(layout.Categorizer):
                 if self.target_info.pegRNA_programmed_insertion is not None:
                     indels.append(self.target_info.pegRNA_programmed_insertion)
 
-            self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, self.non_pegRNA_mismatches_outcome, indels)
-
         elif self.intended_edit_type == 'insertion':
             self.subcategory = 'insertion'
-            self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, self.non_pegRNA_mismatches_outcome, [self.target_info.pegRNA_programmed_insertion])
+            indels = [self.target_info.pegRNA_programmed_insertion]
 
         elif self.intended_edit_type == 'deletion':
             self.subcategory = 'deletion'
-
-            self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, self.non_pegRNA_mismatches_outcome, [self.target_info.pegRNA_programmed_deletion])
+            indels = [self.target_info.pegRNA_programmed_deletion]
 
         else:
             target_alignment = self.single_read_covering_target_alignment
@@ -1698,17 +1693,21 @@ class Layout(layout.Categorizer):
                 target_alignment = self.original_target_covering_alignment
 
             if target_alignment is not None:
-                _, uninteresting_indels = self.interesting_and_uninteresting_indels([target_alignment])
+                _, indels = self.interesting_and_uninteresting_indels([target_alignment])
             else:
-                uninteresting_indels = []
-
-            self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, self.non_pegRNA_mismatches_outcome, uninteresting_indels)
+                indels = []
 
             if self.pegRNA_SNV_string == self.full_incorporation_pegRNA_SNV_string:
                 self.subcategory = 'substitution'
             else:
                 self.category = 'partial edit'
                 self.subcategory = 'partial incorporation'
+
+        self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string,
+                                             self.non_pegRNA_mismatches_outcome,
+                                             self.non_programmed_edit_mismatches_outcome,
+                                             indels,
+                                            )
 
     def register_indels_in_original_alignment(self):
         relevant_indels, other_indels = self.indels_in_original_target_covering_alignment
@@ -1836,7 +1835,11 @@ class Layout(layout.Categorizer):
         elif self.intended_edit_type == 'deletion':
             indels = indels + [self.target_info.pegRNA_programmed_deletion]
 
-        self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, self.non_pegRNA_mismatches_outcome, indels)
+        self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string,
+                                             self.non_pegRNA_mismatches_outcome,
+                                             self.non_programmed_edit_mismatches_outcome,
+                                             indels,
+                                            )
 
     def is_valid_unintended_rejoining(self, chains):
         ''' There is RT'ed sequence, and the extension chains cover the whole read.
@@ -2734,6 +2737,14 @@ class Layout(layout.Categorizer):
         return MismatchOutcome(self.non_pegRNA_mismatches)
 
     @memoized_property
+    def non_programmed_edit_mismatches(self):
+        return knock_knock.target_info.SNVs([])
+
+    @memoized_property
+    def non_programmed_edit_mismatches_outcome(self):
+        return MismatchOutcome(self.non_programmed_edit_mismatches)
+
+    @memoized_property
     def original_target_alignment_has_no_indels(self):
         if self.original_target_covering_alignment is None:
             return False
@@ -3095,4 +3106,4 @@ class UnintendedRejoiningOutcome(Outcome):
         return cls(left_edge, right_edge, MH_nts, integrase_sites)
 
     def __str__(self):
-        return f'{self.edges["left"]},{self.edges["right"]},{self.MH_nts}'
+        return f'{self.edges["left"]},{self.edges["right"]},{self.MH_nts},{";".join(self.integrases_sites)}'

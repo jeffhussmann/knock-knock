@@ -171,8 +171,8 @@ def plot_single_flap_extension_chain_edges(target_info,
     ti = target_info
 
     # Common parameters.
-    ref_bar_height = 0.04
-    feature_height = 0.05
+    ref_bar_height = 0.05
+    feature_height = 0.04
 
     figsize = (16, 6)
 
@@ -207,7 +207,7 @@ def plot_single_flap_extension_chain_edges(target_info,
     # is zero in the coordinate system.
     PBS_end = ti.features[pegRNA_name, 'PBS'].end
 
-    y_start = -0.25
+    y_start = -0.35
 
     pegRNA_length = len(ti.reference_sequences[pegRNA_name])
 
@@ -232,12 +232,22 @@ def plot_single_flap_extension_chain_edges(target_info,
             p = PBS_end - x
             if 0 <= p < len(ti.reference_sequences[pegRNA_name]):
                 ax.annotate(ti.reference_sequences[pegRNA_name][p],
-                            xy=(x - 0.5, y_start),
+                            xy=(x - 0.5, y_start + ref_bar_height * 0.5),
                             xycoords=('data', 'axes fraction'),
                             annotation_clip=False,
-                            size=8,
+                            size=7,
                             family='monospace',
+                            va='center',
                            )
+
+        if p > 0:
+            ax.annotate('...',
+                        xy=(x + 1 - 0.5, y_start),
+                        xycoords=('data', 'axes fraction'),
+                        annotation_clip=False,
+                        size=7,
+                        family='monospace',
+                       )
 
     features_to_annotate = [
         'protospacer',
@@ -313,8 +323,9 @@ def plot_single_flap_extension_chain_edges(target_info,
         ax.set_ylim(0)
 
     axs[0, 0].set_title(f'pegRNA ({pegRNA_name})', color='C1')
+    axs[0, 0].set_xticklabels([])
 
-    axs[0, 1].set_xticklabels([])
+    axs[1, 0].set_xlabel('End of reverse transcribed sequence')
 
     ax = axs[1, 1]
 
@@ -432,8 +443,9 @@ def plot_single_flap_extension_chain_edges(target_info,
         ax.set_ylim(0)
 
     axs[0, 1].set_title('genome', color='C0')
+    axs[0, 1].set_xticklabels([])
 
-    axs[0, 0].set_xticklabels([])
+    axs[1, 1].set_xlabel('Rejoining position in genome')
 
     if len(guide_sets) > 1:
         if include_genome:

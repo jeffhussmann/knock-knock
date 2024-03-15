@@ -295,6 +295,19 @@ class pegRNA:
 
         return target_downstream_of_nick
 
+    @memoized_property
+    def target_upstream_of_nick(self):
+        protospacer = self.features[self.target_name, self.protospacer_name]
+
+        if protospacer.strand == '+':
+            target_upstream_of_nick = self.target_sequence[:self.cut_after + 1]
+        else:
+            target_upstream_of_nick = utilities.reverse_complement(self.target_sequence[self.cut_after + 1:])
+
+        target_upstream_of_nick = target_upstream_of_nick[-20:]
+
+        return target_upstream_of_nick
+
     def align_RTT_to_target(self):
         ''' Align the intended flap sequence to genomic sequence downstream
         of the nick using Biopython's dynamic programming.
@@ -856,6 +869,76 @@ class pegRNA_pair:
         }
 
     @memoized_property
+    def complete_integrase_site_ends_in_RT_extended_target_sequence(self):
+        features = knock_knock.integrases.identify_split_recognition_sequences(self.RT_extended_target_sequence)
+
+        all_complete_sites = {
+            '+': [],
+            '-': [],
+        }
+
+        for (strand, feature_name), feature in features.items():
+            if feature.attribute['component'] == 'complete_site':
+                all_complete_sites[strand].append(feature)
+                
+        ends = {}
+
+        # First get coordinates relative to last nt before the nick, then translate
+        # to the start of the PBS.
+
+        for strand, complete_sites in all_complete_sites.items():
+            if len(complete_sites) == 0:
+                ends[strand] = None
+
+            elif len(complete_sites) == 1:
+                complete_site = complete_sites[0]
+                label = f'{complete_site.attribute["recombinase"]}_{complete_site.attribute["site"]}_{complete_site.attribute["central_dinucleotide"]}'
+                if strand == '+':
+                    end = complete_site.end - (len(self.target_sequence_up_to_nick['+']) - 1) + (len(self.pegRNAs_by_strand['+'].components['PBS']) - 1)
+                elif strand == '-':
+                    end = len(self.RT_extended_target_sequence['-']) - len(self.target_sequence_up_to_nick['-']) - complete_site.start + (len(self.pegRNAs_by_strand['-'].components['PBS']) - 1)
+
+                ends[strand] = (end, label)
+
+            else:
+                raise NotImplementedError
+
+        return ends
+
+    @memoized_property
+    def RT_and_overlap_extended_target_sequence(self):
+        RTed_seq = self.RT_extended_target_sequence
+        overlap = self.overlap_interval
+
+        return RTed_seq['+'][:overlap['+'].end + 1] + RTed_seq['-'][overlap['-'].end + 1:]
+
+    @memoized_property
+    def complete_integrase_site_ends_in_RT_and_overlap_extended_target_sequence(self):
+        full_seq = self.RT_and_overlap_extended_target_sequence
+        features = knock_knock.integrases.identify_split_recognition_sequences({'full_seq': full_seq})
+        complete_sites = [feature for feature in features.values() if feature.attribute['component'] == 'complete_site']
+
+        if len(complete_sites) == 0:
+            ends = {
+                '+': None,
+                '-': None,
+            }
+        elif len(complete_sites) == 1:
+            complete_site = complete_sites[0]
+            label = f'{complete_site.attribute["recombinase"]}_{complete_site.attribute["site"]}_{complete_site.attribute["central_dinucleotide"]}'
+
+            # First get coordinates relative to last nt before the nick, then translate
+            # to the start of the PBS.
+            ends = {
+                '+': (complete_site.end - (len(self.target_sequence_up_to_nick['+']) - 1) + (len(self.pegRNAs_by_strand['+'].components['PBS']) - 1), label),
+                '-': ((len(full_seq) - len(self.target_sequence_up_to_nick['-'])) - complete_site.start + (len(self.pegRNAs_by_strand['-'].components['PBS']) - 1), label),
+            }
+        else:
+            raise NotImplementedError
+
+        return ends
+
+    @memoized_property
     def RTed_interval_in_extended_target(self):
         return {
             '+': interval.Interval(len(self.target_sequence_up_to_nick['+']), len(self.RT_extended_target_sequence['+']) - 1),
@@ -926,38 +1009,39 @@ class pegRNA_pair:
         # or to the position that aligns to the last base before the
         # PBS of the -, whichever come first
         
-        before_overlap_start = self.RTed_interval_in_extended_target['+'].start
-        before_overlap_end = self.overlap_interval_in_RTed_for_both['+'].start
-        
         mapping = {
             '+': {},
             '-': {},
         }
 
-        for edit_p, RT_extended_p in enumerate(range(before_overlap_start, before_overlap_end)):
-            mapping['+'][RT_extended_p] = edit_p
+        if self.overlap_interval_in_RTed_for_both['+'].total_length > 0:
+            before_overlap_start = self.RTed_interval_in_extended_target['+'].start
+            before_overlap_end = self.overlap_interval_in_RTed_for_both['+'].start
+            
+            for edit_p, RT_extended_p in enumerate(range(before_overlap_start, before_overlap_end)):
+                mapping['+'][RT_extended_p] = edit_p
 
-        overlap_start = self.overlap_interval_in_RTed_for_both['+'].start
-        overlap_end = self.overlap_interval_in_RTed_for_both['+'].end + 1
+            overlap_start = self.overlap_interval_in_RTed_for_both['+'].start
+            overlap_end = self.overlap_interval_in_RTed_for_both['+'].end + 1
 
-        overlap_start_in_edit = max(mapping['+'].values(), default=-1) + 1
+            overlap_start_in_edit = max(mapping['+'].values(), default=-1) + 1
 
-        for edit_p, RT_extended_p in enumerate(range(overlap_start, overlap_end), overlap_start_in_edit):
-            mapping['+'][RT_extended_p] = edit_p
+            for edit_p, RT_extended_p in enumerate(range(overlap_start, overlap_end), overlap_start_in_edit):
+                mapping['+'][RT_extended_p] = edit_p
 
-        overlap_start = self.overlap_interval_in_RTed_for_both['-'].start
-        overlap_end = self.overlap_interval_in_RTed_for_both['-'].end + 1
+            overlap_start = self.overlap_interval_in_RTed_for_both['-'].start
+            overlap_end = self.overlap_interval_in_RTed_for_both['-'].end + 1
 
-        for edit_p, RT_extended_p in enumerate(range(overlap_start, overlap_end), overlap_start_in_edit):
-            mapping['-'][RT_extended_p] = edit_p
+            for edit_p, RT_extended_p in enumerate(range(overlap_start, overlap_end), overlap_start_in_edit):
+                mapping['-'][RT_extended_p] = edit_p
 
-        after_overlap_start = self.overlap_interval_in_RTed_for_both['-'].end + 1
-        after_overlap_end = self.RTed_interval_in_extended_target['-'].end + 1
+            after_overlap_start = self.overlap_interval_in_RTed_for_both['-'].end + 1
+            after_overlap_end = self.RTed_interval_in_extended_target['-'].end + 1
 
-        after_overlap_start_in_edit = max(mapping['-'].values()) + 1
+            after_overlap_start_in_edit = max(mapping['-'].values()) + 1
 
-        for edit_p, RT_extended_p in enumerate(range(after_overlap_start, after_overlap_end), after_overlap_start_in_edit):
-            mapping['-'][RT_extended_p] = edit_p
+            for edit_p, RT_extended_p in enumerate(range(after_overlap_start, after_overlap_end), after_overlap_start_in_edit):
+                mapping['-'][RT_extended_p] = edit_p
 
         return mapping
 
@@ -984,8 +1068,21 @@ class pegRNA_pair:
         return edit_coords_to_pegRNA_coords
 
     @memoized_property
+    def pegRNA_coords_to_edit_coords(self):
+        pegRNA_coords_to_edit_coords = {}
+
+        for strand, edit_to_pegRNA in self.edit_coords_to_pegRNA_coords.items():
+            pegRNA_name = self.pegRNAs_by_strand[strand].name
+            
+            pegRNA_coords_to_edit_coords[pegRNA_name] = {}
+            for edit_p, pegRNA_p in edit_to_pegRNA.items():
+                pegRNA_coords_to_edit_coords[pegRNA_name][pegRNA_p] = edit_p
+
+        return pegRNA_coords_to_edit_coords
+
+    @memoized_property
     def intended_edit_between_nicks(self):
-        edit_bs = [[] for _ in range(max(self.edit_coords_to_RT_extended_target_coords['-']) + 1)]
+        edit_bs = [[] for _ in range(max(self.edit_coords_to_RT_extended_target_coords['-'], default=-1) + 1)]
 
         for strand, mapping in self.edit_coords_to_RT_extended_target_coords.items():
             for edit_p, RT_extended_p in mapping.items():
@@ -1034,7 +1131,7 @@ class pegRNA_pair:
                 ps['-'].add(minus_p)
                 
         return {
-            strand: interval.Interval(min(ps[strand]), max(ps[strand]))
+            strand: interval.Interval(min(ps[strand]), max(ps[strand])) if len(ps[strand]) > 0 else interval.Interval.empty() 
             for strand in ['+', '-']
         }
 
@@ -1059,8 +1156,8 @@ class pegRNA_pair:
         for strand in ['+', '-']:
             pegRNA_ = self.pegRNAs_by_strand[strand]
 
-            if not self.overlap_interval_in_RTed[strand].is_empty:
-                pegRNA_interval = self.RT_extended_interval_to_pegRNA_interval(self.overlap_interval_in_RTed[strand], strand)
+            if not self.overlap_interval_in_RTed_for_both[strand].is_empty:
+                pegRNA_interval = self.RT_extended_interval_to_pegRNA_interval(self.overlap_interval_in_RTed_for_both[strand], strand)
 
                 opposite_strand = '-' if strand == '+' else '+'
 
@@ -1150,8 +1247,6 @@ class pegRNA_pair:
                                     'base': pegRNA_b,
                                     'alternative_base': target_b_effective,
                                 }
-
-            print(self.SNVs)
 
             # Insertions are gaps between consecutive edit subsequences. If the
             # first subsequence doesn't start at 0, the edit begins with an insertion.

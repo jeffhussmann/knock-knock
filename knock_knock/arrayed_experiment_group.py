@@ -464,7 +464,12 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
         for condition in self.full_conditions:
             sample_name = self.full_condition_to_sample_name[condition]
-            label = f'{" ".join(condition)} ({sample_name}, {self.total_valid_reads[condition]:,} total reads)'
+            if len(condition) > 1:
+                partial_label = ', '.join(condition[:-1]) + ', '
+            else:
+                partial_label = ''
+
+            label = f'{partial_label}rep. {condition[-1]} ({sample_name}, {self.total_valid_reads[condition]:,} total reads)'
             condition_labels[condition] = label
 
         return condition_labels

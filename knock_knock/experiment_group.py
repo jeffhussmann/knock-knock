@@ -98,6 +98,7 @@ class ExperimentGroup:
         self.write_pegRNA_conversion_fractions()
 
         if generate_figures:
+            logger.info('Generating group figures')
             try:
                 self.make_group_figures()
             except:
@@ -246,9 +247,14 @@ class ExperimentGroup:
                                           unique_colors=False,
                                           min_reads=None,
                                           conditions=None,
+                                          condition_colors=None,
+                                          **kwargs,
                                          ):
         if conditions is None:
             conditions = self.full_conditions
+
+        if condition_colors is None:
+            condition_colors = self.condition_colors(unique=unique_colors)
 
         if min_reads is not None:
             conditions = [c for c in conditions if self.total_valid_reads.loc[c] >= min_reads]
@@ -257,10 +263,11 @@ class ExperimentGroup:
                                                                                self.outcome_fractions,
                                                                                self.pegRNA_conversion_fractions,
                                                                                conditions=conditions,
-                                                                               condition_colors=self.condition_colors(unique=unique_colors),
+                                                                               condition_colors=condition_colors,
                                                                                condition_labels=self.condition_labels,
+                                                                               **kwargs,
                                                                               )
-        
+
         return grid
 
     def make_deletion_boundaries_figure(self,

@@ -103,6 +103,10 @@ class Layout(knock_knock.prime_editing_layout.Layout):
              'phiX',
             ),
         ),
+        ('inversion',
+            ('inversion',
+            ),
+        ),
         ('incorporation of extra sequence',
             ('has RT\'ed extension',
              'no RT\'ed extension',
@@ -479,10 +483,11 @@ class Layout(knock_knock.prime_editing_layout.Layout):
     def has_intended_pegRNA_overlap(self):
         chains = self.extension_chains_by_side
 
-        return (chains['left']['description'] == 'RT\'ed + overlap-extended' and
-                chains['right']['description'] == 'RT\'ed + overlap-extended' and 
-                chains['left']['query_covered'] == chains['right']['query_covered']
-               )
+        return (
+            chains['left']['description'] == 'RT\'ed + overlap-extended' and
+            chains['right']['description'] == 'RT\'ed + overlap-extended' and 
+            chains['left']['query_covered'] == chains['right']['query_covered']
+        )
 
     @memoized_property
     def is_intended_or_partial_replacement(self):
@@ -501,6 +506,27 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
         return status
 
+    @memoized_property
+    def non_programmed_edit_mismatches(self):
+        intended_edit = self.target_info.pegRNA_pair.intended_edit_between_nicks
+
+        mismatches_seen = set()
+
+        for al in self.pegRNA_extension_als_from_either_side_list:
+            mismatches = knock_knock.layout.get_mismatch_info(al, self.target_info.reference_sequences)
+            for true_read_p, read_b, ref_p, ref_b, q in mismatches:
+                
+                # ref_p might be outside of edit portion
+                edit_p = self.target_info.pegRNA_pair.pegRNA_coords_to_edit_coords[al.reference_name].get(ref_p)
+                
+                if edit_p is not None:
+                    edit_ref_b = intended_edit[edit_p]
+                    mismatches_seen.add((edit_p, read_b))
+                    
+        mismatches = knock_knock.target_info.SNVs([knock_knock.target_info.SNV(position, basecall) for position, basecall in sorted(mismatches_seen)])
+
+        return mismatches
+
     def register_intended_replacement(self):
         if self.pegRNA_SNV_string == self.full_incorporation_pegRNA_SNV_string:
             self.category = 'intended edit'
@@ -518,19 +544,16 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             else:
                 raise ValueError
 
-        self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, self.non_pegRNA_mismatches_outcome, [])
+        self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string,
+                                             self.non_pegRNA_mismatches_outcome,
+                                             self.non_programmed_edit_mismatches_outcome,
+                                             [],
+                                            )
         self.relevant_alignments = self.intended_edit_relevant_alignments
 
     @memoized_property
     def intended_edit_relevant_alignments(self):
-        als = list(self.extension_chains_by_side['left']['alignments'].values())
-
-        target_als = [al for al in als if al.reference_name == self.target_info.target]
-        target_als = interval.make_parsimonious(target_als)
-
-        pegRNA_als = [al for al in als if al.reference_name != self.target_info.target]
-
-        return target_als + pegRNA_als
+        return self.target_edge_alignments_list + self.pegRNA_extension_als_list
 
     @memoized_property
     def contains_RTed_sequence(self):
@@ -566,21 +589,38 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         return self.contains_RTed_sequence and self.uncovered_by_extension_chains.total_length == 0
 
     def register_unintended_rejoining(self):
+        pegRNA_pair = self.target_info.pegRNA_pair
         chains = self.extension_chains_by_side
+
+        edges = {side: self.get_extension_chain_edge(side) for side in ['left', 'right']}
 
         if any('overlap' in chains[side]['description'] for side in ['left', 'right']):
             self.category = 'unintended rejoining of overlap-extended sequence'
+
         else:
             self.category = 'unintended rejoining of RT\'ed sequence'
 
         self.subcategory = f'left {chains["left"]["description"]}, right {chains["right"]["description"]}'
 
-        left_edge = self.get_extension_chain_edge('left')
-        right_edge = self.get_extension_chain_edge('right')
-
         MH_nts = self.extension_chain_junction_microhomology
 
-        self.outcome = knock_knock.prime_editing_layout.UnintendedRejoiningOutcome(left_edge, right_edge, MH_nts, [])
+        integrase_sites = []
+
+        for side, strand in [('left', '+'), ('right', '-')]:
+            if 'overlap' in chains[side]['description']:
+                relevant_threshold = pegRNA_pair.complete_integrase_site_ends_in_RT_and_overlap_extended_target_sequence[strand]
+            elif chains[side]['description'].startswith('RT\'ed'):
+                relevant_threshold = pegRNA_pair.complete_integrase_site_ends_in_RT_extended_target_sequence[strand]
+            else:
+                continue
+
+            if relevant_threshold is not None:
+                threshold, label = relevant_threshold
+
+                if edges[side] >= threshold:
+                    integrase_sites.append(label)
+
+        self.outcome = knock_knock.prime_editing_layout.UnintendedRejoiningOutcome(edges['left'], edges['right'], MH_nts, integrase_sites)
 
         als_by_ref = defaultdict(list)
         for al in list(chains['left']['alignments'].values()) + list(chains['right']['alignments'].values()):
@@ -651,7 +691,11 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         elif self.is_intended_deletion:
             self.category = 'intended edit'
             self.subcategory = 'deletion'
-            self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string, self.non_pegRNA_mismatches_outcome, [self.target_info.pegRNA_programmed_deletion])
+            self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string,
+                                                 self.non_pegRNA_mismatches_outcome,
+                                                 self.non_programmed_edit_mismatches_outcome,
+                                                 [self.target_info.pegRNA_programmed_deletion],
+                                                )
             self.relevant_alignments = self.intended_edit_relevant_alignments
 
         elif self.is_unintended_rejoining:
@@ -743,21 +787,31 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             self.subcategory = subcategory
             self.relevant_alignments = merged_als
 
+        elif self.inversion:
+            self.category = 'inversion'
+            self.subcategory = 'inversion'
+            self.details = 'n/a'
+
+            self.relevant_alignments = self.target_edge_alignments_list + self.inversion
+
         elif self.is_multistep_unintended_rejoining:
             self.register_multistep_unintended_rejoining()
 
         elif len(self.has_any_flipped_pegRNA_al) > 0:
             self.category = 'flipped pegRNA incorporation'
+
             if len(self.has_any_flipped_pegRNA_al) == 1:
                 side = sorted(self.has_any_flipped_pegRNA_al)[0]
                 self.subcategory = f'{side} pegRNA'
+
             elif len(self.has_any_flipped_pegRNA_al) == 2:
                 self.subcategory = f'both pegRNAs'
+
             else:
                 raise ValueError(len(self.has_any_flipped_pegRNA_al))
 
             self.outcome = Outcome('n/a')
-            self.relevant_alignments = self.target_edge_alignments_list + self.flipped_pegRNA_als['left'] + self.flipped_pegRNA_als['right']
+            self.relevant_alignments = self.uncategorized_relevant_alignments
 
         elif self.original_target_alignment_has_only_relevant_indels:
             self.register_indels_in_original_alignment()

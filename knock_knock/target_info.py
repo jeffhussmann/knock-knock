@@ -362,6 +362,9 @@ class TargetInfo:
         except:
             return False
 
+        if self.protospacer_feature is None:
+            return False
+
         protospacer_rname, protospacer_start, protospacer_strand = self.mapped_protospacer_location(organism)
 
         if al.reference_name != protospacer_rname:
@@ -606,10 +609,7 @@ class TargetInfo:
     
     @memoized_property
     def protospacer_feature(self):
-        if self.primary_protospacer is None:
-            return None
-        else:
-            return self.protospacer_features[self.primary_protospacer]
+        return self.protospacer_features.get(self.primary_protospacer)
 
     @memoized_property
     def protospacer_sequence(self):
@@ -1106,6 +1106,10 @@ class TargetInfo:
     @memoized_property
     def amplicon_length(self):
         return len(self.amplicon_interval)
+
+    @memoized_property
+    def center_of_amplicon(self):
+        return int(np.floor(np.mean([self.amplicon_interval.start, self.amplicon_interval.end])))
 
     @memoized_property
     def wild_type_amplicon_sequence(self):
@@ -2028,7 +2032,11 @@ class DegenerateDeletion():
 
     def singletons(self):
         return (DegenerateDeletion([starts_at], self.length) for starts_at in self.starts_ats)
-    
+
+    @property
+    def possibly_involved_interval(self):
+        return interval.Interval(min(self.starts_ats), max(self.ends_ats))
+
 class DegenerateInsertion():
     def __init__(self, starts_afters, seqs):
         self.kind = 'I'
@@ -2097,6 +2105,10 @@ class DegenerateInsertion():
 
         return DegenerateInsertion.from_pairs(all_pairs)
 
+    @property
+    def possibly_involved_interval(self):
+        return interval.Interval(min(self.starts_afters), max(self.starts_afters) + 1)
+
 class SNV():
     def __init__(self, position, basecall):
         self.position = position
@@ -2122,7 +2134,12 @@ class SNVs():
 
     @classmethod
     def from_string(cls, details_string):
-        return SNVs([SNV.from_string(s) for s in details_string.split(',')])
+        if details_string == '':
+            snvs = []
+        else:
+            snvs = [SNV.from_string(s) for s in details_string.split(',')]
+
+        return SNVs(snvs)
 
     def __repr__(self):
         return str(self)

@@ -630,7 +630,9 @@ def make_self_contained_zip(base_dir,
 
     logging.info('Generating high-level html table...')
     html_fn = fn_prefix.with_suffix('.html')
-    generate_html(base_dir, html_fn, conditions,
+    generate_html(base_dir,
+                  html_fn,
+                  conditions,
                   show_details=False,
                   include_images=include_images,
                   sort_samples=sort_samples,
@@ -642,7 +644,9 @@ def make_self_contained_zip(base_dir,
     if include_details:
         logging.info('Generating detailed html table...')
         html_fn = fn_prefix.parent / (f'{fn_prefix.name}_with_details.html')
-        generate_html(base_dir, html_fn, conditions,
+        generate_html(base_dir,
+                      html_fn,
+                      conditions,
                       show_details=True,
                       include_images=include_images,
                       sort_samples=sort_samples,
@@ -676,6 +680,9 @@ def make_self_contained_zip(base_dir,
                             fns_to_zip.add(child_fn)
                     else:
                         fns_to_zip.add(fn)
+
+            add_fn(exp.experiment_group.batch.fns['group_name_to_sanitized_group_name'])
+            add_fn(exp.experiment_group.fns['pegRNA_conversion_fractions'])
 
             add_fn(exp.experiment_group.fns['partial_incorporation_figure'])
             add_fn(exp.experiment_group.fns['deletion_boundaries_figure'])

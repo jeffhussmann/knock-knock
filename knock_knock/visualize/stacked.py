@@ -9,11 +9,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 
+import hits.interval
 import hits.utilities
 import hits.visualize
 
 import knock_knock.pegRNAs
-from knock_knock.target_info import degenerate_indel_from_string, SNV, SNVs
+from knock_knock.target_info import degenerate_indel_from_string
 from knock_knock.outcome import *
 
 @dataclass
@@ -71,19 +72,12 @@ class StackedDiagrams:
         else:
             self.window_left, self.window_right = self.window
 
-        self.window_size = self.window_right - self.window_left + 1
+        self.window_size = 0
 
         if self.num_outcomes is None:
             self.num_outcomes = len(self.outcome_order)
 
         self.outcome_order = self.outcome_order[:self.num_outcomes]
-
-        if self.ax is None:
-            width = self.inches_per_nt * self.window_size
-            height = self.inches_per_outcome * max(self.num_outcomes, 1)
-            self.fig, self.ax = plt.subplots(figsize=(width, height))
-        else:
-            self.fig = self.ax.figure
 
         if isinstance(self.draw_all_sequence, float):
             self.sequence_alpha = self.draw_all_sequence
@@ -100,21 +94,25 @@ class StackedDiagrams:
         self.guide = {}
 
         for source_name, ti in self.target_infos.items():
-            self.guide[source_name] = ti.features[ti.target, ti.primary_protospacer]
+            self.guide[source_name] = ti.features.get((ti.target, ti.primary_protospacer))
 
             # TODO: flip behavior for multiple sources
-            if self.force_flip or (self.flip_if_reverse and self.guide[source_name].strand == '-'):
+            if self.force_flip or (self.flip_if_reverse and self.guide[source_name] is not None and self.guide[source_name].strand == '-'):
                 self.flip[source_name] = True
                 transform_seq = hits.utilities.complement
             else:
                 self.flip[source_name] = False
                 transform_seq = hits.utilities.identity
 
-            if self.center_at_PAM:
+            if len(ti.cut_afters) == 0:
+                offset = ti.center_of_amplicon
+
+            elif self.center_at_PAM:
                 if self.guide[source_name].strand == '+':
                     offset = ti.PAM_slice.start
                 else:
                     offset = ti.PAM_slice.stop - 1
+
             else:
                 offset = max(v for n, v in ti.cut_afters.items() if n.startswith(ti.primary_protospacer))
 
@@ -133,10 +131,18 @@ class StackedDiagrams:
                 this_window_right = len(ti.target_sequence) - offset - 1
 
             self.windows[source_name] = (this_window_left, this_window_right)
+            self.window_size = max(self.window_size, this_window_right - this_window_left + 1)
 
             seq = ti.target_sequence[offset + this_window_left:offset + this_window_right + 1]
             self.seqs[source_name] = seq
             self.transform_seqs[source_name] = transform_seq
+
+        if self.ax is None:
+            width = self.inches_per_nt * self.window_size
+            height = self.inches_per_outcome * max(self.num_outcomes, 1)
+            self.fig, self.ax = plt.subplots(figsize=(width, height))
+        else:
+            self.fig = self.ax.figure
 
         cuts_drawn_at = set()
         if self.draw_cuts:
@@ -704,11 +710,29 @@ class StackedDiagrams:
                 insertion = ti.expand_degenerate_indel(insertion)
                 self.draw_insertion(y, insertion, source_name, draw_sequence=True)
 
-        non_programmed_mismatches_string = str(programmed_edit_outcome.non_programmed_mismatches_outcome)
+        non_programmed_mismatches_string = str(programmed_edit_outcome.non_programmed_target_mismatches_outcome)
         mismatch_xs = self.draw_non_programmed_mismatches(y, non_programmed_mismatches_string, source_name)
         
         if self.draw_all_sequence:
             self.draw_sequence(y, source_name, xs_to_skip=SNP_xs | mismatch_xs, alpha=self.sequence_alpha)
+
+    def edit_name_to_x(self, source_name, edit_name):
+        ti = self.target_infos[source_name]
+        SNVs = ti.pegRNA_SNVs
+        
+        if SNVs is not None and edit_name in SNVs[ti.target]:
+            p = SNVs[ti.target][edit_name]['position']
+        else:
+            indel = knock_knock.target_info.degenerate_indel_from_string(edit_name)
+            # Note: indels are not anchor shifted, so don't need to be un-shifted.
+            if indel.kind == 'D':
+                p = indel.starts_ats[0]
+            else:
+                p = indel.starts_afters[0] + 0.5
+
+        x = p - ti.cut_after
+
+        return x
 
     def draw_pegRNA(self,
                     source_name,
@@ -717,6 +741,7 @@ class StackedDiagrams:
                     label_color=None,
                     label_features=True,
                    ):
+
         ti = self.target_infos[source_name]
         offset = self.offsets[source_name]
 
@@ -1114,13 +1139,8 @@ class DiagramGrid:
 
         self.outcomes = outcomes
         self.target_info = target_info
-        #PAM_feature = target_info.PAM_features[f'{target_info.primary_protospacer}_PAM']
         
-        #self.PAM_color = PAM_feature.attribute['color']
         self.ax_on_bottom = ax_on_bottom
-
-        #if cut_color == 'PAM':
-        #    diagram_kwargs['cut_color'] = self.PAM_color
 
         self.inches_per_nt = inches_per_nt
         self.inches_per_outcome = inches_per_outcome
@@ -1281,7 +1301,9 @@ class DiagramGrid:
 
             warnings.resetwarnings()
 
-        if len(self.outcomes[0]) == 3:
+        if len(self.outcomes) == 0:
+            xs = []
+        elif len(self.outcomes[0]) == 3:
             xs = [value_source.get((c, s, d), fill) for c, s, d in self.outcomes]
         else:
             xs = [value_source.get((c, s, d), fill) for source_name, c, s, d in self.outcomes]
@@ -1383,13 +1405,13 @@ class DiagramGrid:
     def width_per_heatmap_cell(self):
         fig_width_inches, fig_height_inches = self.fig.get_size_inches()
         diagram_position = self.axs_by_name['diagram'].get_position()
-        width_per_cell = diagram_position.height * 1 / len(self.outcomes) * fig_height_inches / fig_width_inches
+        width_per_cell = diagram_position.height * 1 / max(1, len(self.outcomes)) * fig_height_inches / fig_width_inches
         return width_per_cell
 
     @property
     def height_per_heatmap_cell(self):
         diagram_position = self.axs_by_name['diagram'].get_position()
-        height_per_cell = diagram_position.height * 1 / len(self.outcomes)
+        height_per_cell = diagram_position.height * 1 / max(1, len(self.outcomes))
         return height_per_cell
 
     def add_heatmap(self, vals, name,
@@ -1581,7 +1603,6 @@ class DiagramGrid:
                 x -= 1
 
         ax.set_xlim(x - 1, 1)
-        #ax.set_ylim(-0.5, len(outcomes) - 0.5)
         ax.axis('off')
 
     def set_xlim(self, ax_name, lims):
@@ -1591,7 +1612,6 @@ class DiagramGrid:
                 ax.set_xlim(*lims)
 
     def plot_pegRNA_conversion_fractions_above(self,
-                                               target_info,
                                                pegRNA_conversion_fractions,
                                                gap=4,
                                                height_multiple=10,
@@ -1610,26 +1630,9 @@ class DiagramGrid:
         if condition_colors is None:
             condition_colors = {}
 
-        def edit_name_to_x(edit_name):
-            SNVs = target_info.pegRNA_SNVs
-            
-            if SNVs is not None and edit_name in SNVs[target_info.target]:
-                p = SNVs[target_info.target][edit_name]['position']
-            else:
-                indel = knock_knock.target_info.degenerate_indel_from_string(edit_name)
-                # Note: indels are not anchor shifted, so don't need to be un-shifted.
-                if indel.kind == 'D':
-                    p = indel.starts_ats[0]
-                else:
-                    p = indel.starts_afters[0] + 0.5
-
-            x = p - target_info.cut_after
-
-            return x
-        
         pegRNA_conversion_fractions = pegRNA_conversion_fractions.copy()
 
-        xs = pegRNA_conversion_fractions.index.map(edit_name_to_x)
+        xs = [self.diagrams.edit_name_to_x(self.target_info.name, edit_name) for edit_name in pegRNA_conversion_fractions.index]
         pegRNA_conversion_fractions.index = xs
         pegRNA_conversion_fractions = pegRNA_conversion_fractions.sort_index()
 
@@ -1648,7 +1651,11 @@ class DiagramGrid:
                                   **plot_kwargs,
                                  )
 
-    def style_pegRNA_conversion_plot(self, ax_name='pegRNA_conversion_fractions', y_max=None):
+    def style_pegRNA_conversion_plot(self,
+                                     ax_name='pegRNA_conversion_fractions',
+                                     y_max=None,
+                                     difference_from_condition=None,
+                                    ):
         if 'diagram' not in self.axs_by_name or ax_name not in self.axs_by_name:
             return
 
@@ -1661,7 +1668,12 @@ class DiagramGrid:
         if y_max is None:
             ax.autoscale(axis='y')
 
-        ax.set_ylim(0, y_max)
+        if difference_from_condition is None:
+            y_min = 0
+        else:
+            y_min = None
+
+        ax.set_ylim(y_min, y_max)
 
         xs = set()
 
@@ -1683,7 +1695,12 @@ class DiagramGrid:
 
                 ax.plot(x_bounds, [y for x in x_bounds], linewidth=0.5, clip_on=clip_on, color='black', alpha=alpha)
 
-            ax.set_ylabel('Total %\nincorporation\nat position', size=12)
+            if difference_from_condition is None:
+                title = 'Total % incorporation\nat position across\nall outcomes'
+            else:
+                title = f'Change (from mean of\n{difference_from_condition} samples) in\ntotal % incorporation\nacross all outcomes'
+
+            ax.set_ylabel(title, size=12)
             ax.tick_params(labelsize=8)
 
             ax.spines.left.set_position(('data', x_bounds[0]))
@@ -1699,7 +1716,6 @@ def make_deletion_boundaries_figure(target_info,
                                     include_simple_deletions=True,
                                     include_edit_plus_deletions=True,
                                     include_insertions=False,
-                                    include_multiple_indels=False,
                                     show_log_scale=False,
                                    ):
     ti = target_info
@@ -1733,11 +1749,10 @@ def make_deletion_boundaries_figure(target_info,
     else:
         insertions = None
 
-    multiple_indels = outcome_fractions.xs('multiple indels', level=1, drop_level=False)
-
-    edit_plus_deletions = [(c, s, d) for c, s, d in outcome_fractions.index
-                           if (c, s) == ('edit + indel', 'deletion')
-                          ] 
+    edit_plus_deletions = [
+        (c, s, d) for c, s, d in outcome_fractions.index
+        if (c, s) == ('edit + indel', 'deletion')
+    ] 
 
     to_concat = []
 
@@ -1767,12 +1782,17 @@ def make_deletion_boundaries_figure(target_info,
         color_overrides[ps_name] = light_color
         color_overrides[PAM_name] = color
 
-    flip = (ti.features[ti.target, ti.primary_protospacer].strand == '-')
+    if ti.protospacer_features:
+        flip = (ti.features[ti.target, ti.primary_protospacer].strand == '-')
+        center = ti.cut_after
+    else:
+        flip = False
+        center = ti.center_of_amplicon
 
     if flip:
-        window = (ti.cut_after - ti.amplicon_interval.end, ti.cut_after - ti.amplicon_interval.start)
+        window = (center - ti.amplicon_interval.end, center - ti.amplicon_interval.start)
     else:
-        window = (ti.amplicon_interval.start - ti.cut_after, ti.amplicon_interval.end - ti.cut_after)
+        window = (ti.amplicon_interval.start - center, ti.amplicon_interval.end - center)
         
     window = (window[0] - 5, window[1] + 5)
         
@@ -1785,7 +1805,7 @@ def make_deletion_boundaries_figure(target_info,
                                                      features_to_draw=sorted(ti.primers), 
                                                     )
 
-    grid.add_ax('fractions', width_multiple=12, title='% of reads')
+    grid.add_ax('fractions', width_multiple=12, title='% of reads\nwith specific outcome')
 
     if show_log_scale:
         grid.add_ax('log10_fractions', width_multiple=12, gap_multiple=2, title='% of reads (log scale)')
@@ -1804,7 +1824,7 @@ def make_deletion_boundaries_figure(target_info,
                             markersize=7,
                             label=condition_labels.get(condition, condition),
                             clip_on=True,
-                            )
+                           )
 
     grid.style_frequency_ax('fractions')
     grid.ordered_axs[-1].legend(bbox_to_anchor=(1, 1), loc='upper left')
@@ -1815,54 +1835,107 @@ def make_deletion_boundaries_figure(target_info,
     grid.set_xlim('log10_fractions', (np.log10(0.49 * frequency_cutoff), np.log10(x_max)))
     grid.style_log10_frequency_ax('log10_fractions')
 
-    if flip:
-        panel_order = [
-            'fraction_removed',
-            'stops',
-            'starts',
-        ]
-    else:
-        panel_order = [
-            'fraction_removed',
-            'starts',
-            'stops',
-        ]
+    if deletion_boundaries_retriever is not None:
+        if flip:
+            panel_order = [
+                'fraction_removed',
+                'stops',
+                'starts',
+            ]
+        else:
+            panel_order = [
+                'fraction_removed',
+                'starts',
+                'stops',
+            ]
 
-    deletion_boundaries = deletion_boundaries_retriever(include_simple_deletions=include_simple_deletions,
-                                                        include_edit_plus_deletions=include_edit_plus_deletions,
-                                                       )
+        deletion_boundaries = deletion_boundaries_retriever(include_simple_deletions=include_simple_deletions,
+                                                            include_edit_plus_deletions=include_edit_plus_deletions,
+                                                        )
 
-    for quantity in panel_order:
-        grid.add_ax_above(quantity,
-                            gap=6 if quantity == panel_order[0] else 2,
-                            height_multiple=15 if quantity == 'fraction_removed' else 7,
-                            )
+        for quantity in panel_order:
+            grid.add_ax_above(quantity,
+                                gap=6 if quantity == panel_order[0] else 2,
+                                height_multiple=15 if quantity == 'fraction_removed' else 7,
+                                )
 
-        for condition in conditions:
-            series = deletion_boundaries[quantity][condition].copy()
-            series.index = series.index.values - grid.diagrams.offsets[ti.name]
-            grid.plot_on_ax_above(quantity,
-                                  series.index,
-                                  series * 100,
-                                  markersize=3 if quantity != 'fraction_removed' else 0,
-                                  linewidth=1 if quantity != 'fraction_removed' else 2,
-                                  color=condition_colors.get(condition, 'black'),
-                                 )
+            for condition in conditions:
+                series = deletion_boundaries[quantity][condition].copy()
+                series.index = series.index.values - grid.diagrams.offsets[ti.name]
+                grid.plot_on_ax_above(quantity,
+                                    series.index,
+                                    series * 100,
+                                    markersize=3 if quantity != 'fraction_removed' else 0,
+                                    linewidth=1 if quantity != 'fraction_removed' else 2,
+                                    color=condition_colors.get(condition, 'black'),
+                                    )
 
-        for cut_after in ti.cut_afters.values():
-            grid.axs_by_name[quantity].axvline(cut_after + 0.5 - grid.diagrams.offsets[ti.name], linestyle='--', color=grid.diagrams.cut_color, linewidth=grid.diagrams.line_widths)
+            for cut_after in ti.cut_afters.values():
+                grid.axs_by_name[quantity].axvline(cut_after + 0.5 - grid.diagrams.offsets[ti.name], linestyle='--', color=grid.diagrams.cut_color, linewidth=grid.diagrams.line_widths)
 
-    for pegRNA_i, pegRNA_name in enumerate(ti.pegRNA_names):
-        grid.diagrams.draw_pegRNA(ti.name, pegRNA_name, y_offset=pegRNA_i + 1, label_features=False)
+        for pegRNA_i, pegRNA_name in enumerate(ti.pegRNA_names):
+            grid.diagrams.draw_pegRNA(ti.name, pegRNA_name, y_offset=pegRNA_i + 1, label_features=False)
 
-    grid.axs_by_name['fraction_removed'].set_ylabel('% of reads with\nposition deleted', size=14)
-    grid.axs_by_name[panel_order[1]].set_ylabel('% of reads\nwith deletion\nstarting at', size=14)
-    grid.axs_by_name[panel_order[2]].set_ylabel('% of reads\nwith deletion\nending at', size=14)
+        grid.axs_by_name['fraction_removed'].set_ylabel('% of reads with\nposition deleted', size=14)
+        grid.axs_by_name[panel_order[1]].set_ylabel('% of reads\nwith deletion\nstarting at', size=14)
+        grid.axs_by_name[panel_order[2]].set_ylabel('% of reads\nwith deletion\nending at', size=14)
 
-    for panel in panel_order:
-        grid.axs_by_name[panel].set_ylim(0)
+        for panel in panel_order:
+            grid.axs_by_name[panel].set_ylim(0)
 
     return grid
+
+def restrict_mismatches_to_window(csd, window_interval, anchor):
+    ''' Return a transformed version of csd in which all non-programmed mismatches
+    outside of window_interval have been removed.
+
+    Intended for used as a groupby key for collapsing outcomes to a representative when
+    marginalizing over all mismatches outside of a registered window.
+    ''' 
+
+    c, s, d = csd
+    
+    if (c, s) == ('wild type', 'mismatches'):
+        outcome = knock_knock.outcome.MismatchOutcome.from_string(d).undo_anchor_shift(anchor)
+        snvs = outcome.snvs.snvs
+    
+    elif (c, s) == ('intended edit', 'substitution') or (c, s) == ('partial edit', 'partial incorporation'):
+        outcome = knock_knock.outcome.ProgrammedEditOutcome.from_string(d).undo_anchor_shift(anchor)
+        snvs = outcome.non_programmed_target_mismatches_outcome.snvs.snvs
+        
+    else:
+        return c, s, d
+    
+    SNVs_in_window = knock_knock.target_info.SNVs([snv for snv in snvs if snv.position in window_interval])
+    
+    restricted_mismatch_outcome = knock_knock.outcome.MismatchOutcome(SNVs_in_window)
+    
+    if (c, s) == ('wild type', 'mismatches'):
+        restricted_outcome = restricted_mismatch_outcome
+        if len(restricted_mismatch_outcome.snvs.snvs) == 0:
+            restricted_s = 'clean'
+        else:
+            restricted_s = s
+    
+    elif (c, s) == ('intended edit', 'substitution') or (c, s) == ('partial edit', 'partial incorporation'):
+        restricted_outcome = knock_knock.outcome.ProgrammedEditOutcome(outcome.SNV_read_bases, restricted_mismatch_outcome, outcome.non_programmed_edit_mismatches_outcome, outcome.indels)
+        restricted_s = s
+                                                                         
+    restricted_outcome = restricted_outcome.perform_anchor_shift(anchor)
+    
+    restricted_c = c
+    
+    if (restricted_c, restricted_s) == ('wild type', 'clean'):
+        restricted_d = 'n/a'
+    else:
+        restricted_d = str(restricted_outcome)
+    
+    return restricted_c, restricted_s, restricted_d
+
+def marginalize_over_mismatches_outside_window(outcome_fractions, window_interval, anchor):
+    outcome_fractions = outcome_fractions.groupby(by=lambda csd: restrict_mismatches_to_window(csd, window_interval, anchor)).sum()
+    outcome_fractions.index = pd.MultiIndex.from_tuples(outcome_fractions.index, names=('category', 'subcategory', 'details'))
+    return outcome_fractions
 
 def make_partial_incorporation_figure(target_info,
                                       outcome_fractions,
@@ -1874,6 +1947,11 @@ def make_partial_incorporation_figure(target_info,
                                       show_log_scale=False,
                                       manual_window=None,
                                       include_non_programmed_mismatches=True,
+                                      include_wild_type=False,
+                                      pegRNA_conversion_fractions_y_max=None,
+                                      manual_outcomes=None,
+                                      perform_marginalization_over_mismatches_outside_window=True,
+                                      difference_from_condition=None,
                                       **diagram_kwargs,
                                      ):
 
@@ -1884,9 +1962,6 @@ def make_partial_incorporation_figure(target_info,
     '''
 
     ti = target_info
-
-    if len(ti.pegRNA_names) == 0:
-        return
 
     if isinstance(outcome_fractions, pd.Series):
         outcome_fractions = outcome_fractions.to_frame()
@@ -1901,6 +1976,11 @@ def make_partial_incorporation_figure(target_info,
         condition_labels = {}
 
     outcome_fractions = outcome_fractions[conditions]
+
+    if difference_from_condition is not None:
+        outcome_fractions = outcome_fractions.sub(outcome_fractions[difference_from_condition].mean(axis=1), axis=0)
+
+        pegRNA_conversion_fractions = pegRNA_conversion_fractions.sub(pegRNA_conversion_fractions[difference_from_condition].mean(axis=1), axis=0)
 
     color_overrides = {primer_name: 'grey' for primer_name in ti.primers}
 
@@ -1919,34 +1999,54 @@ def make_partial_incorporation_figure(target_info,
     elif len(ti.pegRNA_names) == 1:
         window = (-20, len(ti.sgRNA_components[ti.pegRNA_names[0]]['RTT']) + 4)
     else:
-        raise ValueError
+        half_length = int(np.floor(ti.amplicon_length / 2))
+        window = (-half_length, half_length)
 
-    if ti.protospacer_feature.strand == '+':
+    if ti.protospacer_feature is None:
+        half_length = int(np.floor(ti.amplicon_length / 2))
+        window_interval = hits.interval.Interval(ti.center_of_amplicon - half_length, ti.center_of_amplicon + half_length)
+    elif ti.protospacer_feature.strand == '+':
         window_interval = hits.interval.Interval(ti.cut_after + window[0], ti.cut_after + window[1])
     else:
         window_interval = hits.interval.Interval(ti.cut_after - window[1], ti.cut_after - window[0])
 
-    def mismatch_in_window(d):
-        if d == 'n/a':
-            return False
-        else:
-            SNVs = knock_knock.outcome.MismatchOutcome.from_string(d).undo_anchor_shift(ti.anchor).snvs
-            return any(p in window_interval for p in SNVs.positions)
+    if perform_marginalization_over_mismatches_outside_window:
+        outcome_fractions = marginalize_over_mismatches_outside_window(outcome_fractions, window_interval, target_info.anchor)
 
-    if include_non_programmed_mismatches:
-        def outcome_filter(c, s, d):
-            return (((c, s) in {('wild type', 'mismatches')} and mismatch_in_window(d))
-                    or c in {'intended edit', 'partial replacement', 'partial edit'}
-                   )
+    def mismatch_in_window(d):
+        SNVs = MismatchOutcome.from_string(d).undo_anchor_shift(ti.anchor).snvs
+        return any(p in window_interval for p in SNVs.positions)
+
+    def indel_in_window(d):
+        indel = degenerate_indel_from_string(d)
+        if indel.kind == 'D':
+            outcome = DeletionOutcome.from_string(d).undo_anchor_shift(ti.anchor).deletion
+        elif indel.kind == 'I':
+            outcome = InsertionOutcome.from_string(d).undo_anchor_shift(ti.anchor).insertion
+
+        return hits.interval.are_overlapping(window_interval, outcome.possibly_involved_interval)
+
+    if manual_outcomes is not None:
+        outcomes = manual_outcomes
     else:
         def outcome_filter(c, s, d):
-            return c in {'intended edit', 'partial replacement', 'partial edit'}
+            return (
+                (c in {'intended edit', 'partial replacement', 'partial edit'})
+                or
+                (include_non_programmed_mismatches and 
+                (((c, s) == ('wild type', 'mismatches') and mismatch_in_window(d)) or
+                ((c, s) == ('wild type', 'short indel far from cut') and indel_in_window(d))
+                )
+                ) 
+                or 
+                (include_wild_type and (c, s) == ('wild type', 'clean'))
+            )
 
-    outcomes = [
-        (c, s, d) for (c, s, d), f_row in outcome_fractions.iterrows()
-        if outcome_filter(c, s, d) and max(f_row) > frequency_cutoff
-    ]
-    outcomes = outcome_fractions.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
+        outcomes = [
+            (c, s, d) for (c, s, d), f_row in outcome_fractions.iterrows()
+            if outcome_filter(c, s, d) and f_row.abs().max() > frequency_cutoff
+        ]
+        outcomes = outcome_fractions.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
 
     if len(outcomes) > 0:
         grid = knock_knock.visualize.stacked.DiagramGrid(outcomes, 
@@ -1959,9 +2059,14 @@ def make_partial_incorporation_figure(target_info,
                                                          **diagram_kwargs,
                                                         )
 
-        grid.add_ax('fractions', width_multiple=12, title='% of reads')
+        if difference_from_condition is None:
+            title = '% of reads with\nspecific outcome'
+        else:
+            title = f'Change (from mean of \n{difference_from_condition} samples) in\n% of reads with\nspecific outcome'
 
-        if show_log_scale:
+        grid.add_ax('fractions', width_multiple=12, title=title)
+
+        if difference_from_condition is None and show_log_scale:
             grid.add_ax('log10_fractions', width_multiple=12, gap_multiple=2, title='% of reads (log scale)')
 
         ax_params = [
@@ -1984,7 +2089,9 @@ def make_partial_incorporation_figure(target_info,
 
         grid.style_frequency_ax('fractions')
 
-        grid.set_xlim('fractions', (0,))
+        if difference_from_condition is None:
+            grid.set_xlim('fractions', (0,))
+
         x_max = (grid.axs_by_name['fractions'].get_xlim()[1] / 100) * 1.01
 
         grid.set_xlim('log10_fractions', (np.log10(0.49 * frequency_cutoff), np.log10(x_max)))
@@ -1993,13 +2100,15 @@ def make_partial_incorporation_figure(target_info,
         for pegRNA_i, pegRNA_name in enumerate(ti.pegRNA_names):
             grid.diagrams.draw_pegRNA(ti.name, pegRNA_name, y_offset=pegRNA_i + 1, label_features=False)
 
-        grid.plot_pegRNA_conversion_fractions_above(ti,
-                                                    pegRNA_conversion_fractions,
+        grid.plot_pegRNA_conversion_fractions_above(pegRNA_conversion_fractions,
                                                     conditions=conditions,
                                                     condition_colors=condition_colors,
                                                    )
 
-        grid.style_pegRNA_conversion_plot('pegRNA_conversion_fractions')
+        grid.style_pegRNA_conversion_plot('pegRNA_conversion_fractions',
+                                          difference_from_condition=difference_from_condition,
+                                          y_max=pegRNA_conversion_fractions_y_max,
+                                         )
 
         grid.ordered_axs[-1].legend(bbox_to_anchor=(1, 1))
 
