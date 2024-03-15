@@ -94,13 +94,11 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
     @memoized_property
     def R1_read_length(self):
-        R1, R2 = next(self.read_pairs)
-        return len(R1)
+        return max(len(R1) for R1, R2 in islice(self.read_pairs, 5000))
     
     @memoized_property
     def R2_read_length(self):
-        R1, R2 = next(self.read_pairs)
-        return len(R2)
+        return max(len(R2) for R1, R2 in islice(self.read_pairs, 5000))
 
     def check_combined_read_length(self):
         if self.paired_end:
