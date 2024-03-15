@@ -125,7 +125,9 @@ def identify_split_recognition_sequences(ref_seqs):
                         child.parent = feature
 
                     feature.attribute['central_dinucleotide'] = CD.sequence(ref_seqs)
-                    feature.attribute['component'] = 'full_site'
+                    feature.attribute['component'] = 'complete_site'
+                    feature.attribute['recombinase'] = source
+                    feature.attribute['site'] = site_name
 
                     all_features[ref_name, full_name] = feature
 
@@ -145,7 +147,7 @@ def recombine(ref_seqs, target, donor):
     }
 
     for (ref_name, feature_name), feature in features.items():
-        if feature.attribute['component'] == 'full_site':
+        if feature.attribute['component'] == 'complete_site':
             source, site_name, *rest = feature_name.split('_')
             sites[ref_name][source, site_name, feature.attribute['central_dinucleotide']] = feature
 
