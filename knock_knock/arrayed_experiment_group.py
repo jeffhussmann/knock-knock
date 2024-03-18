@@ -868,13 +868,13 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
             SNVs = self.target_info.pegRNA.SNVs
             
             def name_to_description(name):
-                if name in SNVs['flap']:
+                if SNVs is not None and name in SNVs['flap']:
                     position = SNVs['flap'][name]['position'] + 1
                     genome_base = SNVs['target_downstream'][name]['base']
                     flap_base = SNVs['flap'][name]['base']
                     description = f'+{position}{genome_base}→{flap_base}'
                 else:
-                    raise NotImplementedError
+                    description = name
                 
                 return description
 
