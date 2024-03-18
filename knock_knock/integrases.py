@@ -105,8 +105,8 @@ def identify_split_recognition_sequences(ref_seqs):
                     elif left.strand == '-' and CD.strand == '-' and right.strand == '-':
                         if left.start == CD.end + 1 and CD.start == right.end + 1:
                             strand = '-'
-                            start = left.start
-                            end = right.end
+                            start = right.start
+                            end = left.end
                         else:
                             continue
 
