@@ -1788,6 +1788,10 @@ class Layout(layout.Categorizer):
                 organism = sorted(organisms)[0]
                 self.subcategory = organism
 
+            elif any(al.reference_name == self.target_info.target for al in results['covering_als']) and self.target_info.genome_source is not None:
+                # reference name of supplmental al has been replaced
+                self.subcategory = self.target_info.genome_source
+
             else:
                 raise ValueError
 
