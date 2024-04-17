@@ -43,7 +43,6 @@ class ReadDiagram():
                  max_qual=41,
                  process_mappings=None,
                  detect_orientation=False,
-                 label_layout=False,
                  highlight_SNPs=False,
                  reverse_complement=False,
                  label_left=False,
@@ -111,7 +110,6 @@ class ReadDiagram():
         self.max_qual = max_qual
         self.process_mappings = process_mappings
         self.detect_orientation = detect_orientation
-        self.label_layout = label_layout
         self.highlight_SNPs = highlight_SNPs
         self.reverse_complement = reverse_complement
         self.label_left = label_left
@@ -1140,12 +1138,7 @@ class ReadDiagram():
         self.label_references()
 
         if self.title is None:
-            if self.label_layout:
-                layout = knock_knock.layout.Layout(self.alignments, ti)
-                cat, subcat, details = layout.categorize()
-                title = f'{self.query_name}\n{cat}, {subcat}, {details}'
-            else:
-                title = self.query_name
+            title = self.query_name
         else:
             title = self.title
 
@@ -1420,6 +1413,10 @@ class ReadDiagram():
             # Always extend the target all the way to the edges.
             ref_xs[0] = min(ref_xs[0], self.min_x)
             ref_xs[1] = max(ref_xs[1], self.max_x)
+
+            if self.manual_x_lims is not None:
+                ref_xs[0] = max(self.manual_x_lims[0], ref_xs[0])
+                ref_xs[1] = min(self.manual_x_lims[1], ref_xs[1])
 
         rgba = matplotlib.colors.to_rgba(color)
         image = np.expand_dims(np.array([rgba]*1000), 0)

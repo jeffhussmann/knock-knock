@@ -930,7 +930,7 @@ class StackedDiagrams:
                 
             if (category == 'deletion') or \
                (category == 'simple indel' and subcategory.startswith('deletion')) or \
-               (category == 'wild type' and subcategory == 'short indel far from cut' and degenerate_indel_from_string(details).kind == 'D'):
+               (category == 'wild type' and subcategory == 'short indel far from cut' and details != 'collapsed' and degenerate_indel_from_string(details).kind == 'D'):
 
                 deletion = DeletionOutcome.from_string(details).undo_anchor_shift(ti.anchor).deletion
                 deletion = ti.expand_degenerate_indel(deletion)
@@ -1899,7 +1899,10 @@ def restrict_mismatches_to_window(csd, window_interval, anchor):
         outcome = knock_knock.outcome.MismatchOutcome.from_string(d).undo_anchor_shift(anchor)
         snvs = outcome.snvs.snvs
     
-    elif (c, s) == ('intended edit', 'substitution') or (c, s) == ('partial edit', 'partial incorporation'):
+    elif (c, s) == ('intended edit', 'substitution') or \
+         (c, s) == ('intended edit', 'replacement') or \
+         (c, s) == ('partial edit', 'partial incorporation'):
+
         outcome = knock_knock.outcome.ProgrammedEditOutcome.from_string(d).undo_anchor_shift(anchor)
         snvs = outcome.non_programmed_target_mismatches_outcome.snvs.snvs
         
@@ -1917,7 +1920,10 @@ def restrict_mismatches_to_window(csd, window_interval, anchor):
         else:
             restricted_s = s
     
-    elif (c, s) == ('intended edit', 'substitution') or (c, s) == ('partial edit', 'partial incorporation'):
+    elif (c, s) == ('intended edit', 'substitution') or \
+         (c, s) == ('intended edit', 'replacement') or \
+         (c, s) == ('partial edit', 'partial incorporation'):
+        
         restricted_outcome = knock_knock.outcome.ProgrammedEditOutcome(outcome.SNV_read_bases, restricted_mismatch_outcome, outcome.non_programmed_edit_mismatches_outcome, outcome.indels)
         restricted_s = s
                                                                          
@@ -2018,13 +2024,19 @@ def make_partial_incorporation_figure(target_info,
         return any(p in window_interval for p in SNVs.positions)
 
     def indel_in_window(d):
-        indel = degenerate_indel_from_string(d)
-        if indel.kind == 'D':
-            outcome = DeletionOutcome.from_string(d).undo_anchor_shift(ti.anchor).deletion
-        elif indel.kind == 'I':
-            outcome = InsertionOutcome.from_string(d).undo_anchor_shift(ti.anchor).insertion
+        if d == 'collapsed':
+            in_window = True
+        else:
+            indel = degenerate_indel_from_string(d)
 
-        return hits.interval.are_overlapping(window_interval, outcome.possibly_involved_interval)
+            if indel.kind == 'D':
+                outcome = DeletionOutcome.from_string(d).undo_anchor_shift(ti.anchor).deletion
+            elif indel.kind == 'I':
+                outcome = InsertionOutcome.from_string(d).undo_anchor_shift(ti.anchor).insertion
+
+            in_window = hits.interval.are_overlapping(window_interval, outcome.possibly_involved_interval)
+
+        return in_window
 
     if manual_outcomes is not None:
         outcomes = manual_outcomes
@@ -2100,16 +2112,17 @@ def make_partial_incorporation_figure(target_info,
         for pegRNA_i, pegRNA_name in enumerate(ti.pegRNA_names):
             grid.diagrams.draw_pegRNA(ti.name, pegRNA_name, y_offset=pegRNA_i + 1, label_features=False)
 
-        grid.plot_pegRNA_conversion_fractions_above(pegRNA_conversion_fractions,
-                                                    conditions=conditions,
-                                                    condition_colors=condition_colors,
-                                                   )
+        if pegRNA_conversion_fractions is not None:
+            grid.plot_pegRNA_conversion_fractions_above(pegRNA_conversion_fractions,
+                                                        conditions=conditions,
+                                                        condition_colors=condition_colors,
+                                                    )
 
-        grid.style_pegRNA_conversion_plot('pegRNA_conversion_fractions',
-                                          difference_from_condition=difference_from_condition,
-                                          y_max=pegRNA_conversion_fractions_y_max,
-                                         )
+            grid.style_pegRNA_conversion_plot('pegRNA_conversion_fractions',
+                                            difference_from_condition=difference_from_condition,
+                                            y_max=pegRNA_conversion_fractions_y_max,
+                                            )
 
-        grid.ordered_axs[-1].legend(bbox_to_anchor=(1, 1))
+            grid.ordered_axs[-1].legend(bbox_to_anchor=(1, 1))
 
         return grid

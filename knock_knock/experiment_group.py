@@ -48,6 +48,7 @@ class ExperimentGroup:
              
             'partial_incorporation_figure': self.results_dir / 'partial_incorporation.pdf',
             'deletion_boundaries_figure': self.results_dir / 'deletion_boundaries.pdf',
+            'single_flap_rejoining_boundaries_figure': self.results_dir / 'single_flap_rejoining_boundaries.pdf',
         }
 
     def process(self, generate_figures=False, num_processes=18, verbose=True, use_logger_thread=False):
@@ -237,17 +238,31 @@ class ExperimentGroup:
         return diagram
 
     def make_group_figures(self):
-        grid = self.make_partial_incorporation_figure()
-        grid.fig.savefig(self.fns['partial_incorporation_figure'], bbox_inches='tight')
+        try:
+            grid = self.make_partial_incorporation_figure()
+            grid.fig.savefig(self.fns['partial_incorporation_figure'], bbox_inches='tight')
+        except:
+            logging.warning(f'Failed to make partial incorporation figure for {self}')
 
-        grid = self.make_deletion_boundaries_figure()
-        grid.fig.savefig(self.fns['deletion_boundaries_figure'], bbox_inches='tight')
+        try:
+            grid = self.make_deletion_boundaries_figure()
+            grid.fig.savefig(self.fns['deletion_boundaries_figure'], bbox_inches='tight')
+        except:
+            logging.warning(f'Failed to make deletion boundaries figure for {self}')
+
+        if len(self.target_info.pegRNAs) == 1:
+            try:
+                fig, axs = self.make_single_flap_extension_chain_edge_figure()
+                fig.savefig(self.fns['single_flap_rejoining_boundaries_figure'], bbox_inches='tight')
+            except:
+                logging.warning(f'Failed to make flap rejoining boundaries figure for {self}')
 
     def make_partial_incorporation_figure(self,
                                           unique_colors=False,
                                           min_reads=None,
                                           conditions=None,
                                           condition_colors=None,
+                                          condition_labels=None,
                                           **kwargs,
                                          ):
         if conditions is None:
@@ -259,12 +274,15 @@ class ExperimentGroup:
         if min_reads is not None:
             conditions = [c for c in conditions if self.total_valid_reads.loc[c] >= min_reads]
 
+        if condition_labels is None:
+            condition_labels = self.condition_labels
+
         grid = knock_knock.visualize.stacked.make_partial_incorporation_figure(self.target_info,
                                                                                self.outcome_fractions,
                                                                                self.pegRNA_conversion_fractions,
                                                                                conditions=conditions,
                                                                                condition_colors=condition_colors,
-                                                                               condition_labels=self.condition_labels,
+                                                                               condition_labels=condition_labels,
                                                                                **kwargs,
                                                                               )
 
@@ -292,12 +310,23 @@ class ExperimentGroup:
                                                                             )
         return grid
 
-    def make_single_flap_extension_chain_edge_figure(self,
-                                                     palette='inferno',
-                                                     conditions=None,
-                                                     aggregate_replicates=True,
-                                                     **plot_kwargs,
-                                                    ):
+    def load_single_flap_boundary_properties(self,
+                                             aggregate_replicates=True,
+                                             palette='tab10',
+                                             conditions=None,
+                                             samples_to_exclude=None,
+                                             include_intended_edit=False,
+                                             condition_colors=None,
+                                             condition_labels=None,
+                                            ):
+        if samples_to_exclude is None:
+            samples_to_exclude = set()
+
+        if condition_colors is None:
+            condition_colors = self.condition_colors(palette=palette)
+
+        if condition_labels is None:
+            condition_labels = self.condition_labels
 
         if aggregate_replicates:
             if conditions is None:
@@ -310,11 +339,14 @@ class ExperimentGroup:
                 
                 boundaries = knock_knock.visualize.rejoining_boundaries.BoundaryProperties()
                 for sample_name in sample_names:
-                    exp = self.sample_name_to_experiment(sample_name)
-                    boundaries.count_single_flap_boundaries(exp)
+                    if sample_name not in samples_to_exclude:
+                        exp = self.sample_name_to_experiment(sample_name)
+                        boundaries.count_single_flap_boundaries(exp, include_intended_edit=include_intended_edit)
 
-                exp_sets[condition] = {
-                    'color': self.condition_colors(palette=palette)[condition],
+                label = condition_labels[condition]
+
+                exp_sets[label] = {
+                    'color': condition_colors[condition],
                     'results': boundaries,
                 }
         else:
@@ -325,23 +357,46 @@ class ExperimentGroup:
 
             for condition in conditions:
                 exp = self.full_condition_to_experiment[condition]
-                
-                boundaries = knock_knock.visualize.rejoining_boundaries.BoundaryProperties()
-                boundaries.count_single_flap_boundaries(exp)
+                if exp.sample_name not in samples_to_exclude:
+                    boundaries = knock_knock.visualize.rejoining_boundaries.BoundaryProperties()
+                    boundaries.count_single_flap_boundaries(exp, include_intended_edit=include_intended_edit)
 
-                key = f'{",".join(condition)} ({exp.sample_name})'
+                    label = condition_labels[condition]
 
-                exp_sets[key] = {
-                    'color': self.condition_colors(palette=palette)[condition],
-                    'results': boundaries,
-                }
+                    exp_sets[label] = {
+                        'color': condition_colors[condition],
+                        'results': boundaries,
+                    }
 
-        fig, axs = knock_knock.visualize.rejoining_boundaries.plot_single_flap_extension_chain_edges(exp.target_info,
+        return exp_sets
+
+    def make_single_flap_extension_chain_edge_figure(self,
+                                                     palette='tab10',
+                                                     conditions=None,
+                                                     condition_colors=None,
+                                                     condition_labels=None,
+                                                     aggregate_replicates=True,
+                                                     samples_to_exclude=None,
+                                                     include_intended_edit=False,
+                                                     **plot_kwargs,
+                                                    ):
+        
+        exp_sets = self.load_single_flap_boundary_properties(aggregate_replicates=aggregate_replicates,
+                                                             palette=palette,
+                                                             conditions=conditions,
+                                                             samples_to_exclude=samples_to_exclude,
+                                                             include_intended_edit=include_intended_edit,
+                                                             condition_colors=condition_colors,
+                                                             condition_labels=condition_labels,
+                                                            )
+
+        fig, axs = knock_knock.visualize.rejoining_boundaries.plot_single_flap_extension_chain_edges(self.target_info,
                                                                                                      exp_sets,
                                                                                                      **plot_kwargs,
                                                                                                     ) 
-        
-        fig.suptitle(f'{self.target_info.target} - {",".join(self.target_info.sgRNAs)}')
+
+        if plot_kwargs.get('include_genome', True):
+            fig.suptitle(f'{self.target_info.target} - {",".join(self.target_info.sgRNAs)}')
 
         return fig, axs
 

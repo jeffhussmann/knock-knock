@@ -1,7 +1,9 @@
 from collections import defaultdict, Counter
+from itertools import islice
 
 import matplotlib.pyplot as plt
 import numpy as np
+import RNA
 
 import hits.visualize
 import hits.utilities
@@ -30,53 +32,56 @@ class BoundaryProperties:
 
         self.joint_array = hits.utilities.counts_to_array(counts, dim=2) / self.total_outcomes
 
-    def count_single_flap_boundaries(self, exp, include_intended_edit=False):
+    def count_single_flap_boundaries(self, exp, include_intended_edit=False, max_reads=None):
         ti = exp.target_info
 
-        pegRNA_name = ti.pegRNA.name
-        pegRNA_HA_RT = ti.features[pegRNA_name, f'HA_RT_{pegRNA_name}']
-        pegRNA_PBS = ti.features[pegRNA_name, 'PBS']
-        last_HA_RT_nt_in_pegRNA = pegRNA_PBS.end - pegRNA_HA_RT.start
+        if include_intended_edit:
+            pegRNA_name = ti.pegRNA.name
+            pegRNA_HA_RT = ti.features[pegRNA_name, f'HA_RT_{pegRNA_name}']
+            pegRNA_PBS = ti.features[pegRNA_name, 'PBS']
+            last_HA_RT_nt_in_pegRNA = pegRNA_PBS.end - pegRNA_HA_RT.start
 
-        target_PBS_name = ti.PBS_names_by_side_of_read[ti.pegRNA_side]
-        target_PBS = ti.features[ti.target, target_PBS_name]
-        target_HA_RT = ti.features[ti.target, f'HA_RT_{pegRNA_name}']
+            target_PBS_name = ti.PBS_names_by_side_of_read[ti.pegRNA_side]
+            target_PBS = ti.features[ti.target, target_PBS_name]
+            target_HA_RT = ti.features[ti.target, f'HA_RT_{pegRNA_name}']
 
-        # By definition, the nt on the PAM-distal side of the nick
-        # is zero in the coordinate system, and postive values go towards
-        # the PAM.
+            # By definition, the nt on the PAM-distal side of the nick
+            # is zero in the coordinate system, and postive values go towards
+            # the PAM.
 
-        if target_PBS.strand == '+':
-            first_nt_after_HA_RT_in_genome = target_HA_RT.end + 1 - (target_PBS.end + 1)
-        else:
-            # TODO: confirm that there are no off-by-one errors here.
-            first_nt_after_HA_RT_in_genome = (target_PBS.start - 1) - (target_HA_RT.start - 1)
+            if target_PBS.strand == '+':
+                first_nt_after_HA_RT_in_genome = target_HA_RT.end + 1 - (target_PBS.end + 1)
+            else:
+                # TODO: confirm that there are no off-by-one errors here.
+                first_nt_after_HA_RT_in_genome = (target_PBS.start - 1) - (target_HA_RT.start - 1)
 
-        for outcome in exp.outcome_iter():
+        outcomes = exp.outcome_iter()
+        if max_reads is not None:
+            outcomes = islice(outcomes, max_reads)
+
+        for outcome in outcomes:
             if outcome.category != 'nonspecific amplification':
                 self.total_outcomes += 1
 
-            if outcome.category.startswith('unintended rejoining'):
+            if outcome.category.startswith('unintended rejoining') or outcome.category == 'RTed sequence':
                 if self.specific_subcategories is not None:
                     if outcome.subcategory not in self.specific_subcategories:
                         continue
 
                 ur_outcome = knock_knock.prime_editing_layout.UnintendedRejoiningOutcome.from_string(outcome.details)
 
-                if ur_outcome.edges[ti.pegRNA_side] is not None:
-                    self.edge_distributions['pegRNA', 'RT\'ed'][ur_outcome.edges[ti.pegRNA_side]] += 1
-                
-                if ur_outcome.edges[ti.non_pegRNA_side] is not None:
-                    self.edge_distributions['target', 'RT\'ed'][ur_outcome.edges[ti.non_pegRNA_side] + ur_outcome.MH_nts] += 1
-
                 self.MH_nts_distribution[ur_outcome.MH_nts] += 1
 
-                joint_key = (outcome.subcategory, ur_outcome.edges['left'], ur_outcome.edges['right'])
-                self.joint_distribution[joint_key] += 1
+                self.edge_distributions['pegRNA', 'RT\'ed'][ur_outcome.edges[ti.pegRNA_side]] += 1
+                if ur_outcome.edges[ti.non_pegRNA_side] is not None:
+                    self.edge_distributions['target', 'not RT\'ed'][ur_outcome.edges[ti.non_pegRNA_side] + ur_outcome.MH_nts] += 1
+
+                    joint_key = (outcome.subcategory, ur_outcome.edges['left'], ur_outcome.edges['right'])
+                    self.joint_distribution[joint_key] += 1
 
             elif include_intended_edit and outcome.category == 'intended edit':
                 self.edge_distributions['pegRNA', 'RT\'ed'][last_HA_RT_nt_in_pegRNA] += 1
-                self.edge_distributions['target', 'RT\'ed'][first_nt_after_HA_RT_in_genome] += 1
+                self.edge_distributions['target', 'not RT\'ed'][first_nt_after_HA_RT_in_genome] += 1
 
         return self
 
@@ -103,36 +108,6 @@ class BoundaryProperties:
                 joint_key = (outcome.subcategory, ur_outcome.edges['left'], ur_outcome.edges['right'])
                 self.joint_distribution[joint_key] += 1
 
-            elif outcome.category == 'deletion':
-                deletion_outcome = knock_knock.outcome.DeletionOutcome.from_string(outcome.details).undo_anchor_shift(ti.anchor)
-
-                if ti.sequencing_direction == '+':
-                    left = max(deletion_outcome.deletion.starts_ats)
-                    right = min(deletion_outcome.deletion.ends_ats)
-                else:
-                    right = max(deletion_outcome.deletion.starts_ats)
-                    left = min(deletion_outcome.deletion.ends_ats)
-
-                relevant_edges = {}
-
-                for side, ref_edge in [('left', left), ('right', right)]:
-                    
-                    target_PBS_name = ti.PBS_names_by_side_of_read[side]
-                    target_PBS = ti.features[ti.target, target_PBS_name]
-
-                    # Positive values are towards the opposite nick,
-                    # negative values are away from the opposite nick.
-
-                    if target_PBS.strand == '+':
-                        relevant_edges[side] = ref_edge - target_PBS.end
-                    else:
-                        relevant_edges[side] = target_PBS.start - ref_edge
-
-                    self.edge_distributions[side, 'deletion'][relevant_edges[side]] += 1
-
-                joint_key = ('deletion',  relevant_edges['left'], relevant_edges['right'])
-                self.joint_distribution[joint_key] += 1
-
         return self
 
     def get_xs_and_ys(self, side, subcategory_key, cumulative=False, normalize=False, from_right=False):
@@ -145,20 +120,18 @@ class BoundaryProperties:
         ys = np.array([counts[x] for x in xs]) / self.total_outcomes * 100
 
         if normalize:
-            ys = ys / ys.sum()
+            ys = ys / ys.sum() * 100
 
         if cumulative:
-            if from_right or subcategory_key in ("not RT'ed", 'deletion'):
+            if from_right:
                 ys = np.cumsum(ys[::-1])[::-1]
-            elif subcategory_key in ("RT'ed", "RT'ed + overlap-extended"):
-                ys = np.cumsum(ys)
             else:
-                ys = ys
+                ys = np.cumsum(ys)
 
         return xs, ys
 
 def plot_single_flap_extension_chain_edges(target_info,
-                                           guide_sets,
+                                           exp_sets,
                                            normalize=False,
                                            pegRNA_x_lims=None,
                                            target_x_lims=None,
@@ -167,287 +140,370 @@ def plot_single_flap_extension_chain_edges(target_info,
                                            pegRNA_from_right=False,
                                            draw_sequence=False,
                                            include_genome=True,
+                                           side_and_subcategories=None,
+                                           annotate_structure=False,
+                                           draw_genomic_homology=False,
                                           ):
     ti = target_info
+
+    if side_and_subcategories is None:
+        side_and_subcategories = [
+            ('pegRNA', 'RT\'ed'),
+            ('target', 'not RT\'ed'),
+        ]
 
     # Common parameters.
     ref_bar_height = 0.05
     feature_height = 0.04
 
-    figsize = (16, 6)
+    y_start = -0.35
 
-    # just RT'ed
-    subcategory_key = "RT\'ed"
+    figsize = (16, 6)
 
     fig, axs = plt.subplots(2, 2, figsize=figsize)
 
-    xs = {}
-    ys = {}
-    for ax_col, side in zip(axs.T, ['pegRNA', 'target']):
+    for ax_col, (side, subcategory_key) in zip(axs.T, side_and_subcategories):
         for ax, cumulative in zip(ax_col, [True, False]):
-            for set_name, set_details in guide_sets.items():
+            for set_name, set_details in exp_sets.items():
                 color = set_details['color']
 
-                xs[side], ys[side] = set_details['results'].get_xs_and_ys(side,
-                                                                          subcategory_key,
-                                                                          cumulative=cumulative,
-                                                                          normalize=normalize,
-                                                                          from_right=pegRNA_from_right and side == 'pegRNA',
-                                                                         )
+                xs, ys = set_details['results'].get_xs_and_ys(side,
+                                                              subcategory_key,
+                                                              cumulative=cumulative,
+                                                              normalize=normalize,
+                                                              from_right=pegRNA_from_right and side == 'pegRNA',
+                                                             )
 
-                if xs[side] is None:
+                if xs is None:
                     continue
 
-                ax.plot(xs[side], ys[side], 'o-', label=set_name, linewidth=line_width, markersize=marker_size, color=color)
+                ax.plot(xs, ys, 'o-', label=set_name, linewidth=line_width, markersize=marker_size, color=color)
 
-    ax = axs[1, 0]
-    pegRNA_name = ti.pegRNA_names[0]
+        ax = ax_col[1]
 
-    # By definition, the end of the PBS on this side's pegRNA 
-    # is zero in the coordinate system.
-    PBS_end = ti.features[pegRNA_name, 'PBS'].end
+        if subcategory_key == 'RT\'ed':
 
-    y_start = -0.35
+            if len(ti.pegRNAs) > 1:
+                pegRNA_name = ti.pegRNA_names_by_side_of_read[side]
+            else:
+                pegRNA_name = ti.pegRNA.name
 
-    pegRNA_length = len(ti.reference_sequences[pegRNA_name])
+            # By definition, the end of the PBS on this side's pegRNA 
+            # is zero in the coordinate system.
+            PBS_end = ti.features[pegRNA_name, 'PBS'].end
 
-    start = PBS_end - pegRNA_length - 0.5
-    end = PBS_end + 0.5
+            pegRNA_length = len(ti.reference_sequences[pegRNA_name])
 
-    if pegRNA_x_lims is not None:
-        pegRNA_x_min, pegRNA_x_max = pegRNA_x_lims
-    else:
-        pegRNA_x_min, pegRNA_x_max = start - 5, end + 5
+            start = PBS_end - pegRNA_length - 0.5
+            end = PBS_end + 0.5
 
-    start = max(start, pegRNA_x_min)
-    end = min(end, pegRNA_x_max)
+            if pegRNA_x_lims is not None:
+                pegRNA_x_min, pegRNA_x_max = pegRNA_x_lims
+            else:
+                pegRNA_x_min, pegRNA_x_max = start - 5, end + 5
 
-    ax.axvspan(start, end, y_start, y_start + ref_bar_height,
-               facecolor='C1',
-               clip_on=False,
-              )
+            start = max(start, pegRNA_x_min)
+            end = min(end, pegRNA_x_max)
 
-    if draw_sequence:
-        for x in range(int(np.ceil(start)), int(np.ceil(end))):
-            p = PBS_end - x
-            if 0 <= p < len(ti.reference_sequences[pegRNA_name]):
-                ax.annotate(ti.reference_sequences[pegRNA_name][p],
-                            xy=(x - 0.5, y_start + ref_bar_height * 0.5),
+            ax.axvspan(start, end, y_start, y_start + ref_bar_height,
+                       facecolor=ti.pegRNA_name_to_color[pegRNA_name],
+                       clip_on=False,
+                      )
+
+            if draw_sequence:
+                pegRNA_sequence = ti.reference_sequences[pegRNA_name]
+                for x in range(int(np.ceil(start)), int(np.ceil(end))):
+                    p = PBS_end - x
+                    if 0 <= p < len(pegRNA_sequence):
+                        ax.annotate(pegRNA_sequence[p],
+                                    xy=(x, y_start + ref_bar_height * 0.5),
+                                    xycoords=('data', 'axes fraction'),
+                                    annotation_clip=False,
+                                    size=7,
+                                    family='monospace',
+                                    va='center',
+                                    ha='center',
+                                   )
+
+                if p > 0:
+                    ax.annotate('...',
+                                xy=(x + 1 - 0.5, y_start),
+                                xycoords=('data', 'axes fraction'),
+                                annotation_clip=False,
+                                size=7,
+                                family='monospace',
+                               )
+
+            features_to_annotate = [
+                'protospacer',
+                'scaffold',
+                'PBS',
+            ]
+
+            feature_aliases = {}
+
+            if ti.pegRNA_programmed_insertion_features:
+                for insertion_feature in ti.pegRNA_programmed_insertion_features:
+                    features_to_annotate.append(insertion_feature.ID)
+                    feature_aliases[insertion_feature.ID] = 'insertion'
+
+                features_to_annotate.append(f'HA_RT_{ti.pegRNA.name}')
+                feature_aliases[f'HA_RT_{ti.pegRNA.name}'] = 'homology\narm'
+
+            else:
+                features_to_annotate.append('RTT')
+
+            for feature_name in features_to_annotate:
+                feature = ti.features[pegRNA_name, feature_name]
+                color = feature.attribute['color']
+
+                if feature_name == 'protospacer':
+                    color = ti.pegRNA_name_to_color[pegRNA_name]
+
+                # Moving back from the PBS end is moving
+                # forward in the coordinate system.
+                start, end = PBS_end - feature.end - 0.5, PBS_end - feature.start + 0.5
+
+                if end < pegRNA_x_min or start > pegRNA_x_max: 
+                    continue
+
+                start = max(start, pegRNA_x_min)
+                end = min(end, pegRNA_x_max)
+
+                ax.axvspan(start,
+                           end,
+                           y_start + ref_bar_height,
+                           y_start + ref_bar_height + feature_height,
+                           facecolor=color,
+                           alpha=0.75,
+                           clip_on=False,
+                          )
+
+                for data_ax in ax_col:
+                    data_ax.axvspan(start,
+                                    end,
+                                    facecolor=color,
+                                    alpha=0.5,
+                                    clip_on=False,
+                                )
+
+                label = feature_aliases.get(feature_name, feature_name)
+
+                if len(label) > 3 and end - start < 10:
+                    y_offset = -15
+                else:
+                    y_offset = -5
+
+                ax.annotate(label,
+                            xy=(np.mean([start, end]), y_start),
                             xycoords=('data', 'axes fraction'),
+                            xytext=(0, y_offset),
+                            textcoords='offset points',
+                            ha='center',
+                            va='top',
+                            color=color,
                             annotation_clip=False,
-                            size=7,
-                            family='monospace',
-                            va='center',
+                            weight='bold',
                            )
 
-        if p > 0:
-            ax.annotate('...',
-                        xy=(x + 1 - 0.5, y_start),
-                        xycoords=('data', 'axes fraction'),
-                        annotation_clip=False,
-                        size=7,
-                        family='monospace',
-                       )
+            new_zero = len(ti.sgRNA_components[pegRNA_name]['PBS']) - 1
+            new_ticks = [t for t in np.arange(-100, 300, 10) + new_zero if pegRNA_x_min <= t <= pegRNA_x_max]
+            new_labels = [str(t - new_zero) for t in new_ticks]
 
-    features_to_annotate = [
-        'protospacer',
-        'scaffold',
-        'PBS',
-    ]
+            for ax in ax_col:
+                ax.set_xlim(pegRNA_x_min, pegRNA_x_max)
+                ax.set_ylim(0)
+                ax.set_xticks(new_ticks)
+                ax.set_xticklabels(new_labels)
 
-    feature_aliases = {}
+            ax_col[0].set_title(f'pegRNA ({pegRNA_name})', color=ti.pegRNA_name_to_color[pegRNA_name])
+            ax_col[0].set_xticklabels([])
 
-    if ti.pegRNA_programmed_insertion_features:
-        for insertion_feature in ti.pegRNA_programmed_insertion_features:
-            features_to_annotate.append(insertion_feature.ID)
-            feature_aliases[insertion_feature.ID] = 'insertion'
+            ax_col[1].set_xlabel('End of reverse transcribed sequence')
 
-        features_to_annotate.append(f'HA_RT_{ti.pegRNA.name}')
-        feature_aliases[f'HA_RT_{ti.pegRNA.name}'] = 'homology\narm'
+            if annotate_structure:
+                components = ti.sgRNA_components[pegRNA_name]
+                fc = RNA.fold_compound(components['RTT'])
+                (propensity, ensemble_energy) = fc.pf()
+                basepair_probs = fc.bpp()
+                array = np.array(basepair_probs)[1:, 1:]
+                sym_array = array + array.T
+                total_bpps = sym_array.sum(axis=1)
+                flipped_propensity = propensity[::-1].translate(str.maketrans('(){}', ')(}{'))
 
-    else:
-        features_to_annotate.append('RTT')
+                xs = np.arange(len(components['PBS']), len(components['PBS'] + components['RTT']))
+                bpps_ax = ax.twinx()
+                bpps_ax.plot(xs, total_bpps[::-1], 'o-', markersize=2, color='black', clip_on=False)
+                bpps_ax.set_ylim(0, 1)
 
-    for feature_name in features_to_annotate:
-        feature = ti.features[pegRNA_name, feature_name]
-        color = feature.attribute['color']
+                bpps_ax.set_ylabel('Total probability paired', size=12, rotation=270, labelpad=12)
 
-        # Moving back from the PBS end is moving
-        # forward in the coordinate system.
-        start, end = PBS_end - feature.end - 0.5, PBS_end - feature.start + 0.5
+                for x, c in zip(xs, flipped_propensity):
+                    ax.annotate(c,
+                                xy=(x, 1),
+                                xycoords=('data', 'axes fraction'),
+                                xytext=(0, 2),
+                                textcoords='offset points',
+                                ha='center',
+                                va='bottom',
+                                family='monospace',
+                               )
+                  
+                ax.annotate('RTT MFE:',
+                            xy=(xs[0], 1),
+                            xycoords=('data', 'axes fraction'),
+                            xytext=(-5, 2),
+                            textcoords='offset points',
+                            ha='right',
+                            va='bottom',
+                            family='monospace',
+                           )
 
-        if end < pegRNA_x_min or start > pegRNA_x_max: 
-            continue
+        elif subcategory_key == 'not RT\'ed':
+            ax = ax_col[1]
 
-        start = max(start, pegRNA_x_min)
-        end = min(end, pegRNA_x_max)
+            colors = {}
 
-        ax.axvspan(start,
-                   end,
-                   y_start + ref_bar_height,
-                   y_start + ref_bar_height + feature_height,
-                   facecolor=color,
-                   alpha=0.75,
-                   clip_on=False,
-                  )
+            for pegRNA_name in ti.pegRNA_names:
+                color = ti.pegRNA_name_to_color[pegRNA_name]
+                light_color = hits.visualize.apply_alpha(color, 0.5)
+                ps_name = knock_knock.pegRNAs.protospacer_name(pegRNA_name)
+                colors[ps_name] = light_color
 
-        for data_ax in axs[:, 0]:
-            data_ax.axvspan(start,
-                            end,
-                            facecolor=color,
-                            alpha=0.5,
+                PAM_name = f'{ps_name}_PAM'
+                colors[PAM_name] = color
+
+            for primer_name in ti.primer_names:
+                colors[primer_name] = 'grey'
+
+            if len(ti.pegRNA_names) == 1:
+                pegRNA_name = ti.pegRNA_names[0]
+            else:
+                pegRNA_name = ti.pegRNA_names_by_side_of_read[side]
+
+            PBS = ti.features[ti.target, knock_knock.pegRNAs.PBS_name(pegRNA_name)]
+
+            # By definition, the nt on the PAM-distal side of the nick
+            # is zero in the coordinate system, and postive values go towards
+            # the PAM.
+
+            feature_names = ti.protospacer_names + list(ti.PAM_features) + ti.primer_names
+
+            if draw_genomic_homology:
+                feature_names.append(f'HA_RT_{pegRNA_name}')
+                feature_names.append(f'HA_PBS_{pegRNA_name}')
+
+            def target_to_nick_coords(target_x):
+                if PBS.strand == '+':
+                    return target_x - (PBS.end + 1)
+                else:
+                    return (PBS.start - 1) - target_x
+
+            def target_bounds_to_xs(start, end):
+                left, right = sorted([target_to_nick_coords(start), target_to_nick_coords(end)])
+                return left - 0.5, right + 0.5
+
+            if target_x_lims is not None:
+                target_x_min, target_x_max = target_x_lims
+            else:
+                target_x_min, target_x_max = target_bounds_to_xs(ti.amplicon_interval.start, ti.amplicon_interval.end)
+
+            for feature_name in feature_names:
+                if (ti.target, feature_name) not in ti.features:
+                    # 3b spacer
+                    continue
+
+                feature = ti.features[ti.target, feature_name]
+                
+                start, end = target_bounds_to_xs(feature.start, feature.end)
+
+                if end < target_x_min or start > target_x_max: 
+                    continue
+
+                if 'HA_PBS' in feature_name or 'HA_RT' in feature_name:
+                    height = feature_height * 0.75
+                else:
+                    height = feature_height * 1.5
+                
+                color = colors.get(feature_name, feature.attribute['color'])
+
+                ax.axvspan(start, end,
+                           y_start, y_start - height,
+                           facecolor=color,
+                           clip_on=False,
+                          )
+
+                if 'PAM' in feature_name:
+                    label = None
+                elif feature_name.endswith('protospacer'):
+                    label = feature_name[:-len('_protospacer')]
+                elif 'HA_RT' in feature_name or 'HA_PBS' in feature_name:
+                    feature_name = ''
+                else:
+                    label = feature_name
+
+                ax.annotate(label,
+                            xy=(np.mean([start, end]), y_start),
+                            xycoords=('data', 'axes fraction'),
+                            xytext=(0, -15),
+                            textcoords='offset points',
+                            ha='center',
+                            va='top',
+                            color=color,
+                            annotation_clip=False,
+                            weight='bold',
+                        )
+
+            ax.axvspan(target_x_min, target_x_max, y_start, y_start + ref_bar_height, facecolor='C0', clip_on=False)
+
+            for cut_after_name, cut_after in ti.cut_afters.items():
+                # Potentially confusing - if PBS is on the plus strand, cut_after is -1 in nick coords,
+                # but if PBS is on the minus strand, cut_after is 0 in nick coords. In either case,
+                # just take actual cut position (cut_after + 0.5) in target coords and convert it.
+                x = target_to_nick_coords(cut_after + 0.5)
+
+                if target_x_min <= x <= target_x_max:
+
+                    ax.axvline(x, color='black', alpha=0.75)
+
+                    name, strand = cut_after_name.rsplit('_', 1)
+                    ref_y = y_start + 0.5 * ref_bar_height
+                    cut_y_bottom = ref_y - feature_height
+                    cut_y_middle = ref_y
+                    cut_y_top = ref_y + feature_height
+
+                    if (strand == '+' and ti.sequencing_direction == '+') or (strand == '-' and ti.sequencing_direction == '-'):
+                        ys = [cut_y_middle, cut_y_top]
+                    elif (strand == '-' and ti.sequencing_direction == '+') or (strand == '+' and ti.sequencing_direction == '-'):
+                        ys = [cut_y_bottom, cut_y_middle]
+                    else:
+                        ys = [cut_y_bottom, cut_y_top]
+
+                    ax.plot([x, x],
+                            ys,
+                            '-',
+                            linewidth=1,
+                            color='black',
+                            solid_capstyle='butt',
+                            zorder=10,
+                            transform=ax.get_xaxis_transform(),
                             clip_on=False,
                            )
 
-        label = feature_aliases.get(feature_name, feature_name)
+            for ax in ax_col:
+                ax.set_xlim(target_x_min, target_x_max)
+                ax.set_ylim(0)
 
-        if len(label) > 3 and end - start < 10:
-            y_offset = -25
-        else:
-            y_offset = -5
+            ax_col[0].set_title('genome', color='C0')
+            ax_col[0].set_xticklabels([])
 
-        ax.annotate(label,
-                    xy=(np.mean([start, end]), y_start),
-                    xycoords=('data', 'axes fraction'),
-                    xytext=(0, y_offset),
-                    textcoords='offset points',
-                    ha='center',
-                    va='top',
-                    color=color,
-                    annotation_clip=False,
-                    weight='bold',
-                   )
-
-    for ax in axs[:, 0]:
-        ax.set_xlim(pegRNA_x_min, pegRNA_x_max)
-        ax.set_ylim(0)
-
-    axs[0, 0].set_title(f'pegRNA ({pegRNA_name})', color='C1')
-    axs[0, 0].set_xticklabels([])
-
-    axs[1, 0].set_xlabel('End of reverse transcribed sequence')
-
-    ax = axs[1, 1]
-
-    colors = {}
-
-    for primer_name in ti.primer_names:
-        colors[primer_name] = 'grey'
-
-    PBS = ti.features[ti.target, knock_knock.pegRNAs.PBS_name(pegRNA_name)]
-
-    # By definition, the nt on the PAM-distal side of the nick
-    # is zero in the coordinate system, and postive values go towards
-    # the PAM.
-
-    feature_names = ti.protospacer_names + list(ti.PAM_features) + ti.primer_names
-
-    def target_to_nick_coords(target_x):
-        if PBS.strand == '+':
-            return target_x - (PBS.end + 1)
-        else:
-            return (PBS.start - 1) - target_x
-
-    def target_bounds_to_xs(start, end):
-        left, right = sorted([target_to_nick_coords(start), target_to_nick_coords(end)])
-        return left - 0.5, right + 0.5
-
-    if target_x_lims is not None:
-        target_x_min, target_x_max = target_x_lims
-    else:
-        target_x_min, target_x_max = target_bounds_to_xs(ti.amplicon_interval.start, ti.amplicon_interval.end)
-
-    for feature_name in feature_names:
-        if (ti.target, feature_name) not in ti.features:
-            # 3b spacer
-            continue
-
-        feature = ti.features[ti.target, feature_name]
+            ax_col[1].set_xlabel('Rejoining position in genome')
         
-        start, end = target_bounds_to_xs(feature.start, feature.end)
+        #if side == 'right':
+        #    for ax in ax_col:
+        #        ax.invert_xaxis()
 
-        if end < target_x_min or start > target_x_max: 
-            continue
-
-        if 'PBS' in feature_name:
-            height = feature_height / 2
-        else:
-            height = feature_height
-        
-        color = colors.get(feature_name, feature.attribute['color'])
-
-        ax.axvspan(start, end,
-                   y_start, y_start - height,
-                   facecolor=color,
-                   clip_on=False,
-                  )
-
-        if 'PAM' in feature_name:
-            label = None
-        elif 'protospacer' in feature_name:
-            if feature_name.startswith(pegRNA_name):
-                label = 'pegRNA\nprotospacer'
-            else:
-                label = 'nicking\nprotospacer'
-        else:
-            label = feature_name
-
-        ax.annotate(label,
-                    xy=(np.mean([start, end]), y_start),
-                    xycoords=('data', 'axes fraction'),
-                    xytext=(0, -15),
-                    textcoords='offset points',
-                    ha='center',
-                    va='top',
-                    color=color,
-                    annotation_clip=False,
-                    weight='bold',
-                   )
-
-    ax.axvspan(target_x_min, target_x_max, y_start, y_start + ref_bar_height, facecolor='C0', clip_on=False)
-
-    for cut_after_name, cut_after in ti.cut_afters.items():
-        # Potentially confusing - if PBS is on the plus strand, cut_after is -1 in nick coords,
-        # but if PBS is on the minus strand, cut_after is 0 in nick coords. In either case,
-        # just take actual cut position (cut_after + 0.5) in target coords and convert it.
-        x = target_to_nick_coords(cut_after + 0.5)
-
-        ax.axvline(x, color='black', alpha=0.75)
-
-        name, strand = cut_after_name.rsplit('_', 1)
-        ref_y = y_start + 0.5 * ref_bar_height
-        cut_y_bottom = ref_y - feature_height
-        cut_y_middle = ref_y
-        cut_y_top = ref_y + feature_height
-
-        if (strand == '+' and ti.sequencing_direction == '+') or (strand == '-' and ti.sequencing_direction == '-'):
-            ys = [cut_y_middle, cut_y_top]
-        elif (strand == '-' and ti.sequencing_direction == '+') or (strand == '+' and ti.sequencing_direction == '-'):
-            ys = [cut_y_bottom, cut_y_middle]
-        else:
-            ys = [cut_y_bottom, cut_y_top]
-
-        ax.plot([x, x],
-                ys,
-                '-',
-                linewidth=1,
-                color='black',
-                solid_capstyle='butt',
-                zorder=10,
-                transform=ax.get_xaxis_transform(),
-                clip_on=False,
-               )
-
-    for ax in axs[:, 1]:
-        ax.set_xlim(target_x_min, target_x_max)
-        ax.set_ylim(0)
-
-    axs[0, 1].set_title('genome', color='C0')
-    axs[0, 1].set_xticklabels([])
-
-    axs[1, 1].set_xlabel('Rejoining position in genome')
-
-    if len(guide_sets) > 1:
+    if len(exp_sets) > 1:
         if include_genome:
             ax = axs[0, 1]
         else:
@@ -456,15 +512,17 @@ def plot_single_flap_extension_chain_edges(target_info,
         ax.legend(bbox_to_anchor=(1, 1), loc='upper left')
 
     if normalize:
-        ylabel = 'Normalized cumulative\npercentage of reads'
+        ylabel = 'Normalized cumulative\npercentage of\nrelevant reads'
     else:
-        ylabel = 'Cumulative\npercentage of reads'
+        ylabel = 'Cumulative\npercentage of all reads'
+
     axs[0, 0].set_ylabel(ylabel, size=12)
 
     if normalize:
-        ylabel = 'Normalized percentage of reads'
+        ylabel = 'Normalized percentage\nof relevant reads'
     else:
-        ylabel = 'Percentage of reads'
+        ylabel = 'Percentage of all reads'
+
     axs[1, 0].set_ylabel(ylabel, size=12)
 
     if not include_genome:
@@ -474,7 +532,7 @@ def plot_single_flap_extension_chain_edges(target_info,
     return fig, axs
 
 def plot_dual_flap_extension_chain_edges(ti,
-                                         guide_sets,
+                                         exp_sets,
                                          cumulative=False,
                                          normalize=False,
                                          x_lims=(-100, 150),
@@ -495,14 +553,13 @@ def plot_dual_flap_extension_chain_edges(ti,
 
     # not RT'ed and deletion
     for subcategory_key in [
-        "deletion",
         "not RT'ed",
     ]:
         fig, axs = plt.subplots(1, 2, figsize=figsize)
         figs[subcategory_key] = fig
 
         for ax, side in zip(axs, ['left', 'right']):
-            for set_name, set_details in guide_sets.items():
+            for set_name, set_details in exp_sets.items():
                 color = set_details['color']
 
                 xs, ys = set_details['results'].get_xs_and_ys(side, subcategory_key, cumulative=cumulative, normalize=normalize)
@@ -551,7 +608,7 @@ def plot_dual_flap_extension_chain_edges(ti,
             for feature_name in feature_names:
                 feature = ti.features[ti.target, feature_name]
                 
-                # Moving towards the other nicks is moving
+                # Moving towards the other nick is moving
                 # forward in the coordinate system.
                 if PBS.strand == '+':
                     start, end = feature.start - PBS.end - 0.5, feature.end - PBS.end + 0.5
@@ -615,8 +672,8 @@ def plot_dual_flap_extension_chain_edges(ti,
             if side == 'right':
                 ax.invert_xaxis()
 
-        if len(guide_sets) > 1:
-            axs[0].legend()
+        if len(exp_sets) > 1:
+            axs[1].legend(bbox_to_anchor=(1, 1), loc='upper left')
 
         if cumulative:
             axs[0].set_ylabel('Cumulative percentage of reads', size=12)
@@ -630,7 +687,7 @@ def plot_dual_flap_extension_chain_edges(ti,
     figs[subcategory_key] = fig
 
     for ax, side in zip(axs, ['left', 'right']):
-        for set_name, set_details in guide_sets.items():
+        for set_name, set_details in exp_sets.items():
             color = set_details['color']
 
             xs, ys = set_details['results'].get_xs_and_ys(side, subcategory_key, cumulative=cumulative, normalize=normalize)
@@ -679,8 +736,8 @@ def plot_dual_flap_extension_chain_edges(ti,
         if side == 'right':
             ax.invert_xaxis()
 
-    if len(guide_sets) > 1:
-        axs[0].legend()
+    if len(exp_sets) > 1:
+        axs[1].legend(bbox_to_anchor=(1, 1), loc='upper left')
 
     if cumulative:
         axs[0].set_ylabel('Cumulative percentage of reads', size=12)
@@ -694,7 +751,7 @@ def plot_dual_flap_extension_chain_edges(ti,
     figs[subcategory_key] = fig
 
     for ax, side in zip(axs, ['left', 'right']):
-        for set_name, set_details in guide_sets.items():
+        for set_name, set_details in exp_sets.items():
             color = set_details['color']
 
             xs, ys = set_details['results'].get_xs_and_ys(side, subcategory_key, cumulative=cumulative, normalize=normalize)
@@ -786,7 +843,7 @@ def plot_dual_flap_extension_chain_edges(ti,
         if side == 'right':
             ax.invert_xaxis()
 
-    if len(guide_sets) > 1:
+    if len(exp_sets) > 1:
         axs[0].legend()
 
     if cumulative:
