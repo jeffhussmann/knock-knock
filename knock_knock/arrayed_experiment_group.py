@@ -1139,14 +1139,13 @@ def detect_sequencing_start_feature_names(base_dir, batch_name, sample_sheet_df)
 
         primer_prefix_length = 6
         read_length_to_examine = 30
-        num_reads_to_check = 1000
+        num_reads_to_check = 10000
 
         primer_prefixes = {name: seq[:primer_prefix_length] for name, seq in primer_sequences.items()}
 
         reads = fastq.reads(R1_fn)
 
         # Ignore reads that have an N in the region to examine.
-        reads = (read for read in reads if 'N' not in read.seq[:read_length_to_examine])
         reads = itertools.islice(reads, num_reads_to_check)
 
         prefix_counts = Counter()
