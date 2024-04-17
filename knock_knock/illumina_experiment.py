@@ -97,6 +97,10 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
         return {r.name for r in self.reads_by_type('R1_no_overlap')}
 
     @memoized_property
+    def read_length(self):
+        return max(len(read) for read in islice(self.reads, 5000))
+
+    @memoized_property
     def R1_read_length(self):
         return max(len(R1) for R1, R2 in islice(self.read_pairs, 5000))
     
