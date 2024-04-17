@@ -70,6 +70,10 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
             self.preprocessed_read_type = 'trimmed'
 
+            self.trim_to_max_length = self.description.get('trim_to_max_length')
+            if self.trim_to_max_length is not None:
+                self.trim_to_max_length = int(self.trim_to_max_length)
+
     @property
     def read_types_to_align(self):
         return [
@@ -268,6 +272,8 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
                 start = read.seq.index(prefix, 0, 30)
             except ValueError:
                 start = 0
+
+            read = read[:self.trim_to_max_length]
 
             end = adapters.trim_by_local_alignment(adapters.truseq_R2_rc, read.seq)
 
