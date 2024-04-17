@@ -23,6 +23,8 @@ import knock_knock.utilities
 
 from hits import utilities, fastq
 
+import knock_knock.TECseq_layout
+
 memoized_property = utilities.memoized_property
 memoized_with_kwargs = utilities.memoized_with_kwargs
 
@@ -967,6 +969,7 @@ class ArrayedExperiment(knock_knock.illumina_experiment.IlluminaExperiment):
             'prime_editing': knock_knock.prime_editing_layout.Layout,
             'twin_prime': knock_knock.twin_prime_layout.Layout,
             'Bxb1_twin_prime': knock_knock.Bxb1_layout.Layout,
+            'TECseq': knock_knock.TECseq_layout.Layout,
         }
 
         aliases = {
