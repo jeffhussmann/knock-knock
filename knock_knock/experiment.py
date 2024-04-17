@@ -1089,6 +1089,11 @@ class Experiment:
                                                                              **kwargs,
                                                                             )
 
+    def plot_quality_histograms(self):
+        stats = fastq.quality_and_complexity(self.reads, self.read_length)
+        fig = hits.visualize.fastq.plot_quality_histograms(stats['q'])
+        return fig
+
     def alignment_groups_to_diagrams(self,
                                      alignment_groups,
                                      num_examples,
@@ -1435,12 +1440,6 @@ def get_exp_class(platform):
     elif platform == 'length_bias':
         from knock_knock.length_bias_experiment import LengthBiasExperiment
         exp_class = LengthBiasExperiment
-    elif platform == 'prime':
-        from knock_knock.prime_editing_experiment import PrimeEditingExperiment
-        exp_class = PrimeEditingExperiment
-    elif platform == 'twin_prime':
-        from knock_knock.prime_editing_experiment import TwinPrimeExperiment
-        exp_class = TwinPrimeExperiment
     else:
         exp_class = Experiment
 

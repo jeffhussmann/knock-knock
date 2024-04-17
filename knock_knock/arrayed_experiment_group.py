@@ -474,6 +474,9 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
             label = f'{partial_label}rep. {condition[-1]} ({sample_name}, {self.total_valid_reads[condition]:,} total reads)'
             condition_labels[condition] = label
 
+        for condition in self.conditions:
+            condition_labels[condition] = ', '.join(condition)
+
         return condition_labels
 
     def extract_genomic_insertion_length_distributions(self):
@@ -884,8 +887,9 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
             df.index = df.index.map(name_to_description)
 
-            df.columns = df.columns.map(self.full_condition_to_sample_name)
-            df.columns.name = 'sample'
+            new_tuples = [(self.full_condition_to_sample_name[t],) + t for t in df.columns.values]
+            new_columns = pd.MultiIndex.from_tuples(new_tuples, names=['sample'] + df.columns.names)
+            df.columns = new_columns
 
             df.T.to_csv(self.fns['pegRNA_conversion_fractions'])
 

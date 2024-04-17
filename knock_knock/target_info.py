@@ -2134,7 +2134,7 @@ class SNVs():
 
     @classmethod
     def from_string(cls, details_string):
-        if details_string == '':
+        if details_string == '' or details_string == 'collapsed':
             snvs = []
         else:
             snvs = [SNV.from_string(s) for s in details_string.split(',')]
