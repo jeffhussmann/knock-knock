@@ -337,6 +337,18 @@ class pegRNA:
             print(trim_excess_target_from_alignment(alignment))
 
     @memoized_property
+    def programmed_substitution_target_ps(self):
+
+        if self.SNVs is None:
+            target_SNVs = {}
+        else:
+            target_SNVs = self.SNVs[self.target_name]
+
+        ps = {SNV_details['position'] for _, SNV_details in target_SNVs.items()}
+
+        return ps
+
+    @memoized_property
     def edit_properties(self):
         ''' Align the intended flap sequence to genomic sequence downstream
         of the nick using Biopython's dynamic programming.
@@ -437,7 +449,7 @@ class pegRNA:
             'deletions': deletions,
             'insertions': insertions,
             'HA_RT': HA_RT,
-            'HA_RT_length': HA_RT['flap'][1] - HA_RT['flap'][0] + 1,
+            'HA_RT_length': (HA_RT['flap'][1] - HA_RT['flap'][0] + 1) if HA_RT is not None else 0,
             'flap_subsequences': flap_subsequences,
             'target_subsequences': target_subsequences,
         }
@@ -627,6 +639,7 @@ class pegRNA:
                     'position': SNV['flap'],
                     'base': self.intended_flap_sequence[SNV['flap']],
                 }
+
                 self.SNVs['target_downstream'][SNV_name] = {
                     'position': SNV['target_downstream'],
                     'base': self.target_downstream_of_nick[SNV['target_downstream']],
@@ -1177,22 +1190,39 @@ class pegRNA_pair:
 
     @memoized_property
     def best_alignment_of_edit_to_WT_between_nicks(self):
-        edit_aligner = Bio.Align.PairwiseAligner(
-            match_score=2,
-            mismatch_score=-3,
-            open_gap_score=-12,
-            extend_gap_score=-0.1,
-            mode='global',
-        )
-        
-        alignments = edit_aligner.align(self.intended_edit_between_nicks, self.WT_sequence_between_nicks)
-
-        best_alignment = next(alignments)
-
-        if best_alignment.score <= 0:
+        if self.intended_edit_between_nicks == '':
             best_alignment = None
+        else:
+            edit_aligner = Bio.Align.PairwiseAligner(
+                match_score=2,
+                mismatch_score=-3,
+                open_gap_score=-12,
+                extend_gap_score=-0.1,
+                mode='global',
+            )
+            
+            alignments = edit_aligner.align(self.intended_edit_between_nicks, self.WT_sequence_between_nicks)
+
+            best_alignment = next(alignments)
+
+            if best_alignment.score <= 0:
+                best_alignment = None
 
         return best_alignment
+
+    @memoized_property
+    def programmed_substitution_ps(self):
+        self.extract_edits()
+
+        ps = {}
+
+        for pegRNA in self.pegRNAs:
+            ps[pegRNA.name] = set()
+
+            for SNV_name, SNV_details in self.SNVs[pegRNA.name].items():
+                ps[pegRNA.name].add(SNV_details['position'])
+
+        return ps
 
     def extract_edits(self):
 
@@ -1281,7 +1311,6 @@ class pegRNA_pair:
             #    if left_target_end != right_target_start:
             #        deletions.append((left_target_end, right_target_start - 1))
                 
-
 def infer_twin_pegRNA_features(pegRNAs,
                                target_name,
                                existing_features,

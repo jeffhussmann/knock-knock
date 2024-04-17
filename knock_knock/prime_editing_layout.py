@@ -718,8 +718,9 @@ class Layout(layout.Categorizer):
         if possible_covers:
             last_parsimonious_key['left'], last_parsimonious_key['right'] = max(possible_covers, key=lambda pair: (al_order.index(pair[0]), al_order.index(pair[1])))
         else:
-            for side in ['left', 'right']:
-                last_parsimonious_key[side] = max(chains[side]['alignments'], key=al_order.index, default='none')
+            for side, chain in chains.items():
+                maximal_covers = [k for k, covered in chain['query_covered_incremental'].items() if covered == chain['query_covered']]
+                last_parsimonious_key[side] = min(maximal_covers, key=al_order.index, default='none')
 
         for side in ['left', 'right']:
             key = last_parsimonious_key[side]
@@ -852,6 +853,9 @@ class Layout(layout.Categorizer):
 
         PBS_end = ti.features[pegRNA_name, 'PBS'].end
 
+        target_PBS_name = ti.PBS_names_by_side_of_read[ti.pegRNA_side]
+        target_PBS = ti.features[ti.target, target_PBS_name]
+
         if require_definite:
             chain = self.extension_chains_by_side[side]
         else:
@@ -859,27 +863,37 @@ class Layout(layout.Categorizer):
 
         if chain['description'] in ['not seen', 'no target']:
             relevant_edge = None
-        else:
-            if side == ti.pegRNA_side and chain['description'] in ['RT\'ed', 'RT\'ed + annealing-extended']:
+
+        elif side == ti.pegRNA_side:
+            if chain['description'] == 'RT\'ed':
                 al = chain['alignments']['pegRNA']
 
                 relevant_edge = PBS_end - al.reference_start
 
             else:
-                al = chain['alignments']['first target']
-
-                target_PBS_name = ti.PBS_names_by_side_of_read[ti.pegRNA_side]
-                target_PBS = ti.features[ti.target, target_PBS_name]
-
-                # By definition, the nt on the PAM-distal side of the nick
-                # is zero in the coordinate system, and postive values go towards
-                # the PAM.
+                if chain['description'] == 'RT\'ed + annealing-extended':
+                    al = chain['alignments']['second target']
+                else:
+                    al = chain['alignments']['first target']
 
                 if target_PBS.strand == '+':
-                    relevant_edge = al.reference_start - (target_PBS.end + 1)
+                    relevant_edge = (al.reference_end - 1) - target_PBS.end
                 else:
                     # TODO: confirm that there are no off-by-one errors here.
-                    relevant_edge = (target_PBS.start - 1) - (al.reference_end - 1)
+                    relevant_edge = target_PBS.start - al.reference_start
+
+        else:
+            al = chain['alignments']['first target']
+
+            # By definition, the nt on the PAM-distal side of the nick
+            # is zero in the coordinate system, and postive values go towards
+            # the PAM.
+
+            if target_PBS.strand == '+':
+                relevant_edge = al.reference_start - (target_PBS.end + 1)
+            else:
+                # TODO: confirm that there are no off-by-one errors here.
+                relevant_edge = (target_PBS.start - 1) - (al.reference_end - 1)
 
         return relevant_edge
 
@@ -2734,7 +2748,18 @@ class Layout(layout.Categorizer):
     @memoized_property
     def non_pegRNA_mismatches(self):
         _, non_pegRNA_mismatches = self.mismatches_summary
-        return non_pegRNA_mismatches
+
+        # Remove mismatches at programmed posititions. 
+        if self.target_info.pegRNA is None:
+            programmed_ps = set()
+        else:
+            programmed_ps = self.target_info.pegRNA.programmed_substitution_target_ps
+
+        filtered_snvs = [snv for snv in non_pegRNA_mismatches.snvs if snv.position not in programmed_ps]
+
+        filtered_mismatches = knock_knock.target_info.SNVs(filtered_snvs)
+
+        return filtered_mismatches
 
     @memoized_property
     def non_pegRNA_mismatches_outcome(self):
@@ -2967,6 +2992,9 @@ class Layout(layout.Categorizer):
 
                     features_to_show.add((ti.target, name))
 
+        if 'reverse_complement' in manual_diagram_kwargs and manual_diagram_kwargs['reverse_complement']:
+            flip_pegRNA = not flip_pegRNA
+
         if draw_protospacers_on_nicked_strand:
             # Draw protospacer features on the same side as their nick.
             for feature_name, feature in ti.PAM_features.items():
@@ -2988,12 +3016,13 @@ class Layout(layout.Categorizer):
             label_offsets[insertion.ID] = 1
 
         for name in ti.protospacer_names:
-            if name == ti.primary_protospacer:
-                new_name = 'pegRNA\nprotospacer'
-            else:
-                new_name = 'ngRNA\nprotospacer'
+            if name not in label_overrides:
+                if name == ti.primary_protospacer and name not in label_overrides:
+                    new_name = 'pegRNA\nprotospacer'
+                else:
+                    new_name = 'ngRNA\nprotospacer'
 
-            label_overrides[name] = new_name
+                label_overrides[name] = new_name
 
         label_overrides.update({feature_name: None for feature_name in ti.PAM_features})
 

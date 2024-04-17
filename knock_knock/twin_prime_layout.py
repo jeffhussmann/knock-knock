@@ -512,15 +512,18 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
         mismatches_seen = set()
 
+
         for al in self.pegRNA_extension_als_from_either_side_list:
             mismatches = knock_knock.layout.get_mismatch_info(al, self.target_info.reference_sequences)
+
+            programmed_ps = self.target_info.pegRNA_pair.programmed_substitution_ps[al.reference_name]
+
             for true_read_p, read_b, ref_p, ref_b, q in mismatches:
                 
-                # ref_p might be outside of edit portion
+                # ref_p might be outside of edit portion or might be a programmed substitution.
                 edit_p = self.target_info.pegRNA_pair.pegRNA_coords_to_edit_coords[al.reference_name].get(ref_p)
                 
-                if edit_p is not None:
-                    edit_ref_b = intended_edit[edit_p]
+                if edit_p is not None and ref_p not in programmed_ps:
                     mismatches_seen.add((edit_p, read_b))
                     
         mismatches = knock_knock.target_info.SNVs([knock_knock.target_info.SNV(position, basecall) for position, basecall in sorted(mismatches_seen)])
