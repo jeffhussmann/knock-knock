@@ -6,6 +6,7 @@ from collections import defaultdict
 import Bio.Align
 import numpy as np
 import pysam
+import RNA
 
 from hits import gff, interval, sam, sw, utilities
 
@@ -755,6 +756,18 @@ class pegRNA:
             strings.append(f'+{position}del{sequence}')
 
         return ','.join(strings)
+
+    @memoized_property
+    def RTT_structure(self):
+        fc = RNA.fold_compound(self.components['RTT'])
+        (propensity, ensemble_energy) = fc.pf()
+        basepair_probs = fc.bpp()
+        array = np.array(basepair_probs)[1:, 1:]
+        sym_array = array + array.T
+        flipped_total_bpps = sym_array.sum(axis=1)[::-1]
+        flipped_propensity = propensity[::-1].translate(str.maketrans('(){}', ')(}{'))
+
+        return flipped_total_bpps, flipped_propensity
 
 def get_pegRNAs_by_strand(pegRNAs):
     pegRNAs_by_strand = {}

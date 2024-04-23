@@ -3,7 +3,6 @@ from itertools import islice
 
 import matplotlib.pyplot as plt
 import numpy as np
-import RNA
 
 import hits.visualize
 import hits.utilities
@@ -177,7 +176,14 @@ def plot_single_flap_extension_chain_edges(target_info,
                 if xs is None:
                     continue
 
-                ax.plot(xs, ys, 'o-', label=set_name, linewidth=line_width, markersize=marker_size, color=color)
+                ax.plot(xs,
+                        ys,
+                        'o-',
+                        label=set_name,
+                        linewidth=line_width,
+                        markersize=marker_size,
+                        color=color,
+                       )
 
         ax = ax_col[1]
 
@@ -322,18 +328,13 @@ def plot_single_flap_extension_chain_edges(target_info,
             ax_col[1].set_xlabel('End of reverse transcribed sequence')
 
             if annotate_structure:
-                components = ti.sgRNA_components[pegRNA_name]
-                fc = RNA.fold_compound(components['RTT'])
-                (propensity, ensemble_energy) = fc.pf()
-                basepair_probs = fc.bpp()
-                array = np.array(basepair_probs)[1:, 1:]
-                sym_array = array + array.T
-                total_bpps = sym_array.sum(axis=1)
-                flipped_propensity = propensity[::-1].translate(str.maketrans('(){}', ')(}{'))
+                flipped_total_bpps, flipped_propensity = ti.pegRNA.RTT_structure
 
+                components = ti.sgRNA_components[pegRNA_name]
                 xs = np.arange(len(components['PBS']), len(components['PBS'] + components['RTT']))
+
                 bpps_ax = ax.twinx()
-                bpps_ax.plot(xs, total_bpps[::-1], 'o-', markersize=2, color='black', clip_on=False)
+                bpps_ax.plot(xs, flipped_total_bpps, 'o-', markersize=2, color='black', clip_on=False)
                 bpps_ax.set_ylim(0, 1)
 
                 bpps_ax.set_ylabel('Total probability paired', size=12, rotation=270, labelpad=12)
