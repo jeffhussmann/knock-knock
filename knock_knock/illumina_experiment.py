@@ -54,6 +54,8 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
         self.paired_end = 'R2' in self.description
 
+        self.UMI_key = self.description.get('UMI_key')
+
         if self.paired_end:
             self.read_types = {
                 'stitched',
@@ -82,15 +84,35 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
             #'R2_no_overlap',
         ]
 
+    def original_reads_by_key(self, key, add_UMI=True):
+        # Standardizing names is important for sorting.
+        reads = fastq.reads(self.fns[key], standardize_names=True, up_to_space=True)
+
+        if add_UMI and self.UMI_key is not None:
+            UMI_reads = self.original_reads_by_key(self.UMI_key, add_UMI=False)
+
+            for read, UMI_read in zip(reads, UMI_reads):
+                if read.name != UMI_read.name:
+                    raise ValueError
+                else:
+                    UMI_annotation = knock_knock.experiment.UMIAnnotation(original_name=read.name,
+                                                                          UMI_seq=UMI_read.seq,
+                                                                          UMI_qual=fastq.sanitize_qual(UMI_read.qual),
+                                                                         )
+                    read.name = str(UMI_annotation)
+
+                    yield read
+
+        else:
+            yield from reads
+
     @property
     def reads(self):
-        # Standardizing names is important for sorting.
-        return fastq.reads(self.fns['R1'], standardize_names=True)
+        return self.original_reads_by_key('R1')
 
     @property
     def read_pairs(self):
-        # Standardizing names is important for sorting.
-        return fastq.read_pairs(self.fns['R1'], self.fns['R2'], standardize_names=True, up_to_space=True)
+        return zip(self.original_reads_by_key('R1'), self.original_reads_by_key('R2'))
 
     @memoized_property
     def no_overlap_qnames(self):
@@ -284,7 +306,15 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
             trimmed = read[start:end]
 
             if len(trimmed) == 0:
-                outcome = self.final_Outcome(trimmed.name, len(trimmed), 0, 'nonspecific amplification', 'primer dimer', 'n/a')
+                outcome = self.final_Outcome(trimmed.name,
+                                             len(trimmed),
+                                             0,
+                                             '',
+                                             '',
+                                             'nonspecific amplification',
+                                             'primer dimer',
+                                             'n/a',
+                                            )
                 too_short_outcomes.append(outcome)
             else:
                 trimmed_reads.append(trimmed)
@@ -347,7 +377,15 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
             elif len(stitched) <= 10:
                 # 22.07.18: Should this check be done on the final trimmed read instead?
-                outcome = self.final_Outcome(stitched.name, len(stitched), 0, 'nonspecific amplification', 'primer dimer', 'n/a')
+                outcome = self.final_Outcome(stitched.name,
+                                             len(stitched),
+                                             0,
+                                             '',
+                                             '',
+                                             'nonspecific amplification',
+                                             'primer dimer',
+                                             'n/a',
+                                            )
                 too_short_outcomes.append(outcome)
 
                 stitched_lengths[len(stitched)] += 1

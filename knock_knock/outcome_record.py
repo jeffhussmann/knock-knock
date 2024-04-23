@@ -60,6 +60,8 @@ OutcomeRecord = OutcomeRecord_factory(
         'query_name',
         'inferred_amplicon_length',
         'Q30_fraction',
+        'UMI_seq',
+        'UMI_qual',
         'category',
         'subcategory',
         'details',

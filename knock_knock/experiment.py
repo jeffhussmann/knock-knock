@@ -22,7 +22,7 @@ import pysam
 import yaml
 
 import hits.visualize
-from hits import fastq, genomes, mapping_tools, sam, utilities
+from hits import annotation, fastq, genomes, mapping_tools, sam, utilities
 from hits.utilities import memoized_property
 
 import knock_knock.blast
@@ -68,6 +68,14 @@ def ensure_list(possibly_list):
         definitely_list = [possibly_list]
 
     return definitely_list
+
+UMI_annotation_fields = [
+    ('original_name', 's'),
+    ('UMI_seq', 's'),
+    ('UMI_qual', 's'),
+]
+
+UMIAnnotation = annotation.Annotation_factory(UMI_annotation_fields)
 
 class Experiment:
     def __init__(self, base_dir, batch_name, sample_name, description=None, progress=None):
@@ -706,8 +714,17 @@ class Experiment:
                 description = f'Categorizing {read_type} reads'
 
             for name, als in self.progress(alignment_groups, desc=description):
+                if 'UMI_key' in self.description:
+                    UMI_annotation = UMIAnnotation.from_identifier(name)
+                    UMI_seq = UMI_annotation['UMI_seq']
+                    UMI_qual = UMI_annotation['UMI_qual']
+                else:
+                    UMI_seq = ''
+                    UMI_qual = ''
+
                 if isinstance(als, list):
                     seq = als[0].get_forward_sequence()
+                    # TODO: this shouldn't use common sequence al for qualities.
                     Q30_fraction = np.mean(np.array(als[0].query_qualities) >=30)
 
                     # Special handling of empty sequence.
@@ -749,7 +766,12 @@ class Experiment:
                 else:
                     raise ValueError
 
-                outcome = self.final_Outcome.from_layout(layout, query_name=name, Q30_fraction=Q30_fraction)
+                outcome = self.final_Outcome.from_layout(layout,
+                                                         query_name=name,
+                                                         Q30_fraction=Q30_fraction,
+                                                         UMI_seq=UMI_seq,
+                                                         UMI_qual=UMI_qual,
+                                                        )
                 outcome_fh.write(f'{outcome}\n')
 
         # To make plotting easier, for each outcome, make a file listing all of

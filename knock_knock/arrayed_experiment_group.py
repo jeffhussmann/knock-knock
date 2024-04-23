@@ -1306,8 +1306,15 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
             sanitized_sample_names[sample_name] = sanitized_sample_name
 
         ti = knock_knock.target_info.TargetInfo(base_dir, target_info_name, sgRNAs=sgRNAs)
-        
-        if ti.pegRNA_names is None or len(ti.pegRNA_names) <= 1:
+
+        if 'experiment_type' in group_rows.columns:
+            experiment_types = set(group_rows['experiment_type'])
+            if len(experiment_types) != 1:
+                raise ValueError('more than one experiment type specified')
+            else:
+                experiment_type = list(experiment_types)[0]
+
+        elif ti.pegRNA_names is None or len(ti.pegRNA_names) <= 1:
             experiment_type = 'single_flap'
 
         elif len(ti.pegRNA_names) == 2:
@@ -1357,8 +1364,13 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
                         'color': (condition_i * len(groups) + group_i), 
                     }
 
-                    if 'R2' in row:
-                        samples[sample_name]['R2'] = Path(row['R2']).name
+                    for k in ['R2', 'I1', 'I2']:
+                        if k in row:
+                            samples[sample_name][k] = Path(row[k]).name
+
+                    for k in ['trim_to_max_length', 'UMI_key']:
+                        if k in row:
+                            samples[sample_name][k] = row[k]
 
                     for full, short in zip(condition_columns, shortened_condition_columns):
                         samples[sample_name][short] = row[full]
@@ -1375,8 +1387,13 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
                     'color': group_i + 1,
                 }
 
-                if 'R2' in row:
-                    samples[sample_name]['R2'] = Path(row['R2']).name
+                for k in ['R2', 'I1', 'I2']:
+                    if k in row:
+                        samples[sample_name][k] = Path(row[k]).name
+
+                for k in ['trim_to_max_length', 'UMI_key']:
+                    if k in row:
+                        samples[sample_name][k] = row[k]
 
     groups_df = pd.DataFrame.from_dict(groups, orient='index')
     groups_df.index.name = 'group'
