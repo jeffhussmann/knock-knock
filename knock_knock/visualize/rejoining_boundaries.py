@@ -510,14 +510,17 @@ def plot_single_flap_extension_chain_edges(target_info,
         else:
             ax = axs[0, 0]
 
-        ax.legend(bbox_to_anchor=(1, 1), loc='upper left')
+        ax.legend(bbox_to_anchor=(1, 1), loc='upper left', ncol=len(exp_sets) // 20 + (1 if len(exp_sets) % 20 != 0 else 0))
 
     if normalize:
         ylabel = 'Normalized cumulative\npercentage of\nrelevant reads'
+        y_lims = (0, 100.5)
     else:
         ylabel = 'Cumulative\npercentage of all reads'
+        y_lims = (0,)
 
     axs[0, 0].set_ylabel(ylabel, size=12)
+    axs[0, 0].set_ylim(*y_lims)
 
     if normalize:
         ylabel = 'Normalized percentage\nof relevant reads'
