@@ -1681,7 +1681,7 @@ class Layout(layout.Categorizer):
                 self.subcategory = 'combination'
             else:
                 self.category = 'partial edit'
-                self.subcategory = 'other'
+                self.subcategory = 'partial incorporation'
 
             indels = []
 

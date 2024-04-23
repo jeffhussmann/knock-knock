@@ -742,6 +742,9 @@ class StackedDiagrams:
                     label_features=True,
                    ):
 
+        if not hasattr(self, 'RTT_xs'):
+            self.RTT_xs = {}
+
         ti = self.target_infos[source_name]
         offset = self.offsets[source_name]
 
@@ -785,7 +788,6 @@ class StackedDiagrams:
                              ha='center',
                              va='bottom',
                             )
-
 
         PBS_seq = hits.utilities.reverse_complement(components['PBS'])
         # PBS_seq should now match the PBS_covered part of the protospacer.
@@ -860,6 +862,9 @@ class StackedDiagrams:
 
         seq = self.seqs[source_name]
         window_left, window_right = self.windows[source_name]
+
+        self.RTT_xs[pegRNA_name] = RTT_xs
+
         for x, b in zip(RTT_xs, RTT_aligned_seq):
             if window_left <= x <= window_right:
                 target_b = seq[-window_left + x]
@@ -1651,6 +1656,52 @@ class DiagramGrid:
                                   **plot_kwargs,
                                  )
 
+    def plot_RTT_structure_above(self,
+                                 pegRNA_name,
+                                 use_pegRNA_conversion_fractions_ax=True,
+                                 gap=4,
+                                 height_multiple=5,
+                                ):
+
+        pegRNA = [p for p in self.target_info.pegRNAs if p.name == pegRNA_name][0]
+        flipped_total_bpps, flipped_propensity = pegRNA.RTT_structure
+
+        if use_pegRNA_conversion_fractions_ax:
+            if 'pegRNA_conversion_fractions' not in self.axs_by_name:
+                raise ValueError
+            else:
+                ax = self.axs_by_name['pegRNA_conversion_fractions'].twinx()
+
+        else:
+            self.add_ax_above('RTT_structure',
+                              gap=gap,
+                              height_multiple=height_multiple,
+                             )
+            ax = self.axs_by_name['RTT_structure']
+
+        xs = self.diagrams.RTT_xs[pegRNA_name]
+        ax.plot(xs, flipped_total_bpps, 'o-', color='black', alpha=0.4, markeredgewidth=0, markersize=3, clip_on=False)
+        ax.set_ylim(0, 1)
+
+        if use_pegRNA_conversion_fractions_ax:
+            ax.spines[['left', 'top', 'bottom']].set_visible(False)
+            ax.tick_params(labelsize=8)
+            ax.set_ylabel('Total probability paired', size=12, rotation=270, labelpad=20)
+
+        for x, RTT_MFE in zip(xs, flipped_propensity):
+            ax.annotate(RTT_MFE,
+                        xy=(x, 0),
+                        xytext=(0, -0.5 * self.diagrams.text_size),
+                        xycoords='data', 
+                        textcoords='offset points',
+                        ha='center',
+                        va='top',
+                        size=self.diagrams.text_size,
+                        annotation_clip=False,
+                        color='black',
+                        weight='bold',
+                       )
+
     def style_pegRNA_conversion_plot(self,
                                      ax_name='pegRNA_conversion_fractions',
                                      y_max=None,
@@ -1863,12 +1914,12 @@ def make_deletion_boundaries_figure(target_info,
                 series = deletion_boundaries[quantity][condition].copy()
                 series.index = series.index.values - grid.diagrams.offsets[ti.name]
                 grid.plot_on_ax_above(quantity,
-                                    series.index,
-                                    series * 100,
-                                    markersize=3 if quantity != 'fraction_removed' else 0,
-                                    linewidth=1 if quantity != 'fraction_removed' else 2,
-                                    color=condition_colors.get(condition, 'black'),
-                                    )
+                                      series.index,
+                                      series * 100,
+                                      markersize=3 if quantity != 'fraction_removed' else 0,
+                                      linewidth=1 if quantity != 'fraction_removed' else 2,
+                                      color=condition_colors.get(condition, 'black'),
+                                     )
 
             for cut_after in ti.cut_afters.values():
                 grid.axs_by_name[quantity].axvline(cut_after + 0.5 - grid.diagrams.offsets[ti.name], linestyle='--', color=grid.diagrams.cut_color, linewidth=grid.diagrams.line_widths)
@@ -1901,6 +1952,7 @@ def restrict_mismatches_to_window(csd, window_interval, anchor):
     
     elif (c, s) == ('intended edit', 'substitution') or \
          (c, s) == ('intended edit', 'replacement') or \
+         (c, s) == ('intended edit', 'combination') or \
          (c, s) == ('partial edit', 'partial incorporation'):
 
         outcome = knock_knock.outcome.ProgrammedEditOutcome.from_string(d).undo_anchor_shift(anchor)
@@ -1922,9 +1974,14 @@ def restrict_mismatches_to_window(csd, window_interval, anchor):
     
     elif (c, s) == ('intended edit', 'substitution') or \
          (c, s) == ('intended edit', 'replacement') or \
+         (c, s) == ('intended edit', 'combination') or \
          (c, s) == ('partial edit', 'partial incorporation'):
         
-        restricted_outcome = knock_knock.outcome.ProgrammedEditOutcome(outcome.SNV_read_bases, restricted_mismatch_outcome, outcome.non_programmed_edit_mismatches_outcome, outcome.indels)
+        restricted_outcome = knock_knock.outcome.ProgrammedEditOutcome(outcome.SNV_read_bases,
+                                                                       restricted_mismatch_outcome,
+                                                                       outcome.non_programmed_edit_mismatches_outcome,
+                                                                       outcome.indels,
+                                                                      )
         restricted_s = s
                                                                          
     restricted_outcome = restricted_outcome.perform_anchor_shift(anchor)
