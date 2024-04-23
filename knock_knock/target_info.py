@@ -1936,6 +1936,25 @@ class TargetInfo:
 
         return insertion
 
+    @memoized_property
+    def pegRNA_programmed_edit_name_to_description(self):
+        name_to_description = {}
+
+        if self.pegRNA is not None:
+            if self.pegRNA.SNVs is not None:
+                for SNV_name, details in self.pegRNA.SNVs[self.target].items():
+                    name_to_description[SNV_name] = details['description']
+
+            if self.pegRNA_programmed_insertion is not None:
+                if len(self.pegRNA.edit_properties['insertions']) != 1:
+                    raise ValueError
+                else:
+                    insertion = self.pegRNA.edit_properties['insertions'][0]
+                    name_to_description[str(self.pegRNA_programmed_insertion)] = insertion['description']
+
+        return name_to_description
+
+
     #@memoized_property
     #def intended_edit_sequence(self):
     #    if len(self.pegRNA_names) != 2:

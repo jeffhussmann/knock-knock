@@ -870,18 +870,8 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
     def write_pegRNA_conversion_fractions(self):
         if self.target_info.pegRNA is not None:
-            SNVs = self.target_info.pegRNA.SNVs
-            
             def name_to_description(name):
-                if SNVs is not None and name in SNVs['flap']:
-                    position = SNVs['flap'][name]['position'] + 1
-                    genome_base = SNVs['target_downstream'][name]['base']
-                    flap_base = SNVs['flap'][name]['base']
-                    description = f'+{position}{genome_base}→{flap_base}'
-                else:
-                    description = name
-                
-                return description
+                return self.target_info.pegRNA_programmed_edit_name_to_description.get(name, name)
 
             df = self.pegRNA_conversion_fractions.copy()
 
@@ -897,10 +887,12 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
     def deletion_boundaries(self, *, include_simple_deletions=True, include_edit_plus_deletions=False):
         ti = self.target_info
 
-        deletions = [(c, s, d) for c, s, d in self.outcome_fractions.index
-                     if (include_simple_deletions and c == 'deletion')
-                     or (include_edit_plus_deletions and (c, s) == ('edit + indel', 'deletion'))
-                    ] 
+        deletions = [
+            (c, s, d) for c, s, d in self.outcome_fractions.index
+            if (include_simple_deletions and c == 'deletion')
+            or (include_edit_plus_deletions and (c, s) == ('edit + indel', 'deletion'))
+        ]
+
         deletion_fractions = self.outcome_fractions.loc[deletions]
         index = np.arange(len(ti.target_sequence))
         columns = deletion_fractions.columns

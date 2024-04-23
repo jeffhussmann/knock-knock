@@ -397,6 +397,7 @@ class pegRNA:
                         SNVs[SNV_name] = {
                             'flap': flap_p,
                             'target_downstream': target_p,
+                            'description': f'+{target_p + 1}{target_b}→{flap_b}',
                         }
                         
                 mismatches_in_subsequences.append(mismatches)
@@ -432,6 +433,11 @@ class pegRNA:
                         'ends_before_in_downstream': right_target_start,
                     }
                     insertions.append(insertion)
+
+            for insertion in insertions:
+                sequence = self.intended_flap_sequence[insertion['start_in_flap']:insertion['end_in_flap'] + 1]
+                position = insertion['starts_after_in_downstream'] + 1
+                insertion['description'] = f'+{position}ins{sequence}'
 
             # Deletions are gaps between consecutive target subsequences. If the
             # first subsequence doesn't start at 0, sequence immediately after the
@@ -586,7 +592,6 @@ class pegRNA:
         if len(self.edit_properties['deletions']) > 0:
             if len(self.edit_properties['deletions']) > 1:
                 logging.warning('multiple deletions')
-                #raise NotImplementedError
 
             deletion = self.edit_properties['deletions'][0]
             starts['target', 'deletion'], ends['target', 'deletion'] = sorted(map(convert_downstream_of_nick_to_target_coordinates, deletion))
@@ -638,11 +643,13 @@ class pegRNA:
                 self.SNVs['flap'][SNV_name] = {
                     'position': SNV['flap'],
                     'base': self.intended_flap_sequence[SNV['flap']],
+                    'description': SNV['description'],
                 }
 
                 self.SNVs['target_downstream'][SNV_name] = {
                     'position': SNV['target_downstream'],
                     'base': self.target_downstream_of_nick[SNV['target_downstream']],
+                    'description': SNV['description'],
                 }
 
                 self.SNVs[self.target_name][SNV_name] = {
@@ -650,6 +657,7 @@ class pegRNA:
                     'strand': '+',
                     'base': target_base_plus,
                     'alternative_base': pegRNA_base_effective,
+                    'description': SNV['description'],
                 }
 
                 self.SNVs[self.name][SNV_name] = {
@@ -657,6 +665,7 @@ class pegRNA:
                     'strand': pegRNA_strand,
                     'base': pegRNA_base_plus,
                     'alternative_base': target_base_effective,
+                    'description': SNV['description'],
                 }
 
                 for seq_name in names:
@@ -730,19 +739,15 @@ class pegRNA:
 
         self.features.update(new_features)
 
-    @memoized_property    
+    @memoized_property
     def edit_description(self):
         strings = []
 
         for name, details in self.edit_properties['SNVs'].items():
-            genome_base = self.target_downstream_of_nick[details['target_downstream']]
-            edit_base = self.intended_flap_sequence[details['flap']]
-            strings.append(f"+{details['target_downstream'] + 1}{genome_base}→{edit_base}")
+            strings.append(details['description'])
 
         for insertion in self.edit_properties['insertions']:
-            sequence = self.intended_flap_sequence[insertion['start_in_flap']:insertion['end_in_flap'] + 1]
-            position = insertion['starts_after_in_downstream'] + 1
-            strings.append(f'+{position}ins{sequence}')
+            strings.append(insertion['description'])
 
         for deletion in self.edit_properties['deletions']: 
             sequence = self.target_downstream_of_nick[deletion[0]:deletion[1] + 1]
