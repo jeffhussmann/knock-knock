@@ -52,6 +52,7 @@ setup(
         'PyYAML>=3.12',
         'hits>=0.4.1',
         'tqdm>=4.31.1',
+        'viennarna>=2.6.4',
     ],
 
     python_requires='>=3.7',
