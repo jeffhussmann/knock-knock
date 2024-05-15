@@ -109,19 +109,42 @@ class Effector:
             valid_feature = valid_features[0]
             return valid_feature
 
-effectors = {
-    'SpCas9': Effector('SpCas9', 'NGG', 3, (-4, -4)),
-    'SpCas9H840A': Effector('SpCas9H840A', 'NGG', 3, (-4, None)),
-    'SpCas9N863A': Effector('SpCas9N863A', 'NGG', 3, (-4, None)),
-    'SpCas9H840A_VRQR': Effector('SpCas9H840A_VRQR', 'NGA', 3, (-4, None)),
-    'SaCas9': Effector('SaCas9', 'NNGRRT', 3, (-4, -4)),
-    'SaCas9H840A': Effector('SaCas9H840A', 'NNGRRT', 3, (-4, None)),
-    'Cpf1': Effector('Cpf1', 'TTTN', 5, (20, 25)),
-    'AsCas12a': Effector('AsCas12a', 'TTTN', 5, (20, 25)),
-    'sRGN3.1': Effector('sRGN3.1', 'NNGG', 3, (-4, -4)),
-    'evoCjCas9': Effector('evoCjCas9', 'NNNNNNN', 3, (-4, -4)),
+# tuples are (PAM_pattern, PAM side, cut_after_offset)
+effector_details = {
+    'SpCas9': ('NGG', 3, (-4, 4)), 
+    'SpCas9H840A': ('NGG', 3, (-4, None)),
+    'SpCas9N863A': ('NGG', 3, (-4, None)),
+
+    'SpCas9_VRQR': ('NGA', 3, (-4, -4)),
+    'SpCas9H840A_VRQR': ('NGA', 3, (-4, None)),
+
+    'SpCas9_NRRH': ('NRRH', 3, (-4, 4)),
+    'SpCas9H840A_NRRH': ('NRRH', 3, (-4, None)),
+
+    'SpCas9_NRTH': ('NRYH', 3, (-4, 4)),
+    'SpCas9H840A_NRTH': ('NRYH', 3, (-4, None)),
+
+    'SpCas9_NRCH': ('NRYH', 3, (-4, 4)),
+    'SpCas9H840A_NRCH': ('NRYH', 3, (-4, None)),
+
+    'SaCas9': ('NNGRRT', 3, (-4, -4)),
+    'SaCas9H840A': ('NNGRRT', 3, (-4, None)),
+
+    'AsCas12a': ('TTTN', 5, (20, 25)),
+
+    'sRGN3.1': ('NNGG', 3, (-4, -4)),
+    'evoCjCas9': ('NNNNNNN', 3, (-4, -4)),
 }
 
-# Hack because 'sgRNA_SaCas9H840A' is one character too long for genbank format.
-effectors['SaCas9H840'] = effectors['SaCas9H840A']
-effectors['SpCas9H840'] = effectors['SpCas9H840A']
+effectors = {
+    name: Effector(name, PAM_pattern, PAM_side, cut_after_offset) 
+    for name, (PAM_pattern, PAM_side, cut_after_offset) in effector_details.items()
+}
+
+effector_aliases = {
+    'AsCas12a': {'Cpf1'},
+}
+
+for main_name, aliases in effector_aliases.items():
+    for alias in aliases:
+        effectors[alias] = effectors[main_name]
