@@ -769,6 +769,18 @@ class pegRNA:
 
         return flipped_total_bpps, flipped_propensity
 
+    @memoized_property
+    def extension_structure(self):
+        fc = RNA.fold_compound(self.components['extension'])
+        (propensity, ensemble_energy) = fc.pf()
+        basepair_probs = fc.bpp()
+        array = np.array(basepair_probs)[1:, 1:]
+        sym_array = array + array.T
+        flipped_total_bpps = sym_array.sum(axis=1)[::-1]
+        flipped_propensity = propensity[::-1].translate(str.maketrans('(){}', ')(}{'))
+
+        return flipped_total_bpps, flipped_propensity
+
 def get_pegRNAs_by_strand(pegRNAs):
     pegRNAs_by_strand = {}
 
