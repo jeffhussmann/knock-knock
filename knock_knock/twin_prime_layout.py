@@ -990,9 +990,15 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         if 'label_offsets' in manual_diagram_kwargs:
             label_offsets.update(manual_diagram_kwargs.pop('label_offsets'))
 
-        refs_to_draw= {ti.target, *pegRNA_names}
         if 'refs_to_draw' in manual_diagram_kwargs:
-            refs_to_draw.update(manual_diagram_kwargs.pop('refs_to_draw'))
+            refs_to_draw = manual_diagram_kwargs.pop('refs_to_draw')
+        else:
+            refs_to_draw = set()
+
+            if ti.amplicon_length < 1000:
+                refs_to_draw.add(ti.target)
+
+            refs_to_draw.update(pegRNA_names)
 
         invisible_references = manual_diagram_kwargs.get('invisible_references', set())
 

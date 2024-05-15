@@ -4,6 +4,7 @@ from itertools import chain, islice
 
 from collections import defaultdict, Counter
 
+import hits.utilities
 import numpy as np
 import pysam
 
@@ -11,8 +12,9 @@ import knock_knock.experiment
 from knock_knock import visualize
 from knock_knock import layout as layout_module
 
+import hits.visualize.fastq
 from hits import adapters, fastq, sam, sw, utilities
-from hits.utilities import memoized_property
+from hits.utilities import memoized_property, memoized_with_args
 
 class IlluminaExperiment(knock_knock.experiment.Experiment):
     def __init__(self, *args, **kwargs):
@@ -27,11 +29,15 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
         })
 
         sequencing_primers = self.description.get('sequencing_primers', 'truseq')
+
         if '_' in sequencing_primers:
             R1, R2 = sequencing_primers.split('_')
         else:
             R1, R2 = sequencing_primers, sequencing_primers
+
         self.sequencing_primers = {'R1': R1, 'R2': R2}
+
+        self.reverse_complement = bool(self.description.get('reverse_complement', False))
 
         self.x_tick_multiple = 100
 
@@ -122,13 +128,22 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
     def read_length(self):
         return max(len(read) for read in islice(self.reads, 5000))
 
+    @memoized_with_args
+    def original_read_length_by_key(self, key):
+        return max(len(read) for read in islice(self.original_reads_by_key(key), 5000))
+
     @memoized_property
     def R1_read_length(self):
-        return max(len(R1) for R1, R2 in islice(self.read_pairs, 5000))
+        return self.original_read_length_by_key('R1')
     
     @memoized_property
     def R2_read_length(self):
-        return max(len(R2) for R1, R2 in islice(self.read_pairs, 5000))
+        return self.original_read_length_by_key('R2')
+
+    def plot_quality_histograms(self, which='R1'):
+        stats = fastq.quality_and_complexity(self.original_reads_by_key(which), self.original_read_length_by_key(which))
+        fig = hits.visualize.fastq.plot_quality_histograms(stats['q'])
+        return fig
 
     def check_combined_read_length(self):
         if self.paired_end:
@@ -293,6 +308,8 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
         trimmed_reads = []
         too_short_outcomes = []
 
+        sequencing_primer_rc = hits.utilities.reverse_complement(adapters.primers[self.sequencing_primers['R1']]['R1'])
+
         for read in self.progress(self.reads, desc='Trimming reads'):
             try:
                 start = read.seq.index(prefix, 0, 30)
@@ -301,7 +318,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
             read = read[:self.trim_to_max_length]
 
-            end = adapters.trim_by_local_alignment(adapters.truseq_R2_rc, read.seq)
+            end = adapters.trim_by_local_alignment(sequencing_primer_rc, read.seq)
 
             trimmed = read[start:end]
 
@@ -355,8 +372,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
         stitched_lengths = Counter()
 
-        description = 'Stitching read pairs'
-        for R1, R2 in self.progress(self.read_pairs, desc=description):
+        for R1, R2 in self.progress(self.read_pairs, desc='Stitching read pairs'):
             if R1.name != R2.name:
                 print(f'Error: read pairs are out of sync in {self.batch_name} {self.sample_name}.')
                 R1_fns = ','.join(str(fn) for fn in self.fns['R1'])
@@ -367,6 +383,9 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
                 raise ValueError
 
             stitched = sw.stitch_read_pair(R1, R2, before_R1, before_R2, indel_penalty=-1000)
+
+            if self.reverse_complement:
+                stitched = stitched.reverse_complement()
 
             if len(stitched) == len(R1) + len(R2):
                 # No overlap was detected.
@@ -412,6 +431,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
         with gzip.open(fns['stitched'], 'wt', compresslevel=1) as stitched_fh:
             for read in sorted(stitched_reads, key=lambda read: read.name):
+
                 stitched_fh.write(str(read))
              
         with (gzip.open(fns['R1_no_overlap'], 'wt', compresslevel=1) as R1_fh,

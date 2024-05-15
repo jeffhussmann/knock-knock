@@ -3032,9 +3032,16 @@ class Layout(layout.Categorizer):
         if 'features_to_show' in manual_diagram_kwargs:
             features_to_show.update(manual_diagram_kwargs.pop('features_to_show'))
 
-        refs_to_draw = {ti.target}
-        if ti.pegRNA_names is not None:
-            refs_to_draw.update(ti.pegRNA_names)
+        if 'refs_to_draw' in manual_diagram_kwargs:
+            refs_to_draw = manual_diagram_kwargs.pop('refs_to_draw')
+        else:
+            refs_to_draw = set()
+
+            if ti.amplicon_length < 1000:
+                refs_to_draw.add(ti.target)
+
+            if ti.pegRNA_names is not None:
+                refs_to_draw.update(ti.pegRNA_names)
 
         if 'phiX' in ti.supplemental_indices:
             supplementary_reference_sequences = ti.supplemental_reference_sequences('phiX')

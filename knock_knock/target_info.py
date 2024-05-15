@@ -1408,7 +1408,11 @@ class TargetInfo:
 
     @memoized_property
     def degenerate_indels(self):
-        degenerate_dels = defaultdict(list)
+        singleton_to_full = {}
+
+        if self.amplicon_length > 2000:
+            # O(n^2) nature means long amplicons become very slow.
+            return singleton_to_full
 
         # Indels that aren't contained in the amplicon can't be observed,
         # so there is no need to register them.
@@ -1416,9 +1420,9 @@ class TargetInfo:
         amplicon_start = self.primers_by_side_of_target[5].start
         amplicon_end = self.primers_by_side_of_target[3].end
 
-        possible_starts = range(amplicon_start, amplicon_end)
+        degenerate_dels = defaultdict(list)
 
-        singleton_to_full = {}
+        possible_starts = range(amplicon_start, amplicon_end)
 
         for starts_at in possible_starts:
             before = self.target_sequence[:starts_at]
@@ -1428,7 +1432,6 @@ class TargetInfo:
                 deletion = DegenerateDeletion([starts_at], length)
                 degenerate_dels[result].append(deletion)
 
-        classes = degenerate_dels.values()
         for degenerate_class in degenerate_dels.values():
             if len(degenerate_class) > 1:
                 collapsed = DegenerateDeletion.collapse(degenerate_class)

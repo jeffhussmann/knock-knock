@@ -1112,11 +1112,6 @@ class Experiment:
                                                                              **kwargs,
                                                                             )
 
-    def plot_quality_histograms(self):
-        stats = fastq.quality_and_complexity(self.reads, self.read_length)
-        fig = hits.visualize.fastq.plot_quality_histograms(stats['q'])
-        return fig
-
     def alignment_groups_to_diagrams(self,
                                      alignment_groups,
                                      num_examples,

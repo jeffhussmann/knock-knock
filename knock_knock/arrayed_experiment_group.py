@@ -1371,7 +1371,7 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
                         if k in row:
                             samples[sample_name][k] = Path(row[k]).name
 
-                    for k in ['trim_to_max_length', 'UMI_key']:
+                    for k in ['trim_to_max_length', 'UMI_key', 'sequencing_primers', 'reverse_complement']:
                         if k in row:
                             samples[sample_name][k] = row[k]
 
@@ -1394,7 +1394,7 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
                     if k in row:
                         samples[sample_name][k] = Path(row[k]).name
 
-                for k in ['trim_to_max_length', 'UMI_key']:
+                for k in ['trim_to_max_length', 'UMI_key', 'sequencing_primers', 'reverse_complement']:
                     if k in row:
                         samples[sample_name][k] = row[k]
 
