@@ -51,7 +51,7 @@ class ExperimentGroup:
             'single_flap_rejoining_boundaries_figure': self.results_dir / 'single_flap_rejoining_boundaries.pdf',
         }
 
-    def process(self, generate_figures=False, num_processes=18, verbose=True, use_logger_thread=False):
+    def process(self, generate_example_diagrams=False, num_processes=18, verbose=True, use_logger_thread=False):
         self.results_dir.mkdir(exist_ok=True, parents=True)
 
         logger, file_handler = knock_knock.utilities.configure_standard_logger(self.results_dir, verbose=verbose)
@@ -86,8 +86,8 @@ class ExperimentGroup:
                 'categorize',
             ]
 
-            if generate_figures:
-                stages.append('generate_figures')
+            if generate_example_diagrams:
+                stages.append('generate_example_diagrams')
 
             for stage in stages:
                 logger.info(f'Processing unique sequences, stage {stage}')
@@ -98,13 +98,8 @@ class ExperimentGroup:
         self.make_outcome_counts()
         self.write_pegRNA_conversion_fractions()
 
-        if generate_figures:
-            logger.info('Generating group figures')
-            try:
-                self.make_group_figures()
-            except:
-                print(self)
-                raise
+        logger.info('Generating group-level figures')
+        self.make_group_figures()
 
         logger.info('Done!')
 

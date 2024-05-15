@@ -848,8 +848,9 @@ class Experiment:
                 self.align()
             elif stage == 'categorize':
                 self.categorize()
-            elif stage == 'generate_figures':
-                self.generate_figures()
+                self.generate_summary_figures()
+            elif stage == 'generate_example_diagrams':
+                self.generate_example_diagrams()
             else:
                 raise ValueError(f'invalid stage: {stage}')
 
@@ -1188,12 +1189,14 @@ class Experiment:
     def generate_outcome_browser(self, min_total_to_label=0.01):
         svg.decorate_outcome_browser(self, min_total_to_label=min_total_to_label)
 
-    def generate_figures(self):
+    def generate_example_diagrams(self):
+        self.generate_all_outcome_length_range_figures()
+        self.generate_all_outcome_example_figures()
+
+    def generate_summary_figures(self):
         lengths_fig = self.length_distribution_figure()
         lengths_fig.savefig(self.fns['lengths_figure'], bbox_inches='tight')
 
-        self.generate_all_outcome_length_range_figures()
-        self.generate_all_outcome_example_figures()
         self.generate_outcome_browser()
 
     def example_diagrams(self, outcome, num_examples):

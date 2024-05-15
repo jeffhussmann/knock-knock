@@ -76,7 +76,7 @@ def process_arrayed(args):
 
     batch = knock_knock.arrayed_experiment_group.get_batch(args.project_directory, args.batch_name)
     group = batch.groups[args.group_name]
-    group.process(num_processes=args.max_procs, verbose=not args.silent, generate_figures=args.generate_figures)
+    group.process(num_processes=args.max_procs, verbose=not args.silent, generate_example_diagrams=args.generate_example_diagrams)
 
 def parallel_arrayed(args):
     import knock_knock.arrayed_experiment_group
@@ -92,7 +92,7 @@ def parallel_arrayed(args):
         args.project_directory,
         args.batch_name,
         '--max_procs', str(args.max_procs_per_group),
-        '--generate_figures' if args.generate_figures else '',
+        '--generate_example_diagrams' if args.generate_example_diagrams else '',
         '--silent',
         ':::',
     ] + sorted(batch.groups)
@@ -296,7 +296,7 @@ if __name__ == '__main__':
     parser_arrayed_process.add_argument('group_name')
     parser_arrayed_process.add_argument('--max_procs', type=int, default=6)
     parser_arrayed_process.add_argument('--silent', action='store_true')
-    parser_arrayed_process.add_argument('--generate_figures', action='store_true')
+    parser_arrayed_process.add_argument('--generate_example_diagrams', action='store_true')
     parser_arrayed_process.set_defaults(func=process_arrayed)
 
     parser_arrayed_parallel = parser_arrayed_subparsers.add_parser('parallel', help='process groups in parallel')
@@ -304,7 +304,7 @@ if __name__ == '__main__':
     parser_arrayed_parallel.add_argument('batch_name')
     parser_arrayed_parallel.add_argument('--max_procs', type=int, default=10)
     parser_arrayed_parallel.add_argument('--max_procs_per_group', type=int, default=3)
-    parser_arrayed_parallel.add_argument('--generate_figures', action='store_true')
+    parser_arrayed_parallel.add_argument('--generate_example_diagrams', action='store_true')
     parser_arrayed_parallel.add_argument('--progress_bar', action='store_true')
     parser_arrayed_parallel.set_defaults(func=parallel_arrayed)
 
