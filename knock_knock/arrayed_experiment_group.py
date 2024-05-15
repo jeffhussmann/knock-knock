@@ -1096,6 +1096,8 @@ def make_default_target_info_name(amplicon_primers, genome, extra_sequences):
     return target_info_name
 
 def make_targets(base_dir, sample_sheet_df):
+    valid_supplemental_indices = set(knock_knock.target_info.locate_supplemental_indices(base_dir))
+
     targets = {}
 
     grouped = sample_sheet_df.groupby(['amplicon_primers', 'genome', 'extra_sequences'])
@@ -1107,6 +1109,8 @@ def make_targets(base_dir, sample_sheet_df):
                 all_sgRNAs.update(sgRNAs.split(';'))
 
         target_info_name = make_default_target_info_name(amplicon_primers, genome, extra_sequences)
+
+        extra_sequences = ';'.join(set(extra_sequences.split(';')) - valid_supplemental_indices)
 
         targets[target_info_name] = {
             'genome': genome,
@@ -1274,7 +1278,7 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
         existing_unedited_idxs = sample_sheet_df.query('is_unedited_control').index
         sample_sheet_df = pd.concat([sample_sheet_df.drop(existing_unedited_idxs), new_rows])
 
-    valid_supplemental_indices = sorted(knock_knock.target_info.locate_supplemental_indices(base_dir))
+    valid_supplemental_indices = set(knock_knock.target_info.locate_supplemental_indices(base_dir))
 
     groups = {}
     samples = {}
@@ -1329,17 +1333,29 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
         else:
             raise ValueError
 
+        if 'min_relevant_length' in group_rows.columns:
+            min_relevant_lengths = set(group_rows['min_relevant_length'])
+            if len(min_relevant_lengths) != 1:
+                raise ValueError('more than one minimum length specified')
+            else:
+                min_relevant_length = list(min_relevant_lengths)[0]
+        else:
+            min_relevant_length = 100
+
         baseline_condition = ';'.join(map(str, tuple(group_rows[condition_columns].iloc[0])))
 
-        supplemental_indices = {
-            genome,
-            'phiX',
-        }
+        supplemental_indices = set()
 
-        if genome not in {'mm10', 'macFas5'}:
+        for name in [genome] + extra_sequences.split(';'):
+            if name in valid_supplemental_indices:
+                supplemental_indices.add(name)
+
+        if len(supplemental_indices) == 0:
             supplemental_indices.add('hg38')
 
-        supplemental_indices = [name for name in supplemental_indices if name in valid_supplemental_indices]
+        supplemental_indices.add('phiX')
+
+        supplemental_indices = supplemental_indices & valid_supplemental_indices
 
         groups[group_name] = {
             'sanitized_group_name': sanitized_group_name,
@@ -1349,7 +1365,7 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
             'sequencing_start_feature_name': sequencing_start_feature_name,
             'sgRNAs': sgRNAs,
             'donor': donor,
-            'min_relevant_length': 100,
+            'min_relevant_length': min_relevant_length,
             'condition_keys': ';'.join(shortened_condition_columns),
             'baseline_condition': baseline_condition,
         }
