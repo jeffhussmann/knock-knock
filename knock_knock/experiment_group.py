@@ -323,9 +323,12 @@ class ExperimentGroup:
         if condition_labels is None:
             condition_labels = self.condition_labels
 
-        if aggregate_replicates:
+        if aggregate_replicates and len(self.condition_keys) > 0:
             if conditions is None:
                 conditions = self.conditions
+
+                if conditions == []:
+                    conditions = self.full_conditions
 
             exp_sets = {}
 

@@ -477,7 +477,12 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
             condition_labels[condition] = label
 
         for condition in self.conditions:
-            condition_labels[condition] = ', '.join(condition)
+            if isinstance(condition, str):
+                label = condition
+            else:
+                label = ', '.join(condition)
+
+            condition_labels[condition] = label
 
         return condition_labels
 
@@ -863,15 +868,19 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         for edit_name, outcomes in self.outcomes_containing_pegRNA_programmed_edits.items():
             fs[edit_name] = self.outcome_fractions.loc[outcomes].sum()
 
-        fs_df = pd.DataFrame.from_dict(fs, orient='index')
+        if len(fs) > 0:
+            fs_df = pd.DataFrame.from_dict(fs, orient='index')
 
-        fs_df.columns.names = self.full_condition_keys
-        fs_df.index.name = 'edit_name'
+            fs_df.columns.names = self.full_condition_keys
+            fs_df.index.name = 'edit_name'
+
+        else:
+            fs_df = None
 
         return fs_df
 
     def write_pegRNA_conversion_fractions(self):
-        if self.target_info.pegRNA is not None:
+        if self.target_info.pegRNA is not None and self.pegRNA_conversion_fractions is not None:
             def name_to_description(name):
                 return self.target_info.pegRNA_programmed_edit_name_to_description.get(name, name)
 
