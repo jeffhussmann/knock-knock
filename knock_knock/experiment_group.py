@@ -287,6 +287,7 @@ class ExperimentGroup:
                                         unique_colors=False,
                                         min_reads=None,
                                         conditions=None,
+                                        condition_colors=None,
                                         **kwargs,
                                        ):
         if conditions is None:
@@ -295,11 +296,14 @@ class ExperimentGroup:
         if min_reads is not None:
             conditions = [c for c in conditions if self.total_valid_reads.loc[c] >= min_reads]
 
+        if condition_colors is None:
+            condition_colors = self.condition_colors(unique=unique_colors)
+
         grid = knock_knock.visualize.stacked.make_deletion_boundaries_figure(self.target_info,
                                                                              self.outcome_fractions,
                                                                              self.deletion_boundaries,
                                                                              conditions=conditions,
-                                                                             condition_colors=self.condition_colors(unique=unique_colors),
+                                                                             condition_colors=condition_colors,
                                                                              condition_labels=self.condition_labels,
                                                                              **kwargs,
                                                                             )

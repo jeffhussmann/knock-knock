@@ -1749,7 +1749,12 @@ class DiagramGrid:
             if difference_from_condition is None:
                 title = 'Total % incorporation\nat position across\nall outcomes'
             else:
-                title = f'Change (from mean of\n{difference_from_condition} samples) in\ntotal % incorporation\nacross all outcomes'
+                if isinstance(difference_from_condition, str):
+                    condition_label = difference_from_condition
+                else:
+                    condition_label = ', '.join(difference_from_condition)
+
+                title = f'Change (from mean of\n{condition_label} samples)\nin total % incorporation\nacross all outcomes'
 
             ax.set_ylabel(title, size=12)
             ax.tick_params(labelsize=8)
@@ -2103,9 +2108,9 @@ def make_partial_incorporation_figure(target_info,
                 (c in {'intended edit', 'partial replacement', 'partial edit'})
                 or
                 (include_non_programmed_mismatches and 
-                (((c, s) == ('wild type', 'mismatches') and mismatch_in_window(d)) or
-                ((c, s) == ('wild type', 'short indel far from cut') and indel_in_window(d))
-                )
+                 (((c, s) == ('wild type', 'mismatches') and mismatch_in_window(d)) or
+                  ((c, s) == ('wild type', 'short indel far from cut') and indel_in_window(d))
+                 )
                 ) 
                 or 
                 (include_wild_type and (c, s) == ('wild type', 'clean'))
@@ -2131,7 +2136,12 @@ def make_partial_incorporation_figure(target_info,
         if difference_from_condition is None:
             title = '% of reads with\nspecific outcome'
         else:
-            title = f'Change (from mean of \n{difference_from_condition} samples) in\n% of reads with\nspecific outcome'
+            if isinstance(difference_from_condition, str):
+                condition_label = difference_from_condition
+            else:
+                condition_label = ', '.join(difference_from_condition)
+
+            title = f'Change (from mean of \n{condition_label} samples)\nin % of reads with\nspecific outcome'
 
         grid.add_ax('fractions', width_multiple=12, title=title)
 
@@ -2173,12 +2183,12 @@ def make_partial_incorporation_figure(target_info,
             grid.plot_pegRNA_conversion_fractions_above(pegRNA_conversion_fractions,
                                                         conditions=conditions,
                                                         condition_colors=condition_colors,
-                                                    )
+                                                       )
 
             grid.style_pegRNA_conversion_plot('pegRNA_conversion_fractions',
-                                            difference_from_condition=difference_from_condition,
-                                            y_max=pegRNA_conversion_fractions_y_max,
-                                            )
+                                              difference_from_condition=difference_from_condition,
+                                              y_max=pegRNA_conversion_fractions_y_max,
+                                             )
 
             grid.ordered_axs[-1].legend(bbox_to_anchor=(1, 1))
 

@@ -136,7 +136,7 @@ def plot_single_flap_extension_chain_edges(target_info,
                                            target_x_lims=None,
                                            marker_size=2,
                                            line_width=1,
-                                           pegRNA_from_right=False,
+                                           pegRNA_from_right=True,
                                            draw_sequence=False,
                                            include_genome=True,
                                            side_and_subcategories=None,
@@ -334,7 +334,14 @@ def plot_single_flap_extension_chain_edges(target_info,
                 xs = np.arange(len(components['PBS']), len(components['PBS'] + components['RTT']))
 
                 bpps_ax = ax.twinx()
-                bpps_ax.plot(xs, flipped_total_bpps, 'o-', markersize=2, color='black', clip_on=False)
+                bpps_ax.plot(xs,
+                             flipped_total_bpps,
+                             'o-',
+                             markersize=2,
+                             color='black',
+                             clip_on=False,
+                             alpha=0.75,
+                            )
                 bpps_ax.set_ylim(0, 1)
 
                 bpps_ax.set_ylabel('Total probability paired', size=12, rotation=270, labelpad=12)
