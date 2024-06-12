@@ -243,10 +243,6 @@ class Categorizer:
 
             switch_in_shared = interval.are_overlapping(switch_interval, left_feature_interval)
 
-            left_reaches_ref_end = left_al.reference_end == len(ti.reference_sequences[left_al.reference_name])
-            right_reaches_ref_end = right_al.reference_end == len(ti.reference_sequences[right_al.reference_name])
-            both_reach_ref_end = left_reaches_ref_end and right_reaches_ref_end
-
             left_of_feature = interval.Interval(0, left_feature_interval.start - 1)
 
             # If as much query as possible is attributed to the right al, does the remaining left al

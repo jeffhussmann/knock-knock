@@ -29,6 +29,7 @@ import knock_knock.blast
 import knock_knock.lengths
 import knock_knock.visualize.lengths
 import knock_knock.target_info
+import knock_knock.utilities
 import knock_knock.layout as layout_module
 from . import outcome_record, svg, table, explore
 
@@ -457,7 +458,6 @@ class Experiment:
         bam_by_name_fns = []
 
         if supplemental_index_name is None:
-            bam_key = 'primary_bam_by_name'
             base_bam_by_name_fn = self.fns_by_read_type['primary_bam_by_name'][read_type]
             ref_seqs = self.target_info.reference_sequences
         else:
