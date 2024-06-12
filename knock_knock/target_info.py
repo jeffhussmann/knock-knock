@@ -74,7 +74,7 @@ class TargetInfo:
 
         self.target = self.manifest['target']
 
-        self.sources = [s[:-len('.gb')] if s.endswith('.gb') else s for s in self.manifest['sources']]
+        self.sources = [s[:-len('.gb')] if s.endswith('.gb') else s for s in self.manifest.get('sources', [])]
         self.gb_records = gb_records
         self.manual_sgRNA_components = manual_sgRNA_components
 
