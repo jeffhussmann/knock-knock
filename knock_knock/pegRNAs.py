@@ -858,10 +858,14 @@ class pegRNA_pair:
             to allow for flaps to align to opposite R-loop (or past it).
         '''
 
+        # TODO: these parameters are copied from flap-RTT alignment,
+        # but this use case is very different.
+        # TODO: add tests for this from EXP24002732_intron21_DF OLIP7981_hg38_Y11P11+Z11P11_
+
         flap_aligner = Bio.Align.PairwiseAligner(
             match_score=2,
             mismatch_score=-3,
-            open_gap_score=-12,
+            open_gap_score=-200,
             extend_gap_score=-0.1,
             mode='global',
             query_left_open_gap_score=0,
@@ -1144,6 +1148,9 @@ class pegRNA_pair:
     @memoized_property
     def overlap_interval(self):
         aligned_ps = self.aligned_RT_extended_positions
+
+        # TODO: this implicitly assumes a single long alignment.
+
         return {
             '+': interval.Interval(min(aligned_ps['+ to -']), max(aligned_ps['+ to -'])),
             '-': interval.Interval(min(aligned_ps['- to +']), max(aligned_ps['- to +'])),
