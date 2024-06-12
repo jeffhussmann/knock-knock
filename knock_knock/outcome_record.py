@@ -60,6 +60,7 @@ OutcomeRecord = OutcomeRecord_factory(
         'query_name',
         'inferred_amplicon_length',
         'Q30_fraction',
+        'mean_Q',
         'UMI_seq',
         'UMI_qual',
         'category',
@@ -69,6 +70,7 @@ OutcomeRecord = OutcomeRecord_factory(
     converters_arg={
         'inferred_amplicon_length': int,
         'Q30_fraction': (float, '{:0.3f}'.format),
+        'mean_Q': (float, '{:0.3f}'.format),
     },
 )
 

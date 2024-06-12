@@ -730,7 +730,9 @@ class Experiment:
                 if isinstance(als, list):
                     seq = als[0].get_forward_sequence()
                     # TODO: this shouldn't use common sequence al for qualities.
-                    Q30_fraction = np.mean(np.array(als[0].query_qualities) >=30)
+                    qs = np.array(als[0].query_qualities)
+                    Q30_fraction = np.mean(qs >= 30)
+                    mean_Q = np.mean(qs)
 
                     # Special handling of empty sequence.
                     if seq is None:
@@ -774,6 +776,7 @@ class Experiment:
                 outcome = self.final_Outcome.from_layout(layout,
                                                          query_name=name,
                                                          Q30_fraction=Q30_fraction,
+                                                         mean_Q=mean_Q,
                                                          UMI_seq=UMI_seq,
                                                          UMI_qual=UMI_qual,
                                                         )
