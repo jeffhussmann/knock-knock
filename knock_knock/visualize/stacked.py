@@ -8,6 +8,7 @@ from typing import Any, Union, Optional
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+import seaborn as sns
 
 import hits.interval
 import hits.utilities
@@ -1419,17 +1420,21 @@ class DiagramGrid:
         height_per_cell = diagram_position.height * 1 / max(1, len(self.outcomes))
         return height_per_cell
 
-    def add_heatmap(self, vals, name,
+    def add_heatmap(self,
+                    vals,
+                    name,
                     gap_multiple=1,
                     color='black',
                     colors=None,
-                    vmin=-2, vmax=2,
+                    vmin=-2,
+                    vmax=2,
                     cmap=knock_knock.visualize.fold_changes_cmap,
                     draw_tick_labels=True,
                     text_size=10,
                     tick_label_rotation=90,
                     tick_label_pad=8,
                    ):
+
         ax_to_left = self.ordered_axs[-1]
         ax_to_left_p = ax_to_left.get_position()
 
@@ -1497,6 +1502,7 @@ class DiagramGrid:
 
     def add_colorbar(self,
                      width_multiple=5,
+                     gap=5,
                      baseline_condition_name='non-targeting',
                      label_interpretation=True,
                      loc='right',
@@ -1510,7 +1516,7 @@ class DiagramGrid:
         ax_p = self.ordered_axs[-1].get_position()
 
         if loc == 'right':
-            x0 = ax_p.x1 + 5 * self.width_per_heatmap_cell
+            x0 = ax_p.x1 + gap * self.width_per_heatmap_cell
             y0 = 0.5
         else:
             raise NotImplementedError
@@ -2009,6 +2015,8 @@ def make_partial_incorporation_figure(target_info,
                                       outcome_fractions,
                                       pegRNA_conversion_fractions,
                                       conditions=None,
+                                      line_conditions=None,
+                                      heatmap_conditions=None,
                                       condition_colors=None,
                                       condition_labels=None,
                                       frequency_cutoff=1e-3,
@@ -2020,6 +2028,8 @@ def make_partial_incorporation_figure(target_info,
                                       manual_outcomes=None,
                                       perform_marginalization_over_mismatches_outside_window=True,
                                       difference_from_condition=None,
+                                      log2_fold_change_from_condition=None,
+                                      heatmap_kwargs=None,
                                       **diagram_kwargs,
                                      ):
 
@@ -2037,8 +2047,18 @@ def make_partial_incorporation_figure(target_info,
     if conditions is None:
         conditions = outcome_fractions.columns
 
+    if line_conditions is None:
+        line_conditions = conditions
+
+    if heatmap_conditions is None:
+        heatmap_conditions = conditions
+
+    if heatmap_kwargs is None:
+        heatmap_kwargs = {}
+
     if condition_colors is None:
-        condition_colors = {}
+        colors = sns.color_palette('husl', len(conditions))
+        condition_colors = dict(zip(conditions, colors))
 
     if condition_labels is None:
         condition_labels = {}
@@ -2046,9 +2066,14 @@ def make_partial_incorporation_figure(target_info,
     outcome_fractions = outcome_fractions[conditions]
 
     if difference_from_condition is not None:
-        outcome_fractions = outcome_fractions.sub(outcome_fractions[difference_from_condition].mean(axis=1), axis=0)
+        condition_values = outcome_fractions[difference_from_condition]
+        if isinstance(condition_values, pd.DataFrame):
+            condition_values = condition_values.mean(axis=1)
 
-        pegRNA_conversion_fractions = pegRNA_conversion_fractions.sub(pegRNA_conversion_fractions[difference_from_condition].mean(axis=1), axis=0)
+        outcome_fractions = outcome_fractions.sub(condition_values, axis=0)
+
+        if pegRNA_conversion_fractions is not None:
+            pegRNA_conversion_fractions = pegRNA_conversion_fractions.sub(pegRNA_conversion_fractions[difference_from_condition].mean(axis=1), axis=0)
 
     color_overrides = {primer_name: 'grey' for primer_name in ti.primers}
 
@@ -2154,7 +2179,7 @@ def make_partial_incorporation_figure(target_info,
         ]
 
         for ax, transform in ax_params:
-            for condition in outcome_fractions:
+            for condition in line_conditions:
                 grid.plot_on_ax(ax,
                                 outcome_fractions[condition],
                                 transform=transform,
@@ -2166,7 +2191,31 @@ def make_partial_incorporation_figure(target_info,
                                 label=condition_labels.get(condition, condition)
                                )
 
+        if log2_fold_change_from_condition is not None:
+            grid.add_ax('log2_fold_change', width_multiple=12, gap_multiple=2, title=f'Log₂ fold-change from\n{log2_fold_change_from_condition}')
+
+            fcs = outcome_fractions.div(outcome_fractions[log2_fold_change_from_condition], axis=0)
+            l2fcs = np.log2(fcs)
+
+            for condition in line_conditions:
+                grid.plot_on_ax('log2_fold_change',
+                                l2fcs[condition],
+                                color=condition_colors.get(condition, 'black'),
+                                line_alpha=0.75,
+                                linewidth=1.5,
+                                markersize=7,
+                                fill=0,
+                                label=condition_labels.get(condition, condition)
+                               )
+
+            grid.add_heatmap(l2fcs.loc[outcomes[::-1], heatmap_conditions],
+                             'log2_fold_change_heatmap',
+                             colors=[condition_colors.get(c, 'black') for c in heatmap_conditions],
+                             **heatmap_kwargs,
+                            )
+
         grid.style_frequency_ax('fractions')
+        grid.style_fold_change_ax('log2_fold_change')
 
         if difference_from_condition is None:
             grid.set_xlim('fractions', (0,))
@@ -2190,6 +2239,13 @@ def make_partial_incorporation_figure(target_info,
                                               y_max=pegRNA_conversion_fractions_y_max,
                                              )
 
-            grid.ordered_axs[-1].legend(bbox_to_anchor=(1, 1))
+        if log2_fold_change_from_condition is None:
+            legend_ax = grid.ordered_axs[-1]
+            bbox_to_anchor = (1, 1)
+        else:
+            legend_ax = grid.ordered_axs[-2]
+            bbox_to_anchor = (1, 0)
+        
+        legend_ax.legend(bbox_to_anchor=bbox_to_anchor)
 
         return grid
