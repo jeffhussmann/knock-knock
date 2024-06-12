@@ -758,7 +758,13 @@ def load_sgRNAs(base_dir, process=True):
 def load_extra_sequences(base_dir):
     extra_sequences = {}
 
-    fasta_fns = sorted((base_dir / 'targets').glob('*.fasta'))
+    fasta_extensions = {
+        '.fasta',
+        '.fa',
+    }
+
+    fasta_fns = sorted(fn for fn in (base_dir / 'targets').iterdir() if fn.suffix in fasta_extensions)
+
     for fasta_fn in fasta_fns:
         records = fasta.to_dict(fasta_fn)
         records = {name: seq.upper() for name, seq in records.items()}
