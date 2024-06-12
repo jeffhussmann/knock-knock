@@ -19,6 +19,7 @@ def blast(ref_fn,
           manual_temp_dir=None,
           return_alignments=False,
           ref_name_prefix_to_append=None,
+          filter_to_discard=None,
          ):
     ''' ref_fn: either a path to a fasta file, or a dictionary of reference sequences
         reads: either a path to a fastq/fastq.gz file, or a list of such paths, or an iterator over hits.fastq.Read objects
@@ -26,8 +27,12 @@ def blast(ref_fn,
         bam_by_name_fn: path to write query name-sorted alignments
         max_insertion_length: If not None, any alignments with insertions longer than max_insertion_length will be split into multiple alignments.
         ref_name_prefix_to_append: If not None, prefix to append before reference names in header.
+        filter_to_discard: If evaluates to True on an alignment, don't report that alignment.
     '''
     saved_verbosity = pysam.set_verbosity(0)
+
+    if filter_to_discard is None:
+        filter_to_discard = lambda al: False
 
     with tempfile.TemporaryDirectory(suffix='_blast', dir=manual_temp_dir) as temp_dir:
 
@@ -164,6 +169,9 @@ def blast(ref_fn,
 
             aligned_names = set()
             for al in sam_fh:
+                if filter_to_discard(al):
+                    continue
+
                 aligned_names.add(al.query_name)
 
                 undo_hard_clipping(al)

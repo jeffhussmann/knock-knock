@@ -439,7 +439,11 @@ class Experiment:
         for qname, als in self.alignment_groups(read_type=read_type):
             yield qname
     
-    def generate_alignments_with_blast(self, read_type=None, supplemental_index_name=None):
+    def generate_alignments_with_blast(self,
+                                       read_type=None,
+                                       supplemental_index_name=None,
+                                       filter_to_discard=None,
+                                      ):
         reads = self.reads_by_type(read_type)
 
         if read_type is None:
@@ -469,6 +473,7 @@ class Experiment:
                                     bam_by_name_fn=bam_by_name_fn,
                                     max_insertion_length=self.max_insertion_length,
                                     ref_name_prefix_to_append=supplemental_index_name,
+                                    filter_to_discard=filter_to_discard,
                                    )
 
             bam_by_name_fns.append(bam_by_name_fn)
