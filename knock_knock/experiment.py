@@ -176,7 +176,8 @@ class Experiment:
         return outcome_record.OutcomeRecord
 
     def load_description(self):
-        return load_sample_sheet(self.base_dir, self.batch_name)[self.sample_name]
+        sample_sheet = load_sample_sheet(self.base_dir, self.batch_name)
+        return sample_sheet[self.sample_name]
 
     @property
     def categorizer(self):
@@ -1365,17 +1366,16 @@ class Experiment:
         return mh_lengths
 
 def load_sample_sheet_from_csv(csv_fn):
-    csv_fn = Path(csv_fn)
-
     # Note: can't include comment='#' because of '#' in hex color specifications.
-    df = pd.read_csv(csv_fn, index_col='sample', dtype={'figures': str}).replace({np.nan: None})
+    df = knock_knock.utilities.read_and_sanitize_csv(csv_fn, index_col='sample')
+
     if not df.index.is_unique:
         print(f'Error parsing sample sheet {csv_fn}')
         print(f'Sample names are not unique:')
         print(df[df.index.duplicated()])
         sys.exit(1)
 
-    sample_sheet = df.to_dict(orient='index')
+    sample_sheet = pd.DataFrame(df).to_dict(orient='index')
 
     for name, d in sample_sheet.items():
         if 'forward_primer' in d:

@@ -14,6 +14,8 @@ def read_and_sanitize_csv(csv_fn, index_col=None):
             - squeezes to a Series if 1D
     '''
 
+    csv_fn = Path(csv_fn)
+
     try:
         df = pd.read_csv(csv_fn, dtype=str, comment='#')
     except UnicodeDecodeError:
