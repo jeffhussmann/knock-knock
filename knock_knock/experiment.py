@@ -853,9 +853,10 @@ class Experiment:
                 self.align()
             elif stage == 'categorize':
                 self.categorize()
-                self.generate_summary_figures()
             elif stage == 'generate_example_diagrams':
                 self.generate_example_diagrams()
+            elif stage == 'generate_summary_figures':
+                self.generate_summary_figures()
             else:
                 raise ValueError(f'invalid stage: {stage}')
 

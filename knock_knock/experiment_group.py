@@ -89,6 +89,8 @@ class ExperimentGroup:
             if generate_example_diagrams:
                 stages.append('generate_example_diagrams')
 
+            stages.append('generate_summary_figures')
+
             for stage in stages:
                 logger.info(f'Processing unique sequences, stage {stage}')
                 args = [(type(self), self.group_args, sample_name, stage) for sample_name in self.sample_names]
