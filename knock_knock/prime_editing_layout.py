@@ -1607,7 +1607,7 @@ class Layout(layout.Categorizer):
             
             else:
                 target_als = [al for al in self.primary_alignments if al.reference_name == self.target_info.target]
-                not_covered_by_any_target_als = self.whole_read - interval.get_disjoint_covered(target_als)
+                not_covered_by_any_target_als = self.not_covered_by_primers - interval.get_disjoint_covered(target_als)
 
                 if not_covered_by_any_target_als.total_length >= 100:
                     ref_seqs = {**self.target_info.reference_sequences}
@@ -1798,7 +1798,7 @@ class Layout(layout.Categorizer):
                 self.subcategory = 'extra sequence'
             
             elif any(al.reference_name not in self.primary_ref_names for al in results['covering_als']):
-                organisms = {self.target_info.remove_organism_from_alignment(al)[0] for al in results['covering_als']}
+                organisms = {self.target_info.remove_organism_from_alignment(al)[0] for al in results['covering_als'] if al.reference_name not in self.primary_ref_names}
                 organism = sorted(organisms)[0]
                 self.subcategory = organism
 
