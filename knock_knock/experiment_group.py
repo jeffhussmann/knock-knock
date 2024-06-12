@@ -330,47 +330,25 @@ class ExperimentGroup:
             condition_labels = self.condition_labels
 
         if aggregate_replicates and len(self.condition_keys) > 0:
-            if conditions is None:
-                conditions = self.conditions
-
-                if conditions == []:
-                    conditions = self.full_conditions
-
-            exp_sets = {}
-
-            for condition in conditions:
-                sample_names = self.condition_to_sample_names[condition]
-                
-                boundaries = knock_knock.visualize.rejoining_boundaries.BoundaryProperties()
-                for sample_name in sample_names:
-                    if sample_name not in samples_to_exclude:
-                        exp = self.sample_name_to_experiment(sample_name)
-                        boundaries.count_single_flap_boundaries(exp, include_intended_edit=include_intended_edit)
-
-                label = condition_labels[condition]
-
-                exp_sets[label] = {
-                    'color': condition_colors[condition],
-                    'results': boundaries,
-                }
+            aggregate_conditions = self.condition_keys
         else:
-            if conditions is None:
-                conditions = self.full_conditions
+            aggregate_conditions = None
 
-            exp_sets = {}
+        bps = knock_knock.visualize.rejoining_boundaries.EfficientBoundaryProperties(self.target_info,
+                                                                                     self.outcome_counts,
+                                                                                     aggregate_conditions=aggregate_conditions,
+                                                                                     include_intended_edit=include_intended_edit,
+                                                                                    )
 
-            for condition in conditions:
-                exp = self.full_condition_to_experiment[condition]
-                if exp.sample_name not in samples_to_exclude:
-                    boundaries = knock_knock.visualize.rejoining_boundaries.BoundaryProperties()
-                    boundaries.count_single_flap_boundaries(exp, include_intended_edit=include_intended_edit)
+        if conditions is None:
+            conditions = bps.rejoining_counts.columns
 
-                    label = condition_labels[condition]
+        columns_to_extract = [
+            (condition_labels[condition], [condition], condition_colors[condition])
+            for condition in conditions
+        ]
 
-                    exp_sets[label] = {
-                        'color': condition_colors[condition],
-                        'results': boundaries,
-                    }
+        exp_sets = bps.to_exp_sets(columns_to_extract)
 
         return exp_sets
 

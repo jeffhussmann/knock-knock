@@ -11,6 +11,8 @@ import knock_knock.outcome
 import knock_knock.pegRNAs
 import knock_knock.target_info
 
+memoized_property = hits.utilities.memoized_property
+
 class BoundaryProperties:
     def __init__(self, specific_subcategories=None):
         ''' edge_distributions: dict of Counters, outer dict keyed by (side, description), Counter keyed by position
@@ -128,6 +130,90 @@ class BoundaryProperties:
                 ys = np.cumsum(ys)
 
         return xs, ys
+
+class EfficientBoundaryProperties:
+    def __init__(self, target_info, counts, aggregate_conditions=None, include_intended_edit=False):
+        if 'nonspecific amplification' in counts.index:
+            counts = counts.drop('nonspecific amplification')
+        
+        self.target_info = target_info
+        self.counts = counts
+
+        if aggregate_conditions is not None:
+            self.counts = self.counts.T.groupby(aggregate_conditions).sum().T
+
+        cats = [
+            "unintended rejoining of RT'ed sequence",
+        ]
+        if include_intended_edit:
+            cats.append('intended edit')
+
+        self.rejoining_counts = self.counts.loc[[c for c in cats if c in counts.index]]
+
+    @memoized_property
+    def pegRNA_coords(self):
+        pegRNA_name = self.target_info.pegRNA.name
+        pegRNA_HA_RT = self.target_info.features[pegRNA_name, f'HA_RT_{pegRNA_name}']
+        pegRNA_PBS = self.target_info.features[pegRNA_name, 'PBS']
+        last_HA_RT_nt_in_pegRNA = pegRNA_PBS.end - pegRNA_HA_RT.start
+
+        def csd_to_pegRNA_coords(csd):
+            c, s, d = csd
+
+            if c == 'intended edit':
+                pegRNA_coord = last_HA_RT_nt_in_pegRNA
+            else:
+                ur_outcome = knock_knock.prime_editing_layout.UnintendedRejoiningOutcome.from_string(d)
+                pegRNA_coord = ur_outcome.edges[self.target_info.pegRNA_side]
+
+            return pegRNA_coord
+
+        return self.rejoining_counts.groupby(by=csd_to_pegRNA_coords).sum()
+
+    @memoized_property
+    def target_coords(self):
+        target_PBS_name = self.target_info.PBS_names_by_side_of_read[self.target_info.pegRNA_side]
+        target_PBS = self.target_info.features[self.target_info.target, target_PBS_name]
+        target_HA_RT = self.target_info.features[self.target_info.target, f'HA_RT_{self.target_info.pegRNA.name}']
+
+        # By definition, the nt on the PAM-distal side of the nick
+        # is zero in the coordinate system, and postive values go towards
+        # the PAM.
+
+        if target_PBS.strand == '+':
+            first_nt_after_HA_RT_in_genome = target_HA_RT.end + 1 - (target_PBS.end + 1)
+        else:
+            # TODO: confirm that there are no off-by-one errors here.
+            first_nt_after_HA_RT_in_genome = (target_PBS.start - 1) - (target_HA_RT.start - 1)
+
+        def csd_to_target_coords(csd):
+            c, s, d = csd
+
+            if c == 'intended edit':
+                target_coord = first_nt_after_HA_RT_in_genome
+            else:
+                ur_outcome = knock_knock.prime_editing_layout.UnintendedRejoiningOutcome.from_string(d)
+                target_coord = ur_outcome.edges[self.target_info.non_pegRNA_side]
+
+            return target_coord
+
+        return self.rejoining_counts.groupby(by=csd_to_target_coords).sum()
+
+    def to_exp_sets(self, columns_to_extract):
+        exp_sets = {}
+        for name, columns, color in columns_to_extract:
+            bps = BoundaryProperties()
+            bps.total_outcomes = self.counts[columns].sum().sum()
+
+            bps.edge_distributions['pegRNA', 'RT\'ed'].update(self.pegRNA_coords[columns].sum(axis=1).to_dict())
+            bps.edge_distributions['target', 'not RT\'ed'].update(self.target_coords[columns].sum(axis=1).to_dict())
+
+            exp_sets[name] = {
+                'color': color,
+                'results': bps,
+            }
+
+        return exp_sets
 
 def plot_single_flap_extension_chain_edges(target_info,
                                            exp_sets,
