@@ -21,7 +21,7 @@ import knock_knock.Bxb1_layout
 import knock_knock.target_info
 import knock_knock.utilities
 
-from hits import utilities, fastq
+from hits import adapters, fastq, sw, utilities
 
 import knock_knock.TECseq_layout
 
