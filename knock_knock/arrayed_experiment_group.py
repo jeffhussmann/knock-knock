@@ -1130,18 +1130,104 @@ def make_targets(base_dir, sample_sheet_df):
 
     knock_knock.build_targets.build_target_infos_from_csv(base_dir)
 
+def detect_sequencing_primers(base_dir, batch_name, sample_sheet_df):
+
+    opposite_side = {
+        'R1': 'R2',
+        'R2': 'R1',
+    }
+
+    expected_adapter_prefixes = {}
+
+    prefix_length = 13
+
+    for adapter_type in ['truseq', 'nextera']:
+        
+        expected_adapter_prefixes[adapter_type] = {}
+        for side in ['R1', 'R2']:
+            adapter_sequence = adapters.primers[adapter_type][opposite_side[side]]
+            expected_adapter_prefixes[adapter_type][side] = utilities.reverse_complement(adapter_sequence)[:prefix_length]
+
+    base_dir = Path(base_dir)
+
+    sequencing_adapters = {}
+    
+    for _, row in sample_sheet_df.iterrows():
+        adapter_types = {'R1': 'truseq', 'R2': 'truseq'}
+
+        for which_read in ['R1', 'R2']:
+            if which_read in row:
+                fastq_fn = base_dir / 'data' / batch_name / Path(row[which_read]).name
+                reads = fastq.reads(fastq_fn)
+
+                max_reads_to_check = 10000
+
+                reads = itertools.islice(reads, max_reads_to_check)
+
+                prefix_counts = Counter()
+
+                for read in reads:
+                    for adapter_type, prefixes in expected_adapter_prefixes.items():
+                        if prefixes[which_read] in read.seq:
+                            prefix_counts[adapter_type] += 1
+
+                    if max(prefix_counts.values(), default=0) >= 500:
+                        break
+
+                if len(prefix_counts) == 0:
+                    adapter_type = 'truseq'
+                else:
+                    adapter_type, _ = prefix_counts.most_common()[0]
+
+                adapter_types[opposite_side[which_read]] = adapter_type
+
+        sequencing_adapters[row['sample_name']] = f"{adapter_types['R1']};{adapter_types['R2']}" 
+
+    return sequencing_adapters
+
 def detect_sequencing_start_feature_names(base_dir, batch_name, sample_sheet_df):
     base_dir = Path(base_dir)
 
     sequencing_start_feature_names = {}
     
     for _, row in sample_sheet_df.iterrows():
-        R1_name = Path(row['R1']).name
-        R1_fn = base_dir / 'data' / batch_name / R1_name
+        R1_fn = base_dir / 'data' / batch_name / Path(row['R1']).name
 
-        if not R1_fn.exists():
-            logging.warning(f"R1 file name {R1_fn} doesn't exist")
-            continue
+        if row.get('R2', '') != '':
+            R2_fn = base_dir / 'data' / batch_name / Path(row['R2']).name
+
+            # Redundant with stitching code in illumina_experiment, but not sure
+            # how to avoid this.
+            sequencing_primers = row.get('sequencing_primers', 'truseq')
+
+            if ';' in sequencing_primers:
+                R1, R2 = sequencing_primers.split(';')
+            else:
+                R1, R2 = sequencing_primers, sequencing_primers
+
+            sequencing_primers = {'R1': R1, 'R2': R2}
+
+            reverse_complement = bool(row.get('reverse_complement', False))
+
+            def stitched_reads():
+                before_R1 = adapters.primers[sequencing_primers['R1']]['R1']
+                before_R2 = adapters.primers[sequencing_primers['R2']]['R2']
+
+                for R1, R2 in fastq.read_pairs(R1_fn, R2_fn, up_to_space=True):
+                    if R1.name != R2.name:
+                        raise ValueError
+
+                    stitched = sw.stitch_read_pair(R1, R2, before_R1, before_R2, indel_penalty=-1000)
+
+                    if reverse_complement:
+                        stitched = stitched.reverse_complement()
+
+                    yield stitched
+
+            reads = stitched_reads()
+        
+        else:
+            reads = fastq.reads(R1_fn)
 
         target_info_name = make_default_target_info_name(row['amplicon_primers'], row['genome'], row['extra_sequences'])
         ti = knock_knock.target_info.TargetInfo(base_dir, target_info_name) 
@@ -1150,14 +1236,11 @@ def detect_sequencing_start_feature_names(base_dir, batch_name, sample_sheet_df)
 
         primer_prefix_length = 6
         read_length_to_examine = 30
-        num_reads_to_check = 10000
+        max_reads_to_check = 10000
 
         primer_prefixes = {name: seq[:primer_prefix_length] for name, seq in primer_sequences.items()}
 
-        reads = fastq.reads(R1_fn)
-
-        # Ignore reads that have an N in the region to examine.
-        reads = itertools.islice(reads, num_reads_to_check)
+        reads = itertools.islice(reads, max_reads_to_check)
 
         prefix_counts = Counter()
 
@@ -1165,7 +1248,10 @@ def detect_sequencing_start_feature_names(base_dir, batch_name, sample_sheet_df)
             for name, prefix in primer_prefixes.items():
                 if prefix in read.seq[:read_length_to_examine]:
                     prefix_counts[name] += 1
-                    
+
+            if max(prefix_counts.values(), default=0) >= 500:
+                break
+
         if len(prefix_counts) == 0:
             logging.warning(f"Unable to detect sequencing orientation for {row['sample_name']}")
         else:
@@ -1197,7 +1283,11 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
     batch_dir = base_dir / 'data' / batch_name
     batch_dir.mkdir(parents=True, exist_ok=True)
 
+    sequencing_primers = detect_sequencing_primers(base_dir, batch_name, sample_sheet_df)
+    sample_sheet_df['sequencing_primers'] = sample_sheet_df['sample_name'].map(sequencing_primers)
+
     sequencing_start_feature_names = detect_sequencing_start_feature_names(base_dir, batch_name, sample_sheet_df)
+    sample_sheet_df['sequencing_start_feature_name'] = sample_sheet_df['sample_name'].map(sequencing_start_feature_names).fillna('')
 
     # For each set of target info parameter values, assign the most common
     # sequencing_start_feature_name to all samples.
@@ -1216,8 +1306,8 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
         orientations = Counter()
         
         for _, row in rows.iterrows():
-            name = sequencing_start_feature_names.get(row['sample_name'])
-            if name is not None:
+            name = row['sequencing_start_feature_name']
+            if name != '':
                 orientations[name] += 1
         
         if len(orientations) == 0:
@@ -1226,10 +1316,7 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
             feature_name, _ = orientations.most_common()[0]
             
             for _, row in rows.iterrows():
-                if row['sample_name'] not in sequencing_start_feature_names:
-                    sequencing_start_feature_names[row['sample_name']] = feature_name
-
-    sample_sheet_df['sequencing_start_feature_name'] = sample_sheet_df['sample_name'].map(sequencing_start_feature_names)
+                row['sequencing_start_feature_name'] = feature_name
 
     # If unedited controls are annotated, make virtual samples.
 

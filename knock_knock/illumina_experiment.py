@@ -30,8 +30,8 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
         sequencing_primers = self.description.get('sequencing_primers', 'truseq')
 
-        if '_' in sequencing_primers:
-            R1, R2 = sequencing_primers.split('_')
+        if ';' in sequencing_primers:
+            R1, R2 = sequencing_primers.split(';')
         else:
             R1, R2 = sequencing_primers, sequencing_primers
 
