@@ -597,13 +597,14 @@ class StackedDiagrams:
 
         bottom, top = self.get_bottom_and_top(y)
 
+        SNP_xs = set()
+
         if ti.pegRNA_SNVs is not None:
             SNP_ps = sorted(SNV['position'] for SNV_name, SNV in ti.pegRNA_SNVs[ti.target].items())
 
             p_to_i = SNP_ps.index
             i_to_p = dict(enumerate(SNP_ps))
 
-            SNP_xs = set()
             observed_SNP_idxs = set()
 
             SNV_names = sorted(ti.pegRNA_SNVs[ti.target])
@@ -685,9 +686,6 @@ class StackedDiagrams:
                     start = i_to_p[block[0]] - offset
                     end = i_to_p[block[-1]] - offset
                     self.draw_rect(source_name, start - x_buffer, end + x_buffer, bottom, top, 0.5, fill=False)
-
-        else:
-            SNP_xs = None
 
         if len(programmed_edit_outcome.deletions) == 0:
             bottom, top = self.get_bottom_and_top(y)
@@ -1962,6 +1960,8 @@ def restrict_mismatches_to_window(csd, window_interval, anchor):
         snvs = outcome.snvs.snvs
     
     elif (c, s) == ('intended edit', 'substitution') or \
+         (c, s) == ('intended edit', 'insertion') or \
+         (c, s) == ('intended edit', 'deletion') or \
          (c, s) == ('intended edit', 'replacement') or \
          (c, s) == ('intended edit', 'combination') or \
          (c, s) == ('partial edit', 'partial incorporation'):
@@ -1984,6 +1984,8 @@ def restrict_mismatches_to_window(csd, window_interval, anchor):
             restricted_s = s
     
     elif (c, s) == ('intended edit', 'substitution') or \
+         (c, s) == ('intended edit', 'insertion') or \
+         (c, s) == ('intended edit', 'deletion') or \
          (c, s) == ('intended edit', 'replacement') or \
          (c, s) == ('intended edit', 'combination') or \
          (c, s) == ('partial edit', 'partial incorporation'):
