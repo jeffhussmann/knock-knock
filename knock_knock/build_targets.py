@@ -587,7 +587,7 @@ class TargetInfoBuilder:
         else:
             all_extra_sequences = load_extra_sequences(self.base_dir)
             if self.genome not in all_extra_sequences:
-                raise ValueError(f'no fasta record found for {self.genome}')
+                raise ValueError(f'no sequence record found for "{self.genome}"')
 
             def region_fetcher(seq_name, start, end):
                 return all_extra_sequences[seq_name][start:end]
