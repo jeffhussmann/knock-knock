@@ -109,6 +109,11 @@ class Batch:
         groups = {group_name: self.group(group_name) for group_name in self.group_names}
         return groups
 
+    @memoized_property
+    def groups_by_sanitized_name(self):
+        groups = {group.sanitized_group_name: group for group in self.groups.values()}
+        return groups
+
     def group_query(self, query_string):
         groups = []
 
@@ -350,7 +355,10 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         if not conditions_are_unique:
             print(f'{self}\nconditions are not unique:')
             for k, v in Counter(self.full_conditions).most_common():
-                print(k, v)
+                if v > 1:
+                    for _, row in self.sample_sheet.iterrows():
+                        if full_condition_from_row(row) == k:
+                            print(row)
             raise ValueError
 
         self.full_condition_to_sample_name = {full_condition_from_row(row): sample_name for sample_name, row in self.sample_sheet.iterrows()}
@@ -423,6 +431,10 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         sample_names = self.condition_to_sample_names[condition]
         return [self.sample_name_to_experiment(sample_name) for sample_name in sample_names]
 
+    def condition_query(self, query_string):
+        conditions_df = pd.DataFrame(self.full_conditions, index=self.full_conditions, columns=self.full_condition_keys)
+        return conditions_df.query(query_string).index
+
     def sample_name_to_experiment(self, sample_name, no_progress=False):
         if no_progress:
             progress = None
@@ -437,6 +449,10 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
                                 progress=progress,
                                )
         return exp
+
+    @memoized_property
+    def experiments_by_sanitized_name(self):
+        return {exp.description['sanitized_sample_name']: exp for exp in self.experiments()}
 
     @memoized_property
     def full_condition_to_experiment(self):
@@ -475,6 +491,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
                 partial_label = ''
 
             label = f'{partial_label}rep. {condition[-1]} ({sample_name}, {self.total_valid_reads[condition]:,} total reads)'
+
             condition_labels[condition] = label
 
         for condition in self.conditions:
@@ -482,6 +499,30 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
                 label = condition
             else:
                 label = ', '.join(condition)
+
+            condition_labels[condition] = label
+
+        return condition_labels
+
+    @memoized_property
+    def condition_labels_with_keys(self):
+        condition_labels = {}
+
+        for full_condition in self.full_conditions:
+            if len(full_condition) > 1:
+                partial_label = ', '.join(f'{key}: {value}' for key, value in zip(self.condition_keys, full_condition[:-1])) + ', '
+            else:
+                partial_label = ''
+
+            label = f'{partial_label}rep: {full_condition[-1]}'
+
+            condition_labels[full_condition] = label
+
+        for condition in self.conditions:
+            if isinstance(condition, str):
+                label = condition
+            else:
+                label = ', '.join(f'{key}: {value}' for key, value in zip(self.condition_keys, condition)) + ', '
 
             condition_labels[condition] = label
 
@@ -1305,22 +1346,21 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
 
     grouped = sample_sheet_df.groupby(group_keys)
 
-    for (amplicon_primers, genome, sgRNAs, donor, extra_sequences), rows in grouped:
-        orientations = Counter()
-        
-        for _, row in rows.iterrows():
-            name = row['sequencing_start_feature_name']
-            if name != '':
-                orientations[name] += 1
+    keys_to_feature_name = {}
+
+    for keys, rows in grouped:
+        orientations = rows['sequencing_start_feature_name'].value_counts().drop('', errors='ignore')
         
         if len(orientations) == 0:
-            raise ValueError(f'No sequencing orientations detected for {amplicon_primers, genome, sgRNAs, donor}')
+            raise ValueError(f'No sequencing orientations detected for {keys}')
         else:
-            feature_name, _ = orientations.most_common()[0]
-            
-            for _, row in rows.iterrows():
-                row['sequencing_start_feature_name'] = feature_name
+            feature_name = orientations.index[0]
 
+            keys_to_feature_name[keys] = feature_name
+
+    for i in sample_sheet_df.index:
+        sample_sheet_df.loc[i, 'sequencing_start_feature_name'] = keys_to_feature_name[tuple(sample_sheet_df.loc[i, group_keys])]
+            
     # If unedited controls are annotated, make virtual samples.
 
     if 'is_unedited_control' in sample_sheet_df:
@@ -1375,6 +1415,8 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
 
     condition_columns = [column for column in sample_sheet_df.columns if column.startswith('condition:')]
     shortened_condition_columns = [column[len('condition:'):] for column in condition_columns]
+    if 'group' in shortened_condition_columns:
+        raise ValueError('"group" is a reserved column name and can\'t be a condition')
 
     group_keys = [
         'amplicon_primers',
