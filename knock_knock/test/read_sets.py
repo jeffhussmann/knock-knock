@@ -83,12 +83,14 @@ class ReadSet:
     def categorizer(self):
         if self.details['experiment_type'] in ['twin_prime', 'dual_flap']:
             from knock_knock.twin_prime_layout import Layout
-            categorizer = Layout
         elif self.details['experiment_type'] in ['prime_editing', 'prime_editing_layout', 'single_flap']:
             from knock_knock.prime_editing_layout import Layout
-            categorizer = Layout
+        elif self.details['experiment_type'] == 'TECseq':
+            from knock_knock.TECseq_layout import Layout
         else:
             raise NotImplementedError
+
+        categorizer = Layout
 
         return categorizer
 

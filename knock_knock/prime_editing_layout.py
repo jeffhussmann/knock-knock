@@ -3131,11 +3131,16 @@ class UnintendedRejoiningOutcome(Outcome):
         def convert(s):
             return int(s) if s != 'None' else None
 
-        try:
-            left_edge, right_edge, MH_nts, integrase_sites = details_string.split(',')
-        except:
-            left_edge, right_edge, MH_nts = details_string.split(',')
-            integrase_sites = ''
+        left_edge, *other_fields = details_string.split(',')
+
+        right_edge = -1
+        MH_nts = -1
+        integrase_sites = ''
+
+        if len(other_fields) == 3:
+            right_edge, MH_nts, integrase_sites = other_fields
+        elif len(other_fields) == 2:
+            right_edge, MH_nts = other_fields
 
         left_edge = convert(left_edge)
         right_edge = convert(right_edge)

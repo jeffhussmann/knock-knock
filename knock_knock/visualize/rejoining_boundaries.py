@@ -138,13 +138,16 @@ class EfficientBoundaryProperties:
         
         self.target_info = target_info
         self.counts = counts
+        self.include_intended_edit = include_intended_edit
 
         if aggregate_conditions is not None:
             self.counts = self.counts.T.groupby(aggregate_conditions).sum().T
 
         cats = [
             "unintended rejoining of RT'ed sequence",
+            "RTed sequence",
         ]
+
         if include_intended_edit:
             cats.append('intended edit')
 
@@ -152,10 +155,11 @@ class EfficientBoundaryProperties:
 
     @memoized_property
     def pegRNA_coords(self):
-        pegRNA_name = self.target_info.pegRNA.name
-        pegRNA_HA_RT = self.target_info.features[pegRNA_name, f'HA_RT_{pegRNA_name}']
-        pegRNA_PBS = self.target_info.features[pegRNA_name, 'PBS']
-        last_HA_RT_nt_in_pegRNA = pegRNA_PBS.end - pegRNA_HA_RT.start
+        if self.include_intended_edit:
+            pegRNA_name = self.target_info.pegRNA.name
+            pegRNA_HA_RT = self.target_info.features[pegRNA_name, f'HA_RT_{pegRNA_name}']
+            pegRNA_PBS = self.target_info.features[pegRNA_name, 'PBS']
+            last_HA_RT_nt_in_pegRNA = pegRNA_PBS.end - pegRNA_HA_RT.start
 
         def csd_to_pegRNA_coords(csd):
             c, s, d = csd
@@ -172,19 +176,20 @@ class EfficientBoundaryProperties:
 
     @memoized_property
     def target_coords(self):
-        target_PBS_name = self.target_info.PBS_names_by_side_of_read[self.target_info.pegRNA_side]
-        target_PBS = self.target_info.features[self.target_info.target, target_PBS_name]
-        target_HA_RT = self.target_info.features[self.target_info.target, f'HA_RT_{self.target_info.pegRNA.name}']
+        if self.include_intended_edit:
+            target_PBS_name = self.target_info.PBS_names_by_side_of_read[self.target_info.pegRNA_side]
+            target_PBS = self.target_info.features[self.target_info.target, target_PBS_name]
+            target_HA_RT = self.target_info.features[self.target_info.target, f'HA_RT_{self.target_info.pegRNA.name}']
 
-        # By definition, the nt on the PAM-distal side of the nick
-        # is zero in the coordinate system, and postive values go towards
-        # the PAM.
+            # By definition, the nt on the PAM-distal side of the nick
+            # is zero in the coordinate system, and postive values go towards
+            # the PAM.
 
-        if target_PBS.strand == '+':
-            first_nt_after_HA_RT_in_genome = target_HA_RT.end + 1 - (target_PBS.end + 1)
-        else:
-            # TODO: confirm that there are no off-by-one errors here.
-            first_nt_after_HA_RT_in_genome = (target_PBS.start - 1) - (target_HA_RT.start - 1)
+            if target_PBS.strand == '+':
+                first_nt_after_HA_RT_in_genome = target_HA_RT.end + 1 - (target_PBS.end + 1)
+            else:
+                # TODO: confirm that there are no off-by-one errors here.
+                first_nt_after_HA_RT_in_genome = (target_PBS.start - 1) - (target_HA_RT.start - 1)
 
         def csd_to_target_coords(csd):
             c, s, d = csd

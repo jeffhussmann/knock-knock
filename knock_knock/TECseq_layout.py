@@ -6,13 +6,16 @@ memoized_property = hits.utilities.memoized_property
 class Layout(knock_knock.prime_editing_layout.Layout):
     category_order = [
         ('RTed sequence',
-            ('includes scaffold',
-             'no scaffold',
+            ('n/a',
             ),
         ),
         ('targeted genomic sequence',
             ('edited',
              'unedited',
+            ),
+        ),
+        ('nonspecific amplification',
+            ('n/a',
             ),
         ),
         ('uncategorized',
@@ -28,7 +31,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         minimal_cover = None
 
         for key in ['first target', 'pegRNA', 'second target']:
-            if (key in covered) and (self.whole_read - covered[key]).is_empty:
+            if (key in covered) and (self.not_covered_by_primers - covered[key]).is_empty:
                 minimal_cover = key
                 break
 
@@ -67,12 +70,21 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             self.outcome = None
 
         elif self.minimal_cover == 'pegRNA':
-            self.register_unintended_rejoining()
+            self.category = 'RTed sequence'
+            self.subcategory = 'n/a'
+            self.details = str(self.extension_chain_edges['left'])
+            self.outcome = None
 
         elif self.minimal_cover == 'second target':
             self.category = 'targeted genomic sequence'
             self.subcategory = 'edited'
             self.details = str(self.extension_chain_edges['left'])
+            self.outcome = None
+
+        elif self.nonspecific_amplification:
+            self.category = 'nonspecific amplification'
+            self.subcategory = 'n/a'
+            self.details = ''
             self.outcome = None
 
         else:
