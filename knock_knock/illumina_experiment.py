@@ -400,6 +400,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
                 outcome = self.final_Outcome(stitched.name,
                                              len(stitched),
                                              0,
+                                             0,
                                              '',
                                              '',
                                              'nonspecific amplification',
