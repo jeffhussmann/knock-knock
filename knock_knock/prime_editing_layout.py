@@ -965,10 +965,12 @@ class Layout(layout.Categorizer):
     def is_intended_edit(self):
         if self.intended_edit_type is None:
             return False
+
         elif self.intended_edit_type == 'deletion':
             # Outcomes that are very close to but not exactly an intended deletion
             # can produce full extension chains. 
             return self.is_intended_deletion
+
         else:
             full_chain = set(self.extension_chain['alignments']) == {'first target', 'pegRNA', 'second target'}
 
@@ -979,7 +981,9 @@ class Layout(layout.Categorizer):
 
             chain_covers_whole_read = full_chain and uncovered.total_length == 0
 
-            return chain_covers_whole_read and self.matches_all_programmed_insertion_features
+            not_wild_type = not (self.intended_edit_type == 'substitution(s)' and self.pegRNA_SNV_string == self.no_incorporation_pegRNA_SNV_string)
+
+            return chain_covers_whole_read and not_wild_type and self.matches_all_programmed_insertion_features
 
     @memoized_property
     def flipped_pegRNA_als(self):
@@ -1270,6 +1274,22 @@ class Layout(layout.Categorizer):
         return full_incorporation
 
     @memoized_property
+    def no_incorporation_pegRNA_SNV_string(self):
+        ''' value of self.pegRNA_SNV_string expected if no SNVs are incorporated '''
+        ti = self.target_info
+        SNVs = ti.pegRNA_SNVs
+
+        no_incorporation = []
+
+        if SNVs is not None:
+            for SNV_name in sorted(SNVs[ti.target]):
+                no_incorporation.append('_')
+
+        no_incorporation = ''.join(no_incorporation)
+
+        return no_incorporation
+
+    @memoized_property
     def truncation_pegRNA_SNV_strings(self):
         ''' values of self.pegRNA_SNV_string expected if a block of SNVs
             from the beginning of the RTT up to some point are incorporated
@@ -1277,8 +1297,6 @@ class Layout(layout.Categorizer):
         '''
         ti = self.target_info
         SNVs = ti.pegRNA_SNVs
-
-        pegRNA_protospacer_strand = ti.features[ti.target, ti.primary_protospacer].strand
 
         full_incorporation = []
 
