@@ -8,6 +8,9 @@ import hits.utilities
 memoized_property = hits.utilities.memoized_property
 memoized_with_kwargs = hits.utilities.memoized_with_kwargs
 
+def cumulative_from_end(array):
+    return np.cumsum(array[::-1])[::-1]
+
 class OutcomeStratifiedLengths:
     def __init__(self, outcome_iter, max_relevant_length, length_to_store_unknown):
         self.max_relevant_length = max_relevant_length
@@ -103,3 +106,20 @@ class OutcomeStratifiedLengths:
                 truncated.outcome_length_arrays[cat, subcat] = new_counts
 
         return truncated
+
+    @memoized_property
+    def cumulative_lengths_for_all_outcomes(self):
+        return cumulative_from_end(self.lengths_for_all_outcomes)
+
+    @memoized_property
+    def cumulative_frequencies_from_end(self):
+        cumulative_fs = {}
+
+        for (cat, subcat), counts in self.outcome_length_arrays.items():
+            cumulative_fs[cat, subcat] = cumulative_from_end(counts) / self.cumulative_lengths_for_all_outcomes
+
+        df = pd.DataFrame(cumulative_fs).T
+        df.columns.name = 'length'
+        df.index.names = ['category', 'subcategory']
+
+        return df

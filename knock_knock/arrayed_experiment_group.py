@@ -24,6 +24,7 @@ import knock_knock.utilities
 from hits import adapters, fastq, sw, utilities
 
 import knock_knock.TECseq_layout
+import knock_knock.seeseq_layout
 
 memoized_property = utilities.memoized_property
 memoized_with_kwargs = utilities.memoized_with_kwargs
@@ -977,6 +978,8 @@ class ArrayedExperiment(knock_knock.illumina_experiment.IlluminaExperiment):
             'twin_prime': knock_knock.twin_prime_layout.Layout,
             'Bxb1_twin_prime': knock_knock.Bxb1_layout.Layout,
             'TECseq': knock_knock.TECseq_layout.Layout,
+            'seeseq': knock_knock.seeseq_layout.Layout,
+            'seeseq_dual_flap': knock_knock.seeseq_layout.DualFlapLayout,
         }
 
         aliases = {
@@ -1403,10 +1406,14 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
 
         if 'experiment_type' in group_rows.columns:
             experiment_types = set(group_rows['experiment_type'])
+
             if len(experiment_types) != 1:
                 raise ValueError('more than one experiment type specified')
             else:
                 experiment_type = list(experiment_types)[0]
+
+            if experiment_type == 'seeseq' and ti.pegRNA_names is not None and len(ti.pegRNA_names) == 2:
+                experiment_type = 'seeseq_dual_flap'
 
         elif ti.pegRNA_names is None or len(ti.pegRNA_names) <= 1:
             experiment_type = 'single_flap'
@@ -1428,6 +1435,9 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
                 min_relevant_length = list(min_relevant_lengths)[0]
         else:
             min_relevant_length = 100
+
+        if experiment_type in {'seeseq', 'TECseq'}:
+            min_relevant_length = 0
 
         baseline_condition = ';'.join(map(str, tuple(group_rows[condition_columns].iloc[0])))
 
