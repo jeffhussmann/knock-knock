@@ -815,7 +815,10 @@ class StackedDiagrams:
         RTT_rc = hits.utilities.reverse_complement(components['RTT'])
         RTT_aligned_seq = ''
 
-        RTT_offset = ti.cut_afters[f'{pegRNA_name}_protospacer_{PBS.strand}'] - offset
+        try:
+            RTT_offset = ti.cut_afters[f'{pegRNA_name}_protospacer_{PBS.strand}'] - offset
+        except KeyError:
+            RTT_offset = ti.cut_afters[f'{pegRNA_name}_protospacer_both'] - offset
 
         for (target_start, target_end), (flap_start, flap_end) in zip(target_subsequences, flap_subsequences):
             # target_subsequences are in downstream_of_nick coords and end is exclusive.
@@ -1350,7 +1353,7 @@ class DiagramGrid:
         ax.plot(xs, ys, marker=marker, linestyle='', alpha=marker_alpha, label=label, **plot_kwargs)
         ax.plot(xs, ys, marker=None, linestyle='-', alpha=line_alpha, **plot_kwargs)
 
-    def style_frequency_ax(self, name, manual_ticks=None, label_size=8, include_percentage=False):
+    def style_frequency_ax(self, name, label_size=8, **kwargs):
         ax = self.axs_by_name.get(name)
         if ax is None:
             return
@@ -1632,6 +1635,7 @@ class DiagramGrid:
         plot_kwargs.setdefault('line_alpha', 0.75)
         plot_kwargs.setdefault('linewidth', 1.5)
         plot_kwargs.setdefault('markersize', 7)
+        plot_kwargs.setdefault('clip_on', False)
 
         if isinstance(pegRNA_conversion_fractions, pd.Series):
             pegRNA_conversion_fractions = pegRNA_conversion_fractions.to_frame()
@@ -2067,6 +2071,8 @@ def make_partial_incorporation_figure(target_info,
 
     outcome_fractions = outcome_fractions[conditions]
 
+    diagram_kwargs.setdefault('draw_all_sequence', 0.1)
+
     if difference_from_condition is not None:
         condition_values = outcome_fractions[difference_from_condition]
         if isinstance(condition_values, pd.DataFrame):
@@ -2156,7 +2162,6 @@ def make_partial_incorporation_figure(target_info,
                                                          window=window,
                                                          block_alpha=0.1,
                                                          color_overrides=color_overrides,
-                                                         draw_all_sequence=0.1,
                                                          **diagram_kwargs,
                                                         )
 

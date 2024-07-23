@@ -315,6 +315,7 @@ class ExperimentGroup:
                                              aggregate_replicates=True,
                                              palette='tab10',
                                              conditions=None,
+                                             min_reads=None,
                                              samples_to_exclude=None,
                                              include_intended_edit=False,
                                              condition_colors=None,
@@ -326,7 +327,9 @@ class ExperimentGroup:
         if condition_colors is None:
             condition_colors = self.condition_colors(palette=palette)
 
-        if condition_labels is None:
+        if condition_labels == 'with keys':
+            condition_labels = self.condition_labels_with_keys
+        elif condition_labels is None:
             condition_labels = self.condition_labels
 
         if aggregate_replicates and len(self.condition_keys) > 0:
@@ -342,6 +345,10 @@ class ExperimentGroup:
 
         if conditions is None:
             conditions = bps.rejoining_counts.columns
+
+        if min_reads is not None:
+            # .sum() here handles if these are full conditions
+            conditions = [c for c in conditions if self.total_valid_reads.loc[c].sum() >= min_reads]
 
         columns_to_extract = [
             (condition_labels[condition], [condition], condition_colors[condition])
@@ -360,6 +367,7 @@ class ExperimentGroup:
                                                      aggregate_replicates=True,
                                                      samples_to_exclude=None,
                                                      include_intended_edit=False,
+                                                     min_reads=None,
                                                      **plot_kwargs,
                                                     ):
         
@@ -370,6 +378,7 @@ class ExperimentGroup:
                                                              include_intended_edit=include_intended_edit,
                                                              condition_colors=condition_colors,
                                                              condition_labels=condition_labels,
+                                                             min_reads=min_reads,
                                                             )
 
         fig, axs = knock_knock.visualize.rejoining_boundaries.plot_single_flap_extension_chain_edges(self.target_info,

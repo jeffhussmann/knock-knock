@@ -486,10 +486,11 @@ class ReadDiagram():
 
             features_to_show.extend([(self.target_info.target, f_name) for f_name in self.target_info.protospacer_names])
 
-        features = {k: v for k, v in all_features.items()
-                    if k in features_to_show
-                    and k not in self.features_to_hide
-                   }
+        features = {
+            k: v for k, v in all_features.items()
+            if k in features_to_show
+            and k not in self.features_to_hide
+        }
 
         return features
 
@@ -1119,8 +1120,11 @@ class ReadDiagram():
         if (not self.alignments) or (self.alignments[0].query_sequence is None):
             return self.fig
 
-        self.min_x = self.query_interval[0] - 0.05 * self.total_query_length
-        self.max_x = self.query_interval[1] + 0.05 * self.total_query_length
+        if self.manual_x_lims is not None:
+            self.min_x, self.max_x = self.manual_x_lims
+        else:
+            self.min_x = self.query_interval[0] - 0.05 * self.total_query_length
+            self.max_x = self.query_interval[1] + 0.05 * self.total_query_length
             
         self.draw_read_arrows()
 
