@@ -116,7 +116,7 @@ class OutcomeStratifiedLengths:
         cumulative_fs = {}
 
         for (cat, subcat), counts in self.outcome_length_arrays.items():
-            cumulative_fs[cat, subcat] = cumulative_from_end(counts) / self.cumulative_lengths_for_all_outcomes
+            cumulative_fs[cat, subcat] = cumulative_from_end(counts) / np.maximum(self.cumulative_lengths_for_all_outcomes, 1)
 
         df = pd.DataFrame(cumulative_fs).T
         df.columns.name = 'length'
