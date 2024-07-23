@@ -111,20 +111,20 @@ class Effector:
 
 # tuples are (PAM_pattern, PAM side, cut_after_offset)
 effector_details = {
-    'SpCas9': ('NGG', 3, (-4, 4)), 
+    'SpCas9': ('NGG', 3, (-4, -4)), 
     'SpCas9H840A': ('NGG', 3, (-4, None)),
     'SpCas9N863A': ('NGG', 3, (-4, None)),
 
     'SpCas9_VRQR': ('NGA', 3, (-4, -4)),
     'SpCas9H840A_VRQR': ('NGA', 3, (-4, None)),
 
-    'SpCas9_NRRH': ('NRRH', 3, (-4, 4)),
+    'SpCas9_NRRH': ('NRRH', 3, (-4, -4)),
     'SpCas9H840A_NRRH': ('NRRH', 3, (-4, None)),
 
-    'SpCas9_NRTH': ('NRYH', 3, (-4, 4)),
+    'SpCas9_NRTH': ('NRYH', 3, (-4, -4)),
     'SpCas9H840A_NRTH': ('NRYH', 3, (-4, None)),
 
-    'SpCas9_NRCH': ('NRYH', 3, (-4, 4)),
+    'SpCas9_NRCH': ('NRYH', 3, (-4, -4)),
     'SpCas9H840A_NRCH': ('NRYH', 3, (-4, None)),
 
     'SaCas9': ('NNGRRT', 3, (-4, -4)),
@@ -142,7 +142,7 @@ effectors = {
 }
 
 effector_aliases = {
-    'AsCas12a': {'Cpf1'},
+    'AsCas12a': {'Cpf1', 'enAsCas12a'},
 }
 
 for main_name, aliases in effector_aliases.items():
