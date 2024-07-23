@@ -156,31 +156,33 @@ class pegRNA:
         mapper = sw.SeedAndExtender(pegRNA_sequence.encode(), 8, header, self.name)
 
         # Note: assumes PBS perfectly matches at least seed_length nts at the nick.
-        seed_length = 7
+        for seed_length in [7, 6, 5]:
+            if strand == '+':
+                seed_start = cut_after + 1 - seed_length
+                before_nick_start = 0
+                before_nick_end = cut_after
+            else:
+                before_nick_start = cut_after + 1
+                before_nick_end = len(self.target_sequence) - 1
+                seed_start = cut_after + 1
 
-        if strand == '+':
-            seed_start = cut_after + 1 - seed_length
-            before_nick_start = 0
-            before_nick_end = cut_after
-        else:
-            before_nick_start = cut_after + 1
-            before_nick_end = len(self.target_sequence) - 1
-            seed_start = cut_after + 1
+            alignments = mapper.seed_and_extend(self.target_bytes, seed_start, seed_start + seed_length, self.name)
+            
+            extension_ref_p_start = len(protospacer + scaffold)
+            extension_ref_interval = interval.Interval(extension_ref_p_start, len(pegRNA_sequence) - 1)
+            def overlaps_extension(al):
+                return interval.get_covered_on_ref(al) & extension_ref_interval
 
-        alignments = mapper.seed_and_extend(self.target_bytes, seed_start, seed_start + seed_length, self.name)
-        
-        extension_ref_p_start = len(protospacer + scaffold)
-        extension_ref_interval = interval.Interval(extension_ref_p_start, len(pegRNA_sequence) - 1)
-        def overlaps_extension(al):
-            return interval.get_covered_on_ref(al) & extension_ref_interval
+            valid_alignments = [al for al in alignments if sam.get_strand(al) != strand and overlaps_extension(al)]
 
-        valid_alignments = [al for al in alignments if sam.get_strand(al) != strand and overlaps_extension(al)]
+            def priority_key(al):
+                # Prioritize longer matches, then matches closer to the 3' end.
+                return (al.query_alignment_length, al.reference_start)
 
-        def priority_key(al):
-            # Prioritize longer matches, then matches closer to the 3' end.
-            return (al.query_alignment_length, al.reference_start)
+            valid_alignments = sorted(valid_alignments, key=priority_key, reverse=True)
 
-        valid_alignments = sorted(valid_alignments, key=priority_key, reverse=True)
+            if len(valid_alignments) > 0:
+                break
 
         if len(valid_alignments) == 0:
             seed_sequence = self.target_bytes[seed_start:seed_start + seed_length]
