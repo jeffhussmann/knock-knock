@@ -1290,26 +1290,6 @@ class Layout(layout.Categorizer):
         return no_incorporation
 
     @memoized_property
-    def truncation_pegRNA_SNV_strings(self):
-        ''' values of self.pegRNA_SNV_string expected if a block of SNVs
-            from the beginning of the RTT up to some point are incorporated
-            but past that point are not - i.e. consistent with incomplete RT.
-        '''
-        ti = self.target_info
-        SNVs = ti.pegRNA_SNVs
-
-        full_incorporation = []
-
-        if SNVs is not None:
-            for SNV_name in sorted(SNVs[ti.target]):
-                pegRNA_base = SNVs[ti.target][SNV_name]['alternative_base']
-                full_incorporation.append(pegRNA_base)
-
-        full_incorporation = ''.join(full_incorporation)
-
-        return full_incorporation
-
-    @memoized_property
     def pegRNA_insertion_feature_summaries(self):
         summaries = {}
         
@@ -1525,19 +1505,6 @@ class Layout(layout.Categorizer):
         return edge_al
 
     @memoized_property
-    def genomic_insertion(self):
-        if self.ranked_templated_insertions is None:
-            return None
-        
-        ranked = [details for details in self.ranked_templated_insertions if details['source'] == 'genomic']
-        if len(ranked) == 0:
-            return None
-        else:
-            best_explanation = ranked[0]
-
-        return best_explanation
-
-    @memoized_property
     def primer_alignments(self):
         primers = self.target_info.primers_by_side_of_read
         primer_alignments = {}
@@ -1579,7 +1546,7 @@ class Layout(layout.Categorizer):
     def nonspecific_amplification(self):
         ''' Nonspecific amplification if any of following apply:
          - read is empty after adapter trimming
-         - read is short after adapter trimming, in which case inferrence of
+         - read is short after adapter trimming, in which case inference of
             nonspecific amplification per se is less clear but
             sequence is unlikely to be informative of any other process
          - read starts with an alignment to the expected primer, but
@@ -1655,7 +1622,9 @@ class Layout(layout.Categorizer):
                 valid = True
                 results['covering_als'] = None
 
-        if not valid:
+        if valid:
+            results['target_edge_als'] = self.target_edge_alignments_list
+        else:
             results = None
 
         return results
@@ -1827,32 +1796,7 @@ class Layout(layout.Categorizer):
             else:
                 raise ValueError
 
-            self.relevant_alignments = self.target_edge_alignments_list + results['covering_als']
-
-    def register_genomic_insertion(self):
-        details = self.genomic_insertion
-
-        outcome = LongTemplatedInsertionOutcome(details['organism'],
-                                                details['chr'],
-                                                details['strand'],
-                                                details['insertion_reference_bounds'][5],
-                                                details['insertion_reference_bounds'][3],
-                                                details['insertion_query_bounds'][5],
-                                                details['insertion_query_bounds'][3],
-                                                details['target_bounds'][5],
-                                                details['target_bounds'][3],
-                                                details['target_query_bounds'][5],
-                                                details['target_query_bounds'][3],
-                                                details['MH_lengths']['left'],
-                                                details['MH_lengths']['right'],
-                                                '',
-                                               )
-
-        self.outcome = outcome
-        self.category = 'genomic insertion'
-        self.subcategory = details['organism']
-        self.relevant_alignments = details['full_alignments']
-        self.special_alignment = details['cropped_candidate_alignment']
+            self.relevant_alignments = results['target_edge_als'] + results['covering_als']
 
     def register_edit_plus_indel(self, subcategory, indels):
         self.category = 'edit + indel'
@@ -1983,261 +1927,6 @@ class Layout(layout.Categorizer):
                 meaningful_gap_covers = pegRNA_als
                 
         return meaningful_gap_covers
-
-    @memoized_property
-    def ranked_templated_insertions(self):
-        possible = self.possible_templated_insertions
-        valid = [details for details in possible if 'failed' not in details]
-
-        if len(valid) == 0:
-            return None
-
-        def priority(details):
-            key_order = [
-                'total_edits_and_gaps',
-                'total_gap_length',
-                'edit_distance',
-                'gap_before_length',
-                'gap_after_length',
-                'source',
-            ]
-            return [details[k] for k in key_order]
-
-        ranked = sorted(valid, key=priority)
-
-        # For performance reasons, only compute some properties on possible insertions that haven't
-        # already been ruled out.
-
-        ref_seqs = {**self.target_info.reference_sequences}
-        if 'phiX' in self.target_info.supplemental_indices:
-            ref_seqs.update(self.target_info.supplemental_reference_sequences('phiX'))
-
-        for details in ranked:
-            MH_lengths = {}
-
-            if details['edge_alignments']['left'] is None:
-                MH_lengths['left'] = None
-            else:
-                MH_lengths['left'] = layout.junction_microhomology(ref_seqs, details['edge_alignments']['left'], details['candidate_alignment'])
-
-            if details['edge_alignments']['right'] is None:
-                MH_lengths['right'] = None
-            else:
-
-                MH_lengths['right'] = layout.junction_microhomology(ref_seqs, details['candidate_alignment'], details['edge_alignments']['right'])
-
-            details['MH_lengths'] = MH_lengths
-
-        return ranked
-
-    def evaluate_templated_insertion(self, target_edge_als, candidate_al, source):
-        ti = self.target_info
-
-        details = {'source': source}
-
-        candidate_ref_seq = ti.reference_sequences.get(candidate_al.reference_name)
-
-        if candidate_ref_seq is None and 'phiX' in ti.supplemental_indices:
-            candidate_ref_seq = ti.supplemental_reference_sequences('phiX').get(candidate_al.reference_name)
-
-        # Find the locations on the query at which switching from edge alignments to the
-        # candidate and then back again minimizes the edit distance incurred.
-
-        if source == 'genomic':
-            left_tie_break = max
-            right_tie_break = min
-        else:
-            left_tie_break = min
-            right_tie_break = max
-
-        left_results = sam.find_best_query_switch_after(target_edge_als['left'], candidate_al, ti.target_sequence, candidate_ref_seq, left_tie_break)
-        right_results = sam.find_best_query_switch_after(candidate_al, target_edge_als['right'], candidate_ref_seq, ti.target_sequence, right_tie_break)
-
-        # For genomic insertions, parsimoniously assign maximal query to candidates that make it all the way to the read edge
-        # even if there is a short target alignment at the edge.
-        if source == 'genomic':
-            min_left_results = sam.find_best_query_switch_after(target_edge_als['left'], candidate_al, ti.target_sequence, candidate_ref_seq, min)
-            if min_left_results['switch_after'] == -1:
-                left_results = min_left_results
-
-            max_right_results = sam.find_best_query_switch_after(candidate_al, target_edge_als['right'], candidate_ref_seq, ti.target_sequence, max)
-            if max_right_results['switch_after'] == len(self.seq) - 1:
-                right_results = max_right_results
-
-        # Crop the alignments at the switch points identified.
-        target_bounds = {}
-        target_query_bounds = {}
-
-        cropped_left_al = sam.crop_al_to_query_int(target_edge_als['left'], -np.inf, left_results['switch_after'])
-        target_bounds[5] = sam.reference_edges(cropped_left_al)[3]
-        target_query_bounds[5] = interval.get_covered(cropped_left_al).end
-
-        cropped_right_al = sam.crop_al_to_query_int(target_edge_als['right'], right_results['switch_after'] + 1, np.inf)
-        if cropped_right_al is None:
-            target_bounds[3] = None
-            target_query_bounds[3] = len(self.seq)
-        else:
-            if cropped_right_al.query_alignment_length >= 8:
-                target_bounds[3] = sam.reference_edges(cropped_right_al)[5]
-                target_query_bounds[3] = interval.get_covered(cropped_right_al).start
-            else:
-                target_bounds[3] = None
-                target_query_bounds[3] = len(self.seq)
-
-        cropped_candidate_al = sam.crop_al_to_query_int(candidate_al, left_results['switch_after'] + 1, right_results['switch_after'])
-        if cropped_candidate_al is None or cropped_candidate_al.is_unmapped:
-            details['edge_als'] = target_edge_als
-            details['candidate_al'] = candidate_al
-            details['switch_afters'] = {'left': left_results['switch_after'], 'right': right_results['switch_after']}
-            details['failed'] = 'cropping eliminates insertion'
-            return details
-
-        insertion_reference_bounds = sam.reference_edges(cropped_candidate_al)   
-        insertion_query_interval = interval.get_covered(cropped_candidate_al)
-        insertion_length = len(insertion_query_interval)
-            
-        left_edits = sam.edit_distance_in_query_interval(cropped_left_al, ref_seq=ti.target_sequence, only_Q30=True)
-        right_edits = sam.edit_distance_in_query_interval(cropped_right_al, ref_seq=ti.target_sequence, only_Q30=True)
-        middle_edits = sam.edit_distance_in_query_interval(cropped_candidate_al, ref_seq=candidate_ref_seq, only_Q30=True)
-        edit_distance = left_edits + middle_edits + right_edits
-
-        gap_before_length = left_results['gap_length']
-        gap_after_length = right_results['gap_length']
-        total_gap_length = gap_before_length + gap_after_length
-        
-        has_pegRNA_SNV = {
-            'left': self.specific_to_pegRNA(cropped_left_al),
-            'right': self.specific_to_pegRNA(cropped_right_al),
-        }
-        if source == 'pegRNA':
-            has_pegRNA_SNV['insertion'] = self.specific_to_pegRNA(candidate_al) # should this be cropped_candidate_al?
-
-        longest_edge_deletion = None
-
-        for side in ['left', 'right']:
-            if target_edge_als[side] is not None:
-                indels = self.extract_indels_from_alignments([target_edge_als[side]])
-                for indel, _ in indels:
-                    if indel.kind == 'D':
-                        if longest_edge_deletion is None or indel.length > longest_edge_deletion.length:
-                            longest_edge_deletion = indel
-
-        edit_distance_besides_deletion = edit_distance
-        if longest_edge_deletion is not None:
-            edit_distance_besides_deletion -= longest_edge_deletion.length
-
-        details.update({
-            'source': source,
-            'insertion_length': insertion_length,
-            'insertion_reference_bounds': insertion_reference_bounds,
-            'insertion_query_bounds': {5: insertion_query_interval.start, 3: insertion_query_interval.end},
-
-            'gap_left_query_edge': left_results['switch_after'],
-            'gap_right_query_edge': right_results['switch_after'] + 1,
-
-            'gap_before': left_results['gap_interval'],
-            'gap_after': right_results['gap_interval'],
-
-            'gap_before_length': gap_before_length,
-            'gap_after_length': gap_after_length,
-            'total_gap_length': total_gap_length,
-
-            'total_edits_and_gaps': total_gap_length + edit_distance,
-            'left_edits': left_edits,
-            'right_edits': right_edits,
-            'edit_distance': edit_distance,
-            'edit_distance_besides_deletion': edit_distance_besides_deletion,
-            'candidate_alignment': candidate_al,
-            'cropped_candidate_alignment': cropped_candidate_al,
-            'target_bounds': target_bounds,
-            'target_query_bounds': target_query_bounds,
-            'cropped_alignments': [al for al in [cropped_left_al, cropped_candidate_al, cropped_right_al] if al is not None],
-            'edge_alignments': target_edge_als,
-            'full_alignments': [al for al in [target_edge_als['left'], candidate_al, target_edge_als['right']] if al is not None],
-
-            'longest_edge_deletion': longest_edge_deletion,
-
-            'has_pegRNA_SNV': has_pegRNA_SNV,
-
-            'strand': sam.get_strand(candidate_al),
-        })
-
-        if source == 'genomic':
-            # The alignment might have been converted to target coordinates.
-            if cropped_candidate_al.reference_name == self.target_info.target:
-                organism = self.target_info.genome_source
-                original_al = cropped_candidate_al
-            else:
-                organism, original_al = self.target_info.remove_organism_from_alignment(cropped_candidate_al)
-
-            details.update({
-                'chr': original_al.reference_name,
-                'organism': organism,
-                'original_alignment': original_al,
-            })
-
-            # Since genomic insertions draw from a much large reference sequence
-            # than pegRNA insertions, enforce a stringent minimum length.
-
-            if insertion_length <= 25:
-                details['failed'] = f'insertion length = {insertion_length}'
-
-        failures = []
-
-        if gap_before_length > 0:
-            failures.append(f'gap_before_length = {gap_before_length}')
-
-        if gap_after_length > 0:
-            failures.append(f'gap_after_length = {gap_after_length}')
-
-        max_allowable_edit_distance = 5
-
-        # Allow a high edit distance if it is almost entirely explained by a single large deletion.
-        if edit_distance_besides_deletion > max_allowable_edit_distance:
-            failures.append(f'edit_distance = {edit_distance}')
-
-        if has_pegRNA_SNV['left']:
-            failures.append('left alignment has a pegRNA SNV')
-
-        if has_pegRNA_SNV['right']:
-            failures.append('right alignment has a pegRNA SNV')
-
-        edit_distance_over_length = middle_edits / insertion_length
-        if edit_distance_over_length >= 0.1:
-            failures.append(f'edit distance / length = {edit_distance_over_length}')
-
-        if len(failures) > 0:
-            details['failed'] = '; '.join(failures)
-
-        return details
-
-    @memoized_property
-    def possible_templated_insertions(self):
-        ti = self.target_info
-
-        edge_als = self.target_edge_alignments
-
-        if edge_als['left'] is None and edge_als['right'] is None:
-            return [{'failed': 'no target edge alignments'}]
-
-        if edge_als['left'] is not None:
-            # If a target alignment to the start of the read exists,
-            # insist that it be to the sequencing primer. 
-            if not sam.overlaps_feature(edge_als['left'], ti.primers_by_side_of_read['left']):
-                return [{'failed': 'left edge alignment isn\'t to primer'}]
-
-        candidates = []
-
-        for genomic_al in self.nonredundant_supplemental_alignments:
-            candidates.append((genomic_al, 'genomic'))
-
-        possible_insertions = []
-
-        for candidate_al, source in candidates:
-            details = self.evaluate_templated_insertion(edge_als, candidate_al, source)
-            possible_insertions.append(details)
-
-        return possible_insertions
 
     @memoized_property
     def no_alignments_detected(self):
@@ -2475,9 +2164,6 @@ class Layout(layout.Categorizer):
 
         elif self.original_target_alignment_has_only_relevant_indels:
             self.register_indels_in_original_alignment()
-
-        elif self.genomic_insertion is not None:
-            self.register_genomic_insertion()
 
         else:
             self.category = 'uncategorized'
