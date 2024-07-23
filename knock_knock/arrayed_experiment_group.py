@@ -508,9 +508,15 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
     def condition_labels_with_keys(self):
         condition_labels = {}
 
+        informative_condition_idxs = []
+
+        for c_i, row in enumerate(np.array(self.conditions).T):
+            if len(set(row)) > 1:
+                informative_condition_idxs.append(c_i)
+
         for full_condition in self.full_conditions:
             if len(full_condition) > 1:
-                partial_label = ', '.join(f'{key}: {value}' for key, value in zip(self.condition_keys, full_condition[:-1])) + ', '
+                partial_label = ', '.join(f'{self.condition_keys[c_i]}: {full_condition[c_i]}' for c_i in informative_condition_idxs) + ', '
             else:
                 partial_label = ''
 
@@ -522,7 +528,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
             if isinstance(condition, str):
                 label = condition
             else:
-                label = ', '.join(f'{key}: {value}' for key, value in zip(self.condition_keys, condition)) + ', '
+                label = ', '.join(f'{self.condition_keys[c_i]}: {condition[c_i]}' for c_i in informative_condition_idxs)
 
             condition_labels[condition] = label
 
