@@ -767,7 +767,7 @@ class pegRNA:
         array = np.array(basepair_probs)[1:, 1:]
         sym_array = array + array.T
         flipped_total_bpps = sym_array.sum(axis=1)[::-1]
-        flipped_propensity = propensity[::-1].translate(str.maketrans('(){}', ')(}{'))
+        flipped_propensity = propensity[::-1].translate(str.maketrans('(){}', ')()('))
 
         return flipped_total_bpps, flipped_propensity
 
@@ -779,7 +779,7 @@ class pegRNA:
         array = np.array(basepair_probs)[1:, 1:]
         sym_array = array + array.T
         flipped_total_bpps = sym_array.sum(axis=1)[::-1]
-        flipped_propensity = propensity[::-1].translate(str.maketrans('(){}', ')(}{'))
+        flipped_propensity = propensity[::-1].translate(str.maketrans('(){}', ')()('))
 
         return flipped_total_bpps, flipped_propensity
 
