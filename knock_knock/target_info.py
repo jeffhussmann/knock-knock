@@ -1410,7 +1410,7 @@ class TargetInfo:
     def degenerate_indels(self):
         singleton_to_full = {}
 
-        if self.amplicon_length > 2000:
+        if self.amplicon_length > 1000:
             # O(n^2) nature means long amplicons become very slow.
             return singleton_to_full
 
@@ -1956,7 +1956,6 @@ class TargetInfo:
                     name_to_description[str(self.pegRNA_programmed_insertion)] = insertion['description']
 
         return name_to_description
-
 
     #@memoized_property
     #def intended_edit_sequence(self):
