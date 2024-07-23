@@ -12,7 +12,7 @@ for fn in targets_dir.glob('*.csv'):
 
 setup(
     name='knock_knock',
-    version='0.5.5',
+    version='0.5.6',
     url='https://pypi.org/projects/knock-knock',
 
     author='Jeff Hussmann',
