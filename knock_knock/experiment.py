@@ -711,15 +711,20 @@ class Experiment:
 
             alignment_groups = self.alignment_groups(fn_key=fn_key, read_type=read_type)
 
-            if max_reads is not None:
-                alignment_groups = islice(alignment_groups, max_reads)
-
             if read_type is None:
                 description = 'Categorizing reads'
             else:
                 description = f'Categorizing {read_type} reads'
 
-            for name, als in self.progress(alignment_groups, desc=description):
+            to_iter = zip(alignment_groups, self.reads_by_type(self.preprocessed_read_type))
+
+            if max_reads is not None:
+                to_iter = islice(to_iter, max_reads)
+
+            for (name, als), read in self.progress(to_iter, desc=description):
+                if read.qname != name:
+                    raise ValueError('iters out of sync')
+
                 if 'UMI_key' in self.description:
                     UMI_annotation = UMIAnnotation.from_identifier(name)
                     UMI_seq = UMI_annotation['UMI_seq']
@@ -729,11 +734,7 @@ class Experiment:
                     UMI_qual = ''
 
                 if isinstance(als, list):
-                    seq = als[0].get_forward_sequence()
-                    # TODO: this shouldn't use common sequence al for qualities.
-                    qs = np.array(als[0].query_qualities)
-                    Q30_fraction = np.mean(qs >= 30)
-                    mean_Q = np.mean(qs)
+                    seq = read.seq
 
                     # Special handling of empty sequence.
                     if seq is None:
@@ -776,8 +777,8 @@ class Experiment:
 
                 outcome = self.final_Outcome.from_layout(layout,
                                                          query_name=name,
-                                                         Q30_fraction=Q30_fraction,
-                                                         mean_Q=mean_Q,
+                                                         Q30_fraction=read.Q30_fraction,
+                                                         mean_Q=read.mean_Q,
                                                          UMI_seq=UMI_seq,
                                                          UMI_qual=UMI_qual,
                                                         )
