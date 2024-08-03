@@ -417,18 +417,19 @@ class StackedDiagrams:
                 start = feature.start - 0.5 - offset
                 end = feature.end + 0.5 - offset
 
-                color = self.color_overrides.get(feature_name, feature.attribute.get('color', 'grey'))
+                if hits.interval.are_overlapping(hits.interval.Interval(window_left, window_right), hits.interval.Interval(start, end)):
+                    color = self.color_overrides.get(feature_name, feature.attribute.get('color', 'grey'))
 
-                self.draw_rect(source_name, start, end, bottom, top, None, color)
-                self.ax.annotate(feature_name,
-                                 xy=(np.mean([start, end]), top),
-                                 xytext=(0, 5),
-                                 textcoords='offset points',
-                                 color='black',
-                                 annotation_clip=False,
-                                 ha='center',
-                                 va='bottom',
-                                )
+                    self.draw_rect(source_name, start, end, bottom, top, None, color)
+                    self.ax.annotate(feature_name,
+                                     xy=(np.mean([start, end]), top),
+                                     xytext=(0, 5),
+                                     textcoords='offset points',
+                                     color='black',
+                                     annotation_clip=False,
+                                     ha='center',
+                                     va='bottom',
+                                    )
 
     def draw_donor(self, y, HDR_outcome, deletion_outcome, insertion_outcome, source_name, on_top=False):
         ti = self.target_infos[source_name]
@@ -1781,6 +1782,7 @@ def make_deletion_boundaries_figure(target_info,
                                     include_edit_plus_deletions=True,
                                     include_insertions=False,
                                     show_log_scale=False,
+                                    window=None,
                                    ):
     ti = target_info
 
@@ -1831,9 +1833,10 @@ def make_deletion_boundaries_figure(target_info,
 
     outcome_fractions = pd.concat(to_concat)
 
-    outcomes = [(c, s, d) for (c, s, d), f_row in outcome_fractions.iterrows()
-                if max(f_row) > frequency_cutoff
-               ]
+    outcomes = [
+        (c, s, d) for (c, s, d), f_row in outcome_fractions.iterrows()
+        if max(f_row) > frequency_cutoff
+    ]
     outcomes = outcome_fractions.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
 
     color_overrides = {primer_name: 'grey' for primer_name in ti.primers}
@@ -1853,12 +1856,13 @@ def make_deletion_boundaries_figure(target_info,
         flip = False
         center = ti.center_of_amplicon
 
-    if flip:
-        window = (center - ti.amplicon_interval.end, center - ti.amplicon_interval.start)
-    else:
-        window = (ti.amplicon_interval.start - center, ti.amplicon_interval.end - center)
-        
-    window = (window[0] - 5, window[1] + 5)
+    if window is None:
+        if flip:
+            window = (center - ti.amplicon_interval.end, center - ti.amplicon_interval.start)
+        else:
+            window = (ti.amplicon_interval.start - center, ti.amplicon_interval.end - center)
+            
+        window = (window[0] - 5, window[1] + 5)
         
     grid = knock_knock.visualize.stacked.DiagramGrid(outcomes, 
                                                      ti,
@@ -1915,13 +1919,13 @@ def make_deletion_boundaries_figure(target_info,
 
         deletion_boundaries = deletion_boundaries_retriever(include_simple_deletions=include_simple_deletions,
                                                             include_edit_plus_deletions=include_edit_plus_deletions,
-                                                        )
+                                                           )
 
         for quantity in panel_order:
             grid.add_ax_above(quantity,
-                                gap=6 if quantity == panel_order[0] else 2,
-                                height_multiple=15 if quantity == 'fraction_removed' else 7,
-                                )
+                              gap=6 if quantity == panel_order[0] else 2,
+                              height_multiple=15 if quantity == 'fraction_removed' else 7,
+                             )
 
             for condition in conditions:
                 series = deletion_boundaries[quantity][condition].copy()
@@ -2093,6 +2097,8 @@ def make_partial_incorporation_figure(target_info,
         color_overrides[ps_name] = light_color
         color_overrides[PAM_name] = color
 
+    half_length = int(np.floor(ti.amplicon_length / 2))
+
     if manual_window is not None:
         window = manual_window
     elif len(ti.pegRNA_names) == 2:
@@ -2100,12 +2106,10 @@ def make_partial_incorporation_figure(target_info,
     elif len(ti.pegRNA_names) == 1:
         window = (-20, len(ti.sgRNA_components[ti.pegRNA_names[0]]['RTT']) + 4)
     else:
-        half_length = int(np.floor(ti.amplicon_length / 2))
         window = (-half_length, half_length)
 
     if ti.protospacer_feature is None:
-        half_length = int(np.floor(ti.amplicon_length / 2))
-        window_interval = hits.interval.Interval(ti.center_of_amplicon - half_length, ti.center_of_amplicon + half_length)
+        window_interval = hits.interval.Interval(ti.center_of_amplicon + window[0], ti.center_of_amplicon + window[1])
     elif ti.protospacer_feature.strand == '+':
         window_interval = hits.interval.Interval(ti.cut_after + window[0], ti.cut_after + window[1])
     else:
