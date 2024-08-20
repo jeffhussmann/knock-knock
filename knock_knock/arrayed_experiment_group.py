@@ -210,9 +210,16 @@ class Batch:
 
     @memoized_property
     def category_fractions(self):
-        fs = {gn: group.category_fractions for gn, group in self.groups.items()}
+        fs = {}
+        for gn, group in self.groups.items():
+            try:
+                fs[gn] = group.category_fractions
+            except:
+                logging.warning(f'No category fractions for {gn}')
+
         fs = pd.concat(fs, axis='columns').fillna(0).sort_index()
         fs.columns.names = ['group'] + fs.columns.names[1:]
+
         return fs
 
     @memoized_property
@@ -224,8 +231,16 @@ class Batch:
 
     @memoized_property
     def total_valid_reads(self):
-        counts = pd.concat({gn: group.total_valid_reads for gn, group in self.groups.items()}).fillna(0).sort_index()
+        counts = {}
+        for gn, group in self.groups.items():
+            try:
+                counts[gn] = group.total_valid_reads
+            except:
+                logging.warning(f'No read counts for {gn}')
+
+        counts = pd.concat(counts).fillna(0).sort_index()
         counts.index.names = ['group'] + counts.index.names[1:]
+        
         return counts
     
 def get_batch(base_dir, batch_name, progress=None, **kwargs):
