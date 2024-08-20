@@ -1410,7 +1410,10 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
     # If unedited controls are annotated, make virtual samples.
 
     if 'is_unedited_control' in sample_sheet_df:
-        sample_sheet_df['is_unedited_control'] = sample_sheet_df['is_unedited_control'] == 'unedited'
+        sample_sheet_df = sample_sheet_df.rename(columns={'is_unedited_control': 'condition:is_unedited_control'})
+
+    if 'condition:is_unedited_control' in sample_sheet_df:
+        sample_sheet_df['condition:is_unedited_control'] = sample_sheet_df['condition:is_unedited_control'] == 'unedited'
 
         amplicon_keys = ['amplicon_primers', 'genome']
         strategy_keys = ['sgRNAs', 'donor', 'extra_sequences']
@@ -1419,11 +1422,11 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
 
         new_rows = []
 
-        for _, amplicon_rows in grouped_by_amplicon:
+        for amplicon_strategy, amplicon_rows in grouped_by_amplicon:
             grouped_by_editing_strategy = amplicon_rows.groupby(strategy_keys)
 
             for strategy_i, (strategy, strategy_rows) in enumerate(grouped_by_editing_strategy):
-                for _, row in amplicon_rows.query('is_unedited_control').iterrows():
+                for _, row in amplicon_rows.query('`condition:is_unedited_control`').iterrows():
                     augmented_sample_name = f"{row['sample_name']}_{'_'.join(strategy)}"
                     existing_name = Path(row['R1']).name
                     existing_name_stem, extension = existing_name.split('.', 1)
@@ -1451,7 +1454,7 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
 
         new_rows = pd.DataFrame(new_rows)        
 
-        existing_unedited_idxs = sample_sheet_df.query('is_unedited_control').index
+        existing_unedited_idxs = sample_sheet_df.query('`condition:is_unedited_control`').index
         sample_sheet_df = pd.concat([sample_sheet_df.drop(existing_unedited_idxs), new_rows])
 
     valid_supplemental_indices = set(knock_knock.target_info.locate_supplemental_indices(base_dir))
