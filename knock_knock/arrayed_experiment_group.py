@@ -362,7 +362,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
             return condition
 
         def full_condition_from_row(row):
-            return tuple(str(row[key]) for key in self.full_condition_keys)
+            return tuple(str(row[key]) if key != 'replicate' else int(row[key]) for key in self.full_condition_keys)
 
         self.full_conditions = [full_condition_from_row(row) for _, row in self.sample_sheet.iterrows()]
 
@@ -908,6 +908,14 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
         else:
             insertion = None
+
+        if self.target_info.pegRNA_programmed_deletion is not None:
+            deletion = self.target_info.pegRNA_programmed_deletion
+
+            outcomes_containing_pegRNA_programmed_edits[str(deletion)] = []
+
+        else:
+            deletion = None
             
         for c, s, d  in self.outcome_fractions.index:
             if c in {'intended edit', 'partial replacement', 'partial edit'}:
@@ -921,6 +929,9 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
                 if insertion is not None and insertion in outcome.insertions:
                     outcomes_containing_pegRNA_programmed_edits[str(insertion)].append((c, s, d))
+
+                if deletion is not None and deletion in outcome.deletions:
+                    outcomes_containing_pegRNA_programmed_edits[str(deletion)].append((c, s, d))
 
         return outcomes_containing_pegRNA_programmed_edits
 
@@ -942,8 +953,11 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
         return fs_df
 
-    def write_pegRNA_conversion_fractions(self):
-        if self.target_info.pegRNA is not None and self.pegRNA_conversion_fractions is not None:
+    @memoized_property
+    def pegRNA_conversion_fractions_by_edit_description(self):
+        if self.target_info.pegRNA is None or self.pegRNA_conversion_fractions is None:
+            return None
+        else:
             def name_to_description(name):
                 return self.target_info.pegRNA_programmed_edit_name_to_description.get(name, name)
 
@@ -955,7 +969,11 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
             new_columns = pd.MultiIndex.from_tuples(new_tuples, names=['sample'] + df.columns.names)
             df.columns = new_columns
 
-            df.T.to_csv(self.fns['pegRNA_conversion_fractions'])
+            return df
+
+    def write_pegRNA_conversion_fractions(self):
+        if self.target_info.pegRNA is not None and self.pegRNA_conversion_fractions is not None:
+            self.pegRNA_conversion_fractions_by_edit_description.T.to_csv(self.fns['pegRNA_conversion_fractions'])
 
     @memoized_with_kwargs
     def deletion_boundaries(self, *, include_simple_deletions=True, include_edit_plus_deletions=False):
