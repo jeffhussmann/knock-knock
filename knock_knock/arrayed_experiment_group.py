@@ -1391,11 +1391,18 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
         orientations = rows['sequencing_start_feature_name'].value_counts().drop('', errors='ignore')
         
         if len(orientations) == 0:
-            raise ValueError(f'No sequencing orientations detected for {keys}')
+            row = rows.iloc[0]
+            target_info_name = make_default_target_info_name(row['amplicon_primers'], row['genome'], row['extra_sequences'])
+            ti = knock_knock.target_info.TargetInfo(base_dir, target_info_name) 
+
+            feature_name = sorted(ti.primers)[0]
+
+            logging.warning(f'No sequencing orientations detected for {keys}, arbitrarily choosing {feature_name}')
+
         else:
             feature_name = orientations.index[0]
 
-            keys_to_feature_name[keys] = feature_name
+        keys_to_feature_name[keys] = feature_name
 
     for i in sample_sheet_df.index:
         sample_sheet_df.loc[i, 'sequencing_start_feature_name'] = keys_to_feature_name[tuple(sample_sheet_df.loc[i, group_keys])]
