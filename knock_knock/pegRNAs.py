@@ -747,15 +747,17 @@ class pegRNA:
         strings = []
 
         for name, details in self.edit_properties['SNVs'].items():
-            strings.append(details['description'])
+            strings.append((details['target_downstream'], details['description']))
 
         for insertion in self.edit_properties['insertions']:
-            strings.append(insertion['description'])
+            strings.append((insertion['start_in_flap'], insertion['description']))
 
         for deletion in self.edit_properties['deletions']: 
             sequence = self.target_downstream_of_nick[deletion[0]:deletion[1] + 1]
             position = deletion[0] + 1
-            strings.append(f'+{position}del{sequence}')
+            strings.append((deletion[0], f'+{position}del{sequence}'))
+
+        strings = [s for p, s in sorted(strings)]
 
         return ','.join(strings)
 
@@ -782,6 +784,35 @@ class pegRNA:
         flipped_propensity = propensity[::-1].translate(str.maketrans('(){}', ')()('))
 
         return flipped_total_bpps, flipped_propensity
+
+    @memoized_property
+    def SNV_string_to_edit_description(self):
+        SNVs = self.SNVs
+
+        SNV_name_to_target_order = {SNV_name: i for i, SNV_name in enumerate(sorted(SNVs[self.target_name]))}
+
+        SNV_names_in_flap_order = sorted(SNVs['flap'], key=lambda SNV_name: SNVs['flap'][SNV_name]['position'])
+        SNV_name_to_flap_order = {SNV_name: i for i, SNV_name in enumerate(SNV_names_in_flap_order)}
+
+        SNV_string_to_edit_description = {}
+
+        for SNV_subset in utilities.powerset(SNVs['flap']):
+            if len(SNV_subset) == 0:
+                continue
+
+            chars = ['_' for _ in SNVs['flap']]
+            for name in SNV_subset:
+                chars[SNV_name_to_target_order[name]] = SNVs[self.target_name][name]['alternative_base']
+            
+            SNV_string = (''.join(chars))
+            
+            subset_in_flap_order = sorted(SNV_subset, key=SNV_name_to_flap_order.get)
+            
+            description = ','.join(SNVs[self.target_name][name]['description'] for name in subset_in_flap_order)
+            
+            SNV_string_to_edit_description[SNV_string] = description
+
+        return SNV_string_to_edit_description
 
 def get_pegRNAs_by_strand(pegRNAs):
     pegRNAs_by_strand = {}
