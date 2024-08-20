@@ -726,7 +726,7 @@ class StackedDiagrams:
             indel = knock_knock.target_info.degenerate_indel_from_string(edit_name)
             # Note: indels are not anchor shifted, so don't need to be un-shifted.
             if indel.kind == 'D':
-                p = indel.starts_ats[0]
+                p = np.mean([indel.possibly_involved_interval.start, indel.possibly_involved_interval.end])
             else:
                 p = indel.starts_afters[0] + 0.5
 
@@ -1009,7 +1009,6 @@ class StackedDiagrams:
             elif category == 'donor' or \
                  category == 'donor + deletion' or \
                  category == 'donor + insertion' or \
-                 (category == 'intended edit' and subcategory == 'deletion') or \
                  category == 'edit + deletion':
 
                 if category == 'donor':
@@ -1761,7 +1760,10 @@ class DiagramGrid:
                 if isinstance(difference_from_condition, str):
                     condition_label = difference_from_condition
                 else:
-                    condition_label = ', '.join(difference_from_condition)
+                    try:
+                        condition_label = ', '.join(difference_from_condition)
+                    except:
+                        condition_label = 'PH'
 
                 title = f'Change (from mean of\n{condition_label} samples)\nin total % incorporation\nacross all outcomes'
 
@@ -2040,6 +2042,8 @@ def make_partial_incorporation_figure(target_info,
                                       difference_from_condition=None,
                                       log2_fold_change_from_condition=None,
                                       heatmap_kwargs=None,
+                                      marker_size=7,
+                                      line_alpha=0.75,
                                       **diagram_kwargs,
                                      ):
 
@@ -2073,8 +2077,6 @@ def make_partial_incorporation_figure(target_info,
     if condition_labels is None:
         condition_labels = {}
 
-    outcome_fractions = outcome_fractions[conditions]
-
     diagram_kwargs.setdefault('draw_all_sequence', 0.1)
 
     if difference_from_condition is not None:
@@ -2085,7 +2087,10 @@ def make_partial_incorporation_figure(target_info,
         outcome_fractions = outcome_fractions.sub(condition_values, axis=0)
 
         if pegRNA_conversion_fractions is not None:
-            pegRNA_conversion_fractions = pegRNA_conversion_fractions.sub(pegRNA_conversion_fractions[difference_from_condition].mean(axis=1), axis=0)
+            means = pegRNA_conversion_fractions[difference_from_condition].mean(axis=1)
+            pegRNA_conversion_fractions = pegRNA_conversion_fractions.sub(means, axis=0)
+
+    outcome_fractions = outcome_fractions[conditions]
 
     color_overrides = {primer_name: 'grey' for primer_name in ti.primers}
 
@@ -2175,7 +2180,8 @@ def make_partial_incorporation_figure(target_info,
             if isinstance(difference_from_condition, str):
                 condition_label = difference_from_condition
             else:
-                condition_label = ', '.join(difference_from_condition)
+                #condition_label = ', '.join(difference_from_condition)
+                condition_label = 'ph'
 
             title = f'Change (from mean of \n{condition_label} samples)\nin % of reads with\nspecific outcome'
 
@@ -2195,9 +2201,9 @@ def make_partial_incorporation_figure(target_info,
                                 outcome_fractions[condition],
                                 transform=transform,
                                 color=condition_colors.get(condition, 'black'),
-                                line_alpha=0.75,
+                                line_alpha=line_alpha,
                                 linewidth=1.5,
-                                markersize=7,
+                                markersize=marker_size,
                                 fill=0,
                                 label=condition_labels.get(condition, condition)
                                )
@@ -2212,9 +2218,9 @@ def make_partial_incorporation_figure(target_info,
                 grid.plot_on_ax('log2_fold_change',
                                 l2fcs[condition],
                                 color=condition_colors.get(condition, 'black'),
-                                line_alpha=0.75,
+                                line_alpha=line_alpha,
                                 linewidth=1.5,
-                                markersize=7,
+                                markersize=marker_size,
                                 fill=0,
                                 label=condition_labels.get(condition, condition)
                                )
