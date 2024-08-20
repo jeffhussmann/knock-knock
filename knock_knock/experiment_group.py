@@ -271,7 +271,9 @@ class ExperimentGroup:
         if min_reads is not None:
             conditions = [c for c in conditions if self.total_valid_reads.loc[c] >= min_reads]
 
-        if condition_labels is None:
+        if condition_labels == 'with keys':
+            condition_labels = self.condition_labels_with_keys
+        elif condition_labels is None:
             condition_labels = self.condition_labels
 
         grid = knock_knock.visualize.stacked.make_partial_incorporation_figure(self.target_info,

@@ -233,6 +233,8 @@ def plot_single_flap_extension_chain_edges(target_info,
                                            side_and_subcategories=None,
                                            annotate_structure=False,
                                            draw_genomic_homology=False,
+                                           title=None,
+                                           title_color=None,
                                           ):
     ti = target_info
 
@@ -413,7 +415,13 @@ def plot_single_flap_extension_chain_edges(target_info,
                 ax.set_xticks(new_ticks)
                 ax.set_xticklabels(new_labels)
 
-            ax_col[0].set_title(f'pegRNA ({pegRNA_name})', color=ti.pegRNA_name_to_color[pegRNA_name])
+            if title is None:
+                title = f'pegRNA ({pegRNA_name})'
+
+            if title_color is None:
+                title_color = ti.pegRNA_name_to_color[pegRNA_name]
+
+            ax_col[0].set_title(title, color=title_color)
             ax_col[0].set_xticklabels([])
 
             ax_col[1].set_xlabel('End of reverse transcribed sequence')
@@ -608,7 +616,13 @@ def plot_single_flap_extension_chain_edges(target_info,
         else:
             ax = axs[0, 0]
 
-        ax.legend(bbox_to_anchor=(1, 1), loc='upper left', ncol=len(exp_sets) // 20 + (1 if len(exp_sets) % 20 != 0 else 0))
+        ax.legend(bbox_to_anchor=(1, 1),
+                  loc='upper left',
+                  ncol=len(exp_sets) // 20 + (1 if len(exp_sets) % 20 != 0 else 0),
+                  prop=dict(
+                      family='monospace',
+                  ),
+                 )
 
     if normalize:
         ylabel = 'Normalized cumulative\npercentage of\nrelevant reads'
