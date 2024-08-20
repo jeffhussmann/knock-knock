@@ -1527,7 +1527,7 @@ class Layout(layout.Categorizer):
         if self.covered_by_primers.is_empty:
             not_covered_by_primers = self.whole_read
         elif self.primer_alignments['left'] and not self.primer_alignments['right']:
-            not_covered_by_primers = interval.Interval(self.covered_by_primers.end, self.whole_read.end)
+            not_covered_by_primers = interval.Interval(self.covered_by_primers.end + 1, self.whole_read.end)
         elif self.primer_alignments['right'] and not self.primer_alignments['left']:
             not_covered_by_primers = interval.Interval(self.whole_read.start, self.covered_by_primers.start - 1)
         else:
