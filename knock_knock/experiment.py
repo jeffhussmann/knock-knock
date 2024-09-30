@@ -643,9 +643,12 @@ class Experiment:
     @memoized_property
     def outcome_fractions(self):
         if self.outcome_counts is None:
-            return None
+            outcome_fractions = None
         else:
-            return self.outcome_counts / self.outcome_counts.sum()
+            outcome_fractions = self.outcome_counts / self.outcome_counts.sum()
+            outcome_fractions.name = self.sample_name 
+
+        return outcome_fractions
 
     @memoized_property
     def common_sequence_to_outcome(self):

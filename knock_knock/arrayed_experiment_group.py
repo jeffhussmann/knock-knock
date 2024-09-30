@@ -615,7 +615,9 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
     @memoized_property
     def total_valid_reads(self):
-        return self.outcome_counts.sum()
+        total_valid_reads = self.outcome_counts.sum()
+        total_valid_reads.name = 'reads'
+        return total_valid_reads
 
     @memoized_property
     def total_reads(self):
