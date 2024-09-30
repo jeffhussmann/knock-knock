@@ -120,6 +120,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             ('hg19',
              'hg38',
              'macFas5',
+             'T2T-MFA8v1.0',
              'mm10',
              'bosTau7',
              'e_coli',

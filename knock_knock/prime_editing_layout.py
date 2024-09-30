@@ -108,6 +108,7 @@ class Layout(layout.Categorizer):
             ('hg19',
              'hg38',
              'macFas5',
+             'T2T-MFA8v1.0',
              'mm10',
              'bosTau7',
              'e_coli',
@@ -2663,6 +2664,7 @@ class Layout(layout.Categorizer):
              draw_protospacers_on_nicked_strand=True,
              **manual_diagram_kwargs,
             ):
+
         label_overrides = manual_diagram_kwargs.pop('label_overrides', {})
         label_offsets = manual_diagram_kwargs.pop('label_offsets', {})
         feature_heights = manual_diagram_kwargs.pop('feature_heights', {})
