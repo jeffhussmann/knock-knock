@@ -156,7 +156,7 @@ class pegRNA:
         mapper = sw.SeedAndExtender(pegRNA_sequence.encode(), 8, header, self.name)
 
         # Note: assumes PBS perfectly matches at least seed_length nts at the nick.
-        for seed_length in [7, 6, 5]:
+        for seed_length in [7, 6, 5, 4]:
             if strand == '+':
                 seed_start = cut_after + 1 - seed_length
                 before_nick_start = 0
