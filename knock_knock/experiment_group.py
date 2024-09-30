@@ -46,9 +46,13 @@ class ExperimentGroup:
 
             'genomic_insertion_length_distributions': self.results_dir / 'genomic_insertion_length_distribution.txt',
              
-            'partial_incorporation_figure': self.results_dir / 'partial_incorporation.pdf',
-            'deletion_boundaries_figure': self.results_dir / 'deletion_boundaries.pdf',
-            'single_flap_rejoining_boundaries_figure': self.results_dir / 'single_flap_rejoining_boundaries.pdf',
+            'partial_incorporation_figure': self.results_dir / 'partial_incorporation.png',
+            'deletion_boundaries_figure': self.results_dir / 'deletion_boundaries.png',
+
+            'single_flap_rejoining_boundaries_figure': self.results_dir / 'single_flap_rejoining_boundaries.png',
+            'single_flap_rejoining_boundaries_figure_normalized': self.results_dir / 'single_flap_rejoining_boundaries_normalized.png',
+            'single_flap_rejoining_boundaries_figure_individual_samples': self.results_dir / 'single_flap_rejoining_boundaries_individual_samples.png',
+            'single_flap_rejoining_boundaries_figure_individual_samples_normalized': self.results_dir / 'single_flap_rejoining_boundaries_individual_samples_normalized.png',
         }
 
     def process(self, generate_example_diagrams=False, num_processes=18, verbose=True, use_logger_thread=False):
@@ -237,22 +241,54 @@ class ExperimentGroup:
     def make_group_figures(self):
         try:
             grid = self.make_partial_incorporation_figure()
-            grid.fig.savefig(self.fns['partial_incorporation_figure'], bbox_inches='tight')
+            grid.fig.savefig(self.fns['partial_incorporation_figure'], dpi=200, bbox_inches='tight')
         except:
             logging.warning(f'Failed to make partial incorporation figure for {self}')
 
         try:
             grid = self.make_deletion_boundaries_figure()
-            grid.fig.savefig(self.fns['deletion_boundaries_figure'], bbox_inches='tight')
+            grid.fig.savefig(self.fns['deletion_boundaries_figure'], dpi=200, bbox_inches='tight')
         except:
             logging.warning(f'Failed to make deletion boundaries figure for {self}')
 
         if len(self.target_info.pegRNAs) == 1:
             try:
-                fig, axs = self.make_single_flap_extension_chain_edge_figure()
-                fig.savefig(self.fns['single_flap_rejoining_boundaries_figure'], bbox_inches='tight')
+                for fn_key, kwargs in [
+                    (
+                        'single_flap_rejoining_boundaries_figure',
+                        dict(
+                            include_genome=False,
+                        ),
+                    ),
+                    (
+                        'single_flap_rejoining_boundaries_figure_normalized',
+                        dict(
+                            include_genome=False,
+                            normalize=True,
+                        ),
+                    ),
+                    (
+                        'single_flap_rejoining_boundaries_figure_individual_samples',
+                        dict(
+                            include_genome=False,
+                            aggregate_replicates=False,
+                        ),
+                    ),
+                    (
+                        'single_flap_rejoining_boundaries_figure_individual_samples_normalized',
+                        dict(
+                            include_genome=False,
+                            aggregate_replicates=False,
+                            normalize=True,
+                        ),
+                    ),
+                ]:
+
+                    fig, axs = self.make_single_flap_extension_chain_edge_figure(**kwargs)
+                    fig.savefig(self.fns[fn_key], dpi=200, bbox_inches='tight')
+
             except:
-                logging.warning(f'Failed to make flap rejoining boundaries figure for {self}')
+                logging.warning(f'Failed to make flap rejoining boundaries figures for {self}')
 
     def make_partial_incorporation_figure(self,
                                           unique_colors=False,
@@ -292,6 +328,7 @@ class ExperimentGroup:
                                         min_reads=None,
                                         conditions=None,
                                         condition_colors=None,
+                                        condition_labels=None,
                                         **kwargs,
                                        ):
         if conditions is None:
@@ -302,6 +339,11 @@ class ExperimentGroup:
 
         if condition_colors is None:
             condition_colors = self.condition_colors(unique=unique_colors)
+
+        if condition_labels == 'with keys':
+            condition_labels = self.condition_labels_with_keys
+        elif condition_labels is None:
+            condition_labels = self.condition_labels
 
         grid = knock_knock.visualize.stacked.make_deletion_boundaries_figure(self.target_info,
                                                                              self.outcome_fractions,

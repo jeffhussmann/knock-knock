@@ -686,6 +686,11 @@ def make_self_contained_zip(base_dir,
 
             add_fn(exp.experiment_group.fns['partial_incorporation_figure'])
             add_fn(exp.experiment_group.fns['deletion_boundaries_figure'])
+
+            add_fn(exp.experiment_group.fns['single_flap_rejoining_boundaries_figure'])
+            add_fn(exp.experiment_group.fns['single_flap_rejoining_boundaries_figure_normalized'])
+            add_fn(exp.experiment_group.fns['single_flap_rejoining_boundaries_figure_individual_samples'])
+            add_fn(exp.experiment_group.fns['single_flap_rejoining_boundaries_figure_individual_samples_normalized'])
             
             add_fn(exp.fns['outcome_browser'])
             add_fn(exp.fns['lengths_figure'])
