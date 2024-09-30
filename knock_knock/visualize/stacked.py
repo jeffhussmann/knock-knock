@@ -1335,16 +1335,37 @@ class DiagramGrid:
                          ax_name,
                          xs,
                          value_source,
+                         transform=None,
+                         interval_sources=None,
+                         interval_alpha=1,
                          marker_alpha=1,
                          line_alpha=0.75,
                          label='',
                          marker='.',
                          **plot_kwargs,
                         ):
+
         plot_kwargs = copy.copy(plot_kwargs)
         plot_kwargs.setdefault('linewidth', 1.5)
         plot_kwargs.setdefault('markersize', 7)
         plot_kwargs.setdefault('color', 'black')
+
+        if transform == 'percentage':
+            transform = lambda f: 100 * f
+        elif transform == 'log10':
+            transform = np.log10
+
+        if transform is not None:
+            # suppress warnings from log of zeros
+            # Using the warnings context manager doesn't work here, maybe because of pandas multithreading.
+            warnings.filterwarnings('ignore')
+
+            value_source = transform(value_source)
+
+            if interval_sources is not None:
+                interval_sources = {k: transform(v) for k, v in interval_sources.items()}
+
+            warnings.resetwarnings()
 
         ax = self.axs_by_name[ax_name]
 
@@ -1352,6 +1373,19 @@ class DiagramGrid:
 
         ax.plot(xs, ys, marker=marker, linestyle='', alpha=marker_alpha, label=label, **plot_kwargs)
         ax.plot(xs, ys, marker=None, linestyle='-', alpha=line_alpha, **plot_kwargs)
+
+        if interval_sources is not None:
+            interval_ys = {
+                side: [interval_sources[side].get(x, np.nan) for x in xs]
+                for side in ['lower', 'upper']
+            }
+
+            for x, lower_y, upper_y in zip(xs, interval_ys['lower'], interval_ys['upper']):
+                ax.plot([x, x], [lower_y, upper_y],
+                        color=plot_kwargs.get('color'),
+                        alpha=interval_alpha,
+                        clip_on=plot_kwargs.get('clip_on', True),
+                       )
 
     def style_frequency_ax(self, name, label_size=8, **kwargs):
         ax = self.axs_by_name.get(name)
@@ -1652,15 +1686,36 @@ class DiagramGrid:
         if 'pegRNA_conversion_fractions' not in self.axs_by_name:
             self.add_ax_above('pegRNA_conversion_fractions', gap=gap, height_multiple=height_multiple)
         
-        for condition, fs in pegRNA_conversion_fractions.items():
-            if conditions is not None and condition not in conditions:
-                continue
+        for condition in conditions:
+            if isinstance(condition, dict):
+                if len(condition) != 1:
+                    raise ValueError
+                
+                color = 'black'
+                label = sorted(condition)[0]
+                keys = condition[label]
+                fs = pegRNA_conversion_fractions[keys].mean(axis=1)
+                stds = pegRNA_conversion_fractions[keys].std(axis=1)
+
+                interval_sources = {
+                    'lower': fs - stds,
+                    'upper': fs + stds,
+                }
+
+            else:
+                fs = pegRNA_conversion_fractions[condition]
+                label = str(condition)
+                color = condition_colors.get(condition, 'black')
+
+                interval_sources = None
 
             self.plot_on_ax_above('pegRNA_conversion_fractions',
                                   fs.index,
-                                  fs * 100,
-                                  label=condition,
-                                  color=condition_colors.get(condition, 'black'),
+                                  fs,
+                                  transform='percentage',
+                                  interval_sources=interval_sources,
+                                  label=label,
+                                  color=color,
                                   **plot_kwargs,
                                  )
 
@@ -1713,8 +1768,11 @@ class DiagramGrid:
     def style_pegRNA_conversion_plot(self,
                                      ax_name='pegRNA_conversion_fractions',
                                      y_max=None,
+                                     y_ticks=None,
                                      difference_from_condition=None,
+                                     difference_from_condition_label=None,
                                     ):
+
         if 'diagram' not in self.axs_by_name or ax_name not in self.axs_by_name:
             return
 
@@ -1733,6 +1791,8 @@ class DiagramGrid:
             y_min = None
 
         ax.set_ylim(y_min, y_max)
+        if y_ticks is not None:
+            ax.set_yticks(y_ticks)
 
         xs = set()
 
@@ -1752,20 +1812,24 @@ class DiagramGrid:
                     alpha = 0.3
                     clip_on = True
 
-                ax.plot(x_bounds, [y for x in x_bounds], linewidth=0.5, clip_on=clip_on, color='black', alpha=alpha)
+                ax.plot(x_bounds,
+                        [y for x in x_bounds],
+                        linewidth=0.5,
+                        clip_on=clip_on,
+                        color='black',
+                        alpha=alpha,
+                       )
 
             if difference_from_condition is None:
                 title = 'Total % incorporation\nat position across\nall outcomes'
             else:
-                if isinstance(difference_from_condition, str):
-                    condition_label = difference_from_condition
-                else:
-                    try:
-                        condition_label = ', '.join(difference_from_condition)
-                    except:
-                        condition_label = 'PH'
+                if difference_from_condition_label is None:
+                    if isinstance(difference_from_condition, str):
+                        difference_from_condition_label = difference_from_condition
+                    else:
+                        difference_from_condition_label = ', '.join(difference_from_condition)
 
-                title = f'Change (from mean of\n{condition_label} samples)\nin total % incorporation\nacross all outcomes'
+                title = f'Change (from mean of\n{difference_from_condition_label} samples)\nin total % incorporation\nacross all outcomes'
 
             ax.set_ylabel(title, size=12)
             ax.tick_params(labelsize=8)
@@ -1785,6 +1849,8 @@ def make_deletion_boundaries_figure(target_info,
                                     include_insertions=False,
                                     show_log_scale=False,
                                     window=None,
+                                    sort_by_condition=None,
+                                    **kwargs,
                                    ):
     ti = target_info
 
@@ -1839,7 +1905,11 @@ def make_deletion_boundaries_figure(target_info,
         (c, s, d) for (c, s, d), f_row in outcome_fractions.iterrows()
         if max(f_row) > frequency_cutoff
     ]
-    outcomes = outcome_fractions.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
+
+    if sort_by_condition is not None:
+        outcomes = outcome_fractions.loc[outcomes][sort_by_condition].sort_values(ascending=False).index
+    else:
+        outcomes = outcome_fractions.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
 
     color_overrides = {primer_name: 'grey' for primer_name in ti.primers}
 
@@ -1873,6 +1943,7 @@ def make_deletion_boundaries_figure(target_info,
                                                      block_alpha=0.1,
                                                      color_overrides=color_overrides,
                                                      features_to_draw=sorted(ti.primers), 
+                                                     **kwargs,
                                                     )
 
     grid.add_ax('fractions', width_multiple=12, title='% of reads\nwith specific outcome')
@@ -1953,6 +2024,8 @@ def make_deletion_boundaries_figure(target_info,
         for panel in panel_order:
             grid.axs_by_name[panel].set_ylim(0)
 
+    grid.outcome_fractions = outcome_fractions
+
     return grid
 
 def restrict_mismatches_to_window(csd, window_interval, anchor):
@@ -2025,7 +2098,7 @@ def marginalize_over_mismatches_outside_window(outcome_fractions, window_interva
 
 def make_partial_incorporation_figure(target_info,
                                       outcome_fractions,
-                                      pegRNA_conversion_fractions,
+                                      pegRNA_conversion_fractions=None,
                                       conditions=None,
                                       line_conditions=None,
                                       heatmap_conditions=None,
@@ -2037,9 +2110,12 @@ def make_partial_incorporation_figure(target_info,
                                       include_non_programmed_mismatches=True,
                                       include_wild_type=False,
                                       pegRNA_conversion_fractions_y_max=None,
+                                      pegRNA_conversion_fractions_y_ticks=None,
+                                      pegRNA_conversion_fractions_height_multiple=10,
                                       manual_outcomes=None,
                                       perform_marginalization_over_mismatches_outside_window=True,
                                       difference_from_condition=None,
+                                      difference_from_condition_label=None,
                                       log2_fold_change_from_condition=None,
                                       heatmap_kwargs=None,
                                       marker_size=7,
@@ -2090,7 +2166,7 @@ def make_partial_incorporation_figure(target_info,
             means = pegRNA_conversion_fractions[difference_from_condition].mean(axis=1)
             pegRNA_conversion_fractions = pegRNA_conversion_fractions.sub(means, axis=0)
 
-    outcome_fractions = outcome_fractions[conditions]
+    outcome_fractions = outcome_fractions[[c for c in conditions if not isinstance(c, dict)]]
 
     color_overrides = {primer_name: 'grey' for primer_name in ti.primers}
 
@@ -2158,9 +2234,11 @@ def make_partial_incorporation_figure(target_info,
                 (include_wild_type and (c, s) == ('wild type', 'clean'))
             )
 
+        above_threshold = outcome_fractions.abs().max(axis=1) >= frequency_cutoff
+
         outcomes = [
-            (c, s, d) for (c, s, d), f_row in outcome_fractions.iterrows()
-            if outcome_filter(c, s, d) and f_row.abs().max() > frequency_cutoff
+            (c, s, d) for c, s, d in outcome_fractions[above_threshold].index
+            if outcome_filter(c, s, d)
         ]
         outcomes = outcome_fractions.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
 
@@ -2177,13 +2255,13 @@ def make_partial_incorporation_figure(target_info,
         if difference_from_condition is None:
             title = '% of reads with\nspecific outcome'
         else:
-            if isinstance(difference_from_condition, str):
-                condition_label = difference_from_condition
-            else:
-                #condition_label = ', '.join(difference_from_condition)
-                condition_label = 'ph'
+            if difference_from_condition_label is None:
+                if isinstance(difference_from_condition, str):
+                    difference_from_condition_label = difference_from_condition
+                else:
+                    difference_from_condition_label = ', '.join(difference_from_condition)
 
-            title = f'Change (from mean of \n{condition_label} samples)\nin % of reads with\nspecific outcome'
+            title = f'Change (from mean of \n{difference_from_condition_label} samples)\nin % of reads with\nspecific outcome'
 
         grid.add_ax('fractions', width_multiple=12, title=title)
 
@@ -2197,15 +2275,34 @@ def make_partial_incorporation_figure(target_info,
 
         for ax, transform in ax_params:
             for condition in line_conditions:
+                if isinstance(condition, dict):
+                    if len(condition) != 1:
+                        raise ValueError
+                    label = sorted(condition)[0]
+                    keys = condition[label]
+                    vs = outcome_fractions[keys].mean(axis=1)
+                    stds = outcome_fractions[keys].std(axis=1)
+                    interval_sources = {
+                        'lower': vs - stds,
+                        'upper': vs + stds,
+                    }
+                    color = 'black'
+                else:
+                    vs = outcome_fractions[condition]
+                    color = condition_colors.get(condition, 'black')
+                    label = condition_labels.get(condition, condition)
+                    interval_sources = None
+
                 grid.plot_on_ax(ax,
-                                outcome_fractions[condition],
+                                vs,
                                 transform=transform,
-                                color=condition_colors.get(condition, 'black'),
+                                interval_sources=interval_sources,
+                                color=color,
                                 line_alpha=line_alpha,
                                 linewidth=1.5,
                                 markersize=marker_size,
                                 fill=0,
-                                label=condition_labels.get(condition, condition)
+                                label=label,
                                )
 
         if log2_fold_change_from_condition is not None:
@@ -2247,13 +2344,16 @@ def make_partial_incorporation_figure(target_info,
 
         if pegRNA_conversion_fractions is not None:
             grid.plot_pegRNA_conversion_fractions_above(pegRNA_conversion_fractions,
-                                                        conditions=conditions,
+                                                        conditions=line_conditions,
                                                         condition_colors=condition_colors,
+                                                        height_multiple=pegRNA_conversion_fractions_height_multiple,
                                                        )
 
             grid.style_pegRNA_conversion_plot('pegRNA_conversion_fractions',
                                               difference_from_condition=difference_from_condition,
                                               y_max=pegRNA_conversion_fractions_y_max,
+                                              y_ticks=pegRNA_conversion_fractions_y_ticks,
+                                              difference_from_condition_label=difference_from_condition_label,
                                              )
 
         if log2_fold_change_from_condition is None:
@@ -2263,6 +2363,6 @@ def make_partial_incorporation_figure(target_info,
             legend_ax = grid.ordered_axs[-2]
             bbox_to_anchor = (1, 0)
         
-        legend_ax.legend(bbox_to_anchor=bbox_to_anchor)
+        legend_ax.legend(bbox_to_anchor=bbox_to_anchor, loc='upper left')
 
         return grid
