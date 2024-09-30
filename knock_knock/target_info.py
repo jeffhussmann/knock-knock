@@ -413,6 +413,10 @@ class TargetInfo:
         return pegRNAs
 
     @memoized_property
+    def pegRNAs_dict(self):
+        return {pegRNA.name: pegRNA for pegRNA in self.pegRNAs}
+
+    @memoized_property
     def pegRNA(self):
         if len(self.pegRNAs) != 1:
             return None
@@ -1829,7 +1833,7 @@ class TargetInfo:
             SNVs = results['SNVs']
 
         else:
-            raise ValueError
+            SNVs = None
 
         return SNVs
 
