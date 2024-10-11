@@ -118,10 +118,13 @@ class BoundaryProperties:
             return None, None
 
         xs = np.arange(min(counts), max(counts) + 1)
-        ys = np.array([counts[x] for x in xs]) / self.total_outcomes * 100
+        ys = np.array([counts[x] for x in xs]) / max(self.total_outcomes, 1) * 100
 
         if normalize:
-            ys = ys / ys.sum() * 100
+            denominator = ys.sum()
+            if denominator == 0:
+                denominator = 1
+            ys = ys / denominator * 100
 
         if cumulative:
             if from_right:
