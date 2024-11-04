@@ -1546,20 +1546,31 @@ class Layout(layout.Categorizer):
     @memoized_property
     def nonspecific_amplification(self):
         ''' Nonspecific amplification if any of following apply:
+         
          - read is empty after adapter trimming
+         
          - read is short after adapter trimming, in which case inference of
             nonspecific amplification per se is less clear but
             sequence is unlikely to be informative of any other process
+         
          - read starts with an alignment to the expected primer, but
             this alignment does not extend substantially past the primer, and
             the rest of the read is covered by a single alignment to some other
             source that either reaches the end of the read or reaches an
             an alignment to the other primer that does not extend 
             substantially past the primer.
-         - read starts with an alignment to the expected primr, but all
+         
+         - read starts with an alignment to the expected primer, but all
             alignments to the target collectively leave a substantial part
             of the read uncovered, and a single alignment to some other
             source covers the entire read with minimal edit distance.
+         
+         - read starts and ends with alignments to the expected primer, these
+           alignments are spanned by a single alignment to some other source, and
+           the inferred amplicon length is more than 20 nts different from the expected
+           WT amplicon. This covers the case where an amplififcation product has enough
+           homology around the primer for additional sequence to align to the target. 
+        
         '''
         results = {}
 
@@ -1590,12 +1601,15 @@ class Layout(layout.Categorizer):
                     covered_by_al = interval.get_covered(al)
                     if (need_to_cover - covered_by_al).total_length == 0:
                         covering_als.append(al)
-            
+
             else:
                 target_als = [al for al in self.primary_alignments if al.reference_name == self.target_info.target]
                 not_covered_by_any_target_als = self.not_covered_by_primers - interval.get_disjoint_covered(target_als)
 
-                if not_covered_by_any_target_als.total_length >= 100:
+                has_substantial_uncovered = not_covered_by_any_target_als.total_length >= 100
+                has_substantial_length_discrepancy = abs(self.inferred_amplicon_length - self.target_info.amplicon_length) >= 20
+
+                if has_substantial_uncovered or has_substantial_length_discrepancy:
                     ref_seqs = {**self.target_info.reference_sequences}
 
                     # Exclude phiX reads, which can rarely have spurious alignments to the forward primer
