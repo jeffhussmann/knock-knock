@@ -114,6 +114,8 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         ),
         ('uncategorized',
             ('uncategorized',
+             'low quality', 
+             'no alignments detected',
             ),
         ),
         ('nonspecific amplification',
@@ -684,10 +686,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             self.relevant_alignments = [self.longest_phiX_alignment]
 
         elif self.no_alignments_detected:
-            self.category = 'uncategorized'
-            self.subcategory = 'uncategorized'
-            self.details = 'n/a'
-            self.outcome = None
+            self.register_uncategorized()
 
         elif self.is_intended_or_partial_replacement:
             self.register_intended_replacement()
@@ -734,9 +733,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                                 raise ValueError(indel.kind)
 
                         elif len(uninteresting_indels) > 1:
-                            self.category = 'uncategorized'
-                            self.subcategory = 'uncategorized'
-                            self.outcome = Outcome('n/a')
+                            self.register_uncategorized()
 
                         else:
                             self.subcategory = 'mismatches'
@@ -745,11 +742,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                         self.relevant_alignments = [target_alignment]
 
                 else:
-                    self.category = 'uncategorized'
-                    self.subcategory = 'uncategorized'
-                    self.outcome = Outcome('n/a')
-
-                    self.relevant_alignments = [target_alignment]
+                    self.register_uncategorized()
 
             elif len(interesting_indels) == 1:
                 indel = interesting_indels[0]
@@ -777,10 +770,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                     self.relevant_alignments = [target_alignment]
 
             else: # more than one indel
-                self.category = 'uncategorized'
-                self.subcategory = 'uncategorized'
-                self.details = 'n/a'
-                self.relevant_alignments = self.uncategorized_relevant_alignments
+                self.register_uncategorized()
 
         elif self.duplication_covers_whole_read:
             subcategory, ref_junctions, indels, als_with_donor_SNVs, merged_als = self.duplication
@@ -824,11 +814,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             self.register_incorporation_of_extra_sequence()
 
         else:
-            self.category = 'uncategorized'
-            self.subcategory = 'uncategorized'
-            self.details = 'n/a'
-
-            self.relevant_alignments = self.uncategorized_relevant_alignments
+            self.register_uncategorized()
 
         self.relevant_alignments = sam.make_nonredundant(self.relevant_alignments)
 

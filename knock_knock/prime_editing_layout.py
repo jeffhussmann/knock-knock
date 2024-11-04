@@ -1906,6 +1906,31 @@ class Layout(layout.Categorizer):
 
         self.relevant_alignments = sam.make_nonredundant(alignments)
 
+    def register_uncategorized(self):
+        self.category = 'uncategorized'
+
+        if self.no_alignments_detected:
+            self.subcategory = 'no alignments detected'
+
+        else:
+            num_Ns = Counter(self.seq)['N']
+
+            if num_Ns > 10:
+                self.subcategory = 'low quality'
+
+            elif self.Q30_fractions['all'] < 0.5:
+                self.subcategory = 'low quality'
+
+            elif self.Q30_fractions['second_half'] < 0.5:
+                self.subcategory = 'low quality'
+                
+            else:
+                self.subcategory = 'uncategorized'
+
+        self.outcome = Outcome('n/a')
+
+        self.relevant_alignments = self.uncategorized_relevant_alignments
+
     @memoized_property
     def pegRNA_alignments_cover_target_gap(self):
         meaningful_gap_covers = []
@@ -1940,10 +1965,7 @@ class Layout(layout.Categorizer):
             self.register_nonspecific_amplification()
 
         elif self.no_alignments_detected:
-            self.category = 'uncategorized'
-            self.subcategory = 'no alignments detected'
-            self.details = 'n/a'
-            self.outcome = None
+            self.register_uncategorized()
 
         elif self.aligns_to_phiX:
             self.category = 'phiX'
@@ -1982,9 +2004,7 @@ class Layout(layout.Categorizer):
                                 raise ValueError(indel.kind)
 
                         elif len(uninteresting_indels) > 1:
-                            self.category = 'uncategorized'
-                            self.subcategory = 'uncategorized'
-                            self.outcome = Outcome('n/a')
+                            self.register_uncategorized()
 
                         else:
                             self.subcategory = 'mismatches'
@@ -1993,9 +2013,7 @@ class Layout(layout.Categorizer):
                         self.relevant_alignments = [target_alignment]
 
                 else:
-                    self.category = 'uncategorized'
-                    self.subcategory = 'uncategorized'
-                    self.outcome = Outcome('n/a')
+                    self.register_uncategorized()
 
                     self.relevant_alignments = self.uncategorized_relevant_alignments
 
@@ -2013,10 +2031,7 @@ class Layout(layout.Categorizer):
                             self.register_edit_plus_indel('deletion', [indel])
 
                     else:
-                        self.category = 'uncategorized'
-                        self.subcategory = 'pegRNA SNV with non-pegRNA indel'
-                        self.details = 'n/a'
-                        self.relevant_alignments = self.uncategorized_relevant_alignments
+                        self.register_uncategorized()
 
                 else: # no pegRNA mismatches
                     if len(self.non_pegRNA_mismatches) > 0:
@@ -2046,10 +2061,7 @@ class Layout(layout.Categorizer):
                             self.register_edit_plus_indel('deletion', [indel])
 
                         else:
-                            self.category = 'uncategorized'
-                            self.subcategory = 'uncategorized'
-                            self.details = 'n/a'
-                            self.relevant_alignments = self.uncategorized_relevant_alignments
+                            self.register_uncategorized()
 
                     else:
                         self.category = 'multiple indels'
@@ -2061,10 +2073,7 @@ class Layout(layout.Categorizer):
                         self.relevant_alignments = [target_alignment]
 
                 else:
-                    self.category = 'uncategorized'
-                    self.subcategory = 'uncategorized'
-                    self.details = 'n/a'
-                    self.relevant_alignments = self.uncategorized_relevant_alignments
+                    self.register_uncategorized()
 
         elif self.is_unintended_rejoining:
             self.register_unintended_rejoining()
@@ -2167,25 +2176,7 @@ class Layout(layout.Categorizer):
             self.register_indels_in_original_alignment()
 
         else:
-            self.category = 'uncategorized'
-
-            num_Ns = Counter(self.seq)['N']
-
-            if num_Ns > 10:
-                self.subcategory = 'low quality'
-
-            elif self.Q30_fractions['all'] < 0.5:
-                self.subcategory = 'low quality'
-
-            elif self.Q30_fractions['second_half'] < 0.5:
-                self.subcategory = 'low quality'
-                
-            else:
-                self.subcategory = 'uncategorized'
-
-            self.details = 'n/a'
-
-            self.relevant_alignments = self.uncategorized_relevant_alignments
+            self.register_uncategorized()
 
         self.relevant_alignments = sam.make_nonredundant(self.relevant_alignments)
 
