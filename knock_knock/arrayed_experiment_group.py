@@ -1464,7 +1464,7 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
     groups = {}
     samples = {}
 
-    condition_columns = [column for column in sample_sheet_df.columns if column.startswith('condition:')]
+    condition_columns = [column for column in sample_sheet_df.columns if column.lower().startswith('condition:')]
     shortened_condition_columns = [column[len('condition:'):] for column in condition_columns]
     if 'group' in shortened_condition_columns:
         raise ValueError('"group" is a reserved column name and can\'t be a condition')
