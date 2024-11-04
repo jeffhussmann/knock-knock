@@ -578,7 +578,6 @@ class ReadDiagram():
                          size=self.font_sizes['read_label'],
                         )
 
-
     @memoized_property
     def reference_order(self):
         ti = self.target_info

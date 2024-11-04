@@ -2123,12 +2123,6 @@ def make_partial_incorporation_figure(target_info,
                                       **diagram_kwargs,
                                      ):
 
-    ''' needs access to:
-        target_info
-        outcome_fractions
-        pegRNA_conversion_fractions
-    '''
-
     ti = target_info
 
     if isinstance(outcome_fractions, pd.Series):

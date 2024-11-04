@@ -97,7 +97,13 @@ class InsertionOutcome(Outcome):
         return type(self)(shifted_insertion)
 
 class ProgrammedEditOutcome(Outcome):
-    def __init__(self, SNV_read_bases, non_programmed_target_mismatches_outcome, non_programmed_edit_mismatches_outcome, indels):
+    def __init__(self,
+                 SNV_read_bases,
+                 non_programmed_target_mismatches_outcome,
+                 non_programmed_edit_mismatches_outcome,
+                 indels,
+                ):
+
         self.SNV_read_bases = SNV_read_bases
 
         self.non_programmed_target_mismatches_outcome = non_programmed_target_mismatches_outcome

@@ -1118,6 +1118,7 @@ class TargetInfo:
     @memoized_property
     def wild_type_amplicon_sequence(self):
         seq = self.target_sequence[self.amplicon_interval.start:self.amplicon_interval.end + 1]
+
         if self.sequencing_direction == '-':
             seq = utilities.reverse_complement(seq)
 
