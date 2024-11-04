@@ -744,22 +744,27 @@ class pegRNA:
 
     @memoized_property
     def edit_description(self):
-        strings = []
+        if self.edit_properties['HA_RT'] is None:
+            edit_description = 'no homology'
+        else:
+            strings = []
 
-        for name, details in self.edit_properties['SNVs'].items():
-            strings.append((details['target_downstream'], details['description']))
+            for name, details in self.edit_properties['SNVs'].items():
+                strings.append((details['target_downstream'], details['description']))
 
-        for insertion in self.edit_properties['insertions']:
-            strings.append((insertion['start_in_flap'], insertion['description']))
+            for insertion in self.edit_properties['insertions']:
+                strings.append((insertion['start_in_flap'], insertion['description']))
 
-        for deletion in self.edit_properties['deletions']: 
-            sequence = self.target_downstream_of_nick[deletion[0]:deletion[1] + 1]
-            position = deletion[0] + 1
-            strings.append((deletion[0], f'+{position}del{sequence}'))
+            for deletion in self.edit_properties['deletions']: 
+                sequence = self.target_downstream_of_nick[deletion[0]:deletion[1] + 1]
+                position = deletion[0] + 1
+                strings.append((deletion[0], f'+{position}del{sequence}'))
 
-        strings = [s for p, s in sorted(strings)]
+            strings = [s for p, s in sorted(strings)]
 
-        return ','.join(strings)
+            edit_description = ','.join(strings)
+
+        return edit_description
 
     @memoized_property
     def RTT_structure(self):
