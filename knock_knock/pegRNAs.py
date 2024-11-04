@@ -320,7 +320,7 @@ class pegRNA:
 
         alignments = aligner.align(self.intended_flap_sequence, self.target_downstream_of_nick)
 
-        min_aligned_nts = 5
+        min_aligned_nts = min(len(self.intended_flap_sequence), 5)
         best_alignment = alignments[0]
         gaps, identities, mismatches = best_alignment.counts()
         if identities + mismatches < min_aligned_nts:
