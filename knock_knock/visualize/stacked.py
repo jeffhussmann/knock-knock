@@ -2009,6 +2009,7 @@ def make_deletion_boundaries_figure(target_info,
                                     include_simple_deletions=True,
                                     include_edit_plus_deletions=True,
                                     include_insertions=False,
+                                    include_wild_type=False,
                                     show_log_scale=False,
                                     window=None,
                                     sort_by_condition=None,
@@ -2050,6 +2051,11 @@ def make_deletion_boundaries_figure(target_info,
         if (c, s) == ('edit + indel', 'deletion')
     ] 
 
+    wild_type = [
+        (c, s, d) for c, s, d in outcome_fractions.index
+        if c == 'wild type'
+    ] 
+
     to_concat = []
 
     if include_simple_deletions and deletions is not None:
@@ -2060,6 +2066,9 @@ def make_deletion_boundaries_figure(target_info,
 
     if include_insertions and insertions is not None:
         to_concat.append(insertions)
+
+    if include_wild_type:
+        to_concat.append(outcome_fractions.loc[wild_type])
 
     outcome_fractions = pd.concat(to_concat)
 
