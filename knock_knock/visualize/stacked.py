@@ -2291,6 +2291,7 @@ def make_partial_incorporation_figure(target_info,
                                       heatmap_kwargs=None,
                                       marker_size=7,
                                       line_alpha=0.75,
+                                      legend_kwargs=None,
                                       **diagram_kwargs,
                                      ):
 
@@ -2317,6 +2318,9 @@ def make_partial_incorporation_figure(target_info,
 
     if condition_labels is None:
         condition_labels = {}
+
+    if legend_kwargs is None:
+        legend_kwargs = {}
 
     diagram_kwargs.setdefault('draw_all_sequence', 0.1)
 
@@ -2527,7 +2531,10 @@ def make_partial_incorporation_figure(target_info,
         else:
             legend_ax = grid.ordered_axs[-2]
             bbox_to_anchor = (1, 0)
+
+        legend_kwargs.setdefault('bbox_to_anchor', bbox_to_anchor)
+        legend_kwargs.setdefault('loc', 'upper left')
         
-        legend_ax.legend(bbox_to_anchor=bbox_to_anchor, loc='upper left')
+        legend_ax.legend(**legend_kwargs)
 
         return grid
