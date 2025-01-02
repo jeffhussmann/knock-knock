@@ -594,7 +594,7 @@ class pegRNA:
 
         if len(self.edit_properties['deletions']) > 0:
             if len(self.edit_properties['deletions']) > 1:
-                logging.warning('multiple deletions')
+                logging.warning(f'Inferred edit for {self.name} has multiple deletions')
 
             deletion = self.edit_properties['deletions'][0]
             starts['target', 'deletion'], ends['target', 'deletion'] = sorted(map(convert_downstream_of_nick_to_target_coordinates, deletion))

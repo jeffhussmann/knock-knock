@@ -313,7 +313,7 @@ class Experiment:
                 missing_file = True
 
         if missing_file:
-            logging.warning(f'{self.batch_name}, {self.sample_name} {read_type} not found')
+            logging.warning(f'{self.batch_name}, {self.sample_name} {read_type} {fn_source} not found')
             reads = []
         else:
             reads = fastq.reads(fn_source, up_to_space=True)
