@@ -650,6 +650,14 @@ class Experiment:
 
         return outcome_fractions
 
+    @memoized_with_kwargs
+    def deletion_boundaries(self, *, include_simple_deletions=True, include_edit_plus_deletions=False):
+        return knock_knock.outcome.extract_deletion_boundaries(self.target_info,
+                                                               self.outcome_fractions,
+                                                               include_simple_deletions=include_simple_deletions,
+                                                               include_edit_plus_deletions=include_edit_plus_deletions,
+                                                              )
+
     @memoized_property
     def common_sequence_to_outcome(self):
         return {}

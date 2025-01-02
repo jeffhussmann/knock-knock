@@ -463,3 +463,60 @@ def add_directionalities_to_deletions(outcomes, target_info):
         combined_categories.append(combined_category)
 
     return combined_categories
+
+def extract_deletion_boundaries(target_info,
+                                outcome_fractions,
+                                include_simple_deletions=True,
+                                include_edit_plus_deletions=False,
+                               ):
+
+    if isinstance(outcome_fractions, pd.Series):
+        outcome_fractions = outcome_fractions.to_frame()
+
+    deletions = [
+        (c, s, d) for c, s, d in outcome_fractions.index
+        if (include_simple_deletions and c == 'deletion')
+        or (include_edit_plus_deletions and (c, s) == ('edit + indel', 'deletion'))
+    ]
+
+    deletion_fractions = outcome_fractions.loc[deletions]
+    index = np.arange(len(target_info.target_sequence))
+    columns = deletion_fractions.columns
+
+    fraction_removed = np.zeros((len(index), len(columns)))
+    starts = np.zeros_like(fraction_removed)
+    stops = np.zeros_like(fraction_removed)
+
+    for (c, s, d), row in deletion_fractions.iterrows():
+        # Undo anchor shift to make coordinates relative to full target sequence.
+        if c == 'deletion':
+            deletion = DeletionOutcome.from_string(d).undo_anchor_shift(target_info.anchor).deletion
+        elif c == 'edit + indel':
+            deletions = ProgrammedEditOutcome.from_string(d).undo_anchor_shift(target_info.anchor).deletions
+            if len(deletions) != 1:
+                raise NotImplementedError
+            else:
+                deletion = deletions[0]
+        else:
+            raise ValueError
+        
+        per_possible_start = row.values / len(deletion.starts_ats)
+        
+        for start, stop in zip(deletion.starts_ats, deletion.ends_ats):
+            deletion_slice = slice(start, stop + 1)
+
+            fraction_removed[deletion_slice] += per_possible_start
+            starts[start] += per_possible_start
+            stops[stop] += per_possible_start
+
+    fraction_removed = pd.DataFrame(fraction_removed, index=index, columns=columns)
+    starts = pd.DataFrame(starts, index=index, columns=columns)
+    stops = pd.DataFrame(stops, index=index, columns=columns)
+
+    deletion_boundaries = {
+        'fraction_removed': fraction_removed,
+        'starts': starts,
+        'stops': stops,
+    }
+
+    return deletion_boundaries

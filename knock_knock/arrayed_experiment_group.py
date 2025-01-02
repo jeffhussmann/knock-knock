@@ -877,54 +877,11 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
     @memoized_with_kwargs
     def deletion_boundaries(self, *, include_simple_deletions=True, include_edit_plus_deletions=False):
-        ti = self.target_info
-
-        deletions = [
-            (c, s, d) for c, s, d in self.outcome_fractions.index
-            if (include_simple_deletions and c == 'deletion')
-            or (include_edit_plus_deletions and (c, s) == ('edit + indel', 'deletion'))
-        ]
-
-        deletion_fractions = self.outcome_fractions.loc[deletions]
-        index = np.arange(len(ti.target_sequence))
-        columns = deletion_fractions.columns
-
-        fraction_removed = np.zeros((len(index), len(columns)))
-        starts = np.zeros_like(fraction_removed)
-        stops = np.zeros_like(fraction_removed)
-
-        for (c, s, d), row in deletion_fractions.iterrows():
-            # Undo anchor shift to make coordinates relative to full target sequence.
-            if c == 'deletion':
-                deletion = knock_knock.outcome.DeletionOutcome.from_string(d).undo_anchor_shift(ti.anchor).deletion
-            elif c == 'edit + indel':
-                deletions = knock_knock.outcome.ProgrammedEditOutcome.from_string(d).undo_anchor_shift(ti.anchor).deletions
-                if len(deletions) != 1:
-                    raise NotImplementedError
-                else:
-                    deletion = deletions[0]
-            else:
-                raise ValueError
-            
-            per_possible_start = row.values / len(deletion.starts_ats)
-            
-            for start, stop in zip(deletion.starts_ats, deletion.ends_ats):
-                deletion_slice = slice(start, stop + 1)
-
-                fraction_removed[deletion_slice] += per_possible_start
-                starts[start] += per_possible_start
-                stops[stop] += per_possible_start
-
-        fraction_removed = pd.DataFrame(fraction_removed, index=index, columns=columns)
-        starts = pd.DataFrame(starts, index=index, columns=columns)
-        stops = pd.DataFrame(stops, index=index, columns=columns)
-
-        deletion_boundaries = {
-            'fraction_removed': fraction_removed,
-            'starts': starts,
-            'stops': stops,
-        }
-        return deletion_boundaries
+        return knock_knock.outcome.extract_deletion_boundaries(self.target_info,
+                                                               self.outcome_fractions,
+                                                               include_simple_deletions=include_simple_deletions,
+                                                               include_edit_plus_deletions=include_edit_plus_deletions,
+                                                              )
 
     def explore(self, **kwargs):
         import knock_knock.explore
