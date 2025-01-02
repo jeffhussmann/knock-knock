@@ -60,6 +60,7 @@ class Batch:
         self.group_descriptions = pd.read_csv(self.group_descriptions_fn, index_col='group').replace({np.nan: None})
 
         self.fns = {
+            'performance_metrics': self.results_dir / 'performance_metrics.csv',
             'group_name_to_sanitized_group_name': self.results_dir / 'group_name_to_sanitized_group_name.csv',
         }
 
@@ -86,6 +87,9 @@ class Batch:
             table = self.group_descriptions['sanitized_group_name']
             self.results_dir.mkdir(exist_ok=True, parents=True)
             table.to_csv(self.fns['group_name_to_sanitized_group_name'])
+
+    def write_performance_metrics(self):
+        self.performance_metrics.to_csv(self.fns['performance_metrics'])
 
     def group(self, group_name):
         return ArrayedExperimentGroup(self.base_dir,
@@ -242,7 +246,34 @@ class Batch:
         counts.index.names = ['group'] + counts.index.names[1:]
         
         return counts
-    
+
+    @memoized_property
+    def performance_metrics(self):
+        cat_ps = self.outcome_fractions(level='category').T * 100
+
+        individual_columns = [
+            'wild type',
+            'intended edit',
+            'partial edit',
+        ]
+
+        individual_column_ps = cat_ps.reindex(columns=individual_columns, fill_value=0)
+
+        individual_column_ps.columns = [f'{n} %' for n in individual_column_ps.columns]
+
+        unintended = 100 - individual_column_ps.sum(axis=1)
+        unintended.name = 'all unintended edits %'
+
+        total_reads = self.total_reads(only_relevant=False).copy()
+        total_reads.name = 'total reads'
+
+        total_relevant_reads = self.total_reads(only_relevant=True).copy()
+        total_relevant_reads.name = 'total relevant reads'
+
+        combined = pd.concat([total_reads, total_relevant_reads, individual_column_ps, unintended], axis=1)
+
+        return combined
+
 def get_batch(base_dir, batch_name, progress=None, **kwargs):
     group_dir = Path(base_dir) / 'data' / batch_name
     group_descriptions_fn = group_dir / 'group_descriptions.csv'
@@ -330,7 +361,8 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
             self.condition_keys = []
         else:
             self.condition_keys = self.description['condition_keys'].split(';')
-        self.full_condition_keys = tuple(self.condition_keys + ['replicate'])
+
+        self.full_condition_keys = tuple(self.condition_keys + ['replicate', 'sample_name'])
 
         if baseline_condition is not None:
             self.baseline_condition = baseline_condition
@@ -355,7 +387,19 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
             return condition
 
         def full_condition_from_row(row):
-            return tuple(str(row[key]) if key != 'replicate' else int(row[key]) for key in self.full_condition_keys)
+            full_condition = []
+
+            for key in self.full_condition_keys:
+                if key == 'replicate':
+                    value = int(row[key])
+                elif key == 'sample_name':
+                    value = row.name
+                else:
+                    value = row[key]
+
+                full_condition.append(value)
+
+            return tuple(full_condition)
 
         self.full_conditions = [full_condition_from_row(row) for _, row in self.sample_sheet.iterrows()]
 

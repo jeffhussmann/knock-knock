@@ -14,7 +14,6 @@ import nbformat.v4 as nbf
 import PIL
 import tqdm
 
-import knock_knock.experiment
 import knock_knock.svg
 
 totals_all_row_label = (' ', 'Total reads')
@@ -37,6 +36,7 @@ def load_counts(base_dir,
         exps = knock_knock.arrayed_experiment_group.get_all_experiments(base_dir, conditions=conditions) 
 
     else:
+        import knock_knock.experiment
         exps = knock_knock.experiment.get_all_experiments(base_dir, conditions, groups_to_exclude=groups_to_exclude)
 
     counts = {}
@@ -92,39 +92,6 @@ def load_counts(base_dir,
         df = df.sort_index(axis=1)
 
     return df
-
-def calculate_performance_metrics(base_dir, conditions=None, arrayed=False):
-    full_counts = load_counts(base_dir, conditions=conditions, arrayed=arrayed)
-    counts = full_counts.drop([totals_all_row_label, totals_relevant_row_label], axis='index', errors='ignore').groupby(level=0).sum()
-
-    not_real_cell_categories = [
-        'malformed layout',
-    ]
-
-    real_cells = counts.drop(not_real_cell_categories, errors='ignore')
-
-    all_edit_categories = [cat for cat in real_cells.index if cat != 'WT']
-
-    all_integration_categories = [
-        'HDR',
-        'blunt misintegration',
-        'complex misintegration',
-        'concatenated misintegration',
-        'incomplete HDR',
-    ]
-
-    # reindex to handle possibly missing keys
-    HDR_counts = real_cells.reindex(['HDR'], fill_value=0).loc['HDR']
-    edit_counts = real_cells.reindex(all_edit_categories, fill_value=0)
-    integration_counts = real_cells.reindex(all_integration_categories, fill_value=0)
-
-    performance_metrics = pd.DataFrame({
-        'HDR_rate': HDR_counts / real_cells.sum(),
-        'specificity_edits': HDR_counts / edit_counts.sum(),
-        'specificity_integrations': HDR_counts / integration_counts.sum(),
-    })
-
-    return performance_metrics
 
 def png_bytes_to_URI(png_bytes):
     encoded = base64.b64encode(png_bytes).decode('UTF-8')
@@ -655,12 +622,6 @@ def make_self_contained_zip(base_dir,
                      )
         fns_to_zip.add(html_fn)
 
-    logging.info('Generating performance metrics...')
-    pms_fn = fn_prefix.parent / (f'{fn_prefix.name}_performance_metrics.csv')
-    pms = calculate_performance_metrics(base_dir, conditions, arrayed=arrayed)
-    pms.to_csv(pms_fn)
-    fns_to_zip.add(pms_fn)
-
     if arrayed:
         import knock_knock.arrayed_experiment_group
         exps = knock_knock.arrayed_experiment_group.get_all_experiments(base_dir, conditions=conditions)
@@ -682,6 +643,8 @@ def make_self_contained_zip(base_dir,
                         fns_to_zip.add(fn)
 
             add_fn(exp.experiment_group.batch.fns['group_name_to_sanitized_group_name'])
+            add_fn(exp.experiment_group.batch.fns['performance_metrics'])
+
             add_fn(exp.experiment_group.fns['pegRNA_conversion_fractions'])
 
             add_fn(exp.experiment_group.fns['partial_incorporation_figure_high_threshold'])
