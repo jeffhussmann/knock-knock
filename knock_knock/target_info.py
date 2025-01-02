@@ -1731,7 +1731,20 @@ class TargetInfo:
 
     @memoized_property
     def pegRNA_name_to_side_of_read(self):
-        return utilities.reverse_dictionary(self.pegRNA_names_by_side_of_read)
+        if len(self.pegRNAs) <= 2:
+            pegRNA_name_to_side_of_read = utilities.reverse_dictionary(self.pegRNA_names_by_side_of_read)
+        else:
+            pegRNA_name_to_side_of_read = {}
+
+            for pegRNA in self.pegRNAs:
+                if pegRNA.strand == self.sequencing_direction:
+                    side = 'left'
+                else:
+                    side = 'right'
+
+                pegRNA_name_to_side_of_read[pegRNA.name] = side
+
+        return pegRNA_name_to_side_of_read
 
     @memoized_property
     def pegRNA_name_to_color(self):
