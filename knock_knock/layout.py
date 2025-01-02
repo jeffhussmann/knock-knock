@@ -274,7 +274,6 @@ class Categorizer:
             cropped_right_al = sam.crop_al_to_query_int(right_al, switch_interval.start + 1, self.whole_read.end)
             right_possible_contribution_past_overlap = interval.get_covered(cropped_right_al) & right_of_feature
 
-
             overlap_reaches_read_end = right_of_feature.is_empty
 
             # Heuristic: if an optimal switch point occurs in the shared feature,
@@ -402,6 +401,39 @@ class Categorizer:
             extended_al = None
 
         return extended_al
+
+    def edits(self, al):
+        return edit_positions(al, self.target_info.reference_sequences).sum()
+
+    def als_with_min_edits(self, als):
+        decorated_als = sorted([(self.edits(al), al) for al in als], key=lambda t: t[0])
+        
+        if len(decorated_als) > 0:
+            min_edits, _ = decorated_als[0]
+        else:
+            min_edits = None
+
+        return [al for edits, al in decorated_als if edits == min_edits]
+
+    def als_with_max_length(self, als):
+        decorated_als = sorted([(al.query_alignment_length, al) for al in als], key=lambda t: t[0], reverse=True)
+        
+        if len(decorated_als) > 0:
+            max_length, _ = decorated_als[0]
+        else:
+            max_length = None
+
+        return [al for length, al in decorated_als if length == max_length]
+
+    def als_with_max_length_minus_edits(self, als):
+        decorated_als = sorted([(al.query_alignment_length - self.edits(al), al) for al in als], key=lambda t: t[0], reverse=True)
+        
+        if len(decorated_als) > 0:
+            max_length_minus_edits, _ = decorated_als[0]
+        else:
+            max_length_minus_edits = None
+
+        return [al for length_minus_edits, al in decorated_als if length_minus_edits == max_length_minus_edits]
 
     def realign_edges_to_primers(self, read_side):
         if self.seq is None:
