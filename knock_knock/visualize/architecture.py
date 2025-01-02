@@ -1539,11 +1539,16 @@ class ReadDiagram():
 
         if self.draw_cut_afters:
             if ref_name == ti.target:
+                cut_after_x_and_strands = set()
+
                 for cut_after_name, cut_after in ti.cut_afters.items():
                     cut_after_x = ref_p_to_x(cut_after + 0.5)
 
                     name, strand = cut_after_name.rsplit('_', 1)
 
+                    cut_after_x_and_strands.add((cut_after_x, strand))
+
+                for cut_after_x, strand in cut_after_x_and_strands:
                     cut_y_bottom = ref_y - self.feature_line_width
                     cut_y_middle = ref_y
                     cut_y_top = ref_y + self.feature_line_width
