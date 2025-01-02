@@ -34,6 +34,7 @@ class StackedDiagrams:
     draw_insertion_degeneracy: bool = True
     draw_perfect_MH: bool = True
     draw_wild_type_on_top: bool = False
+    draw_pegRNA_names: bool = True
     features_to_draw: Any = field(default_factory=list)
     flip_if_reverse: bool = True
     flip_MH_deletion_boundaries: bool = False
@@ -795,8 +796,25 @@ class StackedDiagrams:
         # xs go from the 5' end to the 3' end of the PBS-covered part of the protospacer.
         if self.guide[source_name].strand == '+':
             xs = start + np.arange(len(PBS_seq))
+
         else:
             xs = end - np.arange(len(PBS_seq))
+
+        if self.flip[source_name]:
+            x = max(xs)
+        else:
+            x = min(xs)
+
+        if self.draw_pegRNA_names:
+            self.ax.annotate(pegRNA_name,
+                             xy=(x, y),
+                             xycoords='data',
+                             xytext=(-15, 0),
+                             textcoords='offset points',
+                             annotation_clip=False,
+                             va='center',
+                             ha='right',
+                            )
 
         # If the reverse of the protospacer is being drawn, need to flip (back) PBS_seq.
         if (self.flip[source_name] and PBS.strand == '+') or (not self.flip[source_name] and PBS.strand == '-'):
