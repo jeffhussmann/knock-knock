@@ -7,6 +7,7 @@ import pandas as pd
 
 def plot_outcome_stratified_lengths(outcome_stratified_lengths,
                                     categorizer,
+                                    level='subcategory',
                                     length_ranges=None,
                                     x_lims=None,
                                     min_total_to_label=0.1,
@@ -24,16 +25,17 @@ def plot_outcome_stratified_lengths(outcome_stratified_lengths,
     if expected_lengths is None:
         expected_lengths = {}
 
-    length_arrays = outcome_stratified_lengths.outcome_length_arrays
+    lengths_df = outcome_stratified_lengths.lengths_df(level=level)
+
     total_reads = outcome_stratified_lengths.total_reads
-    highest_points = outcome_stratified_lengths.outcome_highest_points(smooth_window=smooth_window)
-    outcome_to_color = outcome_stratified_lengths.outcome_to_color(smooth_window=smooth_window)
+    highest_points = outcome_stratified_lengths.highest_points(level=level, smooth_window=smooth_window)
+    outcome_to_color = outcome_stratified_lengths.outcome_to_color(level=level, smooth_window=smooth_window)
 
     if total_reads == 0:
         return
 
     if x_lims is None:
-        ys = list(length_arrays.values())[0]
+        ys = lengths_df.columns
         x_max = int(len(ys) * 1.005)
         x_lims = (0, x_max)
 
@@ -76,7 +78,7 @@ def plot_outcome_stratified_lengths(outcome_stratified_lengths,
 
     y_maxes = []
 
-    listed_order = sorted(length_arrays, key=categorizer.order)
+    listed_order = sorted(lengths_df.index, key=categorizer.order)
 
     non_highlight_color = 'grey'
 
@@ -84,7 +86,7 @@ def plot_outcome_stratified_lengths(outcome_stratified_lengths,
         high_enough_to_show = []
 
         for outcome in listed_order:
-            lengths = length_arrays[outcome]
+            lengths = lengths_df.loc[outcome]
             total_fraction = lengths.sum() / total_reads
             window = smooth_window * 2 + 1
             smoothed_lengths = pd.Series(lengths).rolling(window=window, center=True, min_periods=1).sum()
@@ -109,11 +111,15 @@ def plot_outcome_stratified_lengths(outcome_stratified_lengths,
                     alpha = 0.05
                     gid = f'line_nonhighlighted_05_{sanitized_string}_{panel_i}'
 
-            category, subcategory = outcome
+            if isinstance(outcome, str):
+                outcome_for_label = outcome
+            else:
+                category, subcategory = outcome
+                outcome_for_label = f'{category}: {subcategory}'
 
             if total_fraction * 100 > min_total_to_label:
                 high_enough_to_show.append(outcome)
-                label = f'{total_fraction:6.2%} {category}: {subcategory}'
+                label = f'{total_fraction:6.2%} {outcome_for_label}'
             else:
                 label = None
 

@@ -322,7 +322,7 @@ class Experiment:
     
     @memoized_property
     def read_lengths(self):
-        return self.outcome_stratified_lengths.lengths_for_all_outcomes
+        return self.outcome_stratified_lengths.lengths_for_all_reads
 
     def extract_reads_with_uncommon_sequences(self):
         pass
@@ -370,10 +370,16 @@ class Experiment:
         if outcome is None:
             lengths = self.read_lengths
         else:
-            lengths = self.outcome_stratified_lengths.outcome_length_arrays[outcome]
+            if isinstance(outcome, str):
+                level = 'category'
+            else:
+                level = 'subcategory'
+
+            lengths = self.outcome_stratified_lengths.lengths_df(level=level).loc[outcome]
 
         nonzero, = np.nonzero(lengths)
         ranges = [(i, i) for i in nonzero]
+
         return pd.DataFrame(ranges, columns=['start', 'end'])
     
     def alignment_groups(self, fn_key='bam_by_name', outcome=None, read_type=None):
@@ -949,13 +955,14 @@ class Experiment:
             ys_to_check = all_ys
         else:
             if isinstance(outcome, tuple):
-                outcome_lengths = self.outcome_stratified_lengths.outcome_length_arrays[outcome]
-                color = self.outcome_stratified_lengths.outcome_to_color(smooth_window=self.length_plot_smooth_window)[outcome]
+                level = 'subcategory'
                 label = ': '.join(outcome)
             else:
-                outcome_lengths = sum([v for (c, s), v in self.outcome_stratified_lengths.outcome_length_arrays.items() if c == outcome])
-                color = 'black'
+                level = 'category'
                 label = outcome
+
+            outcome_lengths = self.outcome_stratified_lengths.lengths_df(level=level).loc[outcome]
+            color = self.outcome_stratified_lengths.outcome_to_color(level=level, smooth_window=self.length_plot_smooth_window)[outcome]
 
             outcome_ys = outcome_lengths / self.total_reads
 
