@@ -793,32 +793,16 @@ class StackedDiagrams:
 
         # xs go from the 5' end to the 3' end of the PBS-covered part of the protospacer.
         if self.guide[source_name].strand == '+':
-            xs = start + np.arange(len(PBS_seq))
+            PBS_xs = start + np.arange(len(PBS_seq))
 
         else:
-            xs = end - np.arange(len(PBS_seq))
-
-        if self.flip[source_name]:
-            x = max(xs)
-        else:
-            x = min(xs)
-
-        if self.draw_pegRNA_names:
-            self.ax.annotate(pegRNA_name,
-                             xy=(x, y),
-                             xycoords='data',
-                             xytext=(-15, 0),
-                             textcoords='offset points',
-                             annotation_clip=False,
-                             va='center',
-                             ha='right',
-                            )
+            PBS_xs = end - np.arange(len(PBS_seq))
 
         # If the reverse of the protospacer is being drawn, need to flip (back) PBS_seq.
         if (self.flip[source_name] and PBS.strand == '+') or (not self.flip[source_name] and PBS.strand == '-'):
             PBS_seq = hits.utilities.reverse_complement(PBS_seq)
 
-        for x, b in zip(xs, PBS_seq):
+        for x, b in zip(PBS_xs, PBS_seq):
             self.ax.annotate(b,
                              xy=(x, y),
                              xycoords='data', 
@@ -923,6 +907,25 @@ class StackedDiagrams:
                              annotation_clip=False,
                              ha='center',
                              va='bottom',
+                            )
+
+        if self.draw_pegRNA_names:
+
+            all_xs = list(PBS_xs) + list(RTT_xs)
+
+            if self.flip[source_name]:
+                x = max(all_xs)
+            else:
+                x = min(all_xs)
+
+            self.ax.annotate(pegRNA_name,
+                             xy=(x, y),
+                             xycoords='data',
+                             xytext=(-15, 0),
+                             textcoords='offset points',
+                             annotation_clip=False,
+                             va='center',
+                             ha='right',
                             )
 
         if label_color is not None:
