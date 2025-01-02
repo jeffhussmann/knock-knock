@@ -103,6 +103,8 @@ class pegRNA:
         self.target_sequence = target_sequence
         self.target_bytes = target_sequence.encode()
 
+        self.effector = knock_knock.effector.effectors[self.components['effector']]
+
         self.reference_sequences = {
             self.name: self.components['full_sequence'],
             self.target_name: self.target_sequence,
@@ -134,14 +136,13 @@ class pegRNA:
         protospacer = self.components['protospacer']
         scaffold = self.components['scaffold']
         pegRNA_sequence = self.components['full_sequence']
-        effector = knock_knock.effector.effectors[self.components['effector']]
 
-        target_protospacer_feature = effector.identify_protospacer_in_target(self.target_sequence, protospacer)
+        target_protospacer_feature = self.effector.identify_protospacer_in_target(self.target_sequence, protospacer)
         target_protospacer_feature.attribute['ID'] = self.protospacer_name
         target_protospacer_feature.seqname = self.target_name
         strand = target_protospacer_feature.strand
         
-        cut_afters = effector.cut_afters(target_protospacer_feature)
+        cut_afters = self.effector.cut_afters(target_protospacer_feature)
         try:
             cut_after = cut_afters[strand]
         except KeyError:
@@ -275,12 +276,11 @@ class pegRNA:
     @memoized_property
     def cut_after(self):
         protospacer = self.features[self.target_name, self.protospacer_name]
-        effector = knock_knock.effector.effectors[protospacer.attribute['effector']]
         try:
-            cut_after = effector.cut_afters(protospacer)[protospacer.strand]
+            cut_after = self.effector.cut_afters(protospacer)[protospacer.strand]
         except KeyError:
             # PE nuclease support
-            cut_after = effector.cut_afters(protospacer)['both']
+            cut_after = self.effector.cut_afters(protospacer)['both']
 
         return cut_after
 
