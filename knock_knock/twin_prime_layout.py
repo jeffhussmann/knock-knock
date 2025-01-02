@@ -319,9 +319,24 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             chains[side]['description'] = last_al_to_description[key]
 
             last_index = al_order.index(key)
-            chains[side]['parsimonious_alignments'] = [al for key, al in chains[side]['alignments'].items() if al_order.index(key) <= last_index]
+            chains[side]['parsimonious_alignments'] = [
+                al
+                for key, al in chains[side]['alignments'].items()
+                if al_order.index(key) <= last_index
+            ]
 
             chains[side]['query_covered'] = chains[side]['query_covered_incremental'][key]
+
+        last_als = {
+            side: chains[side]['alignments'][last_parsimonious_key[side]]
+            if last_parsimonious_key[side] != 'none' else None
+            for side in ['left', 'right']
+        }
+
+        cropped_als = sam.crop_to_best_switch_point(last_als['left'], last_als['right'], self.target_info.reference_sequences)
+
+        for side in ['left', 'right']:
+            chains[side]['cropped_last_al'] = cropped_als[side]
 
         # If one chain is absent and the other chain covers the whole read
         # (except possibly 2 nts at either edge), classify the missing side
@@ -427,8 +442,10 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         PBS_end = ti.features[this_side_pegRNA_name, 'PBS'].end
 
         chain = self.extension_chains_by_side[side]
+
         if chain['description'] in ['not seen', 'no target']:
             relevant_edge = None
+
         else:
             if chain['description'] == 'RT\'ed + overlap-extended':
                 if 'second target' in chain['alignments']:
@@ -476,7 +493,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                         relevant_edge = target_PBS.start - al.reference_start
 
                 elif chain['description'] == 'RT\'ed':
-                    al = chain['alignments']['first pegRNA']
+                    al = chain['cropped_last_al']
 
                     relevant_edge = PBS_end - al.reference_start
                 
@@ -511,10 +528,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
     @memoized_property
     def non_programmed_edit_mismatches(self):
-        intended_edit = self.target_info.pegRNA_pair.intended_edit_between_nicks
-
         mismatches_seen = set()
-
 
         for al in self.pegRNA_extension_als_from_either_side_list:
             mismatches = knock_knock.layout.get_mismatch_info(al, self.target_info.reference_sequences)
