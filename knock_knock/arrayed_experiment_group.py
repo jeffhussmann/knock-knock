@@ -33,10 +33,7 @@ class Batch:
     def __init__(self,
                  base_dir,
                  batch_name,
-                 category_groupings=None,
                  baseline_condition=None,
-                 add_pseudocount=False,
-                 only_edited=False,
                  progress=None,
                 ):
 
@@ -53,10 +50,7 @@ class Batch:
 
         self.progress = progress
 
-        self.category_groupings = category_groupings
         self.baseline_condition = baseline_condition
-        self.add_pseudocount = add_pseudocount
-        self.only_edited = only_edited
 
         self.sample_sheet_fn = self.data_dir / 'sample_sheet.csv'
         # Note: set_index after construction is necessary to force dtype=str for the index.
@@ -97,10 +91,7 @@ class Batch:
         return ArrayedExperimentGroup(self.base_dir,
                                       self.batch_name,
                                       group_name,
-                                      category_groupings=self.category_groupings,
                                       baseline_condition=self.baseline_condition,
-                                      add_pseudocount=self.add_pseudocount,
-                                      only_edited=self.only_edited,
                                       progress=self.progress,
                                      )
 
@@ -308,20 +299,13 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
                  base_dir,
                  batch_name,
                  group_name,
-                 category_groupings=None,
                  progress=None,
                  baseline_condition=None,
-                 add_pseudocount=None,
-                 only_edited=False,
                 ):
 
         self.base_dir = Path(base_dir)
         self.batch_name = batch_name
         self.group_name = group_name
-
-        self.category_groupings = category_groupings
-        self.add_pseudocount = add_pseudocount
-        self.only_edited = only_edited
 
         self.group_args = (base_dir, batch_name, group_name)
 
