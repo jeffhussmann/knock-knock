@@ -208,33 +208,42 @@ class Batch:
 
                 shutil.copytree(old_group.target_info.dir, new_target_info_dir)
 
-    @memoized_property
-    def category_fractions(self):
-        fs = {}
+    @memoized_with_kwargs
+    def outcome_counts(self, *, level='details', only_relevant=True):
+        counts = {}
+
         for gn, group in self.groups.items():
             try:
-                fs[gn] = group.category_fractions
+                counts[gn] = group.outcome_counts(level=level, only_relevant=only_relevant)
             except:
-                logging.warning(f'No category fractions for {gn}')
+                logging.warning(f'No read counts for {gn}')
+
+        counts = pd.concat(counts, axis='columns').fillna(0).astype(int).sort_index()
+        counts.columns.names = ['group'] + counts.columns.names[1:]
+        
+        return counts
+
+    @memoized_with_kwargs
+    def outcome_fractions(self, *, level='details', only_relevant=True):
+        fs = {}
+
+        for gn, group in self.groups.items():
+            try:
+                fs[gn] = group.outcome_fractions(level=level, only_relevant=only_relevant)
+            except:
+                logging.warning(f'No read counts for {gn}')
 
         fs = pd.concat(fs, axis='columns').fillna(0).sort_index()
         fs.columns.names = ['group'] + fs.columns.names[1:]
-
+        
         return fs
 
-    @memoized_property
-    def subcategory_fractions(self):
-        fs = {gn: group.subcategory_fractions for gn, group in self.groups.items()}
-        fs = pd.concat(fs, axis='columns').fillna(0).sort_index()
-        fs.columns.names = ['group'] + fs.columns.names[1:]
-        return fs
-
-    @memoized_property
-    def total_valid_reads(self):
+    @memoized_with_kwargs
+    def total_reads(self, *, only_relevant=True):
         counts = {}
         for gn, group in self.groups.items():
             try:
-                counts[gn] = group.total_valid_reads
+                counts[gn] = group.total_reads(only_relevant=only_relevant)
             except:
                 logging.warning(f'No read counts for {gn}')
 
@@ -583,134 +592,127 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         df.columns = [int(c) for c in df.columns]
         return df
 
-    @memoized_property
-    def outcome_counts(self):
-        # Ignore nonspecific amplification products in denominator of any outcome fraction calculations.
-        to_drop = [
-            'nonspecific amplification',
-            #'bad sequence',
-        ]
-
-        # Empirically, overall editing rates can vary considerably across arrayed 
-        # experiments, presumably due to nucleofection efficiency. If self.only_edited
-        # is true, exclude unedited reads from outcome counting.
-        if self.only_edited:
-            to_drop.append('wild type')
-
-        outcome_counts = self.outcome_counts_df(False).drop(to_drop, errors='ignore')
-        
-        # Sort columns to avoid annoying pandas PerformanceWarnings.
-        outcome_counts = outcome_counts.sort_index(axis='columns')
-
-        return outcome_counts
-
-    @memoized_property
-    def outcome_counts_with_bad(self):
+    @memoized_with_kwargs
+    def outcome_counts(self, *, level='details', only_relevant=True):
         outcome_counts = self.outcome_counts_df(False)
-        
+        if only_relevant:
+            # Ignore nonspecific amplification products in denominator of any outcome fraction calculations.
+            to_drop = [
+                'nonspecific amplification',
+                'phiX',
+            ]
+            outcome_counts = outcome_counts.drop(to_drop, errors='ignore')
+
         # Sort columns to avoid annoying pandas PerformanceWarnings.
         outcome_counts = outcome_counts.sort_index(axis='columns')
 
+        if level == 'details':
+            pass
+        else:
+            if level == 'subcategory':
+                keys = ['category', 'subcategory']
+            elif level == 'category':
+                keys = ['category']
+            else:
+                raise ValueError
+
+            outcome_counts = outcome_counts.groupby(keys).sum()
+
         return outcome_counts
 
-    @memoized_property
-    def total_valid_reads(self):
-        total_valid_reads = self.outcome_counts.sum()
-        total_valid_reads.name = 'reads'
-        return total_valid_reads
+    def group_by_condition(self, df):
+        if len(self.condition_keys) == 0:
+            # Supplying a constant function to by means
+            # all columns will be grouped together. Making
+            # this constant value 'all' means that will be
+            # the name of eventual aggregated column. 
+            kwargs = dict(by=lambda x: 'all')
+        else:
+            kwargs = dict(level=self.condition_keys)
 
-    @memoized_property
-    def total_reads(self):
-        return self.outcome_counts_with_bad.sum()
+        return df.T.groupby(**kwargs)
 
-    @memoized_property
-    def outcome_fractions(self):
-        fractions = self.outcome_counts / self.total_valid_reads
+    @memoized_with_kwargs
+    def total_reads(self, *, only_relevant=True):
+        total_reads = self.outcome_counts(only_relevant=only_relevant).sum()
+        total_reads.name = 'reads'
+        return total_reads
+
+    @memoized_with_kwargs
+    def outcome_fractions(self, *, level='details', only_relevant=True):
+        fractions = self.outcome_counts(level=level, only_relevant=only_relevant) / self.total_reads(only_relevant=only_relevant)
         order = fractions[self.baseline_condition].mean(axis='columns').sort_values(ascending=False).index
         fractions = fractions.loc[order]
         return fractions
 
-    @memoized_property
-    def outcome_fractions_with_bad(self):
-        return self.outcome_counts / self.outcome_counts.sum()
+    @memoized_with_kwargs
+    def outcome_fraction_condition_means(self, *, level='details', only_relevant=True):
+        fs = self.outcome_fractions(level=level, only_relevant=only_relevant)
+        return self.group_by_condition(fs).mean().T
 
-    @memoized_property
-    def outcome_fraction_condition_means(self):
-        if len(self.condition_keys) == 0:
-            return self.outcome_fractions.mean(axis='columns')
-        else:
-            return self.outcome_fractions.groupby(axis='columns', level=self.condition_keys).mean()
+    @memoized_with_kwargs
+    def outcome_fraction_baseline_means(self, *, level='details', only_relevant=True):
+        return self.outcome_fraction_condition_means(level=level, only_relevant=only_relevant)[self.baseline_condition]
 
-    @memoized_property
-    def outcome_fraction_baseline_means(self):
-        return self.outcome_fraction_condition_means[self.baseline_condition]
+    @memoized_with_kwargs
+    def outcome_fraction_condition_stds(self, *, level='details', only_relevant=True):
+        fs = self.outcome_fractions(level=level, only_relevant=only_relevant)
+        return self.group_by_condition(fs).std().T
 
-    @memoized_property
-    def outcome_fraction_condition_stds(self):
-        return self.outcome_fractions.groupby(axis='columns', level=self.condition_keys).std()
+    @memoized_with_kwargs
+    def outcomes_by_baseline_frequency(self, *, level='details', only_relevant=True):
+        return self.outcome_fraction_baseline_means(level=level, only_relevant=only_relevant).sort_values(ascending=False).index.values
 
-    @memoized_property
-    def outcomes_by_baseline_frequency(self):
-        return self.outcome_fraction_baseline_means.sort_values(ascending=False).index.values
+    @memoized_with_kwargs
+    def outcome_fraction_differences(self, *, level='details', only_relevant=True):
+        fs = self.outcome_fractions(level=level, only_relevant=only_relevant)
+        means = self.outcome_fraction_baseline_means(level=level, only_relevant=only_relevant)
+        return fs.sub(means, axis=0)
 
-    @memoized_property
-    def outcome_fraction_differences(self):
-        return self.outcome_fractions.sub(self.outcome_fraction_baseline_means, axis=0)
+    @memoized_with_kwargs
+    def outcome_fraction_difference_condition_means(self, *, level='details', only_relevant=True):
+        diffs = self.outcome_fraction_differences(level=level, only_relevant=only_relevant)
+        return self.group_by_condition(diffs).mean().T
 
-    @memoized_property
-    def outcome_fraction_difference_condition_means(self):
-        return self.outcome_fraction_differences.groupby(axis='columns', level=self.condition_keys).mean()
+    @memoized_with_kwargs
+    def outcome_fraction_difference_condition_stds(self, *, level='details', only_relevant=True):
+        diffs = self.outcome_fraction_differences(level=level, only_relevant=only_relevant)
+        return self.group_by_condition(diffs).std().T
 
-    @memoized_property
-    def outcome_fraction_difference_condition_stds(self):
-        return self.outcome_fraction_differences.groupby(axis='columns', level=self.condition_keys).std()
-
-    @memoized_property
-    def log2_fold_changes(self):
+    @memoized_with_kwargs
+    def log2_fold_changes(self, *, level='details', only_relevant=True):
         # Using the warnings context manager doesn't work here, maybe because of pandas multithreading?
         warnings.filterwarnings('ignore')
 
-        fold_changes = self.outcome_fractions.div(self.outcome_fraction_baseline_means, axis=0)
+        fs = self.outcome_fractions(level=level, only_relevant=only_relevant)
+        means = self.outcome_fraction_baseline_means(level=level, only_relevant=only_relevant)
+
+        fold_changes = fs.div(means, axis=0)
         log2_fold_changes = np.log2(fold_changes)
 
         warnings.resetwarnings()
 
         return log2_fold_changes
 
-    @memoized_property
-    def log2_fold_change_condition_means(self):
-        return self.log2_fold_changes.groupby(axis='columns', level=self.condition_keys).mean()
+    @memoized_with_kwargs
+    def log2_fold_change_condition_means(self, *, level='details', only_relevant=True):
+        # Calculate mean in linear space, not log space
+        means = self.outcome_fraction_condition_means(level=level, only_relevant=only_relevant)
+        baseline_means = self.outcome_fraction_baseline_means(level=level, only_relevant=only_relevant)
+        fold_changes = means.div(baseline_means, axis=0)
+        return np.log2(fold_changes)
 
-    @memoized_property
-    def log2_fold_change_condition_stds(self):
-        return self.log2_fold_changes.groupby(axis='columns', level=self.condition_keys).std()
+    @memoized_with_kwargs
+    def log2_fold_change_condition_stds(self, *, level='details', only_relevant=True):
+        # Calculate effective log2 fold change of mean +/- std in linear space
+        means = self.outcome_fraction_condition_means(level=level, only_relevant=only_relevant)
+        stds = self.outcome_fraction_condition_stds(level=level, only_relevant=only_relevant)
+        baseline_means = self.outcome_fraction_baseline_means(level=level, only_relevant=only_relevant)
 
-    @memoized_property
-    def category_fractions(self):
-        fs = self.outcome_fractions.groupby(level='category').sum()
-
-        if self.category_groupings is not None:
-            only_relevant_cats = pd.Index.difference(fs.index, self.category_groupings['not_relevant'])
-            relevant_but_not_specific_cats = pd.Index.difference(only_relevant_cats, self.category_groupings['specific'])
-
-            only_relevant = fs.loc[only_relevant_cats]
-
-            only_relevant_normalized = only_relevant / only_relevant.sum()
-
-            relevant_but_not_specific = only_relevant_normalized.loc[relevant_but_not_specific_cats].sum()
-
-            grouped = only_relevant_normalized.loc[self.category_groupings['specific']]
-            grouped.loc['all others'] = relevant_but_not_specific
-
-            fs = grouped
-
-            if self.add_pseudocount:
-                reads_per_sample = self.outcome_counts.drop(self.category_groupings['not_relevant'], errors='ignore').sum()
-                counts = fs * reads_per_sample
-                counts += 1
-                fs = counts / counts.sum()
-
-        return fs
+        return {
+            'lower': np.log2((means - stds).div(baseline_means, axis=0)),
+            'upper': np.log2((means + stds).div(baseline_means, axis=0)),
+        }
 
     def reassign_outcomes(self, outcomes, reassign_to):
         ''' Returns a copy of category_fractions in which outcome fractions
@@ -730,138 +732,6 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
             cat_fs.loc[reassign_to] += self.outcome_fractions.loc[c, s, d]
 
         return cat_fs
-
-    def group_by_condition(self, df):
-        if len(self.condition_keys) == 0:
-            # Supplying a constant function to by means
-            # all columns will be grouped together. Making
-            # this constant value 'all' means that will be
-            # the name of eventual aggregated column. 
-            kwargs = dict(by=lambda x: 'all')
-        else:
-            kwargs = dict(level=self.condition_keys)
-
-        return df.T.groupby(**kwargs)
-
-    @memoized_property
-    def category_fraction_condition_means(self):
-        return self.group_by_condition(self.category_fractions).mean().T
-
-    @memoized_property
-    def category_fraction_baseline_means(self):
-        return self.category_fraction_condition_means[self.baseline_condition]
-
-    @memoized_property
-    def category_fraction_condition_stds(self):
-        return self.group_by_condition(self.category_fractions).std().T
-
-    @memoized_property
-    def categories_by_baseline_frequency(self):
-        return self.category_fraction_baseline_means.sort_values(ascending=False).index.values
-
-    @memoized_property
-    def category_fraction_differences(self):
-        return self.category_fractions.sub(self.category_fraction_baseline_means, axis=0)
-
-    @memoized_property
-    def category_fraction_difference_condition_means(self):
-        return self.group_by_condition(self.category_fraction_differences).mean().T
-
-    @memoized_property
-    def category_fraction_difference_condition_stds(self):
-        return self.group_by_condition(self.category_fraction_differences).std().T
-
-    @memoized_property
-    def category_log2_fold_changes(self):
-        # Using the warnings context manager doesn't work here, maybe because of pandas multithreading?
-        warnings.filterwarnings('ignore')
-
-        fold_changes = self.category_fractions.div(self.category_fraction_baseline_means, axis=0)
-        log2_fold_changes = np.log2(fold_changes)
-
-        warnings.resetwarnings()
-
-        return log2_fold_changes
-
-    @memoized_property
-    def category_log2_fold_change_condition_means(self):
-        # calculate mean in linear space, not log space
-        fold_changes = self.category_fraction_condition_means.div(self.category_fraction_baseline_means, axis=0)
-        return np.log2(fold_changes)
-
-    @memoized_property
-    def category_log2_fold_change_condition_stds(self):
-        # calculate effective log2 fold change of mean +/- std in linear space
-        means = self.category_fraction_condition_means
-        stds = self.category_fraction_condition_stds
-        baseline_means = self.category_fraction_baseline_means
-        return {
-            'lower': np.log2((means - stds).div(baseline_means, axis=0)),
-            'upper': np.log2((means + stds).div(baseline_means, axis=0)),
-        }
-
-    # TODO: figure out how to avoid this hideous code duplication.
-
-    @memoized_property
-    def subcategory_fractions(self):
-        return self.outcome_fractions.groupby(level=['category', 'subcategory']).sum()
-
-    @memoized_property
-    def subcategory_fraction_condition_means(self):
-        return self.group_by_condition(self.subcategory_fractions).mean().T
-
-    @memoized_property
-    def subcategory_fraction_baseline_means(self):
-        return self.subcategory_fraction_condition_means[self.baseline_condition]
-
-    @memoized_property
-    def subcategory_fraction_condition_stds(self):
-        return self.group_by_condition(self.subcategory_fractions).std().T
-
-    @memoized_property
-    def subcategories_by_baseline_frequency(self):
-        return self.subcategory_fraction_baseline_means.sort_values(ascending=False).index.values
-
-    @memoized_property
-    def subcategory_fraction_differences(self):
-        return self.subcategory_fractions.sub(self.subcategory_fraction_baseline_means, axis=0)
-
-    @memoized_property
-    def subcategory_fraction_difference_condition_means(self):
-        return self.group_by_condition(self.subcategory_fraction_differences).mean().T
-
-    @memoized_property
-    def subcategory_fraction_difference_condition_stds(self):
-        return self.group_by_condition(self.subcategory_fraction_differences).std().T
-
-    @memoized_property
-    def subcategory_log2_fold_changes(self):
-        # Using the warnings context manager doesn't work here, maybe because of pandas multithreading?
-        warnings.filterwarnings('ignore')
-
-        fold_changes = self.subcategory_fractions.div(self.subcategory_fraction_baseline_means, axis=0)
-        log2_fold_changes = np.log2(fold_changes)
-
-        warnings.resetwarnings()
-
-        return log2_fold_changes
-
-    @memoized_property
-    def subcategory_log2_fold_change_condition_means(self):
-        # calculate mean in linear space, not log space
-        fold_changes = self.subcategory_fraction_condition_means.div(self.subcategory_fraction_baseline_means, axis=0)
-        return np.log2(fold_changes)
-
-    @memoized_property
-    def subcategory_log2_fold_change_condition_stds(self):
-        # calculate effective log2 fold change of mean +/- std in linear space
-        means = self.subcategory_fraction_condition_means
-        stds = self.subcategory_fraction_condition_stds
-        baseline_means = self.subcategory_fraction_baseline_means
-        return {
-            'lower': np.log2((means - stds).div(baseline_means, axis=0)),
-            'upper': np.log2((means + stds).div(baseline_means, axis=0)),
-        }
 
     # Duplication of code in pooled_screen
     def donor_outcomes_containing_SNV(self, SNV_name):
