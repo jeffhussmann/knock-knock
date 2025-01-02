@@ -209,12 +209,81 @@ class EfficientBoundaryProperties:
 
     def to_exp_sets(self, columns_to_extract):
         exp_sets = {}
+
         for name, columns, color in columns_to_extract:
             bps = BoundaryProperties()
             bps.total_outcomes = self.counts[columns].sum().sum()
 
             bps.edge_distributions['pegRNA', 'RT\'ed'].update(self.pegRNA_coords[columns].sum(axis=1).to_dict())
             bps.edge_distributions['target', 'not RT\'ed'].update(self.target_coords[columns].sum(axis=1).to_dict())
+
+            exp_sets[name] = {
+                'color': color,
+                'results': bps,
+            }
+
+        return exp_sets
+
+class EfficientDualFlapBoundaryProperties:
+    def __init__(self, target_info, counts, aggregate_conditions=None):
+        if 'nonspecific amplification' in counts.index:
+            counts = counts.drop('nonspecific amplification')
+        
+        self.target_info = target_info
+        self.counts = counts
+
+        if aggregate_conditions is not None:
+            self.counts = self.counts.T.groupby(aggregate_conditions).sum().T
+
+        left_cats = [
+            ("unintended rejoining of RT'ed sequence", "left RT'ed, right RT'ed"),
+            ("unintended rejoining of RT'ed sequence", "left RT'ed, right not RT'ed"),
+        ]
+
+        self.left_rejoining_counts = self.counts.loc[[(c, s, d) for c, s, d in self.counts.index if (c, s) in left_cats]]
+
+        right_cats = [
+            ("unintended rejoining of RT'ed sequence", "left RT'ed, right RT'ed"),
+            ("unintended rejoining of RT'ed sequence", "left not RT'ed, right RT'ed"),
+        ]
+
+        self.right_rejoining_counts = self.counts.loc[[(c, s, d) for c, s, d in self.counts.index if (c, s) in right_cats]]
+
+    @memoized_property
+    def left_pegRNA_coords(self):
+
+        def csd_to_left_coords(csd):
+            c, s, d = csd
+
+            ur_outcome = knock_knock.prime_editing_layout.UnintendedRejoiningOutcome.from_string(d)
+            pegRNA_coord = ur_outcome.edges['left']
+
+            return pegRNA_coord
+
+        return self.left_rejoining_counts.groupby(by=csd_to_left_coords).sum()
+
+    @memoized_property
+    def right_pegRNA_coords(self):
+
+        def csd_to_right_coords(csd):
+            c, s, d = csd
+
+            ur_outcome = knock_knock.prime_editing_layout.UnintendedRejoiningOutcome.from_string(d)
+            pegRNA_coord = ur_outcome.edges['right']
+
+            return pegRNA_coord
+
+        return self.right_rejoining_counts.groupby(by=csd_to_right_coords).sum()
+
+    def to_exp_sets(self, columns_to_extract):
+        exp_sets = {}
+
+        for name, columns, color in columns_to_extract:
+            bps = BoundaryProperties()
+            bps.total_outcomes = self.counts[columns].sum().sum()
+
+            bps.edge_distributions['left', 'RT\'ed'].update(self.left_pegRNA_coords[columns].sum(axis=1).to_dict())
+            bps.edge_distributions['right', 'RT\'ed'].update(self.right_pegRNA_coords[columns].sum(axis=1).to_dict())
 
             exp_sets[name] = {
                 'color': color,

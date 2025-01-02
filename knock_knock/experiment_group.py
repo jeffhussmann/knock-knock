@@ -403,6 +403,52 @@ class ExperimentGroup:
 
         return exp_sets
 
+    def load_dual_flap_boundary_properties(self,
+                                           aggregate_replicates=True,
+                                           palette='tab10',
+                                           conditions=None,
+                                           min_reads=None,
+                                           samples_to_exclude=None,
+                                           condition_colors=None,
+                                           condition_labels=None,
+                                          ):
+        if samples_to_exclude is None:
+            samples_to_exclude = set()
+
+        if condition_colors is None:
+            condition_colors = self.condition_colors(palette=palette)
+
+        if condition_labels == 'with keys':
+            condition_labels = self.condition_labels_with_keys
+        elif condition_labels is None:
+            condition_labels = self.condition_labels
+
+        if aggregate_replicates and len(self.condition_keys) > 0:
+            aggregate_conditions = self.condition_keys
+        else:
+            aggregate_conditions = None
+
+        bps = knock_knock.visualize.rejoining_boundaries.EfficientDualFlapBoundaryProperties(self.target_info,
+                                                                                             self.outcome_counts,
+                                                                                             aggregate_conditions=aggregate_conditions,
+                                                                                            )
+
+        if conditions is None:
+            conditions = bps.left_rejoining_counts.columns
+
+        if min_reads is not None:
+            # .sum() here handles if these are full conditions
+            conditions = [c for c in conditions if self.total_valid_reads.loc[c].sum() >= min_reads]
+
+        columns_to_extract = [
+            (condition_labels[condition], [condition], condition_colors[condition])
+            for condition in conditions
+        ]
+
+        exp_sets = bps.to_exp_sets(columns_to_extract)
+
+        return exp_sets
+
     def make_single_flap_extension_chain_edge_figure(self,
                                                      palette='tab10',
                                                      conditions=None,
