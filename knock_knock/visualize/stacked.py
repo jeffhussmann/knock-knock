@@ -939,6 +939,150 @@ class StackedDiagrams:
 
             self.draw_rect(source_name, start, end, y - 0.4, y + 0.4, 1, clip_to_window=False, color=label_color)
 
+    def draw_PE3b_spacer(self,
+                         source_name,
+                         ngRNA_name,
+                         y_offset=1,
+                        ):
+
+        ti = self.target_infos[source_name]
+        offset = self.offsets[source_name]
+
+        components = ti.sgRNA_components[ngRNA_name]
+        PE3b_spacer = knock_knock.pegRNAs.PE3b_spacer(ngRNA_name,
+                                                      components,
+                                                      ti.target_sequence,
+                                                     )
+
+        alignment, strand = PE3b_spacer.alignment_to_target
+
+        spacer_subsequences, target_subsequences = alignment.aligned
+
+        color = 'lightgrey'
+        PAM_color = hits.visualize.scale_darkness(color, 1.3)
+
+        y = len(self.outcome_order) + y_offset
+
+        bottom, top = self.get_bottom_and_top(y)
+
+        seq = PE3b_spacer.protospacer_and_PAM
+        PAM_positions = PE3b_spacer.PAM_positions
+        cut_afters = PE3b_spacer.cut_afters
+
+        if strand == '-':
+            seq = hits.utilities.reverse_complement(seq)
+            PAM_positions = [len(seq) - 1 - p for p in PE3b_spacer.PAM_positions]
+            cut_afters = {len(seq) - 1 - (p + 1) for p in cut_afters} # Confusing off-by-1s here!
+
+        xs = []
+        aligned_seq = ''
+
+        for (spacer_start, spacer_end), (target_start, target_end) in zip(spacer_subsequences, target_subsequences):
+            subsequence = seq[spacer_start:spacer_end]
+            aligned_seq += subsequence
+
+            xs_start = target_start - offset
+            xs_end = target_end - offset
+
+            xs.extend(np.arange(xs_start, xs_end))
+
+            # If any PAM nts are contained in this block, draw them separately.
+            position_pairs = list(zip(range(spacer_start, spacer_end), range(target_start, target_end)))
+
+            PAM_target_ps = [
+                target_p for spacer_p, target_p in position_pairs
+                if spacer_p in PAM_positions
+            ]
+
+            non_PAM_target_ps = [
+                target_p for spacer_p, target_p in position_pairs
+                if spacer_p not in PAM_positions
+            ]
+
+            if len(PAM_target_ps) > 0:
+                xs_start = min(PAM_target_ps) - offset
+                xs_end = max(PAM_target_ps) - offset
+
+                rect_start, rect_end = sorted([xs_start, xs_end])
+
+                rect_start = rect_start - 0.5
+                rect_end = rect_end + 0.5
+
+                self.draw_rect(source_name, rect_start, rect_end, bottom, top, None, PAM_color)
+
+            if len(non_PAM_target_ps) > 0:
+                xs_start = min(non_PAM_target_ps) - offset
+                xs_end = max(non_PAM_target_ps) - offset
+
+                rect_start, rect_end = sorted([xs_start, xs_end])
+
+                rect_start = rect_start - 0.5
+                rect_end = rect_end + 0.5
+
+                self.draw_rect(source_name, rect_start, rect_end, bottom, top, None, color)
+
+            cut_after_target_ps = [
+                target_p for spacer_p, target_p in position_pairs
+                if spacer_p in cut_afters
+            ]
+            for target_p in cut_after_target_ps:
+                x = target_p - offset + 0.5
+
+                self.ax.plot([x, x], [bottom, top],
+                             color=self.cut_color,
+                             linestyle='-',
+                             clip_on=False,
+                             linewidth=self.line_widths,
+                            )
+
+        if self.flip[source_name]:
+            x = xs[-1]
+        else:
+            x = xs[0]
+
+        self.ax.annotate(ngRNA_name,
+                         xy=(x, y),
+                         xycoords='data',
+                         xytext=(-15, 0),
+                         textcoords='offset points',
+                         annotation_clip=False,
+                         va='center',
+                         ha='right',
+                        )
+
+        seq = self.seqs[source_name]
+        window_left, window_right = self.windows[source_name]
+
+        for x, b in zip(xs, aligned_seq):
+            if window_left <= x <= window_right:
+                target_b = seq[-window_left + x]
+
+                if self.flip[source_name]:
+                    b_to_draw = hits.utilities.complement(b)
+                else:
+                    b_to_draw = b
+
+                if b != target_b and b != 'N':
+                    color = hits.visualize.igv_colors[b_to_draw]
+                    weight = 'bold'
+                else:
+                    color = 'black'
+                    weight = 'normal'
+
+                self.ax.annotate(b_to_draw,
+                                 xy=(x, y),
+                                 xycoords='data', 
+                                 ha='center',
+                                 va='center',
+                                 size=self.text_size,
+                                 annotation_clip=False,
+                                 color=color,
+                                 weight=weight,
+                                )
+
+        #if ti.pegRNA_programmed_insertion is not None:
+        #    self.draw_insertion(y, ti.pegRNA_programmed_insertion, source_name, draw_degeneracy=False)
+
     def draw_outcomes(self):
         for i, (source_name, category, subcategory, details) in enumerate(self.outcome_order):
             ti = self.target_infos[source_name]

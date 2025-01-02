@@ -1385,7 +1385,71 @@ class pegRNA_pair:
             #for (_, left_target_end), (right_target_start, _) in zip(target_subsequences, target_subsequences[1:]):
             #    if left_target_end != right_target_start:
             #        deletions.append((left_target_end, right_target_start - 1))
-                
+
+class PE3b_spacer:
+    def __init__(self, name, components, target_sequence):
+        self.name = name
+        self.components = components
+        self.target_sequence = target_sequence
+
+        self.effector = knock_knock.effector.effectors[components['effector']]
+
+        if self.effector.PAM_side == 3:
+            self.protospacer_and_PAM = components['protospacer'] + self.effector.PAM_pattern
+            self.PAM_positions = len(components['protospacer']) + np.arange(len(self.effector.PAM_pattern))
+            self.cut_afters = set(len(components['protospacer']) + offset for offset in self.effector.cut_after_offset if offset is not None)
+        else:
+            self.protospacer_and_PAM = self.effector.PAM_pattern + components['protospacer'] 
+            self.PAM_positions = np.arange(len(self.effector.PAM_pattern))
+            self.cut_afters = set(offset for offset in self.effector.cut_after_offset if offset is not None)
+
+    @memoized_property
+    def alignment_to_target(self):
+        aligner = Bio.Align.PairwiseAligner(match_score=2,
+                                            mismatch_score=-3,
+                                            open_gap_score=-4,
+                                            extend_gap_score=-0.1,
+                                            target_right_open_gap_score=0,
+                                            target_right_extend_gap_score=0,
+                                            target_left_extend_gap_score=0,
+                                            target_left_open_gap_score=0,
+                                           )
+
+        alignments = {}
+
+        for possibly_reversed, strand in [
+            (self.protospacer_and_PAM, '+'),
+            (utilities.reverse_complement(self.protospacer_and_PAM), '-'),
+        ]:
+            alignments[strand] = aligner.align(possibly_reversed, self.target_sequence)
+
+        best_strand = max(alignments, key=lambda strand: alignments[strand].score)
+        best_alignment = alignments[best_strand][0]
+
+        return best_alignment, best_strand
+
+    @memoized_property
+    def insertions(self):
+        alignment, strand = self.alignment_to_target
+
+        # Insertions are gaps between consecutive spacer subsequences.
+
+        spacer_subsequences, target_subsequences = alignment.aligned
+
+        for (_, left_spacer_end), (right_spacer_start, _), (_, left_target_end), (right_target_start, _) in zip(spacer_subsequences, spacer_subsequences[1:], target_subsequences, target_subsequences[1:]):
+            if left_spacer_end != right_spacer_start:
+                insertion = {
+                    'start_in_spacer': left_spacer_end,
+                    'end_in_spacer': right_spacer_start - 1,
+                    'starts_after_in_target': left_target_end - 1,
+                    'ends_before_in_target': right_target_start,
+                }
+                print(insertion)
+
+        #for (_, left_target_end), (right_target_start, _) in zip(target_subsequences, target_subsequences[1:]):
+        #    if left_target_end != right_target_start:
+        #        deletions.append((left_target_end, right_target_start - 1))
+
 def infer_twin_pegRNA_features(pegRNAs,
                                target_name,
                                existing_features,
