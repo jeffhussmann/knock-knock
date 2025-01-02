@@ -46,7 +46,8 @@ class ExperimentGroup:
 
             'genomic_insertion_length_distributions': self.results_dir / 'genomic_insertion_length_distribution.txt',
              
-            'partial_incorporation_figure': self.results_dir / 'partial_incorporation.png',
+            'partial_incorporation_figure_high_threshold': self.results_dir / 'partial_incorporation.png',
+            'partial_incorporation_figure_low_threshold': self.results_dir / 'partial_incorporation_low_threshold.png',
             'deletion_boundaries_figure': self.results_dir / 'deletion_boundaries.png',
 
             'single_flap_rejoining_boundaries_figure': self.results_dir / 'single_flap_rejoining_boundaries.png',
@@ -240,8 +241,11 @@ class ExperimentGroup:
 
     def make_group_figures(self):
         try:
-            grid = self.make_partial_incorporation_figure()
-            grid.fig.savefig(self.fns['partial_incorporation_figure'], dpi=200, bbox_inches='tight')
+            grid = self.make_partial_incorporation_figure(condition_labels='with key')
+            grid.fig.savefig(self.fns['partial_incorporation_figure_high_threshold'], dpi=200, bbox_inches='tight')
+
+            grid = self.make_partial_incorporation_figure(condition_labels='with key')
+            grid.fig.savefig(self.fns['partial_incorporation_figure_low_threshold'], dpi=200, bbox_inches='tight')
         except:
             logging.warning(f'Failed to make partial incorporation figure for {self}')
 
