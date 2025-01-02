@@ -53,6 +53,7 @@ class StackedDiagrams:
     title_offset: int = 20
     title_color: Optional[Any] = 'black'
     window: int = 70
+    RTT_xs: dict = field(default_factory=dict)
 
     del_multiple = 0.25
     wt_height = 0.6
@@ -742,9 +743,6 @@ class StackedDiagrams:
                     label_color=None,
                     label_features=True,
                    ):
-
-        if not hasattr(self, 'RTT_xs'):
-            self.RTT_xs = {}
 
         ti = self.target_infos[source_name]
         offset = self.offsets[source_name]
@@ -2252,7 +2250,7 @@ def restrict_mismatches_to_window(csd, window_interval, anchor):
         restricted_s = s
                                                                          
     restricted_outcome = restricted_outcome.perform_anchor_shift(anchor)
-    
+
     restricted_c = c
     
     if (restricted_c, restricted_s) == ('wild type', 'clean'):
