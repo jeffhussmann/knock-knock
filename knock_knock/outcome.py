@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 
 import knock_knock.target_info
 from knock_knock.target_info import DegenerateDeletion, DegenerateInsertion, SNV, SNVs

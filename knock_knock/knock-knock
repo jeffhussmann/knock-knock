@@ -100,9 +100,9 @@ def parallel_arrayed(args):
     if args.progress_bar:
         parallel_command.insert(1, '--bar')
 
-    batch.write_performance_metrics()
-
     subprocess.run(parallel_command)
+
+    batch.write_performance_metrics()
 
 def make_tables(args):
     import knock_knock.arrayed_experiment_group

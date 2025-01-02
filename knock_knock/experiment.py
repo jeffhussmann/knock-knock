@@ -23,14 +23,16 @@ import yaml
 
 import hits.visualize
 from hits import annotation, fastq, genomes, mapping_tools, sam, utilities
-from hits.utilities import memoized_property
+from hits.utilities import memoized_property, memoized_with_kwargs
 
 import knock_knock.blast
+import knock_knock.layout as layout_module
 import knock_knock.lengths
-import knock_knock.visualize.lengths
+import knock_knock.outcome
 import knock_knock.target_info
 import knock_knock.utilities
-import knock_knock.layout as layout_module
+import knock_knock.visualize.lengths
+
 from . import outcome_record, svg, table, explore
 
 class ColorGroupCycler:

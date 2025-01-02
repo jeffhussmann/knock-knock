@@ -317,7 +317,7 @@ class ExperimentGroup:
             condition_labels = self.condition_labels
 
         grid = knock_knock.visualize.stacked.make_partial_incorporation_figure(self.target_info,
-                                                                               self.outcome_fractions,
+                                                                               self.outcome_fractions(),
                                                                                self.pegRNA_conversion_fractions,
                                                                                conditions=conditions,
                                                                                condition_colors=condition_colors,
@@ -350,7 +350,7 @@ class ExperimentGroup:
             condition_labels = self.condition_labels
 
         grid = knock_knock.visualize.stacked.make_deletion_boundaries_figure(self.target_info,
-                                                                             self.outcome_fractions,
+                                                                             self.outcome_fractions(),
                                                                              self.deletion_boundaries,
                                                                              conditions=conditions,
                                                                              condition_colors=condition_colors,

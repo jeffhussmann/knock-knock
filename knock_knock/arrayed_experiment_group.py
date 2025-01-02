@@ -343,6 +343,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         if progress is None or getattr(progress, '_silent', False):
             def ignore_kwargs(x, **kwargs):
                 return x
+
             progress = ignore_kwargs
 
         self.silent = True
@@ -362,7 +363,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         else:
             self.condition_keys = self.description['condition_keys'].split(';')
 
-        self.full_condition_keys = tuple(self.condition_keys + ['replicate', 'sample_name'])
+        self.full_condition_keys = tuple(self.condition_keys + ['replicate', 'sample'])
 
         if baseline_condition is not None:
             self.baseline_condition = baseline_condition
@@ -392,7 +393,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
             for key in self.full_condition_keys:
                 if key == 'replicate':
                     value = int(row[key])
-                elif key == 'sample_name':
+                elif key == 'sample':
                     value = row.name
                 else:
                     value = row[key]
@@ -418,7 +419,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         if len(self.condition_keys) == 0:
             self.conditions = []
         else:
-            self.conditions = sorted(set(c[:-1] for c in self.full_conditions))
+            self.conditions = sorted(set(tuple(condition) for *condition, replicate, sample_name in self.full_conditions))
 
         # Indexing breaks if it is a length 1 tuple.
         if len(self.condition_keys) == 1:
@@ -519,7 +520,8 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
             condition_colors = dict(zip(self.conditions, colors))
 
             for full_condition in self.full_conditions:
-                condition = full_condition[:-1]
+                *condition, replicate, sample_name = full_condition
+                condition = tuple(condition)
 
                 if len(condition) == 0:
                     condition_colors[full_condition] = 'black'
@@ -535,16 +537,19 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
     def condition_labels(self):
         condition_labels = {}
 
-        for condition in self.full_conditions:
-            sample_name = self.full_condition_to_sample_name[condition]
-            if len(condition) > 1:
-                partial_label = ', '.join(condition[:-1]) + ', '
+        for full_condition in self.full_conditions:
+            *condition, replicate, sample_name = full_condition
+
+            num_reads = self.total_reads(only_relevant=True)[full_condition]
+
+            if len(condition) > 0:
+                partial_label = ', '.join(condition) + ', '
             else:
                 partial_label = ''
 
-            label = f'{partial_label}rep. {condition[-1]} ({sample_name}, {self.total_valid_reads[condition]:,} total reads)'
+            label = f'{partial_label}rep. {replicate} ({sample_name}, {num_reads:,} total relevant reads)'
 
-            condition_labels[condition] = label
+            condition_labels[full_condition] = label
 
         for condition in self.conditions:
             if isinstance(condition, str):
@@ -567,12 +572,14 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
                 informative_condition_idxs.append(c_i)
 
         for full_condition in self.full_conditions:
-            if len(full_condition) > 1:
+            *condition, replicate, sample_name = full_condition
+
+            if len(condition) > 0:
                 partial_label = ', '.join(f'{self.condition_keys[c_i]}: {full_condition[c_i]}' for c_i in informative_condition_idxs) + ', '
             else:
                 partial_label = ''
 
-            label = f'{partial_label}rep: {full_condition[-1]}'
+            label = f'{partial_label}rep.: {replicate}'
 
             condition_labels[full_condition] = label
 
@@ -607,7 +614,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         length_distributions_df.index.names = list(self.outcome_column_levels) + ['organism']
 
         # Normalize to number of valid reads in each sample.
-        length_distributions_df = length_distributions_df.div(self.total_valid_reads, axis=0)
+        length_distributions_df = length_distributions_df.div(self.total_reads(only_relevant=True), axis=0)
 
         length_distributions_df = length_distributions_df.reorder_levels(['organism'] + list(self.outcome_column_levels))
 
@@ -776,11 +783,9 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
         SNVs = self.target_info.donor_SNVs['target']
 
-        outcome_fractions = self.outcome_fractions
-
         for SNV_name in SNVs:
             outcomes = self.donor_outcomes_containing_SNV(SNV_name)
-            fractions = outcome_fractions.loc[outcomes].sum()
+            fractions = self.outcome_fractions().loc[outcomes].sum()
             conversion_fractions[SNV_name] = fractions
 
         conversion_fractions = pd.DataFrame.from_dict(conversion_fractions, orient='index').sort_index()
@@ -817,7 +822,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         else:
             deletion = None
             
-        for c, s, d  in self.outcome_fractions.index:
+        for c, s, d  in self.outcome_fractions().index:
             if c in {'intended edit', 'partial replacement', 'partial edit'}:
                 outcome = knock_knock.outcome.ProgrammedEditOutcome.from_string(d).undo_anchor_shift(self.target_info.anchor)
 
@@ -840,7 +845,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         fs = {}
 
         for edit_name, outcomes in self.outcomes_containing_pegRNA_programmed_edits.items():
-            fs[edit_name] = self.outcome_fractions.loc[outcomes].sum()
+            fs[edit_name] = self.outcome_fractions().loc[outcomes].sum()
 
         if len(fs) > 0:
             fs_df = pd.DataFrame.from_dict(fs, orient='index')
@@ -865,10 +870,6 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
             df.index = df.index.map(name_to_description)
 
-            new_tuples = [(self.full_condition_to_sample_name[t],) + t for t in df.columns.values]
-            new_columns = pd.MultiIndex.from_tuples(new_tuples, names=['sample'] + df.columns.names)
-            df.columns = new_columns
-
             return df
 
     def write_pegRNA_conversion_fractions(self):
@@ -878,7 +879,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
     @memoized_with_kwargs
     def deletion_boundaries(self, *, include_simple_deletions=True, include_edit_plus_deletions=False):
         return knock_knock.outcome.extract_deletion_boundaries(self.target_info,
-                                                               self.outcome_fractions,
+                                                               self.outcome_fractions(),
                                                                include_simple_deletions=include_simple_deletions,
                                                                include_edit_plus_deletions=include_edit_plus_deletions,
                                                               )
