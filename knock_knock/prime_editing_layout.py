@@ -454,7 +454,10 @@ class Layout(layout.Categorizer):
     
     @memoized_property
     def target_edge_alignments(self):
-        edge_alignments = {'left': [], 'right':[]}
+        edge_alignments = {
+            'left': [],
+            'right':[],
+        }
 
         # Re-merge any deletions.
         merged_als = sam.merge_any_adjacent_pairs(self.target_alignments,
@@ -889,6 +892,9 @@ class Layout(layout.Categorizer):
             # By definition, the nt on the PAM-distal side of the nick
             # is zero in the coordinate system, and postive values go towards
             # the PAM.
+
+            # 24.12.05: having trouble reconciling comment above with code. 
+            # Should it be "PAM-proximal side of the nick"?
 
             if target_PBS.strand == '+':
                 relevant_edge = al.reference_start - (target_PBS.end + 1)
@@ -1565,7 +1571,7 @@ class Layout(layout.Categorizer):
             of the read uncovered, and a single alignment to some other
             source covers the entire read with minimal edit distance.
          
-         - read starts and ends with alignments to the expected primer, these
+         - read starts and ends with alignments to the expected primers, these
            alignments are spanned by a single alignment to some other source, and
            the inferred amplicon length is more than 20 nts different from the expected
            WT amplicon. This covers the case where an amplififcation product has enough
@@ -1607,7 +1613,10 @@ class Layout(layout.Categorizer):
                 not_covered_by_any_target_als = self.not_covered_by_primers - interval.get_disjoint_covered(target_als)
 
                 has_substantial_uncovered = not_covered_by_any_target_als.total_length >= 100
-                has_substantial_length_discrepancy = abs(self.inferred_amplicon_length - self.target_info.amplicon_length) >= 20
+                has_substantial_length_discrepancy = (
+                    abs(self.inferred_amplicon_length - self.target_info.amplicon_length) >= 20 and
+                    self.primer_alignments['right'] is not None
+                )
 
                 if has_substantial_uncovered or has_substantial_length_discrepancy:
                     ref_seqs = {**self.target_info.reference_sequences}
@@ -2104,6 +2113,7 @@ class Layout(layout.Categorizer):
             als = self.target_edge_alignments_list + interval.make_parsimonious(self.pegRNA_alignments_cover_target_gap)
             if PBS_al is not None:
                 als.append(PBS_al)
+
             als = sam.merge_any_adjacent_pairs(als, ti.reference_sequences, max_deletion_length=2, max_insertion_length=2)
             self.relevant_alignments = als
 
