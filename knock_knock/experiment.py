@@ -451,6 +451,7 @@ class Experiment:
                                        read_type=None,
                                        supplemental_index_name=None,
                                        filter_to_discard=None,
+                                       reads_per_chunk=10000,
                                       ):
         reads = self.reads_by_type(read_type)
 
@@ -471,7 +472,7 @@ class Experiment:
             fasta_dir = self.supplemental_indices[supplemental_index_name]['fasta']
             ref_seqs = genomes.load_entire_genome(fasta_dir)
 
-        for i, chunk in enumerate(utilities.chunks(reads, 10000)):
+        for i, chunk in enumerate(utilities.chunks(reads, reads_per_chunk)):
             suffix = f'.{i:06d}.bam'
             bam_by_name_fn = base_bam_by_name_fn.with_suffix(suffix)
 
