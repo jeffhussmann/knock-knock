@@ -582,6 +582,7 @@ def make_self_contained_zip(base_dir,
                             sort_samples=True,
                             arrayed=False,
                             vmax_multiple=1,
+                            show_progress=False,
                            ):
 
     base_dir = Path(base_dir)
@@ -674,7 +675,8 @@ def make_self_contained_zip(base_dir,
                     add_fn(outcome_fns['first_example'])
 
     if len(exps_missing_files) > 0:
-        logging.warning(f'Warning: {len(exps_missing_files)} experiment(s) are missing output files:')
+        logging.warning(f'{len(exps_missing_files)} experiment(s) are missing output files:')
+
         if len(exps_missing_files) <= 10:
             for group, exp_name in sorted(exps_missing_files):
                 logging.warning(f'\t{group} {exp_name}')
@@ -685,7 +687,11 @@ def make_self_contained_zip(base_dir,
     zip_fn = fn_prefix.with_suffix('.zip')
     archive_base = Path(fn_prefix.name)
     with zipfile.ZipFile(zip_fn, mode='w', compression=zipfile.ZIP_DEFLATED) as zip_fh:
-        description = 'Zipping table files'
-        for fn in tqdm.tqdm(fns_to_zip, desc=description):
+
+        if show_progress:
+            description = 'Zipping table files'
+            fns_to_zip = tqdm.tqdm(fns_to_zip, desc=description)
+
+        for fn in fns_to_zip:
             arcname = archive_base / fn.relative_to(results_dir)
             zip_fh.write(fn, arcname=arcname)
