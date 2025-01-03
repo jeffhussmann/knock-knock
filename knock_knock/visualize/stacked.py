@@ -1,4 +1,5 @@
 import copy
+import logging
 import warnings
 
 from collections import defaultdict
@@ -695,7 +696,7 @@ class StackedDiagrams:
             self.draw_rect(source_name, window_left - 0.5, window_right + 0.5, bottom, top, self.block_alpha)
         else:
             if len(programmed_edit_outcome.deletions) > 1:
-                print(f'Warning: multiple deletions in {programmed_edit_outcome}')
+                logging.warning(f'Multiple deletions in {programmed_edit_outcome}')
 
             for deletion in programmed_edit_outcome.deletions:
                 deletion = DeletionOutcome(deletion).undo_anchor_shift(ti.anchor).deletion
