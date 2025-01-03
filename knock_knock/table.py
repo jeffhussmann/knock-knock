@@ -85,7 +85,6 @@ def load_counts(base_dir,
     totals_row = pd.DataFrame.from_dict({totals_row_label: totals}, orient='index')
     
     df = pd.concat([totals_row, df]).astype(int)
-    df.index.names = (None, None)
 
     if sort_samples:
         # Sort by group and sample name.
@@ -222,6 +221,9 @@ def make_table(base_dir,
                      sort_samples=sort_samples,
                      arrayed=arrayed,
                     )
+
+    if df.shape == (0, 0):
+        return None
 
     if show_details:
         totals_row_label = totals_all_row_label
@@ -507,6 +509,7 @@ def generate_html(base_dir, fn,
                   conditions=None,
                   show_details=True,
                   include_images=True,
+                  include_documentation=False,
                   sort_samples=True,
                   arrayed=False,
                   vmax_multiple=1,
@@ -539,6 +542,9 @@ knock-knock is a tool for exploring, categorizing, and quantifying the sequence 
                        vmax_multiple=vmax_multiple,
                       )
 
+    if table is None:
+        return None
+
     table_cell = nbf.new_code_cell('',
                                    outputs=[
                                        nbf.nbbase.NotebookNode(
@@ -551,10 +557,14 @@ knock-knock is a tool for exploring, categorizing, and quantifying the sequence 
                                    ],
                                   )
 
-    nb['cells'] = [
-        #documentation_cell,
-        table_cell,
-    ]
+    cells = []
+
+    if include_documentation:
+        cells.append(documentation_cell)
+
+    cells.append(table_cell)
+
+    nb['cells'] = cells
 
     nb['metadata'] = {
         'title': fn.stem,
@@ -590,11 +600,21 @@ def make_self_contained_zip(base_dir,
     fn_prefix = results_dir / table_name
     fns_to_zip = set()
 
+    def add_fn(fn):
+        if not fn.exists():
+            logging.warning(f'{fn} is missing')
+        else:
+            if fn.is_dir():
+                for child_fn in fn.iterdir():
+                    fns_to_zip.add(child_fn)
+            else:
+                fns_to_zip.add(fn)
+
     logging.info('Generating csv table...')
     csv_fn = fn_prefix.with_suffix('.csv')
     df = load_counts(base_dir, conditions, exclude_empty=False, arrayed=arrayed).T
     df.to_csv(csv_fn)
-    fns_to_zip.add(csv_fn)
+    add_fn(csv_fn)
 
     logging.info('Generating high-level html table...')
     html_fn = fn_prefix.with_suffix('.html')
@@ -607,7 +627,7 @@ def make_self_contained_zip(base_dir,
                   arrayed=arrayed,
                   vmax_multiple=vmax_multiple,
                  )
-    fns_to_zip.add(html_fn)
+    add_fn(html_fn)
 
     if include_details:
         logging.info('Generating detailed html table...')
@@ -621,7 +641,7 @@ def make_self_contained_zip(base_dir,
                       arrayed=arrayed,
                       vmax_multiple=vmax_multiple,
                      )
-        fns_to_zip.add(html_fn)
+        add_fn(html_fn)
 
     if arrayed:
         import knock_knock.arrayed_experiment_group
@@ -675,9 +695,11 @@ def make_self_contained_zip(base_dir,
                     add_fn(outcome_fns['first_example'])
 
     if len(exps_missing_files) > 0:
-        logging.warning(f'{len(exps_missing_files)} experiment(s) are missing output files:')
+        list_exps = (len(exps_missing_files) <= 10)
 
-        if len(exps_missing_files) <= 10:
+        logging.warning(f'{len(exps_missing_files)} experiment(s) are missing output files{":" if list_exps else "."}')
+
+        if list_exps:
             for group, exp_name in sorted(exps_missing_files):
                 logging.warning(f'\t{group} {exp_name}')
                 if len(exps_missing_files[group, exp_name]) <= 10:
