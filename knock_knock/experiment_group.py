@@ -240,13 +240,27 @@ class ExperimentGroup:
 
     def make_group_figures(self):
         try:
-            grid = self.make_partial_incorporation_figure(condition_labels='with key')
-            grid.fig.savefig(self.fns['partial_incorporation_figure_high_threshold'], dpi=200, bbox_inches='tight')
+            for fn_key, kwargs in [
+                (
+                    'partial_incorporation_figure_high_threshold',
+                    dict(
+                        frequency_cutoff=1e-2,
+                    ),
+                ),
+                (
+                    'partial_incorporation_figure_low_threshold',
+                    dict(
+                        frequency_cutoff=2e-3,
+                    ),
+                ),
+            ]:
 
-            grid = self.make_partial_incorporation_figure(condition_labels='with key')
-            grid.fig.savefig(self.fns['partial_incorporation_figure_low_threshold'], dpi=200, bbox_inches='tight')
-        except:
+                grid = self.make_partial_incorporation_figure(condition_labels='with keys', **kwargs)
+                grid.fig.savefig(self.fns[fn_key], dpi=200, bbox_inches='tight')
+
+        except Exception as e:
             logging.warning(f'Failed to make partial incorporation figure for {self}')
+            logging.warning(e)
 
         try:
             grid = self.make_deletion_boundaries_figure()
@@ -290,8 +304,9 @@ class ExperimentGroup:
                     fig, axs = self.make_single_flap_extension_chain_edge_figure(**kwargs)
                     fig.savefig(self.fns[fn_key], dpi=200, bbox_inches='tight')
 
-            except:
+            except Exception as e:
                 logging.warning(f'Failed to make flap rejoining boundaries figures for {self}')
+                logging.warning(e)
 
     def make_partial_incorporation_figure(self,
                                           unique_colors=False,
@@ -385,7 +400,7 @@ class ExperimentGroup:
             aggregate_conditions = None
 
         bps = knock_knock.visualize.rejoining_boundaries.EfficientBoundaryProperties(self.target_info,
-                                                                                     self.outcome_counts,
+                                                                                     self.outcome_counts(),
                                                                                      aggregate_conditions=aggregate_conditions,
                                                                                      include_intended_edit=include_intended_edit,
                                                                                     )
@@ -432,7 +447,7 @@ class ExperimentGroup:
             aggregate_conditions = None
 
         bps = knock_knock.visualize.rejoining_boundaries.EfficientDualFlapBoundaryProperties(self.target_info,
-                                                                                             self.outcome_counts,
+                                                                                             self.outcome_counts(),
                                                                                              aggregate_conditions=aggregate_conditions,
                                                                                             )
 
