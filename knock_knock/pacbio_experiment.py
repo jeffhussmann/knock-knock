@@ -15,7 +15,6 @@ class PacbioExperiment(Experiment):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.paired_end_read_length = None
         self.x_tick_multiple = 500
 
         self.layout_mode = 'pacbio'

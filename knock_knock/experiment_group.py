@@ -3,7 +3,6 @@ import logging
 import multiprocessing
 import os
 
-import numpy as np
 import pandas as pd
 import pysam
 import scipy.sparse
@@ -521,14 +520,6 @@ class ExperimentGroup:
                          )
 
         df.sum(axis=1).to_csv(self.fns['total_outcome_counts'], header=False)
-
-        ## Collapse potentially equivalent outcomes together.
-        #collapsed = pd.concat({pg: collapse_categories(df.loc[pg]) for pg in [True, False] if pg in df.index.levels[0]})
-
-        #coo = scipy.sparse.coo_matrix(np.array(collapsed))
-        #scipy.sparse.save_npz(self.fns['collapsed_outcome_counts'], coo)
-
-        #collapsed.sum(axis=1).to_csv(self.fns['collapsed_total_outcome_counts'], header=False)
 
     @memoized_with_args
     def outcome_counts_df(self, collapsed):

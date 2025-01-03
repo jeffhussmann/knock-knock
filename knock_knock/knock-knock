@@ -76,7 +76,10 @@ def process_arrayed(args):
 
     batch = knock_knock.arrayed_experiment_group.get_batch(args.project_directory, args.batch_name)
     group = batch.groups[args.group_name]
-    group.process(num_processes=args.max_procs, verbose=not args.silent, generate_example_diagrams=args.generate_example_diagrams)
+    group.process(num_processes=args.max_procs,
+                  verbose=not args.silent,
+                  generate_example_diagrams=args.generate_example_diagrams,
+                 )
 
 def parallel_arrayed(args):
     import knock_knock.arrayed_experiment_group
