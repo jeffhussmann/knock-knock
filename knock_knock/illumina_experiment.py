@@ -94,6 +94,8 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
         # Standardizing names is important for sorting.
         reads = fastq.reads(self.fns[key], standardize_names=True, up_to_space=True)
 
+        reads = islice(reads, self.max_reads)
+
         if add_UMI and self.UMI_key is not None:
             UMI_reads = self.original_reads_by_key(self.UMI_key, add_UMI=False)
 

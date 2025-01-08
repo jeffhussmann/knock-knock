@@ -114,6 +114,9 @@ class Experiment:
         self.sequencing_start_feature_name = self.description.get('sequencing_start_feature_name')
         self.infer_homology_arms = self.description.get('infer_homology_arms', False)
         self.min_relevant_length = self.description.get('min_relevant_length', False)
+        self.max_reads = self.description.get('max_reads', None)
+        if self.max_reads is not None:
+            self.max_reads = int(self.max_reads)
 
         # When checking if an Experiment meets filtering conditions, want to be
         # able to just test description.
@@ -717,7 +720,7 @@ class Experiment:
     def combined_header(self):
         return hits.sam.get_header(self.fns_by_read_type['bam_by_name'][self.uncommon_read_type])
 
-    def categorize_outcomes(self, fn_key='bam_by_name', read_type=None, max_reads=None):
+    def categorize_outcomes(self, fn_key='bam_by_name', read_type=None):
         if self.fns['outcomes_dir'].is_dir():
             shutil.rmtree(str(self.fns['outcomes_dir']))
            
@@ -737,9 +740,6 @@ class Experiment:
                 description = f'Categorizing {read_type} reads'
 
             to_iter = zip(alignment_groups, self.reads_by_type(self.preprocessed_read_type))
-
-            if max_reads is not None:
-                to_iter = islice(to_iter, max_reads)
 
             for (name, als), read in self.progress(to_iter, desc=description):
                 if read.qname != name:
