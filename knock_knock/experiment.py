@@ -10,7 +10,7 @@ import sys
 
 from collections import defaultdict, Counter
 from contextlib import ExitStack
-from itertools import islice, chain
+from itertools import chain
 from pathlib import Path
 from textwrap import dedent
 
@@ -353,6 +353,7 @@ class Experiment:
         lengths = knock_knock.lengths.OutcomeStratifiedLengths(self.outcome_iter(),
                                                                self.max_relevant_length,
                                                                self.length_to_store_unknown,
+                                                               self.categorizer.non_relevant_categories,
                                                               )
         lengths.to_file(self.fns['outcome_stratified_lengths'])
 

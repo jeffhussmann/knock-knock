@@ -21,7 +21,7 @@ totals_relevant_row_label = (' ', 'Total relevant reads')
 
 def load_counts(base_dir,
                 conditions=None,
-                exclude_malformed=False,
+                exclude_non_relevant=False,
                 exclude_empty=True,
                 sort_samples=True,
                 groups_to_exclude=None,
@@ -60,20 +60,25 @@ def load_counts(base_dir,
     if len(full_indexes) > 1:
         print(full_indexes)
         raise ValueError('Can\'t make table for experiments with inconsistent layout modules.')
-    
+
     full_index = full_indexes.pop()
-    
+
     df = df.reindex(full_index, fill_value=0)
 
-    if exclude_malformed:
-        malformed_categories = [
-            'malformed layout',
-            'nonspecific amplification',
-            'bad sequence',
-            'phiX',
-        ]
-        df = df.drop(malformed_categories, axis='index', level=0, errors='ignore')
+    
+    if exclude_non_relevant:
+        all_non_relevant_categories = {tuple(sorted(exp.categorizer.non_relevant_categories)) for exp in exps.values()}
+
+        if len(all_non_relevant_categories) > 1:
+            print(all_non_relevant_categories)
+            raise ValueError('Can\'t make table for experiments with inconsistent layout modules.')
+
+        non_relevant_categories = list(all_non_relevant_categories.pop())
+
+        df = df.drop(non_relevant_categories, axis='index', level=0, errors='ignore')
+
         totals_row_label = totals_relevant_row_label
+
     else:
         totals_row_label = totals_all_row_label
 
@@ -217,7 +222,7 @@ def make_table(base_dir,
 
     df = load_counts(base_dir,
                      conditions=conditions,
-                     exclude_malformed=(not show_details),
+                     exclude_non_relevant=(not show_details),
                      sort_samples=sort_samples,
                      arrayed=arrayed,
                     )

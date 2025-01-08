@@ -98,6 +98,10 @@ class Layout(layout.Categorizer):
             ('n/a',
             ),
         ),
+        ('minimal alignment to intended target',
+            ('n/a',
+            ),
+        ),
         ('uncategorized',
             ('uncategorized',
              'low quality',
@@ -122,6 +126,12 @@ class Layout(layout.Categorizer):
             ('phiX',
             ),
         ),
+    ]
+
+    non_relevant_categories = [
+        'phiX',
+        'nonspecific amplification',
+        'minimal alignment to intended target',
     ]
 
     def __init__(self, alignments, target_info, error_corrected=False, mode=None):
@@ -1441,10 +1451,14 @@ class Layout(layout.Categorizer):
         return string
 
     @memoized_property
-    def not_covered_by_split_target_or_pegRNA_alignments(self):
+    def covered_by_split_target_or_pegRNA_alignments(self):
         relevant_als = self.split_target_alignments + self.split_pegRNA_alignments
         covered = interval.get_disjoint_covered(relevant_als)
-        return self.whole_read_minus_edges(2) - covered
+        return covered
+
+    @memoized_property
+    def not_covered_by_split_target_or_pegRNA_alignments(self):
+        return self.whole_read_minus_edges(2) - self.covered_by_split_target_or_pegRNA_alignments
 
     @memoized_property
     def not_covered_by_primary_alignments(self):
@@ -1461,6 +1475,10 @@ class Layout(layout.Categorizer):
         als = self.target_edge_alignments_list
         uncovered = (self.whole_read - interval.get_disjoint_covered(als)) & self.not_covered_by_primers
         return uncovered
+
+    @memoized_property
+    def query_length_covered_by_on_target_alignments(self):
+        return (self.not_covered_by_primers & self.covered_by_split_target_or_pegRNA_alignments).total_length
 
     @memoized_property
     def nonredundant_supplemental_alignments(self):
@@ -1533,10 +1551,13 @@ class Layout(layout.Categorizer):
         '''
         if self.covered_by_primers.is_empty:
             not_covered_by_primers = self.whole_read
+
         elif self.primer_alignments['left'] and not self.primer_alignments['right']:
             not_covered_by_primers = interval.Interval(self.covered_by_primers.end + 1, self.whole_read.end)
+
         elif self.primer_alignments['right'] and not self.primer_alignments['left']:
             not_covered_by_primers = interval.Interval(self.whole_read.start, self.covered_by_primers.start - 1)
+
         else:
             not_covered_by_primers = interval.Interval(self.covered_by_primers.start, self.covered_by_primers.end) - self.covered_by_primers 
 
@@ -1954,6 +1975,12 @@ class Layout(layout.Categorizer):
 
         self.relevant_alignments = self.uncategorized_relevant_alignments
 
+    def register_minimal_alignments_detected(self):
+        self.category = 'minimal alignment to intended target'
+        self.subcategory = 'n/a'
+        self.outcome = Outcome('n/a')
+        self.relevant_alignments = self.uncategorized_relevant_alignments
+
     @memoized_property
     def pegRNA_alignments_cover_target_gap(self):
         meaningful_gap_covers = []
@@ -1988,7 +2015,7 @@ class Layout(layout.Categorizer):
             self.register_nonspecific_amplification()
 
         elif self.no_alignments_detected:
-            self.register_uncategorized()
+            self.register_minimal_alignments_detected()
 
         elif self.aligns_to_phiX:
             self.category = 'phiX'
@@ -2198,6 +2225,9 @@ class Layout(layout.Categorizer):
 
         elif self.original_target_alignment_has_only_relevant_indels:
             self.register_indels_in_original_alignment()
+
+        elif self.query_length_covered_by_on_target_alignments <= 30:
+            self.register_minimal_alignments_detected()
 
         else:
             self.register_uncategorized()

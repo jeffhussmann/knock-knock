@@ -630,13 +630,13 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
     @memoized_with_kwargs
     def outcome_counts(self, *, level='details', only_relevant=True):
         outcome_counts = self.outcome_counts_df(False)
+
         if only_relevant:
-            # Ignore nonspecific amplification products in denominator of any outcome fraction calculations.
-            to_drop = [
-                'nonspecific amplification',
-                'phiX',
-            ]
-            outcome_counts = outcome_counts.drop(to_drop, errors='ignore')
+            # Exclude reads that are not from the targeted locus (e.g. phiX, 
+            # nonspecific amplification products, or cross-contamination
+            # from other samples) and therefore are not relevant to the 
+            # performance of the editing strategy.
+            outcome_counts = outcome_counts.drop(self.categorizer.non_relevant_categories, errors='ignore')
 
         # Sort columns to avoid annoying pandas PerformanceWarnings.
         outcome_counts = outcome_counts.sort_index(axis='columns')

@@ -12,10 +12,17 @@ def cumulative_from_end(array):
     return np.cumsum(array[::-1])[::-1]
 
 class OutcomeStratifiedLengths:
-    def __init__(self, outcome_iter, max_relevant_length, length_to_store_unknown):
+    def __init__(self,
+                 outcome_iter,
+                 max_relevant_length,
+                 length_to_store_unknown,
+                 non_relevant_categories,
+                ):
+
         self.max_relevant_length = max_relevant_length
         self.length_to_store_unknown = length_to_store_unknown
         self.max_length = max(max_relevant_length, length_to_store_unknown)
+        self.non_relevant_categories = non_relevant_categories
 
         subcategory_lengths = defaultdict(Counter)
 
@@ -40,6 +47,7 @@ class OutcomeStratifiedLengths:
         with h5py.File(fn, 'w') as fh:
             fh.attrs['max_relevant_length'] = self.max_relevant_length
             fh.attrs['length_to_store_unknown'] = self.length_to_store_unknown
+            fh.attrs['non_relevant_categories'] = self.non_relevant_categories
 
             for (cat, subcat), counts in self.subcategory_length_arrays.items():
                 # object names can't have '/' characters in them.
@@ -49,7 +57,11 @@ class OutcomeStratifiedLengths:
     @classmethod
     def from_file(cls, fn):
         with h5py.File(fn, 'r') as fh:
-            lengths = cls([], fh.attrs['max_relevant_length'], fh.attrs['length_to_store_unknown'])
+            lengths = cls([],
+                          fh.attrs['max_relevant_length'],
+                          fh.attrs['length_to_store_unknown'],
+                          fh.attrs['non_relevant_categories'],
+                         )
 
             with h5py.File(fn, 'r') as fh:
                 for cat, group in fh.items():
@@ -85,12 +97,7 @@ class OutcomeStratifiedLengths:
 
     @memoized_property
     def lengths_for_relevant_reads(self):
-        irrelevant_categories = [
-            'nonspecific amplification',
-            'phiX',
-        ]
-
-        lengths = self.lengths_df().query('category not in @irrelevant_categories').sum()
+        lengths = self.lengths_df().query('category not in @self.non_relevant_categories').sum()
 
         return lengths
 
