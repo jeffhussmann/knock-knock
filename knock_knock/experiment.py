@@ -695,11 +695,13 @@ class Experiment:
     def outcome_query_names(self, outcome):
         fns = self.outcome_fns(outcome)
         all_qnames = []
+
         for fn_key in ['query_names', 'no_overlap_query_names']:
             fn = fns[fn_key]
             if fn.exists():
                 qnames = fn.read_text().splitlines()
                 all_qnames.extend(qnames)
+
         return all_qnames
     
     def record_sanitized_category_names(self):
@@ -727,7 +729,6 @@ class Experiment:
         self.fns['outcomes_dir'].mkdir()
 
         outcome_to_qnames = defaultdict(list)
-        outcome_to_no_overlap_qnames = defaultdict(list)
 
         with self.fns['outcome_list'].open('w') as outcome_fh:
             outcome_fh.write(f'## Generated at {utilities.current_time_string()}\n')
@@ -753,36 +754,22 @@ class Experiment:
                     UMI_seq = ''
                     UMI_qual = ''
 
-                if isinstance(als, list):
-                    seq = read.seq
+                seq = read.seq
 
-                    # Special handling of empty sequence.
-                    if seq is None:
-                        seq = ''
+                # Special handling of empty sequence.
+                if seq is None:
+                    seq = ''
 
-                    if seq in self.common_sequence_to_outcome:
-                        layout = self.common_sequence_to_outcome[seq]
+                if seq in self.common_sequence_to_outcome:
+                    layout = self.common_sequence_to_outcome[seq]
 
-                    else:
-                        layout = self.categorizer(als,
-                                                  self.target_info,
-                                                  mode=self.layout_mode,
-                                                  error_corrected=self.has_UMIs,
-                                                 )
+                else:
+                    layout = self.categorizer(als,
+                                              self.target_info,
+                                              mode=self.layout_mode,
+                                              error_corrected=self.has_UMIs,
+                                             )
 
-                        try:
-                            layout.categorize()
-                        except:
-                            print()
-                            print(self.sample_name, name)
-                            raise
-
-                    outcome_to_qnames[layout.category, layout.subcategory].append(name)
-
-                elif isinstance(als, dict):
-                    layout = self.nonoverlapping_categorizer(als,
-                                                             self.target_info,
-                                                            )
                     try:
                         layout.categorize()
                     except:
@@ -790,10 +777,7 @@ class Experiment:
                         print(self.sample_name, name)
                         raise
 
-                    outcome_to_no_overlap_qnames[layout.category, layout.subcategory].append(name)
-                
-                else:
-                    raise ValueError
+                outcome_to_qnames[layout.category, layout.subcategory].append(name)
 
                 outcome = self.final_Outcome.from_layout(layout,
                                                          query_name=name,
@@ -817,9 +801,7 @@ class Experiment:
 
         alignment_sorters = sam.multiple_AlignmentSorters(self.combined_header, by_name=True)
 
-        outcomes = set(outcome_to_qnames) | set(outcome_to_no_overlap_qnames)
-
-        for outcome in outcomes:
+        for outcome in outcome_to_qnames:
             outcome_fns = self.outcome_fns(outcome)
             # This shouldn't be necessary due to rmtree of parent directory above
             # but empirically sometimes is.
@@ -834,17 +816,6 @@ class Experiment:
             alignment_sorters[outcome] = outcome_fns['bam_by_name'][bam_read_type]
 
             with outcome_fns['query_names'].open('w') as fh:
-                for qname in qnames:
-                    qname_to_outcome[qname] = outcome
-                    fh.write(qname + '\n')
-
-        for outcome, qnames in outcome_to_no_overlap_qnames.items():
-            outcome_fns = self.outcome_fns(outcome)
-
-            for which in ['R1', 'R2']:
-                alignment_sorters[outcome, which] = outcome_fns['bam_by_name'][f'{which}_no_overlap']
-            
-            with outcome_fns['no_overlap_query_names'].open('w') as fh:
                 for qname in qnames:
                     qname_to_outcome[qname] = outcome
                     fh.write(qname + '\n')
@@ -1129,8 +1100,10 @@ class Experiment:
         ti = self.target_info
 
         expected_lengths = {
-            'WT': ti.amplicon_length,
         }
+
+        if self.description.get('experiment_type') not in ['TECseq', 'seeseq', 'seeseq_dual_flap']:
+            expected_lengths['WT'] = ti.amplicon_length
 
         if ti.clean_HDR_length is not None:
             expected_lengths['intended\nedit'] = ti.clean_HDR_length

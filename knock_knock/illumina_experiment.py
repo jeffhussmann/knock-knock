@@ -9,7 +9,6 @@ import numpy as np
 import pysam
 
 import knock_knock.experiment
-from knock_knock import visualize
 from knock_knock import layout as layout_module
 
 import hits.visualize.fastq
@@ -62,33 +61,46 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
         self.UMI_key = self.description.get('UMI_key')
 
-        if self.paired_end:
-            self.read_types = {
-                'stitched',
+        self.trim_to_max_length = self.description.get('trim_to_max_length')
+        if self.trim_to_max_length is not None:
+            self.trim_to_max_length = int(self.trim_to_max_length)
+
+    @property
+    def read_types(self):
+        read_types = {self.preprocessed_read_type}
+
+        if self.paired_end and self.description.get('experiment_type') == 'TECseq':
+            read_types.update([
                 'R1_no_overlap',
                 'R2_no_overlap',
-            }
+            ])
 
-            self.preprocessed_read_type = 'stitched'
+        return read_types
 
+    @property
+    def preprocessed_read_type(self):
+        if self.paired_end:
+            preprocessed_read_type = 'stitched'
         else:
-            self.read_types = {
-                'trimmed',
-            }
+            preprocessed_read_type = 'trimmed'
 
-            self.preprocessed_read_type = 'trimmed'
-
-            self.trim_to_max_length = self.description.get('trim_to_max_length')
-            if self.trim_to_max_length is not None:
-                self.trim_to_max_length = int(self.trim_to_max_length)
+        return preprocessed_read_type
 
     @property
     def read_types_to_align(self):
-        return [
-            self.uncommon_read_type,
-            #'R1_no_overlap',
-            #'R2_no_overlap',
-        ]
+        read_types = {self.uncommon_read_type}
+
+        if self.paired_end and self.description.get('experiment_type') == 'TECseq':
+            read_types.update([
+                'R1_no_overlap',
+                'R2_no_overlap',
+            ])
+
+        return read_types
+
+    @property
+    def no_overlap_pair_categorizer(self):
+        return layout_module.NonoverlappingPairLayout
 
     def original_reads_by_key(self, key, add_UMI=True):
         # Standardizing names is important for sorting.
@@ -155,41 +167,37 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
     @memoized_property
     def max_relevant_length(self):
-        if self.paired_end:
-            return self.R1_read_length + self.R2_read_length + 100
+        if self.description.get('experiment_type') not in ['TECseq', 'seeseq', 'seeseq_dual_flap']:
+            length = 1000
+        elif self.paired_end:
+            length = self.R1_read_length + self.R2_read_length + 100
         else:
-            return 600
+            length = 600
+
+        return length
+
+    def get_read_alignments(self, read_id, fn_key='bam_by_name', outcome=None, read_type=None):
+        if read_type is None and self.paired_end and read_id in self.no_overlap_qnames:
+            als = {
+                which: self.get_read_alignments(read_id, read_type=f'{which}_no_overlap')
+                for which in ['R1', 'R2']
+            }
+
+        else:
+            als = super().get_read_alignments(read_id, fn_key=fn_key, outcome=outcome, read_type=read_type)
+
+        return als
 
     def get_read_layout(self, read_id, fn_key='bam_by_name', outcome=None, read_type=None):
         if self.paired_end and read_id in self.no_overlap_qnames:
             als = self.get_read_alignments(read_id, outcome=outcome)
-            layout = layout_module.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
+            layout = self.no_overlap_pair_categorizer(als, self.target_info)
             return layout
         else:
-            return super().get_read_layout(read_id, fn_key=fn_key, outcome=outcome, read_type=read_type)
+            layout = super().get_read_layout(read_id, fn_key=fn_key, outcome=outcome, read_type=read_type)
 
-    def get_read_diagram(self, qname, outcome=None, relevant=True, read_type=None, **kwargs):
-        if self.paired_end and qname in self.no_overlap_qnames:
-            als = self.get_read_alignments(qname, outcome=outcome)
+        return layout
 
-            if relevant:
-                layout = layout_module.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
-                layout.categorize()
-                to_plot = layout.relevant_alignments
-            else:
-                to_plot = als
-
-            kwargs['inferred_amplicon_length'] = self.qname_to_inferred_length[qname]
-            for k, v in self.diagram_kwargs.items():
-                kwargs.setdefault(k, v)
-
-            diagram = visualize.ReadDiagram(to_plot, self.target_info, **kwargs)
-
-        else:
-            diagram = super().get_read_diagram(qname, outcome=outcome, relevant=relevant, read_type=read_type, **kwargs)
-
-        return diagram
-    
     def no_overlap_alignment_groups(self, outcome=None):
         R1_read_type = 'R1_no_overlap'
         R2_read_type = 'R2_no_overlap'
@@ -229,7 +237,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
         return chain(*to_chain)
     
-    def categorize_no_overlap_outcomes(self, max_reads=None):
+    def categorize_no_overlap_outcomes(self):
         outcomes = defaultdict(list)
 
         with self.fns['no_overlap_outcome_list'].open('w') as fh:
@@ -237,12 +245,25 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
             alignment_groups = self.no_overlap_alignment_groups()
 
-            if max_reads is not None:
-                alignment_groups = islice(alignment_groups, max_reads)
+            read_pairs = zip(self.reads_by_type('R1_no_overlap'), self.reads_by_type('R2_no_overlap'))
 
-            for name, als in self.progress(alignment_groups, desc='Categorizing non-overlapping read pairs'):
+            to_iter = zip(alignment_groups, read_pairs)
+            description = 'Categorizing non-overlapping read pairs'
+
+            for (name, als), (R1, R2) in self.progress(to_iter, desc=description):
+                if len({name, R1.name, R2.name}) != 1:
+                    raise ValueError
+
+                if 'UMI_key' in self.description:
+                    UMI_annotation = knock_knock.experiment.UMIAnnotation.from_identifier(name)
+                    UMI_seq = UMI_annotation['UMI_seq']
+                    UMI_qual = UMI_annotation['UMI_qual']
+                else:
+                    UMI_seq = ''
+                    UMI_qual = ''
+
                 try:
-                    pair_layout = layout_module.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
+                    pair_layout = self.no_overlap_pair_categorizer(als, self.target_info)
                     pair_layout.categorize()
                 except:
                     print(self.sample_name, name)
@@ -250,7 +271,13 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
                 
                 outcomes[pair_layout.category, pair_layout.subcategory].append(name)
 
-                outcome = self.final_Outcome.from_layout(pair_layout)
+                outcome = self.final_Outcome.from_layout(pair_layout,
+                                                         query_name=name,
+                                                         Q30_fraction=R1.Q30_fraction,
+                                                         mean_Q=R1.mean_Q,
+                                                         UMI_seq=UMI_seq,
+                                                         UMI_qual=UMI_qual,
+                                                        )
                 fh.write(f'{outcome}\n')
 
         # To make plotting easier, for each outcome, make a file listing all of
@@ -260,8 +287,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
         qname_to_outcome = {}
         full_bam_fns = {which: self.fns_by_read_type['bam_by_name'][f'{which}_no_overlap'] for which in ['R1', 'R2']}
 
-        header = sam.get_header(full_bam_fns['R1'])
-        alignment_sorters = sam.multiple_AlignmentSorters(header, by_name=True)
+        alignment_sorters = sam.multiple_AlignmentSorters(self.combined_header, by_name=True)
 
         for outcome, qnames in outcomes.items():
             outcome_fns = self.outcome_fns(outcome)
@@ -393,6 +419,9 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
             if len(stitched) == len(R1) + len(R2):
                 # No overlap was detected.
 
+                if self.reverse_complement:
+                    R1, R2 = R2, R1
+
                 no_overlap_read_pairs.append((R1, R2))
 
                 stitched_lengths[self.length_to_store_unknown] += 1
@@ -484,6 +513,9 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
     def categorize(self):
         self.check_combined_read_length()
         self.categorize_outcomes()
+        
+        if any(read_type.endswith('no_overlap') for read_type in self.read_types):
+            self.categorize_no_overlap_outcomes()
 
         self.generate_outcome_counts()
         self.generate_outcome_stratified_lengths()

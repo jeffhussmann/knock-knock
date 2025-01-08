@@ -903,11 +903,15 @@ class ArrayedExperiment(knock_knock.illumina_experiment.IlluminaExperiment):
         self.group_name = group_name
         self.sample_name = sample_name
 
-        self.read_types.add(self.uncommon_read_type)
-
     @property
     def uncommon_read_type(self):
         return f'{self.preprocessed_read_type}_uncommon'
+
+    @property
+    def read_types(self):
+        read_types = super().read_types 
+        read_types.add(self.uncommon_read_type)
+        return read_types
 
     @memoized_property
     def categorizer(self):
@@ -928,6 +932,14 @@ class ArrayedExperiment(knock_knock.illumina_experiment.IlluminaExperiment):
 
         for alias, original_name in aliases.items():
             experiment_type_to_categorizer[alias] = experiment_type_to_categorizer[original_name]
+
+        return experiment_type_to_categorizer[self.experiment_type]
+
+    @memoized_property
+    def no_overlap_pair_categorizer(self):
+        experiment_type_to_categorizer = {
+            'TECseq': knock_knock.TECseq_layout.NoOverlapPairLayout,
+        }
 
         return experiment_type_to_categorizer[self.experiment_type]
 
@@ -1083,8 +1095,8 @@ def detect_sequencing_primers(base_dir, batch_name, sample_sheet_df):
     prefix_length = 13
 
     for adapter_type in ['truseq', 'nextera']:
-        
         expected_adapter_prefixes[adapter_type] = {}
+
         for side in ['R1', 'R2']:
             adapter_sequence = adapters.primers[adapter_type][opposite_side[side]]
             expected_adapter_prefixes[adapter_type][side] = utilities.reverse_complement(adapter_sequence)[:prefix_length]

@@ -74,7 +74,7 @@ class Explorer:
 
         all_kwargs = {
             **{k: ipywidgets.fixed(v) for k, v in self.plot_kwargs.items()},
-            **self.widgets,
+            **{k: v for k, v in self.widgets.items() if k not in {'category', 'subcategory'}},
         }
 
         self.interactive = ipywidgets.interactive(self.plot, **all_kwargs)
@@ -208,7 +208,7 @@ class Explorer:
                 ]
 
                 if self.by_outcome:
-                    layout = knock_knock.layout.NonoverlappingPairLayout(als['R1'], als['R2'], exp.target_info)
+                    layout = exp.no_overlap_pair_categorizer(als, exp.target_info)
             else:
                 read_details = [
                     f'exp name: {exp.sample_name}',

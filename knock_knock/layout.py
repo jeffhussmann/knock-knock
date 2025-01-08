@@ -530,7 +530,6 @@ class Categorizer:
             
         return edge_al
 
-
 class Layout(Categorizer):
     category_order = [
         ('WT',
@@ -2447,11 +2446,11 @@ class Layout(Categorizer):
         return diagram
 
 class NonoverlappingPairLayout:
-    def __init__(self, R1_als, R2_als, target_info):
+    def __init__(self, als, target_info):
         self.target_info = target_info
         self.layouts = {
-            'R1': Layout(R1_als, target_info, mode='illumina'),
-            'R2': Layout(R2_als, target_info, mode='illumina'),
+            'R1': Layout(als['R1'], target_info, mode='illumina'),
+            'R2': Layout(als['R2'], target_info, mode='illumina'),
         }
         if self.layouts['R1'].name != self.layouts['R2'].name:
             raise ValueError
