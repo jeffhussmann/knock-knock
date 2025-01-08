@@ -914,6 +914,23 @@ class Layout(layout.Categorizer):
 
         return relevant_edge
 
+    def convert_target_alignment_edge_to_nick_coordinate(self, al, start_or_end):
+        ti = self.target_info
+        target_PBS_name = ti.PBS_names_by_side_of_read[ti.pegRNA_side]
+        target_PBS = ti.features[ti.target, target_PBS_name]
+
+        if start_or_end == 'start':
+            reference_edge = al.reference_start
+        elif start_or_end == 'end':
+            reference_edge = al.reference_end - 1
+        
+        if target_PBS.strand == '+':
+            converted_edge = reference_edge - target_PBS.end
+        else:
+            converted_edge = target_PBS.start - reference_edge
+
+        return converted_edge
+
     @memoized_property
     def extension_chain_edges(self):
         return {side: self.get_extension_chain_edge(side) for side in ['left', 'right']}
@@ -2703,34 +2720,17 @@ class Layout(layout.Categorizer):
                 
         return manual_anchors
 
-    def plot(self,
-             relevant=True,
-             manual_alignments=None,
-             draw_protospacers_on_nicked_strand=True,
-             **manual_diagram_kwargs,
-            ):
-
-        label_overrides = manual_diagram_kwargs.pop('label_overrides', {})
-        label_offsets = manual_diagram_kwargs.pop('label_offsets', {})
-        feature_heights = manual_diagram_kwargs.pop('feature_heights', {})
-
-        if relevant and not self.categorized:
-            self.categorize()
-
+    @memoized_property
+    def plot_parameters(self):
         ti = self.target_info
-        features_to_show = {*ti.features_to_show}
 
-        flip_target = ti.sequencing_direction == '-'
-        flip_pegRNA = False
+        features_to_show = {*ti.features_to_show}
+        label_overrides = {}
+        label_offsets = {}
+        feature_heights = {}
 
         if ti.pegRNA_names is not None and len(ti.pegRNA_names) > 0:
             pegRNA_name = ti.pegRNA_names[0]
-
-            PBS_name = knock_knock.pegRNAs.PBS_name(pegRNA_name)
-            PBS_strand = ti.features[ti.target, PBS_name].strand
-
-            if (flip_target and PBS_strand == '-') or (not flip_target and PBS_strand == '+'):
-                flip_pegRNA = True
 
             for pegRNA_name in ti.pegRNA_names:
                 label_overrides[f'HA_RT_{pegRNA_name}'] = 'HA_RT'
@@ -2742,21 +2742,6 @@ class Layout(layout.Categorizer):
                     feature_heights[ti.target, name] = 0.5
 
                     features_to_show.add((ti.target, name))
-
-        if 'reverse_complement' in manual_diagram_kwargs and manual_diagram_kwargs['reverse_complement']:
-            flip_pegRNA = not flip_pegRNA
-
-        if draw_protospacers_on_nicked_strand:
-            # Draw protospacer features on the same side as their nick.
-            for feature_name, feature in ti.PAM_features.items():
-                if (feature.strand == '+' and not flip_target) or (feature.strand == '-' and flip_target):
-                    feature_heights[feature_name] = -1
-
-                label_offsets[feature_name] = 1
-
-            for feature_name, feature in ti.protospacer_features.items():
-                if (feature.strand == '+' and not flip_target) or (feature.strand == '-' and flip_target):
-                    feature_heights[feature_name] = -1
 
         for deletion in ti.pegRNA_programmed_deletions:
             label_overrides[deletion.ID] = f'programmed deletion ({len(deletion)} nts)'
@@ -2780,15 +2765,65 @@ class Layout(layout.Categorizer):
         features_to_show.update({(ti.target, name) for name in ti.protospacer_names})
         features_to_show.update({(ti.target, name) for name in ti.PAM_features})
 
-        if 'features_to_show' in manual_diagram_kwargs:
-            features_to_show.update(manual_diagram_kwargs.pop('features_to_show'))
+        plot_parameters = {
+            'features_to_show': features_to_show,
+            'label_overrides': label_overrides,
+            'label_offsets': label_offsets,
+            'feature_heights': feature_heights,
+        }
+
+        return plot_parameters
+
+    def plot(self,
+             relevant=True,
+             manual_alignments=None,
+             draw_protospacers_on_nicked_strand=True,
+             **manual_diagram_kwargs,
+            ):
+
+        features_to_show = manual_diagram_kwargs.pop('features_to_show', self.plot_parameters['features_to_show'].copy())
+        label_overrides = manual_diagram_kwargs.pop('label_overrides', self.plot_parameters['label_overrides'].copy())
+        label_offsets = manual_diagram_kwargs.pop('label_offsets', self.plot_parameters['label_offsets'].copy())
+        feature_heights = manual_diagram_kwargs.pop('feature_heights', self.plot_parameters['feature_heights'].copy())
+
+        if relevant and not self.categorized:
+            self.categorize()
+
+        ti = self.target_info
+
+        flip_target = ti.sequencing_direction == '-'
+        flip_pegRNA = False
+
+        if ti.pegRNA_names is not None and len(ti.pegRNA_names) > 0:
+            pegRNA_name = ti.pegRNA_names[0]
+
+            PBS_name = knock_knock.pegRNAs.PBS_name(pegRNA_name)
+            PBS_strand = ti.features[ti.target, PBS_name].strand
+
+            if (flip_target and PBS_strand == '-') or (not flip_target and PBS_strand == '+'):
+                flip_pegRNA = True
+
+        if manual_diagram_kwargs.get('reverse_complement', False):
+            flip_pegRNA = not flip_pegRNA
+
+        if draw_protospacers_on_nicked_strand:
+            # Draw protospacer features on the same side as their nick.
+            for feature_name, feature in ti.PAM_features.items():
+                if (feature.strand == '+' and not flip_target) or (feature.strand == '-' and flip_target):
+                    feature_heights[feature_name] = -1
+
+                label_offsets[feature_name] = 1
+
+            for feature_name, feature in ti.protospacer_features.items():
+                if (feature.strand == '+' and not flip_target) or (feature.strand == '-' and flip_target):
+                    feature_heights[feature_name] = -1
 
         if 'refs_to_draw' in manual_diagram_kwargs:
             refs_to_draw = manual_diagram_kwargs.pop('refs_to_draw')
         else:
             refs_to_draw = set()
 
-            if ti.amplicon_length < 1000:
+            if ti.amplicon_length < 3000:
                 refs_to_draw.add(ti.target)
 
             if ti.pegRNA_names is not None:
@@ -2797,7 +2832,7 @@ class Layout(layout.Categorizer):
         if 'phiX' in ti.supplemental_indices:
             supplementary_reference_sequences = ti.supplemental_reference_sequences('phiX')
         else:
-            supplementary_reference_sequences = None
+            supplementary_reference_sequences = dict()
 
         if relevant:
             manual_anchors = manual_diagram_kwargs.get('manual_anchors', self.manual_anchors)

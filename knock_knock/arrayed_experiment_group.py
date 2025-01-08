@@ -127,6 +127,16 @@ class Batch:
 
         return exps
 
+    def sample_name_to_experiment(self, sample_name):
+        exps = self.experiment_query(f'sample_name == "{sample_name}"')
+
+        if len(exps) == 0:
+            return None
+        elif len(exps) > 1:
+            raise ValueError
+        else:
+            return exps[0]
+
     def copy_snapshot(self, new_base_dir,
                       new_batch_name=None,
                       groups_to_include=None,
@@ -1346,6 +1356,14 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
         'sequencing_start_feature_name',
     ]
 
+    optional_keys = [
+        'trim_to_max_length',
+        'UMI_key',
+        'sequencing_primers',
+        'reverse_complement',
+        'max_reads',
+    ]
+
     grouped = sample_sheet_df.groupby(group_keys)
 
     for group_i, ((amplicon_primers, genome, sgRNAs, donor, extra_sequences, sequencing_start_feature_name), group_rows) in enumerate(grouped):
@@ -1445,7 +1463,7 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
                         if k in row:
                             samples[sample_name][k] = Path(row[k]).name
 
-                    for k in ['trim_to_max_length', 'UMI_key', 'sequencing_primers', 'reverse_complement']:
+                    for k in optional_keys:
                         if k in row:
                             samples[sample_name][k] = row[k]
 
@@ -1468,7 +1486,7 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
                     if k in row:
                         samples[sample_name][k] = Path(row[k]).name
 
-                for k in ['trim_to_max_length', 'UMI_key', 'sequencing_primers', 'reverse_complement']:
+                for k in optional_keys:
                     if k in row:
                         samples[sample_name][k] = row[k]
 

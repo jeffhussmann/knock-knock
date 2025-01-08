@@ -26,6 +26,9 @@ from knock_knock import target_info, pegRNAs
 
 import knock_knock.utilities
 
+VIRTUAL_PRIMER_DISTANCE = 2000
+VIRTUAL_PRIMER_LENGTH = 20
+
 def identify_homology_arms(donor_seq, donor_type, target_seq, cut_after, required_match_length=15):
     header = pysam.AlignmentHeader.from_references(['donor', 'target'], [len(donor_seq), len(target_seq)])
     mapper = sw.SeedAndExtender(donor_seq.encode(), 8, header, 'donor')
@@ -210,6 +213,7 @@ class TargetInfoBuilder:
     is flanked by amplicon primers.
     
     info should have keys:
+        name
         genome
         amplicon_primers
         sgRNAs
@@ -222,13 +226,15 @@ class TargetInfoBuilder:
     def __init__(self,
                  base_dir,
                  info,
-                 index_locations,
                  defer_HA_identification=False,
                 ):
 
         self.base_dir = Path(base_dir)
         self.info = info
-        self.index_locations = index_locations
+        self.index_locations = target_info.locate_supplemental_indices(self.base_dir)
+
+        self.extra_sequences = load_extra_sequences(self.base_dir)
+
         self.defer_HA_identification = defer_HA_identification
 
         self.name = self.info['name']
@@ -253,6 +259,34 @@ class TargetInfoBuilder:
         # self.target_name will used as a path component, so can't have a forward slash.
         self.target_name = self.target_name.replace('/', '_SLASH_')
 
+        self.sgRNAs = self.info['sgRNAs']
+        if self.sgRNAs is None:
+            self.sgRNAs = []
+
+    def identify_protospacer_features_in_amplicon(self,
+                                                  amplicon_sequence,
+                                                  verbose=False,
+                                                  left_al=None,
+                                                  right_al=None,
+                                                 ):
+
+        protospacer_features_in_amplicon = {}
+
+        for sgRNA_name, components in sorted(self.sgRNAs):
+            try:
+                effector = knock_knock.effector.effectors[components['effector']]
+                protospacer_feature = effector.identify_protospacer_in_target(amplicon_sequence, components['protospacer'])
+                protospacer_features_in_amplicon[sgRNA_name] = protospacer_feature
+
+            except ValueError:
+                logging.warning(f'A protospacer sequence adjacent to an appropriate could not be located for {sgRNA_name} {components["effector"]} protospacer: {components["protospacer"]} in target {ref_name}:{left_al.reference_start:,}-{right_al.reference_end:,}')
+
+                if components['extension'] != '':
+                    # pegRNAs must have a protospacer in target.
+                    raise ValueError
+
+        return protospacer_features_in_amplicon
+
     def build(self, generate_pegRNA_genbanks=False):
         donor_info = self.info.get('donor_sequence')
         if donor_info is None:
@@ -268,7 +302,7 @@ class TargetInfoBuilder:
         else:
             has_donor = True
 
-        if self.info['donor_type'] is None:
+        if self.info.get('donor_type') is None:
             donor_type = None
         else:
             _, donor_type = self.info['donor_type']
@@ -294,22 +328,7 @@ class TargetInfoBuilder:
         amplicon_end = right_al.reference_end
         amplicon_sequence = self.region_fetcher(ref_name, amplicon_start, amplicon_end).upper()
 
-        sgRNAs = self.info['sgRNAs']
-        if sgRNAs is None:
-            sgRNAs = []
-
-        protospacer_features_in_amplicon = {}
-        for sgRNA_name, components in sorted(sgRNAs):
-            try:
-                effector = knock_knock.effector.effectors[components['effector']]
-                protospacer_feature = effector.identify_protospacer_in_target(amplicon_sequence, components['protospacer'])
-                protospacer_features_in_amplicon[sgRNA_name] = protospacer_feature
-            except ValueError:
-                logging.warning(f'No valid location for {sgRNA_name} {components["effector"]} protospacer: {components["protospacer"]} in target {ref_name}:{left_al.reference_start:,}-{right_al.reference_end:,}')
-
-                if components['extension'] != '':
-                    # pegRNAs must have a protospacer in target.
-                    raise ValueError
+        protospacer_features_in_amplicon = self.identify_protospacer_features_in_amplicon(amplicon_sequence, verbose=True, left_al=left_al, right_al=right_al)
 
         final_window_around = min(500, amplicon_start)
 
@@ -389,10 +408,10 @@ class TargetInfoBuilder:
 
         if has_donor:
             if not self.defer_HA_identification:
-                if len(sgRNAs) > 1:
+                if len(self.sgRNAs) > 1:
                     raise ValueError
 
-                sgRNA_name, components = sgRNAs[0]
+                sgRNA_name, components = self.sgRNAs[0]
 
                 protospacer_feature = protospacer_features[0]
                 effector = target_info.effectors[components['effector']]
@@ -430,7 +449,7 @@ class TargetInfoBuilder:
 
             gb_records[donor_name] = donor_record
 
-        sgRNAs_with_extensions = [(name, components) for name, components in sgRNAs if components['extension'] != '']
+        sgRNAs_with_extensions = [(name, components) for name, components in self.sgRNAs if components['extension'] != '']
 
         if len(sgRNAs_with_extensions) > 0:
 
@@ -573,7 +592,7 @@ class TargetInfoBuilder:
         ti = target_info.TargetInfo(self.base_dir, self.name, gb_records=gb_records)
 
         sgRNAs_df = load_sgRNAs(self.base_dir, process=False)
-        sgRNA_names = sorted([name for name, _ in sgRNAs])
+        sgRNA_names = sorted([name for name, _ in self.sgRNAs])
         sgRNAs_df.loc[sgRNA_names].to_csv(ti.fns['sgRNAs'])
 
         ti.make_protospacer_fastas()
@@ -585,27 +604,97 @@ class TargetInfoBuilder:
         if self.genome in self.index_locations:
             region_fetcher = genomes.build_region_fetcher(self.index_locations[self.genome]['fasta'])
         else:
-            all_extra_sequences = load_extra_sequences(self.base_dir)
-            if self.genome not in all_extra_sequences:
+            if self.genome not in self.extra_sequences:
                 raise ValueError(f'no sequence record found for "{self.genome}"')
 
             def region_fetcher(seq_name, start, end):
-                return all_extra_sequences[seq_name][start:end]
+                return self.extra_sequences[seq_name][start:end]
 
         return region_fetcher
 
+    def reference_length(self, reference_name):
+        if self.genome in self.index_locations:
+            genome_index = genomes.get_genome_index(self.index_locations[self.genome]['fasta'])
+            length = genome_index[reference_name].length
+        else:
+            length = len(self.extra_sequences[reference_name])
+
+        return length
+
+    def identify_virtual_primer(self, primer_alignments):
+        ''' Given alignments of one primer, identify any alignments such that
+            a concordant virtual primer VIRTUAL_PRIMER_DISTANCE away would produce
+            an amplicon containing valide protospacer locations for all required
+            protospacer.
+        '''
+        valids = []
+
+        for primer_al in primer_alignments['primer_0']:
+            strand = sam.get_strand(primer_al)
+
+            ref_name = primer_al.reference_name
+            ref_length = self.reference_length(ref_name)
+
+            header = pysam.AlignmentHeader.from_references([ref_name], [ref_length])
+
+            virtual_al = pysam.AlignedSegment(header)
+            virtual_al.cigar = [(sam.BAM_CMATCH, VIRTUAL_PRIMER_LENGTH)]
+            virtual_al.reference_name = primer_al.reference_name
+            
+            if strand == '+':
+                virtual_primer_end = min(ref_length, primer_al.reference_end + VIRTUAL_PRIMER_DISTANCE + VIRTUAL_PRIMER_LENGTH)
+                virtual_primer_start = virtual_primer_end - VIRTUAL_PRIMER_LENGTH
+                
+                left_al = primer_al
+                right_al = virtual_al
+                
+                virtual_al.is_reverse = True
+
+            else:
+                virtual_primer_start = max(0, primer_al.reference_start - VIRTUAL_PRIMER_DISTANCE - VIRTUAL_PRIMER_LENGTH)
+                virtual_primer_end = virtual_primer_start + VIRTUAL_PRIMER_LENGTH
+                
+                right_al = primer_al
+                left_al = virtual_al
+
+            virtual_al.reference_start = virtual_primer_start
+                
+            amplicon = self.region_fetcher(primer_al.reference_name, left_al.reference_start, right_al.reference_end)
+            
+            try:
+                self.identify_protospacer_features_in_amplicon(amplicon, verbose=False)
+            except:
+                continue
+                
+            valids.append((left_al, right_al))
+
+        if len(valids) == 0:
+            raise ValueError
+        
+        if len(valids) > 1:
+            logging.warning(f'Found {len(valids)} possible valid primer alignments.')
+
+        return valids[0]
+
     def align_primers(self):
+        if len(self.primers) == 2:
+            alignment_tester = self.identify_concordant_primer_alignment_pair
+        elif len(self.primers) == 1:
+            alignment_tester = self.identify_virtual_primer
+
         if self.genome in self.index_locations:
             try:
                 primer_alignments = self.align_primers_to_reference_genome_with_STAR()
-                left_al, right_al = self.identify_concordant_primer_alignment_pair(primer_alignments)
+                left_al, right_al = alignment_tester(primer_alignments)
+
             except ValueError:
                 logging.warning('Failed to find concordant primer alignments with STAR, falling back to manual search.')
                 primer_alignments = self.align_primers_to_reference_genome_manually()
-                left_al, right_al = self.identify_concordant_primer_alignment_pair(primer_alignments)
+                left_al, right_al = alignment_tester(primer_alignments)
+
         else:
             primer_alignments = self.align_primers_to_extra_sequence()
-            left_al, right_al = self.identify_concordant_primer_alignment_pair(primer_alignments)
+            left_al, right_al = alignment_tester(primer_alignments)
 
         return left_al, right_al
 
@@ -644,9 +733,6 @@ class TargetInfoBuilder:
                 if len(al.query_sequence) - 1 in covered:
                     primer_alignments[al.query_name].append(al)
                     
-        if len(primer_alignments) != 2:
-            raise ValueError(f'At least one primer from pair {self.primers_name} could not be located in {self.genome}')
-
         shutil.rmtree(primers_dir)
 
         return primer_alignments
@@ -717,6 +803,7 @@ class TargetInfoBuilder:
             if len(not_correct_orientation_pairs) > 0:
                 for first_al, second_al in not_correct_orientation_pairs:
                     logging.warning(f'Found nearby primer alignments that don\'t point towards each other: {first_al.reference_name} {sam.get_strand(first_al)} {first_al.reference_start:,}-{first_al.reference_end:,}, {sam.get_strand(second_al)} {second_al.reference_start:,}-{second_al.reference_end:,}')
+
             raise ValueError(f'Could not identify primer binding sites in {self.genome} that point towards each other.')
 
         # Rank pairs in the correct orientation by (shortest) amplicon length.
@@ -830,8 +917,6 @@ def build_target_infos_from_csv(base_dir, defer_HA_identification=False):
     base_dir = Path(base_dir)
     csv_fn = base_dir / 'targets' / 'targets.csv'
 
-    indices = target_info.locate_supplemental_indices(base_dir)
-
     targets_df = pd.read_csv(csv_fn, comment='#', index_col='name').replace({np.nan: None})
 
     registry = build_component_registry(base_dir)
@@ -899,7 +984,6 @@ def build_target_infos_from_csv(base_dir, defer_HA_identification=False):
 
         builder = TargetInfoBuilder(base_dir,
                                     info,
-                                    indices,
                                     defer_HA_identification=defer_HA_identification,
                                    )
         builder.build(generate_pegRNA_genbanks=False)
