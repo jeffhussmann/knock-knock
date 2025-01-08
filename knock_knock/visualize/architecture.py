@@ -1,7 +1,10 @@
 import copy
 from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Any, Union, Optional
 
 import matplotlib
+
 if 'inline' not in matplotlib.get_backend():
     matplotlib.use('Agg')
 
@@ -12,6 +15,7 @@ from hits import utilities, interval, sam, sw
 import hits.visualize
 
 import knock_knock.layout
+import knock_knock.target_info
 
 memoized_property = utilities.memoized_property
 
@@ -29,154 +33,89 @@ def adjust_edges(xs):
 
     return xs
 
-class ReadDiagram():
-    def __init__(self, 
-                 alignments,
-                 target_info,
-                 ref_centric=True,
-                 parsimonious=False,
-                 size_multiple=1,
-                 draw_qualities=False,
-                 draw_mismatches=True,
-                 draw_sequence=False,
-                 draw_ref_sequences=False,
-                 max_qual=41,
-                 process_mappings=None,
-                 detect_orientation=False,
-                 highlight_SNPs=False,
-                 reverse_complement=False,
-                 label_left=False,
-                 flip_donor=False,
-                 flip_target=False,
-                 read_label='sequencing read',
-                 donor_below=False,
-                 target_above=False,
-                 manual_refs_below=None,
-                 features_on_alignments=True,
-                 ax=None,
-                 features_to_hide=None,
-                 features_to_show=None,
-                 feature_heights=None,
-                 refs_to_hide=None,
-                 draw_edge_numbers=True,
-                 hide_non_target_alignments=False,
-                 hide_target_alignments=False,
-                 hide_donor_alignments=False,
-                 default_color='grey',
-                 color_overrides=None,
-                 title=None,
-                 title_y=1.02,
-                 mode='normal',
-                 layout_mode='illumina',
-                 label_differences=False,
-                 label_dimples=True,
-                 label_overrides=None,
-                 split_at_indels=False,
-                 only_target_and_donor=False,
-                 force_left_aligned=False,
-                 force_right_aligned=False,
-                 width_per_unit=None,
-                 arrow_width=None,
-                 emphasize_parsimonious=False,
-                 manual_x_lims=None,
-                 label_offsets=None,
-                 center_on_primers=False,
-                 invisible_alignments=None,
-                 query_interval=None,
-                 hide_xticks=False,
-                 inferred_amplicon_length=None,
-                 manual_anchors=None,
-                 manual_ref_extents=None,
-                 manual_fade=None,
-                 refs_to_draw=None,
-                 parallelogram_alpha=0.05,
-                 supplementary_reference_sequences=None,
-                 invisible_references=None,
-                 high_resolution_parallelograms=True,
-                 draw_cut_afters=True,
-                 **kwargs,
-                ):
+@dataclass
+class ReadDiagram:
+    alignments: Union[list, dict]
+    target_info: knock_knock.target_info.TargetInfo
 
-        self.parsimonious = parsimonious
-        self.emphasize_parismonious = emphasize_parsimonious
-        self.ref_centric = ref_centric
-        self.donor_below = donor_below
-        self.target_above = target_above
-        self.manual_refs_below = manual_refs_below
-        self.size_multiple = size_multiple
-        self.draw_qualities = draw_qualities
-        self.draw_mismatches = draw_mismatches
-        self.draw_sequence = draw_sequence
-        self.draw_ref_sequences = draw_ref_sequences
-        self.max_qual = max_qual
-        self.process_mappings = process_mappings
-        self.detect_orientation = detect_orientation
-        self.highlight_SNPs = highlight_SNPs
-        self.reverse_complement = reverse_complement
-        self.label_left = label_left
-        self.flip_donor = flip_donor
-        self.flip_target = flip_target
-        self.read_label = read_label
-        self.draw_edge_numbers = draw_edge_numbers
-        self.features_on_alignments = features_on_alignments
-        self.hide_non_target_alignments = hide_non_target_alignments
-        self.hide_target_alignments = hide_target_alignments
-        self.hide_donor_alignments = hide_donor_alignments
-        self.default_color = default_color
-        self.mode = mode
-        self.layout_mode = layout_mode
-        self.force_left_aligned = force_left_aligned
-        self.force_right_aligned = force_right_aligned
-        self.center_on_primers = center_on_primers
-        self.manual_x_lims = manual_x_lims
-        self.hide_xticks = hide_xticks
-        self.inferred_amplicon_length = inferred_amplicon_length
-        self.manual_fade = manual_fade
-        self.label_differences = label_differences
-        self.label_dimples = label_dimples
-        self.draw_arrowheads = kwargs.get('draw_arrowheads', True)
-        self.refs_to_draw = refs_to_draw
-        self.parallelogram_alpha = parallelogram_alpha
-        self.high_resolution_parallelograms = high_resolution_parallelograms
-        self.draw_cut_afters = draw_cut_afters
+    ref_centric: bool = True
+    parsimonious: bool = False
+    size_multiple: float = 1
+    draw_qualities: bool = False
+    draw_mismatches: bool = True
+    draw_sequence: bool = False
+    draw_ref_sequences: bool = False
+    max_qual: int = 41
+    detect_orientation: bool = False
+    highlight_SNPs: bool = False
+    reverse_complement: bool = False
+    label_left: bool = False
+    flip_donor: bool = False
+    flip_target: bool = False
+    read_label: str = 'sequencing read'
+    donor_below: bool = False
+    target_above: bool = False
+    manual_refs_below: list = field(default_factory=list)
+    features_on_alignments: bool = True
+    ax: Optional[plt.Axes] = None
+    features_to_hide: set = field(default_factory=set)
+    features_to_show: Optional[set] = None
+    feature_heights: dict = field(default_factory=dict)
+    refs_to_hide: set = field(default_factory=set)
+    draw_edge_numbers: bool = True
+    hide_non_target_alignments: bool = False
+    hide_target_alignments: bool = False
+    hide_donor_alignments: bool = False
+    default_color: Any = 'grey'
+    color_overrides: dict = field(default_factory=dict)
+    title: Optional[str] = None
+    title_y: float = 1.02
+    layout_mode: str = 'illumina'
+    label_differences: bool = False
+    label_dimples: bool = True
+    label_overrides: dict = field(default_factory=dict)
+    split_at_indels: bool = False
+    only_target_and_donor: bool = False
+    force_left_aligned: bool = False
+    force_right_aligned: bool = False
+    width_per_unit: Optional[float] = None
+    arrow_width: Optional[float] = None
+    emphasize_parsimonious: bool = False
+    manual_x_lims: Optional[tuple] = None
+    label_offsets: dict = field(default_factory=dict)
+    center_on_primers: bool = False
+    invisible_alignments: list = field(default_factory=list)
+    query_interval: Optional[tuple] = None
+    hide_xticks: bool = False
+    inferred_amplicon_length: Optional[int] = None
+    manual_anchors: dict = field(default_factory=dict)
+    manual_ref_extents: dict = field(default_factory=dict)
+    manual_fade: Optional[dict] = None
+    refs_to_draw: set = field(default_factory=set)
+    parallelogram_alpha: float = 0.05
+    supplementary_reference_sequences: dict = field(default_factory=dict)
+    invisible_references: set = field(default_factory=set)
+    high_resolution_parallelograms: bool = True
+    draw_cut_afters: bool = True
+    draw_arrowheads: bool = True
+    ref_line_width: float = 0.001
+    cross_x: float = 0.6
+    target_and_donor_y_gap: float = 0.03
+    initial_alignment_y_offset: float = 5
+    feature_line_width: float = 0.005
+    gap_between_als: float = 0.003
+    label_cut: bool = False
 
-        self.target_info = target_info
+    def __post_init__(self):
+        self.all_reference_sequences = {
+            **self.target_info.reference_sequences,
+            **self.supplementary_reference_sequences,
+        }
 
-        if supplementary_reference_sequences is None:
-            supplementary_reference_sequences = {}
-
-        self.all_reference_sequences = {**self.target_info.reference_sequences, **supplementary_reference_sequences}
-
-        if self.refs_to_draw is None:
-            self.refs_to_draw = set()
-
-        if self.manual_refs_below is None:
-            self.manual_refs_below = []
-        
         if len(self.refs_to_draw) == 0 and self.ref_centric:
             self.refs_to_draw.add(self.target_info.target)
             if self.target_info.donor is not None:
                 self.refs_to_draw.add(self.target_info.donor)
-
-        if invisible_alignments is None:
-            invisible_alignments = []
-        self.invisible_alignments = invisible_alignments
-
-        if invisible_references is None:
-            invisible_references = []
-        self.invisible_references = invisible_references
-
-        if manual_anchors is None:
-            manual_anchors = {}
-        self.manual_anchors = manual_anchors
-
-        if manual_ref_extents is None:
-            manual_ref_extents = {}
-        self.manual_ref_extents = manual_ref_extents
-
-        # If query_interval is initially None, will be set
-        # to whole query after alignments are cleaned up.
-        self.query_interval = query_interval
 
         if self.query_interval is not None:
             if isinstance(self.query_interval, int):
@@ -187,12 +126,14 @@ class ReadDiagram():
                 als = []
 
             als = copy.deepcopy(als)
-            als = [al for al in als if al is not None]
+            als = [
+                al for al in als
+                if al is not None
+                and al.reference_name is not None
+                and al.reference_name not in self.refs_to_hide
+            ]
 
-            if refs_to_hide is not None:
-                als = [al for al in als if al.reference_name not in refs_to_hide]
-
-            if split_at_indels:
+            if self.split_at_indels:
                 all_split_als = []
 
                 refs_to_split = [self.target_info.target, self.target_info.donor]
@@ -216,7 +157,7 @@ class ReadDiagram():
             if self.query_interval is not None:
                 # If reverse complement, query_interval is specific relative to flipped read and needs to be un-flipped
                 # before applying
-                if reverse_complement:
+                if self.reverse_complement:
                     query_length = als[0].query_length
                     start, end = self.query_interval
                     query_interval_to_apply = (query_length - 1 - end, query_length - 1 - start)
@@ -226,7 +167,7 @@ class ReadDiagram():
                 als = [sam.crop_al_to_query_int(al, *query_interval_to_apply) for al in als]
                 als = [al for al in als if al is not None]
 
-            if only_target_and_donor:
+            if self.only_target_and_donor:
                 als = [al for al in als if al.reference_name in [self.target_info.target, self.target_info.donor]]
 
             all_als = als
@@ -238,103 +179,31 @@ class ReadDiagram():
 
             return als, all_als
 
-        if isinstance(alignments, dict):
-            self.alignments, _ = clean_up_alignments(alignments['R1'])
-            self.R2_alignments, _ = clean_up_alignments(alignments['R2'])
+        if isinstance(self.alignments, dict):
+            self.R2_alignments, _ = clean_up_alignments(self.alignments['R2'])
+            self.alignments, _ = clean_up_alignments(self.alignments['R1'])
         else:
-            self.alignments, self.all_alignments = clean_up_alignments(alignments)
+            self.alignments, self.all_alignments = clean_up_alignments(self.alignments)
             self.R2_alignments = None
 
-        self.ref_line_width = kwargs.get('ref_line_width', 0.001) * self.size_multiple
+        self.ref_line_width = self.ref_line_width * self.size_multiple
 
-        if label_offsets is None:
-            label_offsets = {}
-        self.label_offsets = label_offsets
+        self.font_sizes = {
+            'read_label': 10,
+            'ref_label': 10,
+            'feature_label': 10,
+            'number': 6,
+            'sequence': min(3.5 * self.size_multiple, 12),
+            'title': 16,
+        }
 
-        if self.mode == 'normal':
-            self.font_sizes = {
-                'read_label': 10,
-                'ref_label': 10,
-                'feature_label': 10,
-                'number': 6,
-                'sequence': min(3.5 * self.size_multiple, 12),
-                'title': 16,
-            }
-
-            self.target_and_donor_y_gap = kwargs.get('target_and_donor_y_gap', 0.03)
-            self.initial_alignment_y_offset = kwargs.get('initial_alignment_y_offset', 5)
-            self.feature_line_width = 0.005
-            self.gap_between_als = kwargs.get('gap_between_als', 0.003)
-            self.label_cut = False
-
-            if self.label_left:
-                self.label_x_offset = -30
-            else:
-                self.label_x_offset = 20
-
-        elif self.mode == 'paper':
-            self.font_sizes = {
-                'read_label': kwargs.get('label_size', 12),
-                'ref_label': kwargs.get('label_size', 12),
-                'feature_label': kwargs.get('feature_label_size', 12),
-                'number': kwargs.get('number_size', 8),
-                'sequence': 3.5 * self.size_multiple,
-                'title': 16,
-            }
-
-            self.target_and_donor_y_gap = kwargs.get('target_and_donor_y_gap', 0.015)
-            self.initial_alignment_y_offset = kwargs.get('initial_alignment_y_offset', 5)
-            self.feature_line_width = kwargs.get('feature_line_width', 0.005)
-            self.gap_between_als = kwargs.get('gap_between_als', 0.003)
-            self.label_cut = kwargs.get('label_cut', False)
-
-            if self.label_left:
-                self.label_x_offset = -10
-            else:
-                self.label_x_offset = 20
-
-        elif self.mode == 'compact':
-            self.font_sizes = {
-                'read_label': 12,
-                'ref_label': 12,
-                'feature_label': 12,
-                'number': 8,
-                'sequence': 3.5 * self.size_multiple,
-                'title': 22,
-            }
-
-            self.target_and_donor_y_gap = kwargs.get('target_and_donor_y_gap', 0.01)
-            self.initial_alignment_y_offset = 3
-            self.feature_line_width = 0.004
-            self.gap_between_als = kwargs.get('gap_between_als', 0.003)
-            self.label_cut = kwargs.get('label_cut', False)
-
-            if self.label_left:
-                self.label_x_offset = -5
-            else:
-                self.label_x_offset = 5
-        
-        if color_overrides is None:
-            color_overrides = {}
-
-        self.color_overrides = color_overrides
-        self.title = title
-        self.title_y = title_y
-        self.ax = ax
+        if self.label_left:
+            self.label_x_offset = -30
+        else:
+            self.label_x_offset = 20
 
         self.reference_ys = {}
 
-        if features_to_hide is None:
-            features_to_hide = set()
-        self.features_to_hide = features_to_hide
-        
-        self.features_to_show = features_to_show
-
-        if feature_heights is None:
-            feature_heights = {}
-
-        self.feature_heights = feature_heights
-        
         if len(self.alignments) > 0:
             self.query_length = self.alignments[0].query_length
             self.query_name = self.alignments[0].query_name
@@ -347,7 +216,7 @@ class ReadDiagram():
             self.R2_query_length = self.R2_alignments[0].query_length
 
             if self.inferred_amplicon_length is None or self.inferred_amplicon_length == -1:
-                self.total_query_length = self.R1_query_length + self.R2_query_length + 20
+                self.total_query_length = self.R1_query_length + self.R2_query_length + 50
             else:
                 self.total_query_length = self.inferred_amplicon_length
 
@@ -361,17 +230,15 @@ class ReadDiagram():
 
         self.query_length = self.query_interval[1] - self.query_interval[0] + 1
 
-        if width_per_unit is None:
+        if self.width_per_unit is None:
             if self.query_length < 750:
-                width_per_unit = 0.04
+                self.width_per_unit = 0.04
             elif 750 <= self.query_length < 2000:
-                width_per_unit = 0.01
+                self.width_per_unit = 0.01
             elif 2000 <= self.query_length < 5000:
-                width_per_unit = 0.005
+                self.width_per_unit = 0.005
             else:
-                width_per_unit = 0.003
-
-        self.width_per_unit = width_per_unit
+                self.width_per_unit = 0.003
 
         self.height_per_unit = 40
 
@@ -380,17 +247,13 @@ class ReadDiagram():
         else:
             self.arrow_linewidth = 2
 
-        if arrow_width is None:
-            arrow_width = self.query_length * 0.012
-        self.arrow_width = arrow_width
+        if self.arrow_width is None:
+            self.arrow_width = self.query_length * 0.012
         self.arrow_height_over_width = self.width_per_unit / self.height_per_unit
-
-        self.text_y = -7
 
         # cross_x and cross_y are the width and height of each X arm
         # (i.e. half the width of the whole X)
 
-        self.cross_x = kwargs.get('cross_x', 0.6)
         self.cross_y = self.cross_x * self.width_per_unit / self.height_per_unit
 
         if self.ax is None:
@@ -405,22 +268,7 @@ class ReadDiagram():
             self.label_x = 1
             self.label_ha = 'left'
         
-        if self.reverse_complement is None:
-            if self.detect_orientation and not all(al.is_unmapped for al in self.alignments):
-                layout = knock_knock.layout.Layout(alignments, self.target_info)
-                self.reverse_complement = (layout.strand == '-')
-
-            else:
-                self.reverse_complement = False
-
-        if label_overrides is None:
-            label_overrides = {}
-
-        self.label_overrides = label_overrides
-
-        self.feature_label_size = 10
-        
-        self.ref_name_to_color = defaultdict(lambda: default_color)
+        self.ref_name_to_color = defaultdict(lambda: self.default_color)
 
         unused_colors = {f'C{i}' for i in range(10)} - set(self.color_overrides.values())
 
@@ -462,11 +310,17 @@ class ReadDiagram():
 
         self.update_size()
 
+    def __repr__(self):
+        # Don't want dataclass repr
+        return super().__repr__()
+
     @property
     def seq(self):
         seq = self.alignments[0].get_forward_sequence()
+
         if self.reverse_complement:
             seq = utilities.reverse_complement(seq)
+
         return seq
 
     @property
@@ -619,15 +473,18 @@ class ReadDiagram():
         return [n for n in self.reference_order if n not in self.references_below]
 
     @memoized_property
+    def alignments_including_possibly_R2(self):
+        all_als = [*self.alignments]
+        if self.R2_alignments is not None:
+            all_als.extend(self.R2_alignments)
+        return all_als
+
+    @memoized_property
     def reference_offsets(self):
         by_reference_name = defaultdict(list)
 
-        for al in sorted(self.alignments, key=sam.query_interval):
+        for al in sorted(self.alignments_including_possibly_R2, key=sam.query_interval):
             by_reference_name[al.reference_name].append(al)
-
-        if self.R2_alignments is not None:
-            for al in sorted(self.R2_alignments, key=sam.query_interval):
-                by_reference_name[al.reference_name].append(al)
 
         # Prevent further population of defaultdict.
         by_reference_name = dict(by_reference_name)
@@ -650,21 +507,20 @@ class ReadDiagram():
     def label_references(self):
         by_reference_name = defaultdict(list)
 
-        for al in sorted(self.alignments, key=sam.query_interval):
+        for al in sorted(self.alignments_including_possibly_R2, key=sam.query_interval):
             by_reference_name[al.reference_name].append(al)
-
-        if self.R2_alignments is not None:
-            for al in sorted(self.R2_alignments, key=sam.query_interval):
-                by_reference_name[al.reference_name].append(al)
 
         for ref_name, ref_alignments in by_reference_name.items():
 
             hide_multiplier = 1
-            if self.hide_non_target_alignments and ref_name != ti.target:
+
+            if self.hide_non_target_alignments and ref_name != self.target_info.target:
                 hide_multiplier = 0
-            if self.hide_target_alignments and ref_name == ti.target:
+
+            if self.hide_target_alignments and ref_name == self.target_info.target:
                 hide_multiplier = 0
-            if self.hide_donor_alignments and ref_name == ti.donor:
+
+            if self.hide_donor_alignments and ref_name == self.target_info.donor:
                 hide_multiplier = 0
 
             offset = self.reference_offsets[ref_name]
@@ -725,7 +581,7 @@ class ReadDiagram():
                     alignment.is_reverse = not alignment.is_reverse
 
             for i, alignment in enumerate(ref_alignments):
-                if self.emphasize_parismonious:
+                if self.emphasize_parsimonious:
                     if alignment in self.alignments:
                         parsimony_multiplier = 1
                         parsimony_width_multiplier = 2
@@ -892,7 +748,7 @@ class ReadDiagram():
 
                         if self.label_dimples:
                             ax.annotate(str(length),
-                                        xy=(centered_at, y - height),
+                                        xy=(middle_offset(centered_at), y - height),
                                         xytext=(0, -1),
                                         textcoords='offset points',
                                         ha='center',
@@ -1129,7 +985,7 @@ class ReadDiagram():
             
         self.draw_read_arrows()
 
-        if self.emphasize_parismonious:
+        if self.emphasize_parsimonious:
             self.draw_alignments(self.all_alignments)
 
             if self.R2_alignments is not None:
@@ -1228,7 +1084,10 @@ class ReadDiagram():
             
         return self.fig
 
-    def draw_reference(self, ref_name, ref_y, flip,
+    def draw_reference(self,
+                       ref_name,
+                       ref_y,
+                       flip,
                        label_features=True,
                        visible=True,
                       ):
@@ -1364,8 +1223,18 @@ class ReadDiagram():
                             )
 
         if ref_name == ti.target and self.center_on_primers:
-            ref_al_min = min(ref_al_min, ti.amplicon_interval.start)
-            ref_al_max = max(ref_al_max, ti.amplicon_interval.end)
+            target_features = {
+                feature
+                for (ref_name, feature_name), feature in ti.features.items()
+                if (ref_name, feature_name) in self.features_to_show
+                and ref_name == ti.target
+             }
+
+            min_feature_start = min(feature.start for feature in target_features)
+            max_feature_end = max(feature.end for feature in target_features)
+
+            ref_al_min = min(ref_al_min, min_feature_start)
+            ref_al_max = max(ref_al_max, max_feature_end)
 
         self.min_y = min(self.min_y, ref_y)
         self.max_y = max(self.max_y, ref_y)
