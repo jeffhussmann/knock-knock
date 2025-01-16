@@ -7,7 +7,7 @@ import knock_knock.experiment
 import knock_knock.layout
 
 import ipywidgets
-from ipywidgets import Select, Layout, Text, Button, ToggleButton, Label, HBox, VBox
+from ipywidgets import Select, Layout, Text, Button, ToggleButton, ToggleButtons, Label, HBox, VBox
 
 class Explorer:
     def __init__(self,
@@ -25,9 +25,33 @@ class Explorer:
         default_filename = Path.cwd() / 'figure.png'
 
         self.widgets = {
-            'category': Select(options=[], continuous_update=False, layout=Layout(height='200px', width='300px')),
-            'subcategory': Select(options=[], continuous_update=False, layout=Layout(height='200px', width='300px')),
-            'read_id': Select(options=[], layout=Layout(height='200px', width='500px')),
+            'category': Select(
+                description='Category:',
+                options=[],
+                continuous_update=False,
+                layout=Layout(height='200px', width='300px'),
+            ),
+            'subcategory': Select(
+                description='Subcategory:',
+                options=[],
+                continuous_update=False,
+                layout=Layout(height='200px', width='300px'),
+            ),
+            'read_id': Select(
+                description='read:',
+                options=[],
+                layout=Layout(height='200px', width='500px'),
+            ),
+            'alignment_registration': ToggleButtons(
+                description='Alignment registration:',
+                options=['centered on primers', 'left', 'right'],
+                value='centered on primers',
+                style=dict(
+                    button_width='120px',
+                    description_width='initial',
+                ),
+                layout={'width': '290px'},
+            ),
         }
 
         selection_widget_keys = self.set_up_read_selection_widgets()
@@ -37,16 +61,14 @@ class Explorer:
             'save': Button(description='Save snapshot'),
             'read_details': ipywidgets.Textarea(description='Read details:', layout=Layout(height='200px', width='1000px')),
             'alignments_to_show': ipywidgets.ToggleButtons(
+                description='Alignments to show:',
                 options=['all', 'parsimonious', 'relevant'],
                 value='relevant',
-                style={'button_width': '80px'},
-                layout={'width': '150px'},
-            ),
-            'alignment_registration': ipywidgets.ToggleButtons(
-                options=['centered on primers', 'left', 'right'],
-                value='centered on primers',
-                style={'button_width': '120px'},
-                layout={'width': '190px'},
+                style=dict(
+                    button_width = '80px',
+                    description_width='initial',
+                ),
+                layout={'width': '250px'},
             ),
         }
 
@@ -68,20 +90,16 @@ class Explorer:
             value = self.plot_kwargs.pop(key, default_value)
             self.widgets[key] = ToggleButton(value=value)
 
-        # For some reason, the target widget doesn't get a label without this.
-        for k, v in self.widgets.items():
-            v.description = k
-
         all_kwargs = {
             **{k: ipywidgets.fixed(v) for k, v in self.plot_kwargs.items()},
-            **{k: v for k, v in self.widgets.items() if k not in {'category', 'subcategory'}},
+            **{k: v for k, v in self.widgets.items() if k not in {'category', 'subcategory', 'condition', 'replicate'}},
         }
 
         self.interactive = ipywidgets.interactive(self.plot, **all_kwargs)
         self.interactive.update()
 
         self.non_widgets['alignments_to_show'].observe(self.interactive.update, names='value')
-        self.non_widgets['alignment_registration'].observe(self.interactive.update, names='value')
+        self.widgets['alignment_registration'].observe(self.interactive.update, names='value')
 
         for key in self.draw_buttons:
             self.draw_buttons[key].observe(self.interactive.update, names='value')
@@ -89,16 +107,20 @@ class Explorer:
         def make_row(keys):
             return HBox([self.widgets[k] if k in self.widgets else self.non_widgets[k] for k in keys])
 
-        def make_col(keys):
-            return VBox([self.widgets[k] if k in self.widgets else self.non_widgets[k] for k in keys])
+        def make_col(keys, description=None):
+            col = VBox([self.draw_buttons[k] for k in keys])
+            if description is not None:
+                col = HBox([Label(description), col])
+
+            return col
 
         self.non_widgets['save'].on_click(self.save)
 
         self.layout = ipywidgets.VBox(
             [make_row(selection_widget_keys),
-             HBox([HBox([Label('Alignments to show:'), self.non_widgets['alignments_to_show']]),
-                   HBox([Label('Alignment registration:'), self.non_widgets['alignment_registration']]),
-                   HBox([Label('Draw:'), VBox([self.draw_buttons[k] for k in ['draw_sequence', 'draw_qualities', 'draw_mismatches']])]),
+             HBox([self.non_widgets['alignments_to_show'],
+                   self.widgets['alignment_registration'],
+                   make_col(['draw_sequence', 'draw_qualities', 'draw_mismatches'], description='Draw:'),
                   ]),
              make_row([k for k, d in toggles]),
              make_row(['file_name', 'save']),
@@ -246,17 +268,6 @@ class Explorer:
             if self.non_widgets['alignments_to_show'].value == 'parsimonious':
                 plot_kwargs['parsimonious'] = True
 
-            plot_kwargs['center_on_primers'] = False
-            plot_kwargs['force_left_aligned'] = False
-            plot_kwargs['force_right_aligned'] = False
-
-            if self.non_widgets['alignment_registration'].value == 'centered on primers':
-                plot_kwargs['center_on_primers'] = True
-            elif self.non_widgets['alignment_registration'].value == 'left':
-                plot_kwargs['force_left_aligned'] = True
-            elif self.non_widgets['alignment_registration'].value == 'right':
-                plot_kwargs['force_right_aligned'] = True
-
             for k in self.draw_buttons:
                 plot_kwargs[k] = self.draw_buttons[k].value
 
@@ -328,9 +339,6 @@ class SingleExperimentExplorer(Explorer):
         return self.experiment
 
     def set_up_read_selection_widgets(self):
-        self.widgets.update({
-        })
-
         if self.by_outcome:
             self.populate_categories({'name': 'initial'})
             self.populate_subcategories({'name': 'initial'})
@@ -385,13 +393,22 @@ class ArrayedGroupExplorer(Explorer):
         if len(self.group.conditions) > 0:
             condition_options = [(', '.join(c) if isinstance(c, tuple) else c, c) for c in self.group.conditions] 
             self.widgets.update({
-                'condition': Select(options=condition_options, value=self.initial_condition, layout=Layout(height='200px', width='300px')),
+                'condition': Select(
+                    description='Condition:',
+                    options=condition_options,
+                    value=self.initial_condition,
+                    layout=Layout(height='200px', width='300px'),
+                ),
             })
             self.widgets['condition'].observe(self.populate_replicates, names='value')
             selection_widget_keys.append('condition')
 
         self.widgets.update({
-            'replicate': Select(options=[], layout=Layout(height='200px', width='150px')),
+            'replicate': Select(
+                description='Replicate:',
+                options=[],
+                layout=Layout(height='200px', width='150px'),
+            ),
         })
 
         self.populate_replicates({'name': 'initial'})

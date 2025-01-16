@@ -76,14 +76,12 @@ class ReadDiagram:
     label_overrides: dict = field(default_factory=dict)
     split_at_indels: bool = False
     only_target_and_donor: bool = False
-    force_left_aligned: bool = False
-    force_right_aligned: bool = False
+    alignment_registration: str = 'centered on primers'
     width_per_unit: Optional[float] = None
     arrow_width: Optional[float] = None
     emphasize_parsimonious: bool = False
     manual_x_lims: Optional[tuple] = None
     label_offsets: dict = field(default_factory=dict)
-    center_on_primers: bool = False
     invisible_alignments: list = field(default_factory=list)
     query_interval: Optional[tuple] = None
     hide_xticks: bool = False
@@ -1112,7 +1110,7 @@ class ReadDiagram:
         # it is mapped to if there is only one alignment to this reference, or
         # if there are two but they might just be a single alignment split across R1
         # and R2.
-        elif (self.force_left_aligned or 
+        elif (self.alignment_registration == 'left' or 
               (len(alignment_coordinates) == 1) or 
               (len(alignment_coordinates) == 2 and ref_name == ti.donor and self.R2_alignments is not None) 
              ):
@@ -1125,7 +1123,7 @@ class ReadDiagram:
             else:
                 anchor_read = xs[1]
 
-        elif self.force_right_aligned:
+        elif self.alignment_registration == 'right':
             xs, ps, y, strand, parsimony_multiplier = alignment_coordinates[-1]
 
             anchor_ref = ps[-1]
@@ -1141,7 +1139,7 @@ class ReadDiagram:
             else:
                 relevant_length = self.query_length
 
-            if ref_name == ti.target and self.center_on_primers:
+            if ref_name == ti.target and self.alignment_registration == 'centered on primers':
                 if self.flip_target:
                     anchor_ref = ti.amplicon_interval.end - (len(ti.amplicon_interval) - relevant_length) / 2
                 else:
@@ -1222,7 +1220,7 @@ class ReadDiagram:
                              visible=visible,
                             )
 
-        if ref_name == ti.target and self.center_on_primers:
+        if ref_name == ti.target and self.alignment_registration == 'centered_on_primers':
             target_features = {
                 feature
                 for (ref_name, feature_name), feature in ti.features.items()
