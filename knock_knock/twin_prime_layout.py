@@ -1032,7 +1032,6 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             refs_to_draw=refs_to_draw,
             label_overrides=label_overrides,
             inferred_amplicon_length=inferred_amplicon_length,
-            center_on_primers=True,
             color_overrides=color_overrides,
             feature_heights=feature_heights,
             supplementary_reference_sequences=supplementary_reference_sequences,

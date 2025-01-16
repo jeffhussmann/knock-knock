@@ -2851,7 +2851,6 @@ class Layout(layout.Categorizer):
             label_offsets=label_offsets,
             label_overrides=label_overrides,
             inferred_amplicon_length=inferred_amplicon_length,
-            center_on_primers=True,
             highlight_SNPs=True,
             feature_heights=feature_heights,
             supplementary_reference_sequences=supplementary_reference_sequences,
