@@ -224,9 +224,10 @@ class Explorer:
 
             if isinstance(als, dict):
                 read_details = [
-                    'query name: ' + als['R1'][0].query_name,
-                    'R1 sequence: ' + als['R1'][0].get_forward_sequence(),
-                    'R2 sequence: ' + als['R2'][0].get_forward_sequence(),
+                    f'exp name: {exp.sample_name}',
+                    f'query name: {als["R1"][0].query_name}',
+                    f'R1 sequence: {als["R1"][0].get_forward_sequence()}',
+                    f'R2 sequence: {als["R2"][0].get_forward_sequence()}',
                 ]
 
                 if self.by_outcome:
