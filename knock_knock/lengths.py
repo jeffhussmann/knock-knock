@@ -76,7 +76,11 @@ class OutcomeStratifiedLengths:
     def lengths_df(self, *, level='subcategory'):
         df = pd.DataFrame(self.subcategory_length_arrays).fillna(0).T
         df.columns.name = 'length'
-        df.index.names = ['category', 'subcategory']
+
+        if len(df.index) == 0:
+            df.index = pd.MultiIndex.from_tuples([], names=['category', 'subcategory'])
+        else:
+            df.index.names = ['category', 'subcategory']
 
         if level == 'subcategory':
             pass
