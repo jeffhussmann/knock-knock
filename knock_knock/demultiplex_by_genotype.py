@@ -25,7 +25,7 @@ def get_unique_kmers(genotypes, k=20, relevant_slice=slice(None)):
     def get_kmers(seq, k):
         return {seq[i:i+k] for i in range(0, len(seq) - k)}
 
-    kmers = {name: get_kmers(seq[relevant_slice], 20) for name, seq in genotypes.items()}
+    kmers = {name: get_kmers(seq[relevant_slice], k) for name, seq in genotypes.items()}
 
     unique_kmers = {}
 
@@ -51,6 +51,8 @@ def add_genotypes_to_sample_sheet(base_dir, batch_name, genotypes_fasta_fn):
 
     suffixed_rows = []
 
+    i = 0
+
     for _, row in sample_sheet_df.iterrows():
         for genotype in genotypes:
             suffixed_row = row.copy()
@@ -64,6 +66,10 @@ def add_genotypes_to_sample_sheet(base_dir, batch_name, genotypes_fasta_fn):
             suffixed_row['R1'] = suffixed_R1
             
             suffixed_row['genome'] = genotype
+
+            suffixed_row.name = i
+
+            i += 1
 
     suffixed_df = pd.DataFrame(suffixed_rows)
 
