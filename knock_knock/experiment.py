@@ -113,7 +113,6 @@ class Experiment:
         self.primer_names = self.description.get('primer_names')
         self.sequencing_start_feature_name = self.description.get('sequencing_start_feature_name')
         self.infer_homology_arms = self.description.get('infer_homology_arms', False)
-        self.min_relevant_length = self.description.get('min_relevant_length', False)
         self.max_reads = self.description.get('max_reads', None)
         if self.max_reads is not None:
             self.max_reads = int(self.max_reads)
@@ -225,6 +224,15 @@ class Experiment:
     def supplemental_indices(self):
         locations = knock_knock.target_info.locate_supplemental_indices(self.base_dir)
         return {name: locations[name] for name in self.supplemental_index_names}
+
+    @property
+    def min_relevant_length(self):
+        if knock_knock.utilities.is_one_sided(self.description.get('experiment_type')):
+            min_relevant_length = 0
+        else:
+            min_relevant_length = self.description.get('min_relevant_length')
+
+        return min_relevant_length
 
     @memoized_property
     def target_info(self):
@@ -1103,7 +1111,7 @@ class Experiment:
         expected_lengths = {
         }
 
-        if self.description.get('experiment_type') not in ['TECseq', 'seeseq', 'seeseq_dual_flap']:
+        if not knock_knock.utilities.is_one_sided(self.description.get('experiment_type')):
             expected_lengths['WT'] = ti.amplicon_length
 
         if ti.clean_HDR_length is not None:

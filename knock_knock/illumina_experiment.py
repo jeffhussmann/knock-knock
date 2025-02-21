@@ -15,6 +15,8 @@ import hits.visualize.fastq
 from hits import adapters, fastq, sam, sw, utilities
 from hits.utilities import memoized_property, memoized_with_args
 
+import knock_knock.utilities
+
 class IlluminaExperiment(knock_knock.experiment.Experiment):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -69,7 +71,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
     def read_types(self):
         read_types = {self.preprocessed_read_type}
 
-        if self.paired_end and self.description.get('experiment_type') == 'TECseq':
+        if self.paired_end:
             read_types.update([
                 'R1_no_overlap',
                 'R2_no_overlap',
@@ -90,7 +92,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
     def read_types_to_align(self):
         read_types = {self.uncommon_read_type}
 
-        if self.paired_end and self.description.get('experiment_type') == 'TECseq':
+        if self.paired_end and knock_knock.utilities.is_one_sided(self.description.get('experiment_type')):
             read_types.update([
                 'R1_no_overlap',
                 'R2_no_overlap',
@@ -160,14 +162,14 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
         return fig
 
     def check_combined_read_length(self):
-        if self.paired_end:
+        if self.paired_end and not knock_knock.utilities.is_one_sided(self.description.get('experiment_type')):
             combined_read_length = self.R1_read_length + self.R2_read_length
             if combined_read_length < self.target_info.amplicon_length:
                 logging.warning(f'Warning: {self.batch_name} {self.sample_name} combined read length ({combined_read_length}) less than expected amplicon length ({self.target_info.amplicon_length:,}).')
 
     @memoized_property
     def max_relevant_length(self):
-        if self.description.get('experiment_type') not in ['TECseq', 'seeseq', 'seeseq_dual_flap']:
+        if knock_knock.utilities.is_one_sided(self.description.get('experiment_type')):
             length = 1000
         elif self.paired_end:
             length = self.R1_read_length + self.R2_read_length + 100
@@ -350,13 +352,21 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
             trimmed = read[start:end]
 
+            if 'UMI_key' in self.description:
+                UMI_annotation = knock_knock.experiment.UMIAnnotation.from_identifier(trimmed.name)
+                UMI_seq = UMI_annotation['UMI_seq']
+                UMI_qual = UMI_annotation['UMI_qual']
+            else:
+                UMI_seq = ''
+                UMI_qual = ''
+
             if len(trimmed) == 0:
                 outcome = self.final_Outcome(trimmed.name,
                                              len(trimmed),
                                              0,
                                              0,
-                                             '',
-                                             '',
+                                             UMI_seq,
+                                             UMI_qual,
                                              'nonspecific amplification',
                                              'primer dimer',
                                              'n/a',
@@ -428,12 +438,21 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
             elif len(stitched) <= 10:
                 # 22.07.18: Should this check be done on the final trimmed read instead?
+
+                if 'UMI_key' in self.description:
+                    UMI_annotation = knock_knock.experiment.UMIAnnotation.from_identifier(stitched.name)
+                    UMI_seq = UMI_annotation['UMI_seq']
+                    UMI_qual = UMI_annotation['UMI_qual']
+                else:
+                    UMI_seq = ''
+                    UMI_qual = ''
+
                 outcome = self.final_Outcome(stitched.name,
                                              len(stitched),
                                              0,
                                              0,
-                                             '',
-                                             '',
+                                             UMI_seq,
+                                             UMI_qual,
                                              'nonspecific amplification',
                                              'primer dimer',
                                              'n/a',
@@ -514,7 +533,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
         self.check_combined_read_length()
         self.categorize_outcomes()
         
-        if any(read_type.endswith('no_overlap') for read_type in self.read_types):
+        if any(read_type.endswith('no_overlap') for read_type in self.read_types_to_align):
             self.categorize_no_overlap_outcomes()
 
         self.generate_outcome_counts()

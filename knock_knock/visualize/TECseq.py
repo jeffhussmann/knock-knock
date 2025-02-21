@@ -342,7 +342,15 @@ class StrandsGrid:
                        condition_filter=None,
                       ):
 
-        for strand in ['top', 'bottom']:
+        for strand in ['top', 'bottom', self.pegRNA_name]:
+            if strand not in data:
+                continue
+
+            if strand == self.pegRNA_name:
+                ax = self.axs['pegRNA']
+            else:
+                ax = self.axs[strand]
+
             df = data[strand]
             
             for column in df:
@@ -367,7 +375,7 @@ class StrandsGrid:
                 else:
                     to_plot = nonzero_ps
 
-                self.axs[strand].plot(to_plot, 'o', color=color, markersize=2, clip_on=True, label=label)
+                ax.plot(to_plot, 'o', color=color, markersize=2, clip_on=True, label=label)
 
                 all_xs = np.arange(min(nonzero_ps.index), max(nonzero_ps.index) + 1)
                 all_ys = nonzero_ps.reindex(all_xs, fill_value=0)
@@ -382,46 +390,4 @@ class StrandsGrid:
                 else:
                     to_plot = all_ys
 
-                self.axs[strand].plot(all_xs, to_plot, '-', color=color, markersize=2, clip_on=True)
-
-        if self.pegRNA_name in data:
-            df = data[self.pegRNA_name]
-            
-            for column in df:
-                condition = OrderedDict(zip(df.columns.names, column))
-
-                if condition_filter is not None and not condition_filter(condition):
-                    continue
-
-                label = condition_to_label(condition, condition_keys_to_label)
-
-                color = condition_to_color(condition)
-
-                nonzero_ps = df[column]
-
-                if strand == 'top':
-                    cumulative_nonzero_ps = nonzero_ps.cumsum()
-                else:
-                    cumulative_nonzero_ps = nonzero_ps[::-1].cumsum()[::-1]
-
-                if cumulative:
-                    to_plot = cumulative_nonzero_ps
-                else:
-                    to_plot = nonzero_ps
-
-                self.axs['pegRNA'].plot(to_plot, 'o', color=color, markersize=2, clip_on=True)
-
-                all_xs = np.arange(min(nonzero_ps.index), max(nonzero_ps.index) + 1)
-                all_ys = nonzero_ps.reindex(all_xs, fill_value=0)
-
-                if strand == 'top':
-                    cumulative_all_ys = all_ys.cumsum()
-                else:
-                    cumulative_all_ys = all_ys[::-1].cumsum()[::-1]
-
-                if cumulative:
-                    to_plot = cumulative_all_ys
-                else:
-                    to_plot = all_ys
-
-                self.axs['pegRNA'].plot(all_xs, to_plot, '-', color=color, markersize=2, clip_on=True, label=label)
+                ax.plot(all_xs, to_plot, '-', color=color, markersize=2, clip_on=True)

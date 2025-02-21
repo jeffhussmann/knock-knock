@@ -60,3 +60,6 @@ def configure_standard_logger(results_dir, verbose=True):
         print(f'Logging in {log_fn}')
 
     return logger, file_handler
+
+def is_one_sided(experiment_type):
+    return any(experiment_type.startswith(name) for name in ['TECseq', 'seeseq']) 

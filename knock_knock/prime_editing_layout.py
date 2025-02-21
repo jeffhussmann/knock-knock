@@ -134,7 +134,7 @@ class Layout(layout.Categorizer):
         'minimal alignment to intended target',
     ]
 
-    def __init__(self, alignments, target_info, error_corrected=False, mode=None):
+    def __init__(self, alignments, target_info, error_corrected=False, mode=None, flipped=False):
         super().__init__(alignments, target_info)
 
         self.special_alignment = None
@@ -143,6 +143,7 @@ class Layout(layout.Categorizer):
 
         self.error_corrected = error_corrected
         self.mode = mode
+        self.flipped = flipped
 
     @memoized_property
     def intended_edit_type(self):
@@ -152,6 +153,44 @@ class Layout(layout.Categorizer):
             edit_type = self.target_info.pegRNAs[0].edit_type
 
         return edit_type
+
+    @property
+    def sequencing_direction(self):
+        sequencing_direction = self.target_info.sequencing_direction
+        if self.flipped:
+            sequencing_direction = sam.opposite_strand[sequencing_direction]
+
+        return sequencing_direction
+
+    @memoized_property
+    def pegRNA_side(self):
+        pegRNA_side = self.target_info.pegRNA_side
+
+        if self.flipped:
+            pegRNA_side = {'left': 'right', 'right': 'left'}[pegRNA_side]
+
+        return pegRNA_side
+
+    @memoized_property
+    def non_pegRNA_side(self):
+        non_pegRNA_side = self.target_info.non_pegRNA_side
+
+        if self.flipped:
+            non_pegRNA_side = {'left': 'right', 'right': 'left'}[non_pegRNA_side]
+
+        return non_pegRNA_side
+
+    @memoized_property
+    def pegRNA_name_to_side_of_read(self):
+        if self.flipped:
+            pegRNA_name_to_side_of_read = {
+                name:  {'left': 'right', 'right': 'left'}[side]
+                for name, side in self.target_info.pegRNA_name_to_side_of_read.items()
+            }
+        else:
+            pegRNA_name_to_side_of_read = self.target_info.pegRNA_name_to_side_of_read
+
+        return pegRNA_name_to_side_of_read
 
     # Accessing, refining, and augmenting alignments.
     # Care needs to be taken to avoid circular dependencies.

@@ -23,6 +23,7 @@ import knock_knock.utilities
 
 from hits import adapters, fastq, sw, utilities
 
+import knock_knock.utilities
 import knock_knock.TECseq_layout
 import knock_knock.seeseq_layout
 
@@ -930,6 +931,7 @@ class ArrayedExperiment(knock_knock.illumina_experiment.IlluminaExperiment):
             'twin_prime': knock_knock.twin_prime_layout.Layout,
             'Bxb1_twin_prime': knock_knock.Bxb1_layout.Layout,
             'TECseq': knock_knock.TECseq_layout.Layout,
+            'TECseq_dual_flap': knock_knock.TECseq_layout.TwinPrimeLayout,
             'seeseq': knock_knock.seeseq_layout.Layout,
             'seeseq_dual_flap': knock_knock.seeseq_layout.DualFlapLayout,
         }
@@ -949,6 +951,8 @@ class ArrayedExperiment(knock_knock.illumina_experiment.IlluminaExperiment):
     def no_overlap_pair_categorizer(self):
         experiment_type_to_categorizer = {
             'TECseq': knock_knock.TECseq_layout.NoOverlapPairLayout,
+            'TECseq_dual_flap': knock_knock.TECseq_layout.NoOverlapPairTwinPrimeLayout,
+            'seeseq': knock_knock.seeseq_layout.NoOverlapPairLayout,
         }
 
         return experiment_type_to_categorizer[self.experiment_type]
@@ -1391,8 +1395,8 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
             else:
                 experiment_type = list(experiment_types)[0]
 
-            if experiment_type == 'seeseq' and ti.pegRNA_names is not None and len(ti.pegRNA_names) == 2:
-                experiment_type = 'seeseq_dual_flap'
+            if knock_knock.utilities.is_one_sided(experiment_type) and ti.pegRNA_names is not None and len(ti.pegRNA_names) == 2:
+                experiment_type = f'{experiment_type}_dual_flap'
 
         elif ti.pegRNA_names is None or len(ti.pegRNA_names) <= 1:
             experiment_type = 'single_flap'
@@ -1414,9 +1418,6 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
                 min_relevant_length = list(min_relevant_lengths)[0]
         else:
             min_relevant_length = 100
-
-        if experiment_type in {'seeseq', 'TECseq'}:
-            min_relevant_length = 0
 
         baseline_condition = ';'.join(map(str, tuple(group_rows[condition_columns].iloc[0])))
 

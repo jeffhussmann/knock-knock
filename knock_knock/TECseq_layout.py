@@ -1,12 +1,48 @@
-import itertools
-
 import hits.interval
 import hits.sam
 import hits.utilities
 
 import knock_knock.prime_editing_layout
+import knock_knock.twin_prime_layout
+
+import knock_knock.outcome
+
+class EdgeOutcome(knock_knock.outcome.Outcome):
+    def __init__(self, edge):
+        self.edge = edge
+
+    def __str__(self):
+        return str(self.edge)
+
+    def perform_anchor_shift(self, anchor):
+        return EdgeOutcome(self.edge - anchor)
+
+    @classmethod
+    def from_string(cls, details_string):
+        return cls(int(details_string))
+
+class EdgeMismatchOutcome(knock_knock.outcome.Outcome):
+    def __init__(self, edge_outcome, mismatch_outcome):
+        self.edge_outcome = edge_outcome
+        self.mismatch_outcome = mismatch_outcome
+
+    def __str__(self):
+        return f'{self.edge_outcome};{self.mismatch_outcome}'
+
+    @classmethod
+    def from_string(cls, details_string):
+        edge_string, mismatch_string = details_string.split(';')
+        edge_outcome = EdgeOutcome.from_string(edge_string)
+        mismatch_outcome = knock_knock.outcome.MismatchOutcome.from_string(mismatch_string)
+        return cls(edge_outcome, mismatch_outcome)
+
+    def perform_anchor_shift(self, anchor):
+        shifted_edge = self.edge_outcome.perform_anchor_shift(anchor)
+        shifted_mismatch = self.mismatch_outcome.perform_anchor_shift(anchor)
+        return type(self)(shifted_edge, shifted_mismatch)
 
 memoized_property = hits.utilities.memoized_property
+memoized_with_args = hits.utilities.memoized_with_args
 
 class Layout(knock_knock.prime_editing_layout.Layout):
     category_order = [
@@ -46,48 +82,67 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         return primer_alignments
 
     @memoized_property
-    def minimal_cover(self):
-        covered = self.extension_chain['query_covered_incremental']
+    def target_nts_past_primer(self):
+        target_nts_past_primer = super().target_nts_past_primer
+
+        target_nts_past_primer['right'] = 0
+
+        return target_nts_past_primer
+
+    @memoized_with_args
+    def minimal_cover_by_side(self, side):
+        covered = self.extension_chains_by_side[side]['query_covered_incremental']
 
         minimal_cover = None
 
-        for key in ['first target', 'pegRNA', 'second target']:
+        for key in ['first target',
+                    'pegRNA',
+                    'first pegRNA',
+                    'second target',
+                   ]:
+            
             if (key in covered) and (self.not_covered_by_primers - covered[key]).is_empty:
                 minimal_cover = key
                 break
 
         return minimal_cover
 
+    @memoized_property
+    def minimal_cover(self):
+        return self.minimal_cover_by_side('left')
+
     def categorize(self):
         self.details = 'n/a'
         self.outcome = None
 
-        side = self.target_info.pegRNA_side
+        if self.nonspecific_amplification:
+            self.category = 'nonspecific amplification'
+            self.subcategory = 'n/a'
 
-        if self.minimal_cover is not None:
+            self.relevant_alignments = self.nonspecific_amplification['target_edge_als'] + self.nonspecific_amplification['covering_als']
+
+        elif self.starts_at_expected_location and self.minimal_cover is not None:
             if self.minimal_cover == 'first target':
                 self.category = 'targeted genomic sequence'
                 self.subcategory = 'unedited'
-                self.details = str(self.extension_chain_edges[side])
+                edge = hits.sam.reference_edges(self.extension_chains_by_side['left']['alignments']['first target'])[3]
 
-            elif self.minimal_cover == 'pegRNA':
+            elif self.minimal_cover in ['pegRNA', 'first pegRNA']:
                 self.category = 'RTed sequence'
                 self.subcategory = 'n/a'
-                self.details = str(self.extension_chain_edges[side])
+                edge = self.extension_chain_edges['left']
 
             elif self.minimal_cover == 'second target':
                 self.category = 'targeted genomic sequence'
                 self.subcategory = 'edited'
-                self.details = str(self.extension_chain_edges[side])
+                edge = hits.sam.reference_edges(self.extension_chains_by_side['left']['alignments']['second target'])[3]
             
             else:
                 raise ValueError
 
-            self.relevant_alignments = [al for al in self.target_alignments + self.pegRNA_alignments if not self.is_pegRNA_protospacer_alignment(al)]
+            self.outcome = EdgeMismatchOutcome(EdgeOutcome(edge), self.non_pegRNA_mismatches_outcome)
 
-        elif self.nonspecific_amplification:
-            self.category = 'nonspecific amplification'
-            self.subcategory = 'n/a'
+            self.relevant_alignments = self.parsimonious_extension_chain_alignments
 
         elif self.query_length_covered_by_on_target_alignments <= 30:
             self.register_minimal_alignments_detected()
@@ -96,6 +151,8 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             self.category = 'uncategorized'
             self.subcategory = 'uncategorized'
             self.details = 'n/a'
+
+            self.relevant_alignments = self.uncategorized_relevant_alignments
 
         if self.outcome is not None:
             # Translate positions to be relative to a registered anchor
@@ -118,14 +175,17 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         return plot_parameters
 
 class NoOverlapPairLayout(Layout):
+    individual_layout_class = Layout
+
     def __init__(self, alignments, target_info):
         self.alignments = alignments
         self.target_info = target_info
+        self.flipped = False
 
-        self.layouts = {which: Layout(als, target_info) for which, als in self.alignments.items()}
-
-        for layout in self.layouts.values():
-            layout.categorize()
+        self.layouts = {
+            'R1': type(self).individual_layout_class(alignments['R1'], target_info),
+            'R2': type(self).individual_layout_class(alignments['R2'], target_info, flipped=True),
+        }
 
         self._inferred_amplicon_length = -1
 
@@ -138,132 +198,169 @@ class NoOverlapPairLayout(Layout):
         return sum(layout.query_length_covered_by_on_target_alignments for layout in self.layouts.values())
 
     @memoized_property
-    def nonspecific_amplification(self):
+    def concordant_nonoverlapping(self):
+        '''
+        R1 is nonspecific
+            R2 is covered by concordant
+        
+        R1 is targeted genomic and ends before edit:
+            R2 contains entire edit
+            R2 starts after edit
+
+        R1 is targeted genomic and ends after edit
+            R2 is covered by concordant           
+
+        R1 is RTed
+            R2 has a relevant side extension chain and ends in RTed
+            R2 starts after edit
+
+        '''
+
         R1 = self.layouts['R1']
         R2 = self.layouts['R2']
-        
-        R2_covering_als = []
-    
-        to_cover = R2.whole_read_minus_edges(2)
-    
-        for al in R2.supplemental_alignments:
-            if (to_cover - hits.interval.get_covered(al)).total_length == 0:
-                R2_covering_als.append(al)
-                
-        best_pairs = []
-                    
-        valid_pairs = []
+
+        R1_cover = R1.minimal_cover
+        R2_cover = R2.minimal_cover
 
         if R1.nonspecific_amplification:
+            category = 'nonspecific amplification'
+            subcategory = 'n/a'
+
             R1_als = R1.nonspecific_amplification['covering_als']
+        
+            R2_als = []
+        
+            to_cover = R2.whole_read_minus_edges(2)
+        
+            for al in R2.supplemental_alignments:
+                if (to_cover - hits.interval.get_covered(al)).total_length == 0:
+                    R2_als.append(al)
+
+        elif R1_cover is None or R2_cover is None:
+            R1_als = []
+            R2_als = []
+
+        elif R1.minimal_cover == 'first target':
+            R1_als = [R1.extension_chains_by_side['left']['alignments']['first target']]
+
+            if R2_cover == 'first target':
+                R2_als = [R2.extension_chains_by_side['left']['alignments']['first target']]
+
+                category = 'targeted genomic sequence'
+
+                if R1.extension_chain_covers_both_HAs:
+                    R1.categorize()
+                    subcategory = R1.subcategory
+                else:
+                    subcategory = 'unknown editing status'
+
+            else:
+                category = 'uncategorized'
+                subcategory = 'uncategorized'
+
+                R2_als = R2.uncategorized_relevant_alignments
+
+        elif R1_cover == 'pegRNA':
+            R1_als = [R1.extension_chains_by_side['left']['alignments']['pegRNA']]
+
+            if R2_cover == 'pegRNA':
+                R2_als = [R2.extension_chains_by_side['left']['alignments']['pegRNA']]
+
+                category = 'targeted genomic sequence'
+                subcategory = 'edited'
+
+            elif R2_cover == 'first target':
+                R2_als = [R2.extension_chains_by_side['left']['alignments']['first target']]
+
+                category = 'targeted genomic sequence'
+                subcategory = 'unknown editing status'
+
+            else:
+                raise NotImplementedError
+
+        elif R1_cover == 'second target':
+            R1_als = [R1.extension_chains_by_side['left']['alignments']['second target']]
+
+            if R2_cover == 'first target':
+                R2_als = [R2.extension_chains_by_side['left']['alignments']['first target']]
+
+                category = 'targeted genomic sequence'
+                subcategory = 'edited'
+
+            else:
+                category = 'uncategorized'
+                subcategory = 'uncategorized'
+
+                R2_als = R2.uncategorized_relevant_alignments
+
         else:
             R1_als = []
-    
-        for R1_al, R2_al in itertools.product(R1_als, R2_covering_als):
-            
-            if R1_al.reference_name != R2_al.reference_name:
-                continue
-    
-            R1_strand = hits.sam.get_strand(R1_al)
-            R2_strand = hits.sam.get_strand(R2_al)
-    
-            if R1_strand != R2_strand:
-                # should be in opposite orientation if concordant
-    
-                if R1_strand == '+':
-                    start = R1_al.reference_end - 1
-                    end = R2_al.reference_start
-        
-                elif R1_strand == '-':
-                    start = R2_al.reference_end - 1
-                    end = R1_al.reference_start
+            R2_als = []
 
-                ref_gap = end - start - 1
+        gap, amplicon_length, pairs = self.find_pair_with_shortest_gap(R1_als, R2_als)
 
-                R1_query_end = hits.interval.get_covered(R1_al).end
-                R2_query_end = hits.interval.get_covered(R2_al).end
+        if gap is not None:
+            results = {
+                'category': category,
+                'subcategory': subcategory,
+                'gap': gap,
+                'amplicon_length': amplicon_length,
+                'pairs': pairs,
+            }
+        else:
+            results = None
 
-                length = ref_gap + (R1_query_end + 1) + (R2_query_end + 1)
-        
-                if 0 < length < 2000:
-                    valid_pairs.append((length, {'R1': R1_al, 'R2': R2_al}))
-    
-        if valid_pairs:
-            min_length = min(length for length, _ in valid_pairs)
-    
-            best_pairs = (min_length, [als for length, als in valid_pairs if length == min_length])
+        return results
 
-        return best_pairs
-
-    @memoized_property
-    def targeted_genomic_sequence(self):
+    def register_targeted_genomic_sequence(self):
         R1 = self.layouts['R1']
         R2 = self.layouts['R2']
-        
-        R2_covering_als = []
-    
-        to_cover = R2.whole_read_minus_edges(2)
-    
-        for al in R2.target_alignments:
-            if (to_cover - hits.interval.get_covered(al)).total_length == 0:
-                R2_covering_als.append(al)
 
-        results = None
+        R2_al = R2.extension_chains_by_side['left']['alignments']['first target']
+        edge = hits.sam.reference_edges(R2_al)[5]
 
-        if len(R2_covering_als) == 1:
-            R2_al = R2_covering_als[0]
-                
-            if R1.category == 'targeted genomic sequence':
+        self.category = self.concordant_nonoverlapping['category']
+        self.subcategory = self.concordant_nonoverlapping['subcategory']
 
-                R1_al = R1.extension_chain['alignments']['first target']
-    
-                R1_strand = hits.sam.get_strand(R1_al)
-                R2_strand = hits.sam.get_strand(R2_al)
-    
-                if R1_strand != R2_strand:
-                    # should be in opposite orientation if concordant
-    
-                    if R1_strand == '+':
-                        start = R1_al.reference_end - 1
-                        end = R2_al.reference_start
-            
-                    elif R1_strand == '-':
-                        start = R2_al.reference_end - 1
-                        end = R1_al.reference_start
+        self.outcome = EdgeMismatchOutcome(EdgeOutcome(edge), R1.non_pegRNA_mismatches_outcome)
 
-                    ref_gap = end - start - 1
+        self.relevant_alignments = {
+            'R1': R1.parsimonious_extension_chain_alignments,
+            'R2': R2.parsimonious_extension_chain_alignments,
+        }
 
-                    R1_query_end = hits.interval.get_covered(R1_al).end
-                    R2_query_end = hits.interval.get_covered(R2_al).end
+    def register_nonspecific_amplification(self):
+        R1 = self.layouts['R1']
 
-                    length = ref_gap + (R1_query_end + 1) + (R2_query_end + 1)
-        
-                    results = {
-                        'length': length,
-                        'edge': R2.convert_target_alignment_edge_to_nick_coordinate(al, 'end' if R1_strand == '+' else 'start'),
-                        'relevant_alignments': {'R1': list(R1.extension_chain['alignments'].values()), 'R2': [R2_al]},
-                    }
-    
-        return results
+        self.category = self.concordant_nonoverlapping['category']
+        self.subcategory = self.concordant_nonoverlapping['subcategory']
+
+        self.details = 'n/a'
+
+        self.relevant_alignments = {
+            'R1': R1.target_edge_alignments_list + [R1 for R1, R2 in self.concordant_nonoverlapping['pairs']],
+            'R2': [R2 for R1, R2 in self.concordant_nonoverlapping['pairs']],
+        }
 
     def categorize(self):
         self.details = 'n/a'
         self.outcome = None
         self.relevant_alignments = self.alignments
 
-        if self.nonspecific_amplification:
-            length, _ = self.nonspecific_amplification
-            self.category = 'nonspecific amplification'
-            self.subcategory = 'n/a'
-            self._inferred_amplicon_length = length
+        if self.concordant_nonoverlapping:
+            results = self.concordant_nonoverlapping
 
-        elif self.targeted_genomic_sequence:
-            results = self.targeted_genomic_sequence
-            self.category = 'targeted genomic sequence'
-            self.subcategory = 'unknown editing status'
-            self.details = str(results['edge'])
-            self._inferred_amplicon_length = results['length']
-            self.relevant_alignments = results['relevant_alignments']
+            if results['category'] == 'targeted genomic sequence':
+                self.register_targeted_genomic_sequence()
+
+            elif results['category'] == 'nonspecific amplification':
+                self.register_nonspecific_amplification()
+
+            else:
+                self.category = 'uncategorized'
+                self.subcategory = 'uncategorized'
+
+            self._inferred_amplicon_length = results['amplicon_length']
 
         elif self.query_length_covered_by_on_target_alignments <= 30:
             self.category = 'minimal alignment to intended target'
@@ -273,6 +370,11 @@ class NoOverlapPairLayout(Layout):
             self.category = 'uncategorized'
             self.subcategory = 'uncategorized'
 
+        if self.outcome is not None:
+            # Translate positions to be relative to a registered anchor
+            # on the target sequence.
+            self.details = str(self.outcome.perform_anchor_shift(self.target_info.anchor))
+
         return self.category, self.subcategory, self.details, self.outcome
 
     def plot(self,
@@ -281,25 +383,83 @@ class NoOverlapPairLayout(Layout):
              **kwargs,
             ):
 
+        plot_kwargs = kwargs.copy()
+        plot_kwargs.setdefault('alignment_registration', 'left')
+
         als_to_plot = self.alignments
 
         if manual_alignments is not None:
             als_to_plot = manual_alignments
 
-        if relevant:
+        elif relevant:
             self.categorize()
             als_to_plot = self.relevant_alignments
 
-        ti = self.target_info
-
         diagram = knock_knock.visualize.architecture.ReadDiagram(als_to_plot,
                                                                  self.target_info,
-                                                                 flip_target=ti.sequencing_direction == '-',
+                                                                 highlight_SNPs=True,
+                                                                 flip_target=self.sequencing_direction == '-',
                                                                  inferred_amplicon_length=self.inferred_amplicon_length,
                                                                  features_to_show=self.plot_parameters['features_to_show'],
                                                                  label_overrides=self.plot_parameters['label_overrides'],
                                                                  feature_heights=self.plot_parameters['feature_heights'],
-                                                                 **kwargs,
+                                                                 **plot_kwargs,
                                                                 )
 
         return diagram
+
+    def characterize_gap_between_closest_alignments(self, R1_al, R2_al):
+        R1_strand = hits.sam.get_strand(R1_al)
+        R2_strand = hits.sam.get_strand(R2_al)
+
+        if R1_al.reference_name == self.target_info.pegRNA_names_by_side_of_read.get('left') and R2_al.reference_name == self.target_info.target:
+            gap = 'unknown'
+            amplicon_length = -1
+
+        elif (R1_al.reference_name != R2_al.reference_name) or (R1_strand == R2_strand):
+            gap = None
+            amplicon_length = None
+
+        else:
+            if R1_strand == '+':
+                gap_start = R1_al.reference_end - 1
+                gap_end = R2_al.reference_start
+
+            elif R1_strand == '-':
+                gap_start = R2_al.reference_end - 1
+                gap_end = R1_al.reference_start
+
+            gap = gap_end - gap_start - 1
+
+            R1_query_end = hits.interval.get_covered(R1_al).end
+            R2_query_end = hits.interval.get_covered(R2_al).end
+
+            amplicon_length = gap + (R1_query_end + 1) + (R2_query_end + 1)
+
+        return gap, amplicon_length
+
+    def find_pair_with_shortest_gap(self, R1_als, R2_als):
+        concordant_pairs = []
+
+        for R1_al in R1_als:
+            for R2_al in R2_als:
+                gap, amplicon_length = self.characterize_gap_between_closest_alignments(R1_al, R2_al)
+                if (gap is not None) and ((gap == 'unknown') or (-10 <= gap <= 2000)):
+                    concordant_pairs.append((gap, amplicon_length, (R1_al, R2_al)))
+
+        if len(concordant_pairs) == 0:
+            min_gap = None
+            amplicon_length = None
+            pairs = []
+        else:
+            min_gap, amplicon_length = min((gap, amplicon_length) for gap, amplicon_length, pair in concordant_pairs)
+            pairs = [pair for gap, amplicon_length, pair in concordant_pairs if gap == min_gap]
+
+        return min_gap, amplicon_length, pairs
+
+class TwinPrimeLayout(Layout, knock_knock.twin_prime_layout.Layout):
+    # MRO puts twin_prime_layout.Layout before prime_editing_layout.Layout
+    pass
+
+class NoOverlapPairTwinPrimeLayout(NoOverlapPairLayout, TwinPrimeLayout):
+    individual_layout_class = TwinPrimeLayout
