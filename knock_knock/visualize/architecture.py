@@ -978,8 +978,9 @@ class ReadDiagram:
         if self.manual_x_lims is not None:
             self.min_x, self.max_x = self.manual_x_lims
         else:
-            self.min_x = self.query_interval[0] - 0.05 * self.total_query_length
-            self.max_x = self.query_interval[1] + 0.05 * self.total_query_length
+            buffer = max(20, 0.05 * self.total_query_length)
+            self.min_x = self.query_interval[0] - buffer
+            self.max_x = self.query_interval[1] + buffer
             
         self.draw_read_arrows()
 
