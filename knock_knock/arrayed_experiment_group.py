@@ -914,6 +914,9 @@ class ArrayedExperiment(knock_knock.illumina_experiment.IlluminaExperiment):
         self.group_name = group_name
         self.sample_name = sample_name
 
+    def __repr__(self):
+        return f'{self.__class__.__name__}: batch_name={self.batch_name}, group_name={self.group_name}, sample_name={self.sample_name}, base_dir={self.base_dir}'
+
     @property
     def uncommon_read_type(self):
         return f'{self.preprocessed_read_type}_uncommon'
