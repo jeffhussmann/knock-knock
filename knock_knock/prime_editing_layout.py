@@ -255,49 +255,50 @@ class Layout(layout.Categorizer):
             else:
                 few_mismatches.append(al)
 
-        # Convert relevant supp als to target als, but ignore any that overlap the amplicon interval.
+        # Convert relevant supp als to target als.
+        # Any that overlap the amplicon interval should not be considered supplemental_als
+        # to prevent the intended amplicon from being considered nonspecific amplification.
+
         ti = self.target_info
+
         if ti.reference_name_in_genome_source:
-            extended_target_als = []
-            other_als = []
+            target_als_outside_amplicon = []
+            other_reference_als = []
 
             target_interval = interval.Interval(0, len(ti.target_sequence) - 1)
 
             for al in few_mismatches:
-                accounted_for = False
 
-                if al.reference_name == ti.reference_name_in_genome_source:
+                if al.reference_name != ti.reference_name_in_genome_source:
+                    other_reference_als.append(al)
+
+                else:
                     conversion_results = ti.convert_genomic_alignment_to_target_coordinates(al)
 
                     if conversion_results:
                         converted_interval = interval.Interval(conversion_results['start'], conversion_results['end'])
     
-                        if converted_interval in target_interval:
+                        if not interval.are_overlapping(converted_interval, target_interval):
+                            other_reference_als.append(al)
+
+                        else:
                             al_dict = al.to_dict()
 
                             al_dict['ref_name'] = ti.target
                             
-                            # Note gotcha here: in dictionary form, coordinates need to be 1-based.
-                            al_dict['ref_pos'] = str(conversion_results['start'] + 1)
-
                             converted_al = pysam.AlignedSegment.from_dict(al_dict, ti.header)
 
-                            if converted_al.is_reverse != al.is_reverse:
-                                raise NotImplementedError
+                            converted_al.reference_start = conversion_results['start']
+
+                            converted_al.is_reverse = (conversion_results['strand'] == '-')
 
                             overlaps_amplicon = interval.get_covered_on_ref(converted_al) & ti.amplicon_interval
 
                             if not overlaps_amplicon:
-                                extended_target_als.append(converted_al)
-                                accounted_for = True
-                            else:
-                                # Ignore it.
-                                accounted_for = True
+                                target_als_outside_amplicon.append(converted_al)
 
-                if not accounted_for:
-                    other_als.append(al)
+            final_als = other_reference_als + target_als_outside_amplicon
 
-            final_als = other_als + extended_target_als
         else:
             final_als = few_mismatches
 
