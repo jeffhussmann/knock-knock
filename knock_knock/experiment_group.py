@@ -391,6 +391,8 @@ class ExperimentGroup:
 
         if condition_labels == 'with keys':
             condition_labels = self.condition_labels_with_keys
+        elif condition_labels == 'sample_name':
+            condition_labels = self.full_condition_to_sample_name
         elif condition_labels is None:
             condition_labels = self.condition_labels
 
