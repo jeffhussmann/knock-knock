@@ -26,9 +26,6 @@ from knock_knock import target_info, pegRNAs
 
 import knock_knock.utilities
 
-VIRTUAL_PRIMER_DISTANCE = 2000
-VIRTUAL_PRIMER_LENGTH = 20
-
 def identify_homology_arms(donor_seq, donor_type, target_seq, cut_after, required_match_length=15):
     header = pysam.AlignmentHeader.from_references(['donor', 'target'], [len(donor_seq), len(target_seq)])
     mapper = sw.SeedAndExtender(donor_seq.encode(), 8, header, 'donor')
@@ -244,10 +241,16 @@ class TargetInfoBuilder:
 
         # Only align primer sequence downstream of any N's.
         self.primers_name, primers = self.info['amplicon_primers']
+
         self.primers = {}
-        
-        for primer_i, primer in enumerate(primers.split(';')):
-            self.primers[f'primer_{primer_i}'] = primer.upper().split('N')[-1]
+
+        primers = [primer.upper().split('N')[-1] for primer in primers.split(';')]
+
+        if len(primers) == 1:
+            self.primers[self.primers_name] = primers[0]
+        else:
+            for primer_i, primer in enumerate(primers):
+                self.primers[f'{self.primers_name}_{primer_i}'] = primer
 
         self.genome = self.info['genome']
 
@@ -265,9 +268,7 @@ class TargetInfoBuilder:
 
     def identify_protospacer_features_in_amplicon(self,
                                                   amplicon_sequence,
-                                                  verbose=False,
-                                                  left_al=None,
-                                                  right_al=None,
+                                                  amplicon_description=None,
                                                  ):
 
         protospacer_features_in_amplicon = {}
@@ -279,7 +280,9 @@ class TargetInfoBuilder:
                 protospacer_features_in_amplicon[sgRNA_name] = protospacer_feature
 
             except ValueError:
-                logging.warning(f'A protospacer sequence adjacent to an appropriate could not be located for {sgRNA_name} {components["effector"]} protospacer: {components["protospacer"]} in target {ref_name}:{left_al.reference_start:,}-{right_al.reference_end:,}')
+                if amplicon_description is not None:
+                    sgRNA_description = f'{sgRNA_name} {components["effector"]} protospacer: {components["protospacer"]}'
+                    logging.warning(f'A protospacer sequence adjacent to an appropriate PAM could not be located for {sgRNA_description} in target {amplicon_description}')
 
                 if components['extension'] != '':
                     # pegRNAs must have a protospacer in target.
@@ -321,14 +324,15 @@ class TargetInfoBuilder:
         else:
             has_nh_donor = True
 
-        left_al, right_al = self.align_primers()
+        left_primer_al, right_primer_al = self.align_primers()
 
-        ref_name = left_al.reference_name
-        amplicon_start = left_al.reference_start
-        amplicon_end = right_al.reference_end
+        ref_name = left_primer_al.reference_name
+        amplicon_start = left_primer_al.reference_start
+        amplicon_end = right_primer_al.reference_end
         amplicon_sequence = self.region_fetcher(ref_name, amplicon_start, amplicon_end).upper()
 
-        protospacer_features_in_amplicon = self.identify_protospacer_features_in_amplicon(amplicon_sequence, verbose=True, left_al=left_al, right_al=right_al)
+        amplicon_description = f'{left_primer_al.reference_name}:{left_primer_al.reference_start:,}-{right_primer_al.reference_end:,}'
+        protospacer_features_in_amplicon = self.identify_protospacer_features_in_amplicon(amplicon_sequence, amplicon_description=amplicon_description)
 
         final_window_around = min(500, amplicon_start)
 
@@ -345,30 +349,30 @@ class TargetInfoBuilder:
 
         target_sequence = self.region_fetcher(ref_name, amplicon_start - final_window_around, amplicon_end + final_window_around).upper()
         
-        left_primer_location = FeatureLocation(genomic_coords_to_target_coords(left_al.reference_start),
-                                               genomic_coords_to_target_coords(left_al.reference_end),
+        left_primer_location = FeatureLocation(genomic_coords_to_target_coords(left_primer_al.reference_start),
+                                               genomic_coords_to_target_coords(left_primer_al.reference_end),
                                                strand=convert_strand['+'],
                                               )
 
-        right_primer_location = FeatureLocation(genomic_coords_to_target_coords(right_al.reference_start),
-                                                genomic_coords_to_target_coords(right_al.reference_end),
+        right_primer_location = FeatureLocation(genomic_coords_to_target_coords(right_primer_al.reference_start),
+                                                genomic_coords_to_target_coords(right_primer_al.reference_end),
                                                 strand=convert_strand['-'],
                                                )
 
         target_features = [
             SeqFeature(location=left_primer_location,
-                       id='forward_primer',
+                       id=left_primer_al.query_name,
                        type='misc_feature',
                        qualifiers={
-                           'label': 'forward_primer',
+                           'label': left_primer_al.query_name,
                            'ApEinfo_fwdcolor': feature_colors['forward_primer'],
                        },
                       ),
             SeqFeature(location=right_primer_location,
-                       id='reverse_primer',
+                       id=right_primer_al.query_name,
                        type='misc_feature',
                        qualifiers={
-                           'label': 'reverse_primer',
+                           'label': right_primer_al.query_name,
                            'ApEinfo_fwdcolor': feature_colors['reverse_primer'],
                        },
                       ),
@@ -380,13 +384,6 @@ class TargetInfoBuilder:
                        },
                       ),
         ]
-
-        # Note: the primer listed first is assumed to correspond to the expected
-        # start of sequencing reads.
-        if left_al.query_name == 'primer_0':
-            sequencing_start_feature_name = 'forward_primer'
-        else:
-            sequencing_start_feature_name = 'reverse_primer'
 
         protospacer_features = []
         for sgRNA_name, feature in protospacer_features_in_amplicon.items():
@@ -555,7 +552,6 @@ class TargetInfoBuilder:
         manifest = {
             'sources': sources,
             'target': self.target_name,
-            'sequencing_start_feature_name': sequencing_start_feature_name,
         }
 
         if has_donor:
@@ -568,8 +564,8 @@ class TargetInfoBuilder:
             manifest['nonhomologous_donor'] = nh_donor_name
 
         manifest['features_to_show'] = [
-            [self.target_name, 'forward_primer'],
-            [self.target_name, 'reverse_primer'],
+            [self.target_name, left_primer_al.query_name],
+            [self.target_name, right_primer_al.query_name],
         ]
 
         if has_donor:
@@ -583,7 +579,9 @@ class TargetInfoBuilder:
                 [self.target_name, 'HA_2'],
             ])
 
-        manifest['genome_source'] = self.genome
+        manifest['genome_source'] = self.info.get('genome_source', self.genome)
+
+        manifest['primer_names'] = [left_primer_al.query_name, right_primer_al.query_name]
 
         manifest_fn.write_text(yaml.dump(manifest, default_flow_style=False))
 
@@ -596,8 +594,8 @@ class TargetInfoBuilder:
         sgRNAs_df.loc[sgRNA_names].to_csv(ti.fns['sgRNAs'])
 
         ti.make_protospacer_fastas()
-        if self.genome in self.index_locations:
-            ti.map_protospacers(self.genome)
+        if ti.genome_source in self.index_locations:
+            ti.map_protospacers(ti.genome_source)
 
     @utilities.memoized_property
     def region_fetcher(self):
@@ -623,13 +621,24 @@ class TargetInfoBuilder:
 
     def identify_virtual_primer(self, primer_alignments):
         ''' Given alignments of one primer, identify any alignments such that
-            a concordant virtual primer VIRTUAL_PRIMER_DISTANCE away would produce
-            an amplicon containing valide protospacer locations for all required
-            protospacer.
+            a concordant virtual primer a reasonable distance away would produce
+            an amplicon containing valid protospacer locations for all required
+            protospacers.
         '''
+
+        virtual_primer_distances = [
+            2000,
+            4000,
+            8000,
+        ]
+
+        virtual_primer_length = 20
+
         valids = []
 
-        for primer_al in primer_alignments['primer_0']:
+        primer_name = list(primer_alignments)[0]
+
+        for primer_al in primer_alignments[primer_name]:
             strand = sam.get_strand(primer_al)
 
             ref_name = primer_al.reference_name
@@ -638,35 +647,44 @@ class TargetInfoBuilder:
             header = pysam.AlignmentHeader.from_references([ref_name], [ref_length])
 
             virtual_al = pysam.AlignedSegment(header)
-            virtual_al.cigar = [(sam.BAM_CMATCH, VIRTUAL_PRIMER_LENGTH)]
+            virtual_al.query_name = 'virtual_primer'
+            virtual_al.cigar = [(sam.BAM_CMATCH, virtual_primer_length)]
             virtual_al.reference_name = primer_al.reference_name
-            
-            if strand == '+':
-                virtual_primer_end = min(ref_length, primer_al.reference_end + VIRTUAL_PRIMER_DISTANCE + VIRTUAL_PRIMER_LENGTH)
-                virtual_primer_start = virtual_primer_end - VIRTUAL_PRIMER_LENGTH
-                
-                left_al = primer_al
-                right_al = virtual_al
-                
-                virtual_al.is_reverse = True
 
+            found_all_protospacers = False
+            
+            for virtual_primer_distance in virtual_primer_distances:
+                if strand == '+':
+                    virtual_primer_end = min(ref_length, primer_al.reference_end + virtual_primer_distance + virtual_primer_length)
+                    virtual_primer_start = virtual_primer_end - virtual_primer_length
+                    
+                    left_al = primer_al
+                    right_al = virtual_al
+                    
+                    virtual_al.is_reverse = True
+
+                else:
+                    virtual_primer_start = max(0, primer_al.reference_start - virtual_primer_distance - virtual_primer_length)
+                    virtual_primer_end = virtual_primer_start + virtual_primer_length
+                    
+                    right_al = primer_al
+                    left_al = virtual_al
+
+                virtual_al.reference_start = virtual_primer_start
+                    
+                amplicon_sequence = self.region_fetcher(primer_al.reference_name, left_al.reference_start, right_al.reference_end).upper()
+                
+                try:
+                    self.identify_protospacer_features_in_amplicon(amplicon_sequence)
+                    found_all_protospacers = True
+                    break
+                except:
+                    continue
+
+            if found_all_protospacers:
+                valids.append((left_al, right_al))
             else:
-                virtual_primer_start = max(0, primer_al.reference_start - VIRTUAL_PRIMER_DISTANCE - VIRTUAL_PRIMER_LENGTH)
-                virtual_primer_end = virtual_primer_start + VIRTUAL_PRIMER_LENGTH
-                
-                right_al = primer_al
-                left_al = virtual_al
-
-            virtual_al.reference_start = virtual_primer_start
-                
-            amplicon = self.region_fetcher(primer_al.reference_name, left_al.reference_start, right_al.reference_end)
-            
-            try:
-                self.identify_protospacer_features_in_amplicon(amplicon, verbose=False)
-            except:
                 continue
-                
-            valids.append((left_al, right_al))
 
         if len(valids) == 0:
             raise ValueError
@@ -685,18 +703,18 @@ class TargetInfoBuilder:
         if self.genome in self.index_locations:
             try:
                 primer_alignments = self.align_primers_to_reference_genome_with_STAR()
-                left_al, right_al = alignment_tester(primer_alignments)
+                concordant_primer_alignments = alignment_tester(primer_alignments)
 
             except ValueError:
                 logging.warning('Failed to find concordant primer alignments with STAR, falling back to manual search.')
                 primer_alignments = self.align_primers_to_reference_genome_manually()
-                left_al, right_al = alignment_tester(primer_alignments)
+                concordant_primer_alignments = alignment_tester(primer_alignments)
 
         else:
             primer_alignments = self.align_primers_to_extra_sequence()
-            left_al, right_al = alignment_tester(primer_alignments)
+            concordant_primer_alignments = alignment_tester(primer_alignments)
 
-        return left_al, right_al
+        return concordant_primer_alignments
 
     def align_primers_to_reference_genome_with_STAR(self):
         if self.genome not in self.index_locations:
@@ -755,7 +773,7 @@ class TargetInfoBuilder:
         return primer_alignments
 
     def identify_concordant_primer_alignment_pair(self, primer_alignments, max_length=10000):
-        # Find pairs of alignments that are on the same chromosome and point towards each other.
+        ''' Find pairs of alignments that are on the same chromosome and point towards each other. '''
 
         def same_reference_name(first_al, second_al):
             return first_al.reference_name == second_al.reference_name
@@ -772,7 +790,7 @@ class TargetInfoBuilder:
                 return None
             
             left_al, right_al = sorted([first_al, second_al], key=lambda al: al.reference_start)
-            
+
             if sam.get_strand(left_al) != '+' or sam.get_strand(right_al) != '-':
                 return None
             else:
@@ -790,12 +808,13 @@ class TargetInfoBuilder:
         correct_orientation_pairs = []
         not_correct_orientation_pairs = []
 
-        primer_names = sorted(primer_alignments)
+        first_name, second_name = sorted(primer_alignments)
 
-        for first_al in primer_alignments[primer_names[0]]:
-            for second_al in primer_alignments[primer_names[1]]:
+        for first_al in primer_alignments[first_name]:
+            for second_al in primer_alignments[second_name]:
                 if (oriented_pair := in_correct_orientation(first_al, second_al)) is not None:
                     correct_orientation_pairs.append(oriented_pair)
+
                 elif reference_extent(first_al, second_al) < max_length:
                     not_correct_orientation_pairs.append((first_al, second_al))
                     
@@ -965,6 +984,7 @@ def build_target_infos_from_csv(base_dir, defer_HA_identification=False):
         info = {
             'name': target_name,
             'genome': row['genome'],
+            'genome_source': row['genome_source'],
             'amplicon_primers': lookup(row, 'amplicon_primers', 'amplicon_primers'),
             'sgRNAs': lookup(row, 'sgRNAs', 'sgRNAs', multiple_lookups=True, validate_sequence=False),
             'donor_sequence': lookup(row, 'donor_sequence', 'donor_sequence'),
