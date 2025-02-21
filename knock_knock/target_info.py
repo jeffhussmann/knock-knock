@@ -1968,7 +1968,7 @@ class TargetInfo:
 
             if self.pegRNA_programmed_insertion is not None:
                 if len(self.pegRNA.edit_properties['insertions']) != 1:
-                    raise ValueError
+                    logging.warning('multiple insertions')
                 else:
                     insertion = self.pegRNA.edit_properties['insertions'][0]
                     name_to_description[str(self.pegRNA_programmed_insertion)] = insertion['description']
