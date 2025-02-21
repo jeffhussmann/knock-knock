@@ -29,7 +29,7 @@ def read_csv(csv_fn, process=True):
             if component not in df.columns:
                 df[component] = ''
 
-            df[component] = df[component].str.upper().str.replace('U', 'T')
+            df[component] = [s.strip().upper().replace('U', 'T') for s in df[component]]
 
         full_sequences = []
         for _, row in df.iterrows():
