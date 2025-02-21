@@ -1111,7 +1111,7 @@ class ReadDiagram:
         # it is mapped to if there is only one alignment to this reference, or
         # if there are two but they might just be a single alignment split across R1
         # and R2.
-        elif (self.alignment_registration == 'left' or 
+        elif ((self.alignment_registration == 'left' and len(alignment_coordinates) != 0) or 
               (len(alignment_coordinates) == 1) or 
               (len(alignment_coordinates) == 2 and ref_name == ti.donor and self.R2_alignments is not None) 
              ):

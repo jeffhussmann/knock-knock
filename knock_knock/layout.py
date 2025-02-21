@@ -2422,7 +2422,6 @@ class Layout(Categorizer):
             label_offsets=label_offsets,
             label_overrides=label_overrides,
             inferred_amplicon_length=self.inferred_amplicon_length,
-            center_on_primers=True,
             highlight_SNPs=True,
             feature_heights=feature_heights,
             layout_mode=self.mode,
