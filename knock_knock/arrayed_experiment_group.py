@@ -1019,6 +1019,9 @@ def sanitize_and_validate_sample_sheet(sample_sheet_fn):
     if 'donor' not in sample_sheet_df.columns:
         sample_sheet_df['donor'] = ''
 
+    if 'genome_source' not in sample_sheet_df.columns:
+        sample_sheet_df['genome_source'] = sample_sheet_df['genome']
+
     # Confirm mandatory columns are present.
 
     mandatory_columns = [
@@ -1027,6 +1030,7 @@ def sanitize_and_validate_sample_sheet(sample_sheet_fn):
         'amplicon_primers',
         'sgRNAs',
         'genome',
+        'genome_source',
         'extra_sequences',
         'donor',
     ]
@@ -1051,8 +1055,11 @@ def sanitize_and_validate_sample_sheet(sample_sheet_fn):
     
     return sample_sheet_df
 
-def make_default_target_info_name(amplicon_primers, genome, extra_sequences):
+def make_default_target_info_name(amplicon_primers, genome, genome_source, extra_sequences):
     target_info_name = f'{amplicon_primers}_{genome}'
+
+    if genome_source != genome:
+        target_info_name = f'{target_info_name}_{genome_source}'
 
     if extra_sequences != '':
         target_info_name = f'{target_info_name}_{extra_sequences}'
@@ -1067,20 +1074,21 @@ def make_targets(base_dir, sample_sheet_df):
 
     targets = {}
 
-    grouped = sample_sheet_df.groupby(['amplicon_primers', 'genome', 'extra_sequences'])
+    grouped = sample_sheet_df.groupby(['amplicon_primers', 'genome', 'genome_source', 'extra_sequences'])
 
-    for (amplicon_primers, genome, extra_sequences), rows in grouped:
+    for (amplicon_primers, genome, genome_source, extra_sequences), rows in grouped:
         all_sgRNAs = set()
         for sgRNAs in rows['sgRNAs']:
             if sgRNAs != '':
                 all_sgRNAs.update(sgRNAs.split(';'))
 
-        target_info_name = make_default_target_info_name(amplicon_primers, genome, extra_sequences)
+        target_info_name = make_default_target_info_name(amplicon_primers, genome, genome_source, extra_sequences)
 
         extra_sequences = ';'.join(set(extra_sequences.split(';')) - valid_supplemental_indices)
 
         targets[target_info_name] = {
             'genome': genome,
+            'genome_source': genome_source,
             'amplicon_primers': amplicon_primers,
             'sgRNAs': ';'.join(all_sgRNAs),
             'extra_sequences': extra_sequences,
@@ -1196,7 +1204,7 @@ def detect_sequencing_start_feature_names(base_dir, batch_name, sample_sheet_df)
         else:
             reads = fastq.reads(R1_fn)
 
-        target_info_name = make_default_target_info_name(row['amplicon_primers'], row['genome'], row['extra_sequences'])
+        target_info_name = make_default_target_info_name(row['amplicon_primers'], row['genome'], row['genome_source'], row['extra_sequences'])
         ti = knock_knock.target_info.TargetInfo(base_dir, target_info_name) 
 
         primer_sequences = {name: ti.feature_sequence(ti.target, name).upper() for name in ti.primers}
@@ -1262,6 +1270,7 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
     group_keys = [
         'amplicon_primers',
         'genome',
+        'genome_source',
         'sgRNAs',
         'donor',
         'extra_sequences',
@@ -1276,7 +1285,7 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
         
         if len(orientations) == 0:
             row = rows.iloc[0]
-            target_info_name = make_default_target_info_name(row['amplicon_primers'], row['genome'], row['extra_sequences'])
+            target_info_name = make_default_target_info_name(row['amplicon_primers'], row['genome'], row['genome_source'], row['extra_sequences'])
             ti = knock_knock.target_info.TargetInfo(base_dir, target_info_name) 
 
             feature_name = sorted(ti.primers)[0]
@@ -1354,6 +1363,7 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
     group_keys = [
         'amplicon_primers',
         'genome',
+        'genome_source',
         'sgRNAs',
         'donor',
         'extra_sequences',
@@ -1370,8 +1380,8 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
 
     grouped = sample_sheet_df.groupby(group_keys)
 
-    for group_i, ((amplicon_primers, genome, sgRNAs, donor, extra_sequences, sequencing_start_feature_name), group_rows) in enumerate(grouped):
-        target_info_name = make_default_target_info_name(amplicon_primers, genome, extra_sequences)
+    for group_i, ((amplicon_primers, genome, genome_source, sgRNAs, donor, extra_sequences, sequencing_start_feature_name), group_rows) in enumerate(grouped):
+        target_info_name = make_default_target_info_name(amplicon_primers, genome, genome_source, extra_sequences)
 
         group_name = f'{target_info_name}_{sgRNAs}_{donor}'
         group_name = group_name.replace(';', '+')
@@ -1440,6 +1450,7 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
             'experiment_type': experiment_type,
             'target_info': target_info_name,
             'sequencing_start_feature_name': sequencing_start_feature_name,
+            'genome': genome,
             'sgRNAs': sgRNAs,
             'donor': donor,
             'min_relevant_length': min_relevant_length,
