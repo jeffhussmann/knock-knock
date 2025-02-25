@@ -792,19 +792,33 @@ class TargetInfo:
         return by_side
 
     @memoized_property
+    def sequencing_direction(self):
+        if self.sequencing_start is None:
+            return '+'
+        else:
+            return self.sequencing_start.strand
+
+    @memoized_property
     def primers_by_side_of_read(self):
         if self.sequencing_direction == '+':
-            by_side = {
-                'left': self.primers_by_side_of_target[5],
-                'right': self.primers_by_side_of_target[3],
+            read_to_target = {
+                'left': 5,
+                'right': 3,
             }
+
         elif self.sequencing_direction == '-':
-            by_side = {
-                'left': self.primers_by_side_of_target[3],
-                'right': self.primers_by_side_of_target[5],
+            read_to_target = {
+                'left': 3,
+                'right': 5,
             }
+
         else:
             raise ValueError(self.sequencing_direction)
+
+        by_side = {
+            read: self.primers_by_side_of_target[read_to_target[read]]
+            for read in ['left', 'right']
+        }
 
         return by_side
 
@@ -818,13 +832,6 @@ class TargetInfo:
         start = self.primers_by_side_of_target[5].end + 1
         end = self.primers_by_side_of_target[3].start - 1
         return interval.Interval(start, end)
-
-    @memoized_property
-    def sequencing_direction(self):
-        if self.sequencing_start is None:
-            return None
-        else:
-            return self.sequencing_start.strand
 
     @memoized_property
     def combined_primer_length(self):

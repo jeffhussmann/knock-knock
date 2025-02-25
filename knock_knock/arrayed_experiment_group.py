@@ -1038,9 +1038,10 @@ def sanitize_and_validate_sample_sheet(sample_sheet_fn):
         'donor',
     ]
     
-    missing_columns = [col for col in mandatory_columns if col not in sample_sheet_df.columns]
+    missing_columns = [col for col in mandatory_columns if col not in sample_sheet_df]
     if len(missing_columns) > 0:
-        raise ValueError(f'{missing_columns} column(s) not found in sample sheet')
+        if not(missing_columns == ['R1'] and 's3_path' in sample_sheet_df):
+            raise ValueError(f'{missing_columns} column(s) not found in sample sheet')
 
     if not sample_sheet_df['sample_name'].is_unique:
         counts = sample_sheet_df['sample_name'].value_counts()
@@ -1050,7 +1051,7 @@ def sanitize_and_validate_sample_sheet(sample_sheet_fn):
     # Since only the final path component of R1 and R2 files will be retained,
     # ensure that these are unique to avoid clobbering.
 
-    if not sample_sheet_df['R1'].apply(lambda fn: Path(fn).name).is_unique:
+    if 'R1' in sample_sheet_df and not sample_sheet_df['R1'].apply(lambda fn: Path(fn).name).is_unique:
         raise ValueError(f'R1 files do not have unique names')
 
     if 'R2' in sample_sheet_df and not sample_sheet_df['R1'].apply(lambda fn: Path(fn).name).is_unique:
@@ -1058,7 +1059,7 @@ def sanitize_and_validate_sample_sheet(sample_sheet_fn):
     
     return sample_sheet_df
 
-def make_default_target_info_name(amplicon_primers, genome, genome_source, extra_sequences):
+def make_default_target_info_name(amplicon_primers, genome, genome_source, extra_sequences='', donor=''):
     target_info_name = f'{amplicon_primers}_{genome}'
 
     if genome_source != genome:
@@ -1066,6 +1067,9 @@ def make_default_target_info_name(amplicon_primers, genome, genome_source, extra
 
     if extra_sequences != '':
         target_info_name = f'{target_info_name}_{extra_sequences}'
+
+    if donor != '':
+        target_info_name = f'{target_info_name}_{donor}'
 
     # Names can't contain a forward slash since they are a path component.
     target_info_name = target_info_name.replace('/', '_SLASH_')
@@ -1077,15 +1081,15 @@ def make_targets(base_dir, sample_sheet_df):
 
     targets = {}
 
-    grouped = sample_sheet_df.groupby(['amplicon_primers', 'genome', 'genome_source', 'extra_sequences'])
+    grouped = sample_sheet_df.groupby(['amplicon_primers', 'genome', 'genome_source', 'donor', 'extra_sequences'])
 
-    for (amplicon_primers, genome, genome_source, extra_sequences), rows in grouped:
+    for (amplicon_primers, genome, genome_source, donor, extra_sequences), rows in grouped:
         all_sgRNAs = set()
         for sgRNAs in rows['sgRNAs']:
             if sgRNAs != '':
                 all_sgRNAs.update(sgRNAs.split(';'))
 
-        target_info_name = make_default_target_info_name(amplicon_primers, genome, genome_source, extra_sequences)
+        target_info_name = make_default_target_info_name(amplicon_primers, genome, genome_source, extra_sequences, donor)
 
         extra_sequences = ';'.join(set(extra_sequences.split(';')) - valid_supplemental_indices)
 
@@ -1095,6 +1099,7 @@ def make_targets(base_dir, sample_sheet_df):
             'amplicon_primers': amplicon_primers,
             'sgRNAs': ';'.join(all_sgRNAs),
             'extra_sequences': extra_sequences,
+            'donor': donor,
         }
 
     targets_df = pd.DataFrame.from_dict(targets, orient='index')
@@ -1207,7 +1212,12 @@ def detect_sequencing_start_feature_names(base_dir, batch_name, sample_sheet_df)
         else:
             reads = fastq.reads(R1_fn)
 
-        target_info_name = make_default_target_info_name(row['amplicon_primers'], row['genome'], row['genome_source'], row['extra_sequences'])
+        target_info_name = make_default_target_info_name(row['amplicon_primers'],
+                                                         row['genome'],
+                                                         row['genome_source'],
+                                                         row['extra_sequences'],
+                                                         row['donor'],
+                                                        )
         ti = knock_knock.target_info.TargetInfo(base_dir, target_info_name) 
 
         primer_sequences = {name: ti.feature_sequence(ti.target, name).upper() for name in ti.primers}
@@ -1288,7 +1298,12 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
         
         if len(orientations) == 0:
             row = rows.iloc[0]
-            target_info_name = make_default_target_info_name(row['amplicon_primers'], row['genome'], row['genome_source'], row['extra_sequences'])
+            target_info_name = make_default_target_info_name(row['amplicon_primers'],
+                                                             row['genome'],
+                                                             row['genome_source'],
+                                                             row['extra_sequences'],
+                                                             row['donor'],
+                                                            )
             ti = knock_knock.target_info.TargetInfo(base_dir, target_info_name) 
 
             feature_name = sorted(ti.primers)[0]
@@ -1384,7 +1399,7 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
     grouped = sample_sheet_df.groupby(group_keys)
 
     for group_i, ((amplicon_primers, genome, genome_source, sgRNAs, donor, extra_sequences, sequencing_start_feature_name), group_rows) in enumerate(grouped):
-        target_info_name = make_default_target_info_name(amplicon_primers, genome, genome_source, extra_sequences)
+        target_info_name = make_default_target_info_name(amplicon_primers, genome, genome_source, extra_sequences, donor)
 
         group_name = f'{target_info_name}_{sgRNAs}_{donor}'
         group_name = group_name.replace(';', '+')

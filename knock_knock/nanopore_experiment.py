@@ -1,0 +1,315 @@
+import itertools
+import logging
+import multiprocessing
+import os
+
+from pathlib import Path
+
+import pandas as pd
+
+import hits.fastq
+import hits.utilities as utilities
+
+import knock_knock.experiment
+import knock_knock.arrayed_experiment_group
+
+import knock_knock.Bxb1_layout
+
+memoized_property = utilities.memoized_property
+
+class Experiment(knock_knock.experiment.Experiment):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.layout_mode = 'nanopore'
+
+        self.read_types = [
+            'nanopore_by_name',
+        ]
+
+        self.fastq_dir = self.data_dir / self.sample_name
+
+        self.preprocessed_read_type = 'nanopore_by_name'
+
+        self.max_relevant_length = 10000
+        self.x_tick_multiple = 500
+        self.length_plot_smooth_window = 1
+
+        self.max_insertion_length = 20
+
+    @memoized_property
+    def categorizer(self):
+        return knock_knock.Bxb1_layout.Layout
+
+    @memoized_property
+    def expected_lengths(self):
+        return {}
+
+    @property
+    def fastq_fns(self):
+        return sorted(self.fastq_dir.glob('*.fastq.gz'))
+
+    @property
+    def reads(self):
+        reads = itertools.chain.from_iterable(hits.fastq.reads(fn, up_to_space=True) for fn in self.fastq_fns)
+
+        for i, read in enumerate(reads):
+            # samtools sorting appears to be funky with hex names.
+            read.name = f'{i:010d}_{read.name}'
+            yield read
+
+    def preprocess(self):
+        self.results_dir.mkdir(parents=True, exist_ok=True)
+
+        by_name_fn = self.fns_by_read_type['fastq']['nanopore_by_name']
+
+        hits.fastq.ExternalSorter(self.reads, by_name_fn).sort()
+
+    def align(self):
+        self.generate_alignments_with_blast(self.preprocessed_read_type,
+                                           )
+
+        self.generate_supplemental_alignments_with_minimap2(read_type=self.preprocessed_read_type,
+                                                            report_all=False,
+                                                            use_ont_index=True,
+                                                           )
+
+        self.combine_alignments(self.preprocessed_read_type)
+
+    def categorize(self):
+        self.categorize_outcomes()
+
+        self.generate_outcome_counts()
+        self.generate_outcome_stratified_lengths()
+
+        self.record_sanitized_category_names()
+
+class ChunkedExperiment(Experiment):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.chunk_number_to_fastq_fn = {}
+        for i, fastq_fn in enumerate(self.fastq_fns):
+            # Extract chunk number from systematic nanopore file name format
+            # if present, otherwise use enumerate.
+
+            try:
+                chunk_number = int(fastq_fn.name.split('.')[0].split('_')[-1]) 
+            except ValueError:
+                chunk_number = i
+
+            self.chunk_number_to_fastq_fn[chunk_number] = fastq_fn
+
+        for chunk_number in self.chunk_number_to_fastq_fn:
+            chunk_exp = self.chunk_experiment(chunk_number)
+            chunk_exp.results_dir.mkdir(exist_ok=True, parents=True)
+
+    @memoized_property
+    def chunk_numbers(self):
+        # To allow detection of chunks when results are present but not
+        # fastqs, look at results, not fastqs. This means results need to be
+        # made during initial processing.
+        return sorted([int(d.name[len('chunk_'):]) for d in self.results_dir.glob('chunk_*') if d.is_dir()])
+
+    def chunk_experiment(self, chunk_number):
+        return ChunkExperiment(self, chunk_number)
+
+    @memoized_property
+    def chunk_experiments(self):
+        return {chunk_number: ChunkExperiment(self, chunk_number) for chunk_number in self.chunk_numbers}
+
+    def outcome_metadata(self):
+        return {}
+
+    @property
+    def reads(self):
+        for chunk_number in self.progress(self.chunk_numbers):
+            chunk_exp = self.chunk_experiments[chunk_number]
+            yield from chunk_exp.reads
+
+    def outcome_iter(self):
+        for chunk_number in self.progress(self.chunk_numbers):
+            chunk_exp = self.chunk_experiments[chunk_number]
+            yield from chunk_exp.outcome_iter()
+
+    def alignment_groups(self):
+        for chunk_number in self.chunk_numbers:
+            chunk_exp = self.chunk_experiments[chunk_number]
+            yield from chunk_exp.alignment_groups()
+
+    def reads_by_type(self, read_type):
+        for chunk_number in self.chunk_numbers:
+            chunk_exp = self.chunk_experiments[chunk_number]
+            yield from chunk_exp.reads_by_type(read_type)
+
+    def get_read_alignments(self, read_id, **kwargs):
+        annotation = ChunkReadAnnotation.from_identifier(read_id)
+        chunk_exp = self.chunk_experiments[annotation['chunk_number']]
+        return chunk_exp.get_read_alignments(read_id)
+
+    @memoized_property
+    def combined_header(self):
+        # Is this guaranteed to have all supplementary references even if the first
+        # chunk didn't have any reads align to them?
+        return self.chunk_experiments[0].combined_header
+
+    def process(self,
+                max_chunks=None,
+                num_processes=18,
+                use_logger_thread=True,
+                only_if_new=False,
+               ):
+
+        logger, file_handler = knock_knock.utilities.configure_standard_logger(self.results_dir)
+
+        if use_logger_thread:
+            process_pool = knock_knock.parallel.PoolWithLoggerThread(num_processes, logger)
+        else:
+            NICENESS = 3
+            process_pool = multiprocessing.Pool(num_processes, maxtasksperchild=1, initializer=os.nice, initargs=(NICENESS,))
+
+        with process_pool:
+            arg_tuples = []
+
+            chunks_to_process = self.chunk_numbers[:max_chunks]
+
+            for chunk_number in chunks_to_process:
+                arg_tuple = (
+                    self.base_dir,
+                    self.batch_name,
+                    self.sample_name,
+                    only_if_new,
+                    chunk_number,
+                    len(chunks_to_process),
+                )
+
+                arg_tuples.append(arg_tuple)
+
+            process_pool.starmap(process_chunk_experiment, arg_tuples)
+
+        self.generate_outcome_counts()
+        self.generate_outcome_stratified_lengths()
+
+        logger.removeHandler(file_handler)
+        file_handler.close()
+
+chunk_read_annotation_fields = [
+    ('chunk_number', '06d'),
+    ('read_number', '06d'),
+    ('original_name', 's'),
+]
+
+ChunkReadAnnotation = hits.annotation.Annotation_factory(chunk_read_annotation_fields)
+
+class ChunkExperiment(Experiment):
+    def __init__(self, chunked_experiment, chunk_number):
+        self.chunk_number = chunk_number
+        self.chunked_experiment = chunked_experiment
+        self.fastq_fn = self.chunked_experiment.chunk_number_to_fastq_fn[self.chunk_number]
+
+        self.chunk_name = f'{self.chunk_number:06d}'
+
+        Experiment.__init__(self,
+                            chunked_experiment.base_dir,
+                            chunked_experiment.batch_name,
+                            chunked_experiment.sample_name,
+                            progress=self.chunked_experiment.progress,
+                           )
+
+    @property
+    def reads(self):
+        original_reads = hits.fastq.reads(self.fastq_fn, up_to_space=True)
+
+        for i, read in enumerate(original_reads):
+            annotation = ChunkReadAnnotation(chunk_number=self.chunk_number, read_number=i, original_name=read.name)
+            read.name = str(annotation)
+            yield read
+
+    @memoized_property
+    def results_dir(self):
+        return self.chunked_experiment.results_dir / f'chunk_{self.chunk_name}'
+
+    def load_description(self):
+        return self.chunked_experiment.description
+
+def process_chunk_experiment(base_dir,
+                             batch_name,
+                             sample_name,
+                             only_if_new,
+                             chunk_number,
+                             total_chunks,
+                            ):
+    chunked_exp = ChunkedExperiment(base_dir, batch_name, sample_name)
+    chunk_exp = chunked_exp.chunk_experiment(chunk_number)
+
+    progress_string = f'({chunk_number + 1: >7,} / {total_chunks: >7,})'
+
+    for stage in [
+        'preprocess',
+        'align',
+        'categorize',
+    ]:
+        stage_string = f'{chunk_number} {stage}'
+        logging.info(f'{progress_string} Started {stage_string}')
+
+        previously_processed = chunk_exp.fns['outcome_counts'].exists()
+
+        if not(only_if_new and previously_processed):
+            chunk_exp.process(stage)
+
+        logging.info(f'{progress_string} Finished {stage_string}')
+
+def convert_sample_sheet(base_dir, sample_sheet_df, batch_name):
+    base_dir = Path(base_dir)
+    sample_sheet_df = sample_sheet_df.copy()
+
+    batch_dir = base_dir / 'data' / batch_name
+    batch_dir.mkdir(parents=True, exist_ok=True)
+
+    valid_supplemental_indices = set(knock_knock.target_info.locate_supplemental_indices(base_dir))
+
+    samples = {}
+
+    target_info_keys = [
+        'amplicon_primers',
+        'genome',
+        'genome_source',
+        'extra_sequences',
+        'donor',
+    ]
+
+    grouped = sample_sheet_df.groupby(target_info_keys)
+
+    samples = {}
+
+    for (amplicon_primers, genome, genome_source, extra_sequences, donor), rows in grouped:
+        target_info_name = knock_knock.arrayed_experiment_group.make_default_target_info_name(amplicon_primers, genome, genome_source, extra_sequences, donor)
+
+        supplemental_indices = set()
+
+        for name in [genome] + extra_sequences.split(';'):
+            if name in valid_supplemental_indices:
+                supplemental_indices.add(name)
+
+        if len(supplemental_indices) == 0:
+            supplemental_indices.add('hg38')
+
+        supplemental_indices = supplemental_indices & valid_supplemental_indices
+
+        for _, row in rows.iterrows():
+            sample_name = row['sample_name']
+
+            samples[sample_name] = {
+                'supplemental_indices': ';'.join(supplemental_indices),
+                'target_info': target_info_name,
+                'experiment_type': 'nanopore',
+                'sgRNAs': row['sgRNAs'],
+            }
+
+    samples_df = pd.DataFrame.from_dict(samples, orient='index')
+    samples_df.index.name = 'sample_name'
+
+    samples_csv_fn = batch_dir / 'sample_sheet.csv'
+    samples_df.to_csv(samples_csv_fn)
+
+    return samples_df

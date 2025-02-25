@@ -871,7 +871,7 @@ class Experiment:
                 raise ValueError(f'invalid stage: {stage}')
 
         except:
-            print(self.batch_name, self.sample_name)
+            print(self)
             raise
 
     def get_read_alignments(self, read_id, fn_key='bam_by_name', outcome=None, read_type=None):
@@ -1376,7 +1376,7 @@ class Experiment:
 
 def load_sample_sheet_from_csv(csv_fn):
     # Note: can't include comment='#' because of '#' in hex color specifications.
-    df = knock_knock.utilities.read_and_sanitize_csv(csv_fn, index_col='sample')
+    df = knock_knock.utilities.read_and_sanitize_csv(csv_fn, index_col='sample_name')
 
     if not df.index.is_unique:
         print(f'Error parsing sample sheet {csv_fn}')
@@ -1403,8 +1403,10 @@ def load_sample_sheet(base_dir, batch):
 
     if data_yaml_fn.exists():
         sample_sheet = yaml.safe_load(data_yaml_fn.read_text())
+
     elif results_yaml_fn.exists():
         sample_sheet = yaml.safe_load(results_yaml_fn.read_text())
+
     else:
         csv_fn = data_yaml_fn.with_suffix('.csv')
         if not csv_fn.exists():

@@ -89,10 +89,6 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             ('multiple indels',
             ),
         ),
-        ('extension from intended annealing',
-            ('n/a',
-            ),
-        ),
         ('genomic insertion',
             ('hg19',
              'hg38',
@@ -149,15 +145,14 @@ class Layout(knock_knock.prime_editing_layout.Layout):
     def pegRNA_alignments_by_side_of_read(self):
         als = {}
         for side in ['left', 'right']:
-            name = self.target_info.pegRNA_names_by_side_of_read[side]
+            name = self.pegRNA_names_by_side_of_read[side]
             als[side] = self.pegRNA_alignments_by_pegRNA_name[name]
 
         return als
 
     def other_pegRNA_name(self, pegRNA_name):
-        ti = self.target_info
-        side = ti.pegRNA_name_to_side_of_read[pegRNA_name]
-        other_name = ti.pegRNA_names_by_side_of_read[knock_knock.target_info.other_side[side]]
+        side = self.pegRNA_name_to_side_of_read[pegRNA_name]
+        other_name = self.pegRNA_names_by_side_of_read[knock_knock.target_info.other_side[side]]
         return other_name
 
     def pegRNA_alignment_extends_pegRNA_alignment(self, first_pegRNA_al, second_pegRNA_al):
@@ -167,7 +162,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         if first_pegRNA_al.reference_name == second_pegRNA_al.reference_name:
             return None
 
-        if self.target_info.pegRNA_name_to_side_of_read[first_pegRNA_al.reference_name] == 'left':
+        if self.pegRNA_name_to_side_of_read[first_pegRNA_al.reference_name] == 'left':
             left_al, right_al = first_pegRNA_al, second_pegRNA_al
             right_al = second_pegRNA_al
         else:
@@ -232,8 +227,26 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                 als['first target'] = cropped_target_al
                 
                 overlap_extended_pegRNA_al = self.find_pegRNA_alignment_extending_from_overlap(pegRNA_al)
-                
-                if overlap_extended_pegRNA_al is not None:
+
+                if side == 'left':
+                    left_al, right_al = pegRNA_al, overlap_extended_pegRNA_al
+                elif side == 'right':
+                    left_al, right_al = overlap_extended_pegRNA_al, pegRNA_al
+                else:
+                    raise ValueError
+
+                cropped = sam.crop_to_best_switch_point(left_al, right_al, self.target_info.reference_sequences)
+
+                if side == 'left':
+                    cropped_pegRNA_al, cropped_overlap_extended_pegRNA_al = cropped['left'], cropped['right']
+                elif side == 'right':
+                    cropped_pegRNA_al, cropped_overlap_extended_pegRNA_al = cropped['right'], cropped['left']
+                else:
+                    raise ValueError
+
+                contribution_from_overlap_extended = not (interval.get_covered(cropped_overlap_extended_pegRNA_al) - interval.get_covered(cropped_pegRNA_al)).is_empty
+
+                if contribution_from_overlap_extended:
                     als['second pegRNA'] = overlap_extended_pegRNA_al
                     
                     overlap_extended_target_al, _, _ = self.find_target_alignment_extending_pegRNA_alignment(overlap_extended_pegRNA_al, 'PBS')
@@ -251,8 +264,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         query_covered = interval.get_disjoint_covered([])
         query_covered_incremental = {'none': query_covered}
 
-        for al_order_i in range(len(al_order)):
-            al_key = al_order[al_order_i]
+        for al_order_i, al_key in enumerate(al_order):
             if al_key in als:
                 als_up_to = [als[key] for key in al_order[:al_order_i + 1]]
                 query_covered = interval.get_disjoint_covered(als_up_to)
@@ -293,17 +305,26 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
         possible_covers = set()
 
-        if chains['left']['query_covered'] != chains['right']['query_covered']:
-            for left_key in al_order:
-                if left_key in chains['left']['alignments']:
-                    for right_key in al_order:
-                        if right_key in chains['right']['alignments']:
-                            covered_left = chains['left']['query_covered_incremental'][left_key]
-                            covered_right = chains['right']['query_covered_incremental'][right_key]
+        # If right covers part of right side not covered by left, or left
+        # covers part of left side not covered by right, look for joint covers.
 
-                            # Check if left and right overlap or abut each other.
-                            if covered_left.end >= covered_right.start - 1:
-                                possible_covers.add((left_key, right_key))
+        left_covered = chains['left']['query_covered']
+        right_covered = chains['right']['query_covered']
+
+        if not left_covered.is_empty and not right_covered.is_empty:
+            if (right_covered.end > left_covered.end) or \
+               (left_covered.start < right_covered.start):
+
+                for left_key in al_order:
+                    if left_key in chains['left']['alignments']:
+                        for right_key in al_order:
+                            if right_key in chains['right']['alignments']:
+                                covered_left = chains['left']['query_covered_incremental'][left_key]
+                                covered_right = chains['right']['query_covered_incremental'][right_key]
+
+                                # Check if left and right overlap or abut each other.
+                                if covered_left.end >= covered_right.start - 1:
+                                    possible_covers.add((left_key, right_key))
 
         last_parsimonious_key = {}
 
@@ -372,6 +393,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             
         if left_al is not None and right_al is not None:
             merged_al = sam.merge_adjacent_alignments(left_al, right_al, self.target_info.reference_sequences, max_deletion_length=2, max_insertion_length=2)
+
             if merged_al is not None:
                 if chains['right']['description'] == 'not RT\'ed':
                     chains['left']['alignments']['second target'] = merged_al
@@ -436,7 +458,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         '''
         ti = self.target_info
 
-        this_side_pegRNA_name = ti.pegRNA_names_by_side_of_read[side]
+        this_side_pegRNA_name = self.pegRNA_names_by_side_of_read[side]
         other_side_pegRNA_name = self.other_pegRNA_name(this_side_pegRNA_name)
 
         PBS_end = ti.features[this_side_pegRNA_name, 'PBS'].end
@@ -557,9 +579,9 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                 self.subcategory = 'both pegRNAs'
             elif len(self.pegRNAs_that_explain_all_SNVs) == 2:
                 self.subcategory = 'single pegRNA (ambiguous)'
-            elif self.target_info.pegRNA_names_by_side_of_read['left'] in self.pegRNAs_that_explain_all_SNVs:
+            elif self.pegRNA_names_by_side_of_read['left'] in self.pegRNAs_that_explain_all_SNVs:
                 self.subcategory = 'left pegRNA'
-            elif self.target_info.pegRNA_names_by_side_of_read['right'] in self.pegRNAs_that_explain_all_SNVs:
+            elif self.pegRNA_names_by_side_of_read['right'] in self.pegRNAs_that_explain_all_SNVs:
                 self.subcategory = 'right pegRNA'
             else:
                 raise ValueError
@@ -685,6 +707,22 @@ class Layout(knock_knock.prime_editing_layout.Layout):
     @memoized_property
     def has_any_flipped_pegRNA_al(self):
         return {side for side in ['left', 'right'] if len(self.flipped_pegRNA_als[side]) > 0}
+
+    def convert_target_alignment_edge_to_nick_coordinate(self, al, start_or_end):
+        ti = self.target_info
+        target_PBS = ti.features[ti.target, ti.PBS_names_by_side_of_read['left']]
+
+        if start_or_end == 'start':
+            reference_edge = al.reference_start
+        elif start_or_end == 'end':
+            reference_edge = al.reference_end - 1
+        
+        if target_PBS.strand == '+':
+            converted_edge = reference_edge - target_PBS.end
+        else:
+            converted_edge = target_PBS.start - reference_edge
+
+        return converted_edge
 
     def categorize(self):
         self.outcome = None
@@ -858,7 +896,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             overlap_offset_to_qs = defaultdict(dict)
 
             for side, expected_strand in [('left', '-'), ('right', '+')]:
-                pegRNA_name = ti.pegRNA_names_by_side_of_read[side]
+                pegRNA_name = self.pegRNA_names_by_side_of_read[side]
                 
                 pegRNA_als = [al for al in alignments_to_plot if al.reference_name == pegRNA_name and sam.get_strand(al) == expected_strand]
 
@@ -896,7 +934,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                     q = overlap_offset_to_qs['right'][anchor_offset]
 
                 for side in ['left', 'right']:
-                    pegRNA_name = ti.pegRNA_names_by_side_of_read[side]
+                    pegRNA_name = self.pegRNA_names_by_side_of_read[side]
                     ref_p = ti.feature_offset_to_ref_p(pegRNA_name, 'overlap')[anchor_offset]
                     manual_anchors[pegRNA_name] = (q, ref_p)
                 
@@ -996,7 +1034,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         else:
             refs_to_draw = set()
 
-            if ti.amplicon_length < 1000:
+            if ti.amplicon_length < 10000:
                 refs_to_draw.add(ti.target)
 
             refs_to_draw.update(pegRNA_names)
@@ -1014,13 +1052,13 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             manual_anchors = manual_diagram_kwargs.get('manual_anchors', self.manual_anchors(als_to_plot))
             inferred_amplicon_length = self.inferred_amplicon_length
         else:
-            manual_anchors = None
+            manual_anchors = {}
             inferred_amplicon_length = None
 
         if 'phiX' in ti.supplemental_indices:
             supplementary_reference_sequences = ti.supplemental_reference_sequences('phiX')
         else:
-            supplementary_reference_sequences = None
+            supplementary_reference_sequences = {}
 
         diagram_kwargs = dict(
             draw_sequence=True,
@@ -1064,10 +1102,10 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
             ref_p_to_xs = {}
 
-            left_name = ti.pegRNA_names_by_side_of_read['left']
+            left_name = self.pegRNA_names_by_side_of_read['left']
             left_visible = (left_name not in invisible_references) and any(al.reference_name == left_name for al in diagram.alignments)
 
-            right_name = ti.pegRNA_names_by_side_of_read['right']
+            right_name = self.pegRNA_names_by_side_of_read['right']
             right_visible = (right_name not in invisible_references) and any(al.reference_name == right_name for al in diagram.alignments)
 
             ref_p_to_xs['left'] = diagram.draw_reference(left_name, ref_ys['left'],

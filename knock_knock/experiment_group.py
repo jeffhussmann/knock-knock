@@ -256,7 +256,8 @@ class ExperimentGroup:
             ]:
 
                 grid = self.make_partial_incorporation_figure(condition_labels='with keys', **kwargs)
-                grid.fig.savefig(self.fns[fn_key], dpi=200, bbox_inches='tight')
+                if grid is not None:
+                    grid.fig.savefig(self.fns[fn_key], dpi=200, bbox_inches='tight')
 
         except Exception as e:
             logging.warning(f'Failed to make partial incorporation figure for {self}')
