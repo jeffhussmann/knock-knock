@@ -190,7 +190,6 @@ class Categorizer:
         else:
             return interval.Interval(min(qs), max(qs))
 
-
     def share_feature(self, first_al, first_feature_name, second_al, second_feature_name):
         '''
         Returns True if any query position is aligned to equivalent positions in first_feature and second_feature
@@ -3010,28 +3009,22 @@ def comprehensively_split_alignment(al, target_info, mode,
                     if cropped_al is not None and cropped_al.query_alignment_length >= 5:
                         split_als.append(cropped_al)
 
-    elif mode in ['pacbio', 'ont']:
+    elif mode in ['pacbio', 'ont', 'nanopore']:
         # Empirically, for Pacbio data, it is hard to find a threshold for number of edits within a window that
         # doesn't produce a lot of false positive splits, so don't try to split at edit clusters.
 
-        if ins_size_to_split_at is None:
-            ins_size_to_split_at = 5
-        
-        if del_size_to_split_at is None:
-            del_size_to_split_at = 3
-
         if al.reference_name == target_info.target:
             # First split at short indels close to expected cuts.
-            exempt = target_info.not_around_cuts(50)
-            for split_1 in sam.split_at_deletions(al, del_size_to_split_at, exempt_if_overlaps=exempt):
-                for split_2 in sam.split_at_large_insertions(split_1, ins_size_to_split_at, exempt_if_overlaps=exempt):
+            exempt = target_info.not_around_cuts(20)
+            for split_1 in sam.split_at_deletions(al, 3, exempt_if_overlaps=exempt):
+                for split_2 in sam.split_at_large_insertions(split_1, 3, exempt_if_overlaps=exempt):
                     # Then at longer indels anywhere.
                     for split_3 in sam.split_at_deletions(split_2, 10):
                         for split_4 in sam.split_at_large_insertions(split_3, 10):
                             split_als.append(split_4)
         else:
-            for split_1 in sam.split_at_deletions(al, del_size_to_split_at):
-                for split_2 in sam.split_at_large_insertions(split_1, ins_size_to_split_at):
+            for split_1 in sam.split_at_deletions(al, 10):
+                for split_2 in sam.split_at_large_insertions(split_1, 10):
                     split_als.append(split_2)
 
     else:
