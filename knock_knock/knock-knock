@@ -106,6 +106,7 @@ def parallel_arrayed(args):
     subprocess.run(parallel_command)
 
     batch.write_performance_metrics()
+    batch.write_pegRNA_conversion_fractions()
 
 def make_tables(args):
     import knock_knock.arrayed_experiment_group
