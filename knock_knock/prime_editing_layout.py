@@ -503,7 +503,7 @@ class Layout(layout.Categorizer):
             all_als = self.split_pegRNA_alignments + gap_als
 
             all_als = sam.make_nonredundant(all_als)
-            all_als = interval.make_parsimonious(all_als)
+            all_als = sam.make_noncontained(all_als)
 
             # Supplement with manually-generated extensions of target edge alignments.
             for side in ['left', 'right']:
