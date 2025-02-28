@@ -492,7 +492,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                     opposite_target_PBS_name = ti.PBS_names_by_side_of_read[knock_knock.target_info.other_side[side]]
                     opposite_target_PBS = ti.features[ti.target, opposite_target_PBS_name]
 
-                    if opposite_target_PBS.strand == '+':
+                    if opposite_target_PBS.strand == self.sequencing_direction:
                         extra_genomic = (opposite_target_PBS.start - 1) - al.reference_start + 1
                     else:
                         extra_genomic = (al.reference_end - 1) - (opposite_target_PBS.end + 1) + 1
@@ -926,9 +926,11 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                     anchor_offset = present_in_both[0]
                     qs = [overlap_offset_to_qs[side][anchor_offset] for side in ['left', 'right']] 
                     q = int(np.floor(np.mean(qs)))
+
                 elif len(overlap_offset_to_qs['left']) > 0:
                     anchor_offset = sorted(overlap_offset_to_qs['left'])[0]
                     q = overlap_offset_to_qs['left'][anchor_offset]
+
                 elif len(overlap_offset_to_qs['right']) > 0:
                     anchor_offset = sorted(overlap_offset_to_qs['right'])[0]
                     q = overlap_offset_to_qs['right'][anchor_offset]
