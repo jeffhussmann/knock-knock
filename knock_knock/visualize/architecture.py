@@ -246,7 +246,8 @@ class ReadDiagram:
             self.arrow_linewidth = 2
 
         if self.arrow_width is None:
-            self.arrow_width = self.query_length * 0.012
+            self.arrow_width = min(20, self.query_length * 0.012)
+
         self.arrow_height_over_width = self.width_per_unit / self.height_per_unit
 
         # cross_x and cross_y are the width and height of each X arm
