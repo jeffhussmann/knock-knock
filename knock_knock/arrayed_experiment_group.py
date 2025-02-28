@@ -92,6 +92,11 @@ class Batch:
     def write_performance_metrics(self):
         self.performance_metrics.to_csv(self.fns['performance_metrics'])
 
+    def write_pegRNA_conversion_fractions(self):
+        for (genome, protospacer), df in self.pegRNA_conversion_fractions.items():
+            fn = self.results_dir / f'pegRNA_conversion_fractions_{genome}_{protospacer}.csv'
+            df.to_csv(fn)
+
     def group(self, group_name):
         return ArrayedExperimentGroup(self.base_dir,
                                       self.batch_name,
@@ -284,6 +289,24 @@ class Batch:
         combined = pd.concat([total_reads, total_relevant_reads, individual_column_ps, unintended], axis=1)
 
         return combined
+
+    @memoized_property
+    def pegRNA_conversion_fractions(self):
+        grouped = defaultdict(dict)
+
+        for gn, group in self.groups.items():
+            if group.target_info.pegRNA is not None:
+                sgRNAs = ' + '.join(group.target_info.sgRNAs)
+                genome = group.description['genome']
+                protospacer = group.target_info.pegRNA.components['protospacer']
+                grouped[genome, protospacer][sgRNAs] = group.pegRNA_conversion_fractions_by_edit_description.T
+
+        pegRNA_conversion_fractions = {
+            (genome, protospacer): pd.concat(data, names=['sgRNAs'])
+            for (genome, protospacer), data in grouped.items()
+        }
+
+        return pegRNA_conversion_fractions
 
 def get_batch(base_dir, batch_name, progress=None, **kwargs):
     group_dir = Path(base_dir) / 'data' / batch_name
