@@ -232,6 +232,8 @@ class TargetInfoBuilder:
 
         self.extra_sequences = load_extra_sequences(self.base_dir)
 
+        self.extra_genbank_records = load_extra_genbank_records(self.base_dir)
+
         self.defer_HA_identification = defer_HA_identification
 
         self.name = self.info['name']
@@ -292,6 +294,7 @@ class TargetInfoBuilder:
 
     def build(self, generate_pegRNA_genbanks=False):
         donor_info = self.info.get('donor_sequence')
+
         if donor_info is None:
             donor_name = None
             donor_seq = None
@@ -311,6 +314,7 @@ class TargetInfoBuilder:
             _, donor_type = self.info['donor_type']
 
         nh_donor_info = self.info.get('nonhomologous_donor_sequence')
+
         if nh_donor_info is None:
             nh_donor_name = None
             nh_donor_seq = None
@@ -507,13 +511,20 @@ class TargetInfoBuilder:
         gb_records[self.target_name] = target_record
 
         if self.info.get('extra_sequences') is not None:
-            extra_genbank_records = load_extra_genbank_records(self.base_dir)
             for extra_seq_name, extra_seq in self.info['extra_sequences']:
-                if extra_seq_name in extra_genbank_records:
-                    record = extra_genbank_records[extra_seq_name]
+                if extra_seq_name in self.extra_genbank_records:
+                    record = self.extra_genbank_records[extra_seq_name]
                 else:
                     record = SeqRecord(Seq(extra_seq), name=extra_seq_name, annotations={'molecule_type': 'DNA'})
+
                 gb_records[extra_seq_name] = record
+
+        if self.info.get('donor') is not None:
+            donor_name, donor_sequence = self.info['donor']
+            if donor_name in self.extra_genbank_records:
+                record = self.extra_genbank_records[donor_name]
+
+                gb_records[donor_name] = record
 
         # Note: for debugging convenience, genbank files can be written for pegRNAs,
         # but these are NOT supplied as genbank records to make the final TargetInfo,
@@ -553,6 +564,10 @@ class TargetInfoBuilder:
             'sources': sources,
             'target': self.target_name,
         }
+
+        if self.info['donor'] is not None:
+            donor_name, donor_sequence = self.info['donor']
+            manifest['donor'] = donor_name
 
         if has_donor:
             manifest['donor'] = donor_name
@@ -987,10 +1002,9 @@ def build_target_infos_from_csv(base_dir, defer_HA_identification=False):
             'genome_source': row['genome_source'],
             'amplicon_primers': lookup(row, 'amplicon_primers', 'amplicon_primers'),
             'sgRNAs': lookup(row, 'sgRNAs', 'sgRNAs', multiple_lookups=True, validate_sequence=False),
-            'donor_sequence': lookup(row, 'donor_sequence', 'donor_sequence'),
+            'donor': lookup(row, 'donor', 'extra_sequence'),
             'extra_sequences': lookup(row, 'extra_sequences', 'extra_sequence', multiple_lookups=True),
             'nonhomologous_donor_sequence': lookup(row, 'nonhomologous_donor_sequence', 'donor_sequence'),
-            'donor_type': lookup(row, 'donor_sequence', 'donor_type', validate_sequence=False),
         }
 
         if info['sgRNAs'] is not None:

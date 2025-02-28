@@ -116,6 +116,10 @@ class Layout(knock_knock.twin_prime_layout.Layout):
              'no alignments detected',
             ),
         ),
+        ('malformed',
+            ('doesn\'t have both primers',
+            ),
+        ),
         ('nonspecific amplification',
             ('hg19',
              'hg38',
@@ -139,10 +143,18 @@ class Layout(knock_knock.twin_prime_layout.Layout):
 
     @property
     def inferred_amplicon_length(self):
-        if self.target_edge_alignments['left'] is not None and self.target_edge_alignments['right'] is not None:
-            return super().inferred_amplicon_length
+        if self.primer_alignments['left'] is not None:
+            left = interval.get_covered(self.primer_alignments['left']).start
         else:
-            return self.read_length
+            left = 0
+
+        if self.primer_alignments['right'] is not None:
+            right = interval.get_covered(self.primer_alignments['right']).end
+        else:
+            right = self.whole_read.end
+
+        return right - left + 1
+            
 
     @memoized_property
     def is_low_quality(self):
@@ -266,7 +278,7 @@ class Layout(knock_knock.twin_prime_layout.Layout):
 
         return by_component
 
-    def find_donor_alignment_extending_pegRNA_alignment(self, pegRNA_al):
+    def find_donor_alignment_extending_pegRNA_alignment(self, pegRNA_al, from_side):
         donor_als = []
 
         pegRNA_CD_name = self.pegRNA_integrase_sites[pegRNA_al.reference_name]['CD'].ID
@@ -275,50 +287,70 @@ class Layout(knock_knock.twin_prime_layout.Layout):
             for donor_CD_feature in self.donor_integrase_sites['CD']:
                 donor_CD_name = donor_CD_feature.ID
 
-                extension_results = self.are_mutually_extending_from_shared_feature(pegRNA_al,
-                                                                                    pegRNA_CD_name,
-                                                                                    donor_al,
-                                                                                    donor_CD_name,
+                if from_side == 'left':
+                    left_al = pegRNA_al
+                    left_feature = pegRNA_CD_name
+
+                    right_al = donor_al
+                    right_feature = donor_CD_name
+
+                elif from_side == 'right':
+                    left_al = donor_al
+                    left_feature = donor_CD_name
+
+                    right_al = pegRNA_al
+                    right_feature = pegRNA_CD_name
+                
+                else:
+                    raise ValueError
+
+                extension_results = self.are_mutually_extending_from_shared_feature(left_al,
+                                                                                    left_feature,
+                                                                                    right_al,
+                                                                                    right_feature,
                                                                                    )
                 if extension_results['status'] == 'definite':
                     donor_als.append(donor_al)
                     
-                extension_results = self.are_mutually_extending_from_shared_feature(donor_al,
-                                                                                    donor_CD_name,
-                                                                                    pegRNA_al,
-                                                                                    pegRNA_CD_name,
-                                                                                   )
-                if extension_results['status'] == 'definite':
-                    donor_als.append(donor_al)
-                
         return max(donor_als, key=lambda al: al.query_alignment_length, default=None)
 
-    def find_pegRNA_alignment_extending_donor_alignment(self, donor_al, pegRNA_name):
-        pegRNA_als = []
+    def find_pegRNA_alignment_extending_donor_alignment(self, donor_al, from_side):
+        extending_pegRNA_als = []
 
-        pegRNA_CD_name = self.pegRNA_integrase_sites[pegRNA_name]['CD'].ID
+        for pegRNA_name, pegRNA_als in self.pegRNA_alignments_by_pegRNA_name.items():
+            pegRNA_CD_name = self.pegRNA_integrase_sites[pegRNA_name]['CD'].ID
 
-        for pegRNA_al in self.pegRNA_alignments_by_pegRNA_name[pegRNA_name]:
-            for donor_CD_feature in self.donor_integrase_sites['CD']:
-                donor_CD_name = donor_CD_feature.ID
+            for pegRNA_al in pegRNA_als:
 
-                extension_results = self.are_mutually_extending_from_shared_feature(pegRNA_al,
-                                                                                    pegRNA_CD_name,
-                                                                                    donor_al,
-                                                                                    donor_CD_name,
-                                                                                   )
-                if extension_results['status'] == 'definite':
-                    pegRNA_als.append(pegRNA_al)
-                    
-                extension_results = self.are_mutually_extending_from_shared_feature(donor_al,
-                                                                                    donor_CD_name,
-                                                                                    pegRNA_al,
-                                                                                    pegRNA_CD_name,
-                                                                                   )
-                if extension_results['status'] == 'definite':
-                    pegRNA_als.append(pegRNA_al)
+                for donor_CD_feature in self.donor_integrase_sites['CD']:
+                    donor_CD_name = donor_CD_feature.ID
 
-        return max(pegRNA_als, key=lambda al: al.query_alignment_length, default=None)
+                    if from_side == 'left':
+                        left_al = donor_al
+                        left_feature = donor_CD_name
+
+                        right_al = pegRNA_al
+                        right_feature = pegRNA_CD_name
+
+                    elif from_side == 'right':
+                        left_al = pegRNA_al
+                        left_feature = pegRNA_CD_name
+
+                        right_al = donor_al
+                        right_feature = donor_CD_name
+
+                    else:
+                        raise ValueError
+
+                    extension_results = self.are_mutually_extending_from_shared_feature(left_al,
+                                                                                        left_feature,
+                                                                                        right_al,
+                                                                                        right_feature,
+                                                                                       )
+                    if extension_results['status'] == 'definite':
+                        extending_pegRNA_als.append(pegRNA_al)
+
+        return max(extending_pegRNA_als, key=lambda al: al.query_alignment_length, default=None)
 
     @memoized_property
     def gap_covering_alignments(self):
@@ -328,6 +360,30 @@ class Layout(knock_knock.twin_prime_layout.Layout):
     def partial_gap_perfect_alignments(self):
         return []
 
+    def realign_edges_to_primers(self, read_side):
+        return None
+
+    @memoized_property
+    def perfect_right_edge_alignment(self):
+        return None
+
+    def manual_anchors(self, alignments_to_plot):
+        return {}
+
+    def interesting_and_uninteresting_indels(self, als):
+        # For now, ignore most indels.
+
+        interesting = []
+        uninteresting = []
+
+        indels = self.extract_indels_from_alignments(als)
+
+        for indel, near_cut in indels:
+            if indel.kind == 'D' and indel.length > 20:
+                interesting.append(indel)
+
+        return interesting, uninteresting
+
     @memoized_property
     def donor_extension_chains_by_side(self):
         chains = copy.deepcopy(self.extension_chains_by_side)
@@ -335,16 +391,14 @@ class Layout(knock_knock.twin_prime_layout.Layout):
         for side in ['left', 'right']:
             if chains[side]['description'] == "RT'ed":
                 first_pegRNA_al = chains[side]['alignments']['first pegRNA']
-                donor_al = self.find_donor_alignment_extending_pegRNA_alignment(first_pegRNA_al)
+                donor_al = self.find_donor_alignment_extending_pegRNA_alignment(first_pegRNA_al, side)
 
                 if donor_al is not None:
                     chains[side]['description'] = 'one-sided integration'
 
                     chains[side]['alignments']['donor'] = donor_al
 
-                    second_pegRNA_name = self.other_pegRNA_name(first_pegRNA_al.reference_name)
-
-                    second_pegRNA_al = self.find_pegRNA_alignment_extending_donor_alignment(donor_al, second_pegRNA_name)
+                    second_pegRNA_al = self.find_pegRNA_alignment_extending_donor_alignment(donor_al, side)
 
                     if second_pegRNA_al is not None:
                         chains[side]['description'] = 'integration'
@@ -410,14 +464,15 @@ class Layout(knock_knock.twin_prime_layout.Layout):
 
         self.outcome = Outcome('n/a')
 
-    @memoized_property
-    def alignments_to_search_for_gaps(self):
-        return self.split_target_and_pegRNA_alignments + self.donor_alignments
-
     def categorize(self):
         self.outcome = None
 
-        if self.nonspecific_amplification:
+        if self.primer_alignments['left'] is None or self.primer_alignments['right'] is None:
+            self.category = 'malformed'
+            self.subcategory = 'doesn\'t have both primers'
+            self.details = 'n/a/'
+
+        elif self.nonspecific_amplification:
             self.register_nonspecific_amplification()
 
         elif self.aligns_to_phiX:
@@ -549,7 +604,7 @@ class Layout(knock_knock.twin_prime_layout.Layout):
         else:
             self.register_uncategorized()
 
-        self.relevant_alignments = [
+        self.relevant_alignments = self.target_edge_alignments_list + [
             al for al in self.target_alignments + sam.make_noncontained(self.non_protospacer_pegRNA_alignments) + sam.make_noncontained(self.donor_alignments)
             if not self.overlaps_outside_primers(al)
         ] + self.extra_alignments
