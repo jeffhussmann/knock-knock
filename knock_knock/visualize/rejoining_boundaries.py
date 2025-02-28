@@ -3,6 +3,7 @@ from itertools import islice
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 import hits.visualize
 import hits.utilities
@@ -140,7 +141,12 @@ class EfficientBoundaryProperties:
             counts = counts.drop('nonspecific amplification')
         
         self.target_info = target_info
+
+        if isinstance(counts, pd.Series):
+            counts = counts.to_frame()
+
         self.counts = counts
+
         self.include_intended_edit = include_intended_edit
 
         if aggregate_conditions is not None:
@@ -207,7 +213,12 @@ class EfficientBoundaryProperties:
 
         return self.rejoining_counts.groupby(by=csd_to_target_coords).sum()
 
-    def to_exp_sets(self, columns_to_extract):
+    def to_exp_sets(self, columns_to_extract=None):
+        if columns_to_extract is None:
+            columns_to_extract = [
+                ('all', pd.IndexSlice[:], 'black'),
+            ]
+
         exp_sets = {}
 
         for name, columns, color in columns_to_extract:
