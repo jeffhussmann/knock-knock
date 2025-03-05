@@ -542,8 +542,15 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         return exp
 
     @memoized_property
-    def experiments_by_sanitized_name(self):
-        return {exp.description['sanitized_sample_name']: exp for exp in self.experiments()}
+    def sanitized_sample_name_to_sample_name(self):
+        return utilities.reverse_dictionary(self.sample_sheet['sanitized_sample_name'])
+
+    def sanitized_sample_name_to_experiment(self, sanitized_sample_name):
+        if isinstance(sanitized_sample_name, int):
+            sanitized_sample_name = get_sanitized_sample_name(sanitized_sample_name)
+
+        sample_name = self.sanitized_sample_name_to_sample_name[sanitized_sample_name]
+        return self.sample_name_to_experiment(sample_name)
 
     @memoized_property
     def full_condition_to_experiment(self):
