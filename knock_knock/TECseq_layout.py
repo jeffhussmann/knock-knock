@@ -57,8 +57,9 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             ),
         ),
         ('nonspecific amplification',
-            ('n/a',
+            ('hg38',
              'primer dimer',
+             'short unknown',
             ),
         ),
         ('minimal alignment to intended target',
@@ -116,10 +117,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         self.outcome = None
 
         if self.nonspecific_amplification:
-            self.category = 'nonspecific amplification'
-            self.subcategory = 'n/a'
-
-            self.relevant_alignments = self.nonspecific_amplification['target_edge_als'] + self.nonspecific_amplification['covering_als']
+            self.register_nonspecific_amplification()
 
         elif self.starts_at_expected_location and self.minimal_cover is not None:
             if self.minimal_cover == 'first target':
@@ -223,8 +221,10 @@ class NoOverlapPairLayout(Layout):
         R2_cover = R2.minimal_cover
 
         if R1.nonspecific_amplification:
+            R1.register_nonspecific_amplification()
+
             category = 'nonspecific amplification'
-            subcategory = 'n/a'
+            subcategory = R1.subcategory
 
             R1_als = R1.nonspecific_amplification['covering_als']
         
