@@ -79,8 +79,10 @@ class Batch:
     def sanitized_group_name_to_group(self, sanitized_group_name):
         if isinstance(sanitized_group_name, int):
             sanitized_group_name = get_sanitized_group_name(sanitized_group_name)
+
         group_name = self.sanitized_group_name_to_group_name[sanitized_group_name]
         group = self.groups[group_name]
+
         return group
 
     def write_sanitized_group_name_lookup_table(self):
@@ -299,7 +301,9 @@ class Batch:
                 sgRNAs = ' + '.join(group.target_info.sgRNAs)
                 genome = group.description['genome']
                 protospacer = group.target_info.pegRNA.components['protospacer']
-                grouped[genome, protospacer][sgRNAs] = group.pegRNA_conversion_fractions_by_edit_description.T
+
+                if group.pegRNA_conversion_frations_by_edit_description is not None:
+                    grouped[genome, protospacer][sgRNAs] = group.pegRNA_conversion_fractions_by_edit_description.T
 
         pegRNA_conversion_fractions = {
             (genome, protospacer): pd.concat(data, names=['sgRNAs'])
