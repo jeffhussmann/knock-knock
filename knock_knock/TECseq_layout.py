@@ -178,7 +178,7 @@ class NoOverlapPairLayout(Layout):
     def __init__(self, alignments, target_info):
         self.alignments = alignments
         self.target_info = target_info
-        self.flipped = False
+        self._flipped = False
 
         self.layouts = {
             'R1': type(self).individual_layout_class(alignments['R1'], target_info),
