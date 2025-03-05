@@ -153,9 +153,13 @@ class Layout(knock_knock.twin_prime_layout.Layout):
         else:
             right = self.whole_read.end
 
-        return right - left + 1
-            
+        inferred_amplicon_length = right - left + 1
 
+        if inferred_amplicon_length < 0:
+            inferred_amplicon_length = len(self.seq)
+
+        return inferred_amplicon_length
+            
     @memoized_property
     def is_low_quality(self):
         return False
