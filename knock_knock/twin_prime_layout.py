@@ -1120,7 +1120,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
             ref_p_to_xs['right'] = diagram.draw_reference(right_name, ref_ys['right'],
                                                           flip=False,
-                                                          label_features=True,
+                                                          label_features=False,
                                                           visible=right_visible,
                                                          )
 

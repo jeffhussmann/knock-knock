@@ -1336,6 +1336,8 @@ class DiagramGrid:
             label_aliases = {}
         self.label_aliases = label_aliases
 
+        self.cut_color = cut_color
+
         self.plot_diagrams()
 
     def plot_diagrams(self):

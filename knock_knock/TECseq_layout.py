@@ -1,3 +1,5 @@
+import copy
+
 import hits.interval
 import hits.sam
 import hits.utilities
@@ -395,13 +397,15 @@ class NoOverlapPairLayout(Layout):
             self.categorize()
             als_to_plot = self.relevant_alignments
 
+        label_overrides = plot_kwargs.pop('label_overrides', self.plot_parameters['label_overrides'].copy())
+
         diagram = knock_knock.visualize.architecture.ReadDiagram(als_to_plot,
                                                                  self.target_info,
                                                                  highlight_SNPs=True,
                                                                  flip_target=self.sequencing_direction == '-',
                                                                  inferred_amplicon_length=self.inferred_amplicon_length,
                                                                  features_to_show=self.plot_parameters['features_to_show'],
-                                                                 label_overrides=self.plot_parameters['label_overrides'],
+                                                                 label_overrides=label_overrides,
                                                                  feature_heights=self.plot_parameters['feature_heights'],
                                                                  **plot_kwargs,
                                                                 )

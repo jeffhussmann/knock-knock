@@ -316,8 +316,8 @@ def plot_single_flap_extension_chain_edges(target_info,
                                            side_and_subcategories=None,
                                            annotate_structure=False,
                                            draw_genomic_homology=False,
-                                           title=None,
-                                           title_color=None,
+                                           manual_title=None,
+                                           manual_title_color=None,
                                           ):
     ti = target_info
 
@@ -346,7 +346,7 @@ def plot_single_flap_extension_chain_edges(target_info,
                                                               subcategory_key,
                                                               cumulative=cumulative,
                                                               normalize=normalize,
-                                                              from_right=pegRNA_from_right and side == 'pegRNA',
+                                                              from_right=pegRNA_from_right and (side == 'pegRNA' or subcategory_key == 'RT\'ed'),
                                                              )
 
                 if xs is None:
@@ -498,11 +498,15 @@ def plot_single_flap_extension_chain_edges(target_info,
                 ax.set_xticks(new_ticks)
                 ax.set_xticklabels(new_labels)
 
-            if title is None:
+            if manual_title is None:
                 title = f'pegRNA ({pegRNA_name})'
+            else:
+                title = manual_title
 
-            if title_color is None:
+            if manual_title_color is None:
                 title_color = ti.pegRNA_name_to_color[pegRNA_name]
+            else:
+                title_color = manual_title_color
 
             ax_col[0].set_title(title, color=title_color)
             ax_col[0].set_xticklabels([])
@@ -576,6 +580,9 @@ def plot_single_flap_extension_chain_edges(target_info,
             # By definition, the nt on the PAM-distal side of the nick
             # is zero in the coordinate system, and postive values go towards
             # the PAM.
+
+            # 24.12.05: having trouble reconciling comment above with code. 
+            # Should it be "PAM-proximal side of the nick"?
 
             feature_names = ti.protospacer_names + list(ti.PAM_features) + ti.primer_names
 
