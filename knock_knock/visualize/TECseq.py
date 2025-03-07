@@ -13,7 +13,7 @@ import bokeh.palettes
 top_color = '#FF00FF'
 bottom_color = '#00FF00'
 
-def condition_to_color(condition):
+def round_1_condition_to_color(condition):
     if condition['in_vitro_Cas9_sgRNA'] == 'none':
         palette = bokeh.palettes.Category20b_20
 
@@ -37,6 +37,22 @@ def condition_to_color(condition):
             color = palette[8]
         else:
             color = 'black'
+
+    return color
+
+def round_2_condition_to_color(condition):
+    palette = bokeh.palettes.Dark2_8
+
+    if condition['time_point'] == '06' and condition['cell_line'] == 'WT':
+        color = palette[0]
+    elif condition['time_point'] == '72' and condition['cell_line'] == 'WT':
+        color = palette[2]
+    elif condition['time_point'] == '06' and condition['cell_line'] == 'MLH1_KO':
+        color = palette[1]
+    elif condition['time_point'] == '72' and condition['cell_line'] == 'MLH1_KO':
+        color = palette[3]
+    else:
+        raise ValueError(condition)
 
     return color
 
@@ -92,12 +108,12 @@ class StrandsGrid:
                                                                        gridspec_kw=dict(hspace=self.hspace),
                                                                       )
 
-        ax_p = self.axs['top'].get_position()
+        if self.pegRNA_name is not None:
+            ax_p = self.axs['top'].get_position()
 
-        self.axs['pegRNA'] = self.fig.add_axes((ax_p.x0, ax_p.y1 + ax_p.height * 0.15, ax_p.width, ax_p.height),
-                                               sharex=self.axs['top'],
-                                              )
-
+            self.axs['pegRNA'] = self.fig.add_axes((ax_p.x0, ax_p.y1 + ax_p.height * 0.15, ax_p.width, ax_p.height),
+                                                sharex=self.axs['top'],
+                                                )
 
         self.axs['top'].set_xlim(self.x_min, self.x_max)
 
@@ -107,7 +123,8 @@ class StrandsGrid:
         self.draw_genomic_sequence()
         self.annotate_genomic_features()
 
-        self.draw_pegRNA_sequence()
+        if self.pegRNA_name is not None:
+            self.draw_pegRNA_sequence()
 
         self.format_axes()
 
@@ -324,21 +341,40 @@ class StrandsGrid:
         for ax in self.axs.values():
             ax.set_ylim(0, self.y_max)
 
-        self.axs['top'].set_ylabel('% of top strand reads,\ngenomic', size=12)
+        #self.axs['top'].set_ylabel('% of top strand reads,\ngenomic', size=12)
+
+        label_kwargs = dict(
+            xy=(0, 0.5),
+            xycoords='axes fraction',
+            xytext=(-50, 0),
+            textcoords='offset points',
+            rotation=90,
+            size=12,
+            va='center',
+            ha='center',
+        )
+
+        self.axs['top'].annotate('% of top strand reads,\ngenomic',
+                                 **label_kwargs,
+                                )
 
         self.axs['bottom'].invert_yaxis()
-        self.axs['bottom'].set_ylabel('% of bottom strand reads', size=12)
+        self.axs['bottom'].annotate('% of bottom strand reads',
+                                    **label_kwargs,
+                                   )
         self.axs['bottom'].xaxis.tick_top()
 
-        self.axs['pegRNA'].set_ylabel('% of top strand reads,\nRT\'ed flap', size=12)
+        if self.pegRNA_name is not None:
+            self.axs['pegRNA'].set_ylabel('% of top strand reads,\nRT\'ed flap', size=12)
 
     def add_legend(self):
         self.axs['top'].legend(markerscale=2)
 
     def plot_fractions(self,
                        data,
+                       condition_to_color=round_1_condition_to_color,
                        cumulative=False,
-                       condition_keys_to_label=('group', 'time_point', 'in_vitro_Cas9_sgRNA'),
+                       condition_keys_to_label=('group', 'cell_line', 'time_point', 'in_vitro_Cas9_sgRNA'),
                        condition_filter=None,
                       ):
 
@@ -352,8 +388,12 @@ class StrandsGrid:
                 ax = self.axs[strand]
 
             df = data[strand]
+
+            def sort_key(column):
+                condition = OrderedDict(zip(df.columns.names, column))
+                return [condition[key] for key in condition_keys_to_label]
             
-            for column in df:
+            for column in sorted(df, key=sort_key):
                 condition = OrderedDict(zip(df.columns.names, column))
 
                 if condition_filter is not None and not condition_filter(condition):
@@ -391,3 +431,108 @@ class StrandsGrid:
                     to_plot = all_ys
 
                 ax.plot(all_xs, to_plot, '-', color=color, markersize=2, clip_on=True)
+
+def load_group_denominator(group):
+    denominator = group.outcome_counts(level='category').reindex(['RTed sequence', 'targeted genomic sequence'], fill_value=0).sum()
+    return denominator
+
+def load_group_counts(group, key=('targeted genomic sequence', 'unedited')):
+    base_dir = '/home/jah/projects/knock-knock_prime/ashley'
+
+    target_name = 'HEK3_annotated'
+
+    sgRNAs = [
+        'PRS26322',
+        'PRS26323',
+        'sgRNA2483',
+        'ngRNA_+26',
+    ]
+
+    ti = knock_knock.target_info.TargetInfo(base_dir, target_name, sgRNAs=sgRNAs)
+
+    if key not in group.outcome_counts().index:
+        return None
+        
+    counts = group.outcome_counts().sort_index().loc[key]
+    
+    if counts.index.nlevels > 1:
+        counts = counts.groupby(level='details').sum()
+        
+    just_edges = [knock_knock.TECseq_layout.EdgeMismatchOutcome.from_string(d).undo_anchor_shift(group.target_info.anchor).edge_outcome.edge for d in counts.index]
+
+    counts.index = just_edges
+
+    just_edges_counts = counts.groupby(level=0).sum()
+    
+    if key[0] == 'RTed sequence':
+        offset = -len(group.target_info.pegRNA.components['PBS']) + 1
+    else:
+        offset = ti.features[('HEK3', group.target_info.sequencing_start_feature_name)].start - group.target_info.features[group.target_info.target, group.target_info.sequencing_start_feature_name].start - ti.cut_afters['sgRNA2483_protospacer_+']
+    
+    just_edges_counts.index = just_edges_counts.index + offset
+    
+    if isinstance(just_edges_counts, pd.Series):
+        just_edges_counts = just_edges_counts.to_frame()
+        just_edges_counts.columns.names = list(group.full_condition_keys)
+    
+    return just_edges_counts
+
+def load_all_data(batch, genome='hg38', key=('targeted genomic sequence', 'unedited'), min_reads=1000):
+    genome_and_sgRNAs = set()
+
+    for _, row in batch.group_descriptions.iterrows():
+        sgRNAs = row['sgRNAs']
+        if sgRNAs is None:
+            sgRNAs = ''
+        sgRNAs = sgRNAs.replace(';', '+')
+        
+        genome = row['genome']
+        
+        genome_and_sgRNAs.add((genome, sgRNAs))
+    
+    top_primer = 'OLI19224'
+    bottom_primer = 'OLI19254'
+    
+    data = {}
+
+    pegRNA_names = set()
+    
+    for genome, sgRNAs in genome_and_sgRNAs:
+        gn_suffix = sgRNAs
+        group_data = {}
+        
+        top_group = batch.groups[f'{top_primer}_{genome}_{gn_suffix}_']
+        top_counts = load_group_counts(top_group, key=key)
+        top_denominator = load_group_denominator(top_group)
+        
+        if top_counts is not None:
+            top_percentages = top_counts / top_denominator * 100
+            group_data['top'] = top_percentages[top_denominator[top_denominator > min_reads].index]
+
+        bottom_group = batch.groups[f'{bottom_primer}_{genome}_{gn_suffix}_']
+        bottom_counts = load_group_counts(bottom_group, key=key)
+        bottom_denominator = load_group_denominator(bottom_group)
+        
+        if bottom_counts is not None:
+            bottom_percentages = bottom_counts / bottom_denominator * 100
+            group_data['bottom'] = bottom_percentages[bottom_denominator[bottom_denominator > min_reads].index]
+
+        if top_group.target_info.pegRNA is not None:
+            pegRNA_counts = load_group_counts(top_group, key=('RTed sequence', 'n/a'))
+            group_data[top_group.target_info.pegRNA.name] = pegRNA_counts / top_denominator * 100
+
+            pegRNA_names.add(top_group.target_info.pegRNA.name)
+            
+        data[gn_suffix] = group_data
+
+    all_data = {}
+
+    for strand in ['top', 'bottom']:
+        flipped = {gn_suffix: data[gn_suffix][strand] for gn_suffix in data if strand in data[gn_suffix]}
+        if len(flipped) > 0:
+            all_data[strand] = pd.concat({gn_suffix: data[gn_suffix][strand] for gn_suffix in data if strand in data[gn_suffix]}, axis=1, names=['group']).fillna(0).sort_index()
+
+    for pegRNA_name in pegRNA_names:
+        all_data[pegRNA_name] = pd.concat({gn_suffix: data[gn_suffix][pegRNA_name] for gn_suffix in data if pegRNA_name in data[gn_suffix]}, axis=1, names=['group']).fillna(0).sort_index()
+    
+    return all_data
