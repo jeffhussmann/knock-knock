@@ -1116,6 +1116,7 @@ class ReadDiagram:
               (len(alignment_coordinates) == 1) or 
               (len(alignment_coordinates) == 2 and ref_name == ti.donor and self.R2_alignments is not None) 
              ):
+
             xs, ps, y, strand, parsimony_multiplier = alignment_coordinates[0]
 
             anchor_ref = ps[0]
@@ -1218,20 +1219,19 @@ class ReadDiagram:
                 self.ax.plot([x, ref_x], [y, ref_border_y],
                              color=color,
                              alpha=0.3 * parsimony_multiplier,
-                             clip_on=False,
+                             clip_on=True,
                              visible=visible,
                             )
 
-        if ref_name == ti.target and self.alignment_registration == 'centered_on_primers':
-            target_features = {
+            features = {
                 feature
-                for (ref_name, feature_name), feature in ti.features.items()
-                if (ref_name, feature_name) in self.features_to_show
-                and ref_name == ti.target
+                for (feature_ref_name, feature_name), feature in ti.features.items()
+                if (feature_ref_name, feature_name) in self.features_to_show
+                and feature_ref_name == ref_name
              }
 
-            min_feature_start = min(feature.start for feature in target_features)
-            max_feature_end = max(feature.end for feature in target_features)
+            min_feature_start = min(feature.start for feature in features)
+            max_feature_end = max(feature.end for feature in features)
 
             ref_al_min = min(ref_al_min, min_feature_start)
             ref_al_max = max(ref_al_max, max_feature_end)
@@ -1321,7 +1321,7 @@ class ReadDiagram:
                        interpolation='none',
                        zorder=3,
                        visible=visible,
-                       clip_on=False,
+                       clip_on=True,
                       )
 
         # Draw features.
