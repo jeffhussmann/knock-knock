@@ -2,100 +2,115 @@ import numpy as np
 import pandas as pd
 
 import knock_knock.target_info
-from knock_knock.target_info import DegenerateDeletion, DegenerateInsertion, SNV, SNVs
+from knock_knock.target_info import DegenerateDeletion, DegenerateInsertion, Mismatches
 
-class Outcome:
-    def __init__(self, description):
-        self.description = description
-
-    def __str__(self):
-        return self.description
-
+class Detail:
     def perform_anchor_shift(self, anchor):
         return self
 
-    def undo_anchor_shift(self, anchor):
-        return self.perform_anchor_shift(-anchor)
+def simple_Detail_factory(convertor):
+    class SimpleDetail(Detail):
+        def __init__(self, value):
+            self.value = value
 
-class DeletionOutcome(Outcome):
-    def __init__(self, deletion):
-        self.deletion = deletion
+        @classmethod
+        def from_string(cls, details_string):
+            value = convertor(details_string)
+            return cls(value)
 
-    @classmethod
-    def from_string(cls, details_string):
-        deletion = DegenerateDeletion.from_string(details_string)
-        return cls(deletion)
+        def __str__(self):
+            return str(self.value)
 
-    def __str__(self):
-        return str(self.deletion)
+    return SimpleDetail
 
-    def perform_anchor_shift(self, anchor):
-        shifted_starts_ats = [starts_at - anchor for starts_at in self.deletion.starts_ats]
-        shifted_deletion = DegenerateDeletion(shifted_starts_ats, self.deletion.length)
-        return type(self)(shifted_deletion)
+def DetailList_factory(SpecificDetail):
+    INTERMEDIATE_DELIMITER = ';'
 
-    def get_min_removed(self, ti):
-        min_removed = {
-            5: max(0, ti.cut_after - max(self.deletion.starts_ats) + 1),
-            3: max(0, min(self.deletion.ends_ats) - ti.cut_after),
-        }
-        for target_side, PAM_side in ti.target_side_to_PAM_side.items():
-            min_removed[PAM_side] = min_removed[target_side]
+    class DetailList:
+        def __init__(self, fields):
+            self.fields = fields
 
-        return min_removed
+        @classmethod
+        def from_string(cls, details_string):
+            fields_strings = details_string.split(INTERMEDIATE_DELIMITER)
+            fields = [SpecificDetail.from_string(s) for s in fields_strings]
+            return cls(fields)
 
-    def classify_directionality(self, ti):
-        if ti.effector.name == 'SpCas9':
-            min_removed = self.get_min_removed(ti)
+        def __str__(self):
+            return INTERMEDIATE_DELIMITER.join(str(field) for field in self.fields)
 
-            if min_removed['PAM-proximal'] > 0 and min_removed['PAM-distal'] > 0:
-                directionality = 'bidirectional'
-            elif min_removed['PAM-proximal'] > 0 and min_removed['PAM-distal'] <= 0:
-                directionality = 'PAM-proximal'
-            elif min_removed['PAM-proximal'] <= 0 and min_removed['PAM-distal'] > 0:
-                directionality = 'PAM-distal'
-            else:
-                directionality = 'ambiguous'
+    return DetailList
+
+def Details_factory(class_name, field_names_and_types):
+    TOP_LEVEL_DELIMITER = '__'
+
+    class Details:
+        def __init__(self, *fields):
+            self.fields = fields
+            for (name, _), field in zip(field_names_and_types, fields):
+                setattr(self, name, field)
+                
+        @classmethod
+        def from_string(cls, details_string):
+            fields_strings = details_string.split(TOP_LEVEL_DELIMITER)
+            fields = [Field.from_string(s) for (_, Field), s in zip(field_names_and_types, fields_strings)]
+            return cls(*fields)
         
-        elif ti.effector.name in ['Cpf1', 'AsCas12a']:
-            start = min(self.deletion.starts_ats)
-            end = max(self.deletion.ends_ats)
-            first_nick, second_nick = sorted(ti.cut_afters.values())
-            includes_first_nick = start - 0.5 <= first_nick + 0.5 <= end + 0.5
-            includes_second_nick = start - 0.5 <= second_nick + 0.5 <= end + 0.5
+        def __str__(self):
+            return TOP_LEVEL_DELIMITER.join(str(field) for field in self.fields)
 
-            if not includes_first_nick and not includes_second_nick:
-                includes = 'spans neither'
-            elif includes_first_nick and not includes_second_nick:
-                includes = 'spans PAM-distal nick'
-            elif not includes_first_nick and includes_second_nick:
-                includes = 'spans PAM-proximal nick'
-            else:
-                includes = 'spans both nicks'
+        def perform_anchor_shift(self, anchor):
+            shifted_fields = [field.perform_anchor_shift(anchor) for field in self.fields]
+            return type(self)(*shifted_fields)
+            
+        def undo_anchor_shift(self, anchor):
+            return self.perform_anchor_shift(-anchor)
 
-            directionality = includes
+    Details.__name__ = class_name
+    Details.__qualname__ = f'Details_factory.{class_name}'
 
-        else:
-            raise NotImplementedError(ti.effector.name)
+    return Details
 
-        return directionality
+Deletions = DetailList_factory(DegenerateDeletion)
+Insertions = DetailList_factory(DegenerateInsertion)
 
-class InsertionOutcome(Outcome):
-    def __init__(self, insertion):
-        self.insertion = insertion
+IntDetail = simple_Detail_factory(int)
 
-    @classmethod
-    def from_string(cls, details_string):
-        insertion = DegenerateInsertion.from_string(details_string)
-        return cls(insertion)
-
-    def __str__(self):
-        return str(self.insertion)
-
+class AnchoredIntDetail(IntDetail):
     def perform_anchor_shift(self, anchor):
-        shifted_starts_afters = [starts_after - anchor for starts_after in self.insertion.starts_afters]
-        shifted_insertion = DegenerateInsertion(shifted_starts_afters, self.insertion.seqs)
-        return type(self)(shifted_insertion)
+        return type(self)(self.value - anchor)
+
+StrDetail = simple_Detail_factory(str)
+
+StrList = DetailList_factory(StrDetail)
+
+DeletionPlusMismatches = Details_factory('DeletionPlusMismatches', [
+    ('deletion', DegenerateDeletion),
+    ('mismatches', Mismatches),
+]) 
+
+InsertionPlusMismatches = Details_factory('InsertionPlusMismatches', [
+    ('insertion', DegenerateInsertion),
+    ('mismatches', Mismatches),
+]) 
+
+UnintendedRejoining = Details_factory('UnintendedRejoining', [
+    ('left_edge', IntDetail),
+    ('right_edge', IntDetail),
+    ('junction_microhomology_length', IntDetail),
+    ('integrase_sites', StrList),
+])
+
+ProgrammedEdit = Details_factory('ProgrammedEdit', [
+    ('programmed_substitution_read_bases', StrDetail),
+    ('non_programmed_target_mismatches_outcome', Mismatches),
+    ('non_programmed_edit_mismatches_outcome', Mismatches),
+    ('insertions', Insertions),
+    ('deletions', Deletions),
+])
+
+class Outcome:
+    pass
 
 class ProgrammedEditOutcome(Outcome):
     def __init__(self,
@@ -249,56 +264,6 @@ class HDRPlusInsertionOutcome(Outcome):
         shifted_insertion = self.insertion_outcome.perform_anchor_shift(anchor)
         return type(self)(self.HDR_outcome, shifted_insertion)
 
-class MismatchOutcome(Outcome):
-    def __init__(self, snvs):
-        self.snvs = snvs
-
-    @classmethod
-    def from_string(cls, details_string):
-        snvs = SNVs.from_string(details_string)
-        return cls(snvs)
-
-    def __str__(self):
-        return str(self.snvs)
-
-    def perform_anchor_shift(self, anchor):
-        shifted_snvs = SNVs([SNV(s.position - anchor, s.basecall) for s in self.snvs])
-        return type(self)(shifted_snvs)
-
-class TruncationOutcome(Outcome):
-    def __init__(self, edge):
-        self.edge = edge
-
-    @classmethod
-    def from_string(cls, details_string):
-        return cls(int(details_string))
-
-    def __str__(self):
-        return str(self.edge)
-
-    def perform_anchor_shift(self, anchor):
-        return TruncationOutcome(self.edge - anchor)
-
-class DeletionPlusMismatchOutcome(Outcome):
-    def __init__(self, deletion_outcome, mismatch_outcome):
-        self.deletion_outcome = deletion_outcome
-        self.mismatch_outcome = mismatch_outcome
-
-    @classmethod
-    def from_string(cls, details_string):
-        deletion_string, mismatch_string = details_string.split(';', 1)
-        deletion_outcome = DeletionOutcome.from_string(deletion_string)
-        mismatch_outcome = MismatchOutcome.from_string(mismatch_string)
-        return cls(deletion_outcome, mismatch_outcome)
-
-    def __str__(self):
-        return f'{self.deletion_outcome};{self.mismatch_outcome}'
-
-    def perform_anchor_shift(self, anchor):
-        shifted_deletion = self.deletion_outcome.perform_anchor_shift(anchor)
-        shifted_mismatch = self.mismatch_outcome.perform_anchor_shift(anchor)
-        return type(self)(shifted_deletion, shifted_mismatch)
-
 class InsertionPlusMismatchOutcome(Outcome):
     def __init__(self, insertion_outcome, mismatch_outcome):
         self.insertion_outcome = insertion_outcome
@@ -319,27 +284,6 @@ class InsertionPlusMismatchOutcome(Outcome):
         shifted_mismatch = self.mismatch_outcome.perform_anchor_shift(anchor)
         return type(self)(shifted_insertion, shifted_mismatch)
 
-class InsertionWithDeletionOutcome(Outcome):
-    ''' Deletion with at the same place. '''
-    def __init__(self, insertion_outcome, deletion_outcome):
-        self.insertion_outcome = insertion_outcome
-        self.deletion_outcome = deletion_outcome
-
-    @classmethod
-    def from_string(cls, details_string):
-        insertion_string, deletion_string = details_string.split(';', 1)
-        insertion_outcome = InsertionOutcome.from_string(insertion_string)
-        deletion_outcome = DeletionOutcome.from_string(deletion_string)
-        return cls(insertion_outcome, deletion_outcome)
-
-    def __str__(self):
-        return f'{self.insertion_outcome};{self.deletion_outcome}'
-
-    def perform_anchor_shift(self, anchor):
-        shifted_insertion = self.insertion_outcome.perform_anchor_shift(anchor)
-        shifted_deletion = self.deletion_outcome.perform_anchor_shift(anchor)
-        return type(self)(shifted_insertion, shifted_deletion)
-
 NAN_INT = np.iinfo(np.int64).min
 
 def int_or_nan_from_string(s):
@@ -347,79 +291,6 @@ def int_or_nan_from_string(s):
         return NAN_INT
     else:
         return int(s)
-
-class LongTemplatedInsertionOutcome(Outcome):
-    field_names = [
-        'source',
-        'ref_name',
-        'strand',
-        'left_insertion_ref_bound',
-        'right_insertion_ref_bound',
-        'left_insertion_query_bound',
-        'right_insertion_query_bound',
-        'left_target_ref_bound',
-        'right_target_ref_bound',
-        'left_target_query_bound',
-        'right_target_query_bound',
-        'left_MH_length',
-        'right_MH_length',
-        'donor_SNV_summary_string',
-    ]
-
-    int_fields = {
-        'left_insertion_ref_bound',
-        'right_insertion_ref_bound',
-        'left_insertion_query_bound',
-        'right_insertion_query_bound',
-        'left_target_ref_bound',
-        'right_target_ref_bound',
-        'left_target_query_bound',
-        'right_target_query_bound',
-        'left_MH_length',
-        'right_MH_length',
-    }
-
-    field_index_to_converter = {}
-    for i, c in enumerate(field_names):
-        if c in int_fields:
-            field_index_to_converter[i] = int_or_nan_from_string
-
-    def __init__(self, *args):
-        for name, arg in zip(self.__class__.field_names, args):
-            setattr(self, name, arg)
-
-    @property
-    def left_gap(self):
-        return self.left_insertion_query_bound - self.left_target_query_bound - 1
-
-    @property
-    def right_gap(self):
-        return self.right_target_query_bound - self.right_insertion_query_bound - 1
-
-    def insertion_length(self, single_end_read_length=None):
-        if single_end_read_length is not None and self.right_insertion_query_bound == single_end_read_length - 1:
-            length = single_end_read_length
-        else:
-            length = self.right_insertion_query_bound - self.left_insertion_query_bound + 1
-        
-        return length
-
-    @classmethod
-    def from_string(cls, details_string):
-        fields = details_string.split(',')
-
-        for i, converter in cls.field_index_to_converter.items():
-            fields[i] = converter(fields[i])
-
-        return cls(*fields)
-
-    def __str__(self):
-        row = [str(getattr(self, k)) for k in self.__class__.field_names]
-        return ','.join(row)
-
-    def pprint(self):
-        for field_name in self.__class__.field_names:
-            print(f'{field_name}: {getattr(self, field_name)}') 
 
 class DuplicationOutcome(Outcome):
     def __init__(self, ref_junctions):
