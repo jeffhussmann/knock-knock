@@ -1,6 +1,7 @@
 import gzip
 import itertools
 import logging
+import re
 import shutil
 import warnings
 
@@ -305,8 +306,15 @@ class Batch:
                 if group.pegRNA_conversion_fractions_by_edit_description is not None:
                     grouped[genome, protospacer][sgRNAs] = group.pegRNA_conversion_fractions_by_edit_description.T
 
+        def by_position(description):
+            match = re.match('\+(\d+)(.+)', description)
+            return int(match.group(1)), match.group(2)
+
+        def vectorized_by_position(columns):
+            return pd.Index([by_position(description) for description in columns])
+
         pegRNA_conversion_fractions = {
-            (genome, protospacer): pd.concat(data, names=['sgRNAs'])
+            (genome, protospacer): pd.concat(data, names=['sgRNAs']).sort_index(axis=1, key=vectorized_by_position)
             for (genome, protospacer), data in grouped.items()
         }
 
