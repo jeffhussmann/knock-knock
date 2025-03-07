@@ -302,7 +302,7 @@ class Batch:
                 genome = group.description['genome']
                 protospacer = group.target_info.pegRNA.components['protospacer']
 
-                if group.pegRNA_conversion_frations_by_edit_description is not None:
+                if group.pegRNA_conversion_fractions_by_edit_description is not None:
                     grouped[genome, protospacer][sgRNAs] = group.pegRNA_conversion_fractions_by_edit_description.T
 
         pegRNA_conversion_fractions = {
