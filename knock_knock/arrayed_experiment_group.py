@@ -620,7 +620,11 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
         informative_condition_idxs = []
 
-        for c_i, row in enumerate(np.array(self.conditions).T):
+        conditions_array = np.array(self.conditions)
+        if conditions_array.ndim == 1:
+            conditions_array = conditions_array.reshape((conditions_array.size, -1))
+
+        for c_i, row in enumerate(conditions_array.T):
             if len(set(row)) > 1:
                 informative_condition_idxs.append(c_i)
 
