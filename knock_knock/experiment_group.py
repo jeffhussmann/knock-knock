@@ -265,9 +265,11 @@ class ExperimentGroup:
 
         try:
             grid = self.make_deletion_boundaries_figure()
-            grid.fig.savefig(self.fns['deletion_boundaries_figure'], dpi=200, bbox_inches='tight')
-        except:
+            if grid is not None:
+                grid.fig.savefig(self.fns['deletion_boundaries_figure'], dpi=200, bbox_inches='tight')
+        except Exception as e:
             logging.warning(f'Failed to make deletion boundaries figure for {self}')
+            logging.warning(e)
 
         if len(self.target_info.pegRNAs) == 1:
             try:
