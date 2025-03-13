@@ -13,125 +13,178 @@ from knock_knock.outcome import *
 
 class Layout(knock_knock.prime_editing_layout.Layout):
     category_order = [
-        ('wild type',
-            ('clean',
-             'mismatches',
-             'short indel far from cut',
+        (
+            'wild type',
+            (
+                'clean',
+                'mismatches',
+                'short indel far from cut',
             ),
+            DeletionsInsertionsMismatches,
         ),
-        ('intended edit',
-            ('replacement',
-             'partial replacement',
-             'deletion',
+        (
+            'intended edit',
+            (
+                'replacement',
+                'deletion',
             ),
+            ProgrammedEdit,
         ),
-        ('partial replacement',
-            ('left pegRNA',
-             'right pegRNA',
-             'both pegRNAs',
-             'single pegRNA (ambiguous)',
+        (
+            'partial replacement',
+            (
+                'left pegRNA',
+                'right pegRNA',
+                'both pegRNAs',
+                'single pegRNA (ambiguous)',
             ),
+            ProgrammedEdit,
         ),
-        ('unintended rejoining of RT\'ed sequence',
-            ('left RT\'ed, right RT\'ed',
-             'left RT\'ed, right not RT\'ed',
-             'left not RT\'ed, right RT\'ed',
-             'left RT\'ed, right not seen',
-             'left not seen, right RT\'ed',
+        (
+            'unintended rejoining of RT\'ed sequence',
+            (
+                'left RT\'ed, right RT\'ed',
+                'left RT\'ed, right not RT\'ed',
+                'left not RT\'ed, right RT\'ed',
+                'left RT\'ed, right not seen',
+                'left not seen, right RT\'ed',
             ),
+            UnintendedRejoining,
         ),
-        ('unintended rejoining of overlap-extended sequence',
-            ('left RT\'ed + overlap-extended, right RT\'ed + overlap-extended',
-             'left RT\'ed + overlap-extended, right RT\'ed',
-             'left RT\'ed, right RT\'ed + overlap-extended',
-             'left RT\'ed + overlap-extended, right not RT\'ed',
-             'left not RT\'ed, right RT\'ed + overlap-extended',
-             'left RT\'ed + overlap-extended, right not seen',
-             'left not seen, right RT\'ed + overlap-extended',
+        (
+            'unintended rejoining of overlap-extended sequence',
+            (
+                'left RT\'ed + overlap-extended, right RT\'ed + overlap-extended',
+                'left RT\'ed + overlap-extended, right RT\'ed',
+                'left RT\'ed, right RT\'ed + overlap-extended',
+                'left RT\'ed + overlap-extended, right not RT\'ed',
+                'left not RT\'ed, right RT\'ed + overlap-extended',
+                'left RT\'ed + overlap-extended, right not seen',
+                'left not seen, right RT\'ed + overlap-extended',
             ),
+            UnintendedRejoining,
         ),
-        ('multistep unintended rejoining of RT\'ed sequence',
-            ('left RT\'ed, right RT\'ed',
-             'left RT\'ed, right indel',
-             'left indel, right RT\'ed',
+        (
+            'multistep unintended rejoining of RT\'ed sequence',
+            (
+                'left RT\'ed, right RT\'ed',
+                'left RT\'ed, right indel',
+                'left indel, right RT\'ed',
             ),
+            NotImplementedError,
         ),
-        ('flipped pegRNA incorporation',
-            ('left pegRNA',
-             'right pegRNA',
-             'both pegRNAs',
+        (
+            'flipped pegRNA incorporation',
+            (
+                'left pegRNA',
+                'right pegRNA',
+                'both pegRNAs',
             ),
+            NotImplementedError,
         ),
-        ('deletion',
-            ('clean',
-             'mismatches',
-             'multiple',
+        (
+            'deletion',
+            (
+                'clean',
+                'mismatches',
+                'multiple',
             ),
+            DeletionsInsertionsMismatches,
         ),
-        ('duplication',
-            ('simple',
-             'iterated',
-             'complex',
+        (
+            'duplication',
+            (
+                'simple',
+                'iterated',
+                'complex',
             ),
+            DuplicationJunctions,
         ),
-        ('insertion',
-            ('clean',
-             'mismatches',
+        (
+            'insertion',
+            (
+                'clean',
+                'mismatches',
             ),
+            DeletionsInsertionsMismatches,
         ),
-        ('edit + indel',
-            ('deletion',
-             'insertion',
-             'duplication',
+        (
+            'edit + indel',
+            (
+                'deletion',
+                'insertion',
+                'duplication',
             ),
+            NotImplementedError,
         ),
-        ('multiple indels',
-            ('multiple indels',
+        (
+            'multiple indels',
+            (
+                'multiple indels',
             ),
+            NotImplementedError,
         ),
-        ('genomic insertion',
-            ('hg19',
-             'hg38',
-             'macFas5',
-             'mm10',
-             'bosTau7',
-             'e_coli',
-             'phiX',
+        (
+            'genomic insertion',
+            (
+                'hg19',
+                'hg38',
+                'macFas5',
+                'mm10',
+                'bosTau7',
+                'e_coli',
+                'phiX',
             ),
+            NotImplementedError,
         ),
-        ('inversion',
-            ('inversion',
+        (
+            'inversion',
+            (
+                'inversion',
             ),
+            NotImplementedError,
         ),
-        ('incorporation of extra sequence',
-            ('has RT\'ed extension',
-             'no RT\'ed extension',
+        (
+            'incorporation of extra sequence',
+            (
+                'has RT\'ed extension',
+                'no RT\'ed extension',
             ),
+            NotImplementedError,
         ),
-        ('uncategorized',
-            ('uncategorized',
-             'low quality', 
-             'no alignments detected',
+        (
+            'uncategorized',
+            (
+                'uncategorized',
+                'low quality', 
+                'no alignments detected',
             ),
+            NotImplementedError,
         ),
-        ('nonspecific amplification',
-            ('hg19',
-             'hg38',
-             'macFas5',
-             'T2T-MFA8v1.0',
-             'mm10',
-             'bosTau7',
-             'e_coli',
-             'b_subtilis',
-             'phiX',
-             'primer dimer',
-             'short unknown',
-             'extra sequence',
+        (
+            'nonspecific amplification',
+            (
+                'hg19',
+                'hg38',
+                'macFas5',
+                'T2T-MFA8v1.0',
+                'mm10',
+                'bosTau7',
+                'e_coli',
+                'b_subtilis',
+                'phiX',
+                'primer dimer',
+                'short unknown',
+                'extra sequence',
             ),
+            NotImplementedError,
         ),
-        ('phiX',
-            ('phiX',
+        (
+            'phiX',
+            (
+                'phiX',
             ),
+            NotImplementedError,
         ),
     ]
 
@@ -563,9 +616,9 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                 edit_p = self.target_info.pegRNA_pair.pegRNA_coords_to_edit_coords[al.reference_name].get(ref_p)
                 
                 if edit_p is not None and ref_p not in programmed_ps:
-                    mismatches_seen.add((edit_p, read_b))
+                    mismatches_seen.add(knock_knock.target_info.Mismatch(edit_p, read_b))
                     
-        mismatches = knock_knock.target_info.SNVs([knock_knock.target_info.SNV(position, basecall) for position, basecall in sorted(mismatches_seen)])
+        mismatches = knock_knock.target_info.Mismatches(mismatches_seen)
 
         return mismatches
 
@@ -575,6 +628,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             self.subcategory = 'replacement'
         else:
             self.category = 'partial replacement'
+
             if len(self.pegRNAs_that_explain_all_SNVs) == 0:
                 self.subcategory = 'both pegRNAs'
             elif len(self.pegRNAs_that_explain_all_SNVs) == 2:
@@ -586,11 +640,12 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             else:
                 raise ValueError
 
-        self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string,
-                                             self.non_pegRNA_mismatches_outcome,
-                                             self.non_programmed_edit_mismatches_outcome,
-                                             [],
-                                            )
+        self.Details = ProgrammedEdit(self.pegRNA_SNV_string,
+                                      self.non_pegRNA_mismatches,
+                                      self.non_programmed_edit_mismatches,
+                                      [],
+                                      [],
+                                     )
         self.relevant_alignments = self.intended_edit_relevant_alignments
 
     @memoized_property
@@ -662,7 +717,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                 if edges[side] >= threshold:
                     integrase_sites.append(label)
 
-        self.outcome = knock_knock.prime_editing_layout.UnintendedRejoiningOutcome(edges['left'], edges['right'], MH_nts, integrase_sites)
+        self.Details = UnintendedRejoining(edges['left'], edges['right'], MH_nts, integrase_sites)
 
         als_by_ref = defaultdict(list)
         for al in list(chains['left']['alignments'].values()) + list(chains['right']['alignments'].values()):
@@ -725,7 +780,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         return converted_edge
 
     def categorize(self):
-        self.outcome = None
+        self.Details = StrDetail('n/a')
 
         if self.nonspecific_amplification:
             self.register_nonspecific_amplification()
@@ -746,11 +801,12 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         elif self.is_intended_deletion:
             self.category = 'intended edit'
             self.subcategory = 'deletion'
-            self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string,
-                                                 self.non_pegRNA_mismatches_outcome,
-                                                 self.non_programmed_edit_mismatches_outcome,
-                                                 [self.target_info.pegRNA_programmed_deletion],
-                                                )
+            self.outcome = ProgrammedEdit(self.pegRNA_SNV_string,
+                                          self.non_pegRNA_mismatches,
+                                          self.non_programmed_edit_mismatches,
+                                          [self.target_info.pegRNA_programmed_deletion],
+                                          [],
+                                         )
             self.relevant_alignments = self.intended_edit_relevant_alignments
 
         elif self.is_unintended_rejoining:
@@ -759,6 +815,9 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         elif self.single_read_covering_target_alignment:
             target_alignment = self.single_read_covering_target_alignment
             interesting_indels, uninteresting_indels = self.interesting_and_uninteresting_indels([target_alignment])
+
+            deletions = [indel for indel in interesting_indels + uninteresting_indels if indel.kind == 'D']
+            insertions = [indel for indel in interesting_indels + uninteresting_indels if indel.kind == 'I']
 
             if len(interesting_indels) == 0:
                 if self.starts_at_expected_location:
@@ -771,27 +830,19 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
                         if len(self.non_pegRNA_mismatches) == 0 and len(uninteresting_indels) == 0:
                             self.subcategory = 'clean'
-                            self.outcome = Outcome('n/a')
 
                         elif len(uninteresting_indels) == 1:
                             self.subcategory = 'short indel far from cut'
-
-                            indel = uninteresting_indels[0]
-                            if indel.kind == 'D':
-                                self.outcome = DeletionOutcome(indel)
-                            elif indel.kind == 'I':
-                                self.outcome = InsertionOutcome(indel)
-                            else:
-                                raise ValueError(indel.kind)
 
                         elif len(uninteresting_indels) > 1:
                             self.register_uncategorized()
 
                         else:
                             self.subcategory = 'mismatches'
-                            self.outcome = MismatchOutcome(self.non_pegRNA_mismatches)
 
                         self.relevant_alignments = [target_alignment]
+
+                    self.Details = DeletionsInsertionsMismatches(deletions, insertions, self.non_pegRNA_mismatches)
 
                 else:
                     self.register_uncategorized()
@@ -814,19 +865,18 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                         self.category = 'deletion'
                         self.relevant_alignments = self.target_edge_alignments_list
 
-                    self.outcome = DeletionOutcome(indel)
-
                 elif indel.kind == 'I':
                     self.category = 'insertion'
-                    self.outcome = InsertionOutcome(indel)
                     self.relevant_alignments = [target_alignment]
+
+                self.Details = DeletionsInsertionsMismatches(deletions, insertions, self.non_pegRNA_mismatches)
 
             else: # more than one indel
                 self.register_uncategorized()
 
         elif self.duplication_covers_whole_read:
             subcategory, ref_junctions, indels, als_with_donor_SNVs, merged_als = self.duplication
-            self.outcome = DuplicationOutcome(ref_junctions)
+            self.Details = DuplicationJunctions(ref_junctions)
 
             self.category = 'duplication'
 
@@ -856,7 +906,6 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             else:
                 raise ValueError(len(self.has_any_flipped_pegRNA_al))
 
-            self.outcome = Outcome('n/a')
             self.relevant_alignments = self.uncategorized_relevant_alignments
 
         elif self.original_target_alignment_has_only_relevant_indels:
@@ -870,14 +919,12 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
         self.relevant_alignments = sam.make_nonredundant(self.relevant_alignments)
 
-        if self.outcome is not None:
-            # Translate positions to be relative to a registered anchor
-            # on the target sequence.
-            self.details = str(self.outcome.perform_anchor_shift(self.target_info.anchor))
+        self.Details = self.Details.perform_anchor_shift(self.target_info.anchor)
+        self.details = str(self.Details)
 
         self.categorized = True
 
-        return self.category, self.subcategory, self.details, self.outcome
+        return self.category, self.subcategory, self.details, self.Details
 
     def manual_anchors(self, alignments_to_plot):
         ''' Anchors for drawing knock-knock ref-centric diagrams with overlap in pegRNA aligned.

@@ -145,6 +145,7 @@ class ExperimentGroup:
     @memoized_property
     def common_sequence_outcomes(self):
         outcomes = []
+
         for exp in self.common_sequence_chunk_exps():
             for outcome in exp.outcome_iter():
                 outcomes.append(outcome)
@@ -154,8 +155,9 @@ class ExperimentGroup:
     @memoized_property
     def common_name_to_common_sequence(self):
         name_to_seq = {}
+
         for outcome in self.common_sequence_outcomes:
-            name_to_seq[outcome.query_name] = outcome.seq
+            name_to_seq[outcome.query_name.value] = outcome.seq.value
 
         return name_to_seq
 
@@ -177,7 +179,7 @@ class ExperimentGroup:
     def common_sequence_to_outcome(self):
         common_sequence_to_outcome = {}
         for outcome in self.common_sequence_outcomes:
-            common_sequence_to_outcome[outcome.seq] = outcome
+            common_sequence_to_outcome[outcome.seq.value] = outcome
 
         return common_sequence_to_outcome
 
@@ -207,10 +209,12 @@ class ExperimentGroup:
     @memoized_property
     def common_sequence_to_alignments(self):
         common_sequence_to_alignments = {}
+
         for chunk_exp in self.common_sequence_chunk_exps():
             for common_name, als in chunk_exp.alignment_groups():
                 seq = self.common_name_to_common_sequence[common_name]
                 common_sequence_to_alignments[seq] = als
+
         return common_sequence_to_alignments
 
     def get_read_alignments(self, name):

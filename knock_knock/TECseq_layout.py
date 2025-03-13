@@ -9,39 +9,21 @@ import knock_knock.twin_prime_layout
 
 import knock_knock.outcome
 
-class EdgeOutcome(knock_knock.outcome.Outcome):
-    def __init__(self, edge):
-        self.edge = edge
+TargetEdge = knock_knock.outcome.Details_factory(
+    'TargetEdge',
+    [
+        ('edge', knock_knock.outcome.AnchoredIntDetail),
+        ('mismatches', knock_knock.outcome.Mismatches),
+    ],
+)
 
-    def __str__(self):
-        return str(self.edge)
-
-    def perform_anchor_shift(self, anchor):
-        return EdgeOutcome(self.edge - anchor)
-
-    @classmethod
-    def from_string(cls, details_string):
-        return cls(int(details_string))
-
-class EdgeMismatchOutcome(knock_knock.outcome.Outcome):
-    def __init__(self, edge_outcome, mismatch_outcome):
-        self.edge_outcome = edge_outcome
-        self.mismatch_outcome = mismatch_outcome
-
-    def __str__(self):
-        return f'{self.edge_outcome};{self.mismatch_outcome}'
-
-    @classmethod
-    def from_string(cls, details_string):
-        edge_string, mismatch_string = details_string.split(';')
-        edge_outcome = EdgeOutcome.from_string(edge_string)
-        mismatch_outcome = knock_knock.outcome.MismatchOutcome.from_string(mismatch_string)
-        return cls(edge_outcome, mismatch_outcome)
-
-    def perform_anchor_shift(self, anchor):
-        shifted_edge = self.edge_outcome.perform_anchor_shift(anchor)
-        shifted_mismatch = self.mismatch_outcome.perform_anchor_shift(anchor)
-        return type(self)(shifted_edge, shifted_mismatch)
+pegRNAEdge = knock_knock.outcome.Details_factory(
+    'pegRNAEdge',
+    [
+        ('edge', knock_knock.outcome.IntDetail),
+        ('mismatches', knock_knock.outcome.Mismatches),
+    ],
+)
 
 memoized_property = hits.utilities.memoized_property
 memoized_with_args = hits.utilities.memoized_with_args
@@ -126,21 +108,24 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                 self.category = 'targeted genomic sequence'
                 self.subcategory = 'unedited'
                 edge = hits.sam.reference_edges(self.extension_chains_by_side['left']['alignments']['first target'])[3]
+                Edge = TargetEdge
 
             elif self.minimal_cover in ['pegRNA', 'first pegRNA']:
                 self.category = 'RTed sequence'
                 self.subcategory = 'n/a'
                 edge = self.extension_chain_edges['left']
+                Edge = pegRNAEdge
 
             elif self.minimal_cover == 'second target':
                 self.category = 'targeted genomic sequence'
                 self.subcategory = 'edited'
                 edge = hits.sam.reference_edges(self.extension_chains_by_side['left']['alignments']['second target'])[3]
+                Edge = TargetEdge
             
             else:
                 raise ValueError
 
-            self.outcome = EdgeMismatchOutcome(EdgeOutcome(edge), self.non_pegRNA_mismatches_outcome)
+            self.Details = Edge(edge, self.non_pegRNA_mismatches)
 
             self.relevant_alignments = self.parsimonious_extension_chain_alignments
 
@@ -154,14 +139,12 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
             self.relevant_alignments = self.uncategorized_relevant_alignments
 
-        if self.outcome is not None:
-            # Translate positions to be relative to a registered anchor
-            # on the target sequence.
-            self.details = str(self.outcome.perform_anchor_shift(self.target_info.anchor))
+        self.Details = self.Details.perform_anchor_shift(self.target_info.anchor)
+        self.details = str(self.Details)
 
         self.categorized = True
 
-        return self.category, self.subcategory, self.details, self.outcome
+        return self.category, self.subcategory, self.details, self.Details
 
     @memoized_property
     def plot_parameters(self):
@@ -324,7 +307,7 @@ class NoOverlapPairLayout(Layout):
         self.category = self.concordant_nonoverlapping['category']
         self.subcategory = self.concordant_nonoverlapping['subcategory']
 
-        self.outcome = EdgeMismatchOutcome(EdgeOutcome(edge), R1.non_pegRNA_mismatches_outcome)
+        self.outcome = TargetEdge(edge, R1.non_pegRNA_mismatches)
 
         self.relevant_alignments = {
             'R1': R1.parsimonious_extension_chain_alignments,

@@ -8,7 +8,6 @@ import pysam
 
 from hits import sam, interval, utilities, fastq, sw
 from .target_info import DegenerateDeletion, DegenerateInsertion
-from .outcome_record import Integration
 
 import knock_knock.outcome
 import knock_knock.visualize.architecture
@@ -94,7 +93,7 @@ class Categorizer:
     @classmethod
     def full_index(cls):
         full_index = []
-        for cat, subcats in cls.category_order:
+        for cat, subcats, Details in cls.category_order:
             for subcat in subcats:
                 full_index.append((cat, subcat))
                 
@@ -104,11 +103,11 @@ class Categorizer:
     
     @classmethod
     def categories(cls):
-        return [c for c, scs in cls.category_order]
+        return [c for c, scs, Details in cls.category_order]
     
     @classmethod
     def subcategories(cls):
-        return dict(cls.category_order)
+        return {c: scs for c, scs, Details in cls.category_order}
 
     @classmethod
     def order(cls, outcome):
@@ -123,6 +122,7 @@ class Categorizer:
                 raise ValueError(category, subcategory)
         else:
             category = outcome
+
             try:
                 return cls.categories().index(category)
             except:
@@ -152,6 +152,10 @@ class Categorizer:
             c = int(match.group(1))
             category, subcats = cls.category_order[c]
             return category
+
+    @classmethod
+    def build_category_to_Details(cls):
+        return {c: Details for c, scs, Details in cls.category_order}
 
     def q_to_feature_offset(self, al, feature_name, target_info=None):
         ''' Returns dictionary of 

@@ -33,7 +33,7 @@ import knock_knock.target_info
 import knock_knock.utilities
 import knock_knock.visualize.lengths
 
-from . import outcome_record, svg, table, explore
+from . import svg, table, explore
 
 class ColorGroupCycler:
     def __init__(self):
@@ -176,9 +176,9 @@ class Experiment:
     def length_to_store_unknown(self):
         return int(self.max_relevant_length * 1.05)
 
-    @property
-    def final_Outcome(self):
-        return outcome_record.OutcomeRecord
+    @memoized_property
+    def Outcome(self):
+        return knock_knock.outcome.Outcome_binder(self.categorizer)
 
     def load_description(self):
         sample_sheet = load_sample_sheet(self.base_dir, self.batch_name)
@@ -453,7 +453,7 @@ class Experiment:
                     name, als = next(uncommon_alignment_groups)
 
                     if name != read.name:
-                        raise ValueError('iters out of sync', name, read.name)
+                        raise ValueError(f'iters out of sync: next read is {read.name}, next uncommmon alignment group is {name}')
 
                 yield name, als
 
@@ -715,7 +715,7 @@ class Experiment:
     
     def record_sanitized_category_names(self):
         sanitized_to_original = {}
-        for cat, subcats in self.categorizer.category_order:
+        for cat, subcats, Details in self.categorizer.category_order:
             sanitized_string = self.categorizer.outcome_to_sanitized_string(cat)
             sanitized_to_original[sanitized_string] = cat
             for subcat in subcats:
@@ -788,13 +788,13 @@ class Experiment:
 
                 outcome_to_qnames[layout.category, layout.subcategory].append(name)
 
-                outcome = self.final_Outcome.from_layout(layout,
-                                                         query_name=name,
-                                                         Q30_fraction=read.Q30_fraction,
-                                                         mean_Q=read.mean_Q,
-                                                         UMI_seq=UMI_seq,
-                                                         UMI_qual=UMI_qual,
-                                                        )
+                outcome = self.Outcome.from_layout(layout,
+                                                   query_name=name,
+                                                   Q30_fraction=read.Q30_fraction,
+                                                   mean_Q=read.mean_Q,
+                                                   UMI_seq=UMI_seq,
+                                                   UMI_qual=UMI_qual,
+                                                  )
                 outcome_fh.write(f'{outcome}\n')
 
         # To make plotting easier, for each outcome, make a file listing all of
@@ -1060,7 +1060,8 @@ class Experiment:
                 if line.startswith('##'):
                     continue
 
-                outcome = self.final_Outcome.from_line(line)
+                outcome = self.Outcome.from_string(line)
+
                 yield outcome
 
     def outcome_metadata(self, outcome_fn_keys=None):
@@ -1308,71 +1309,6 @@ class Experiment:
         layout = self.categorizer(als, self.target_info, mode=self.layout_mode)
 
         return layout
-
-    def extract_donor_microhomology_lengths(self):
-        MH_lengths = defaultdict(lambda: np.zeros(10000, int))
-
-        for outcome in self.outcome_iter():
-            category_and_sides = []
-
-            if outcome.details == 'n/a':
-                # no_overlap categorization doesn't record integration details
-                continue
-
-            if outcome.category == 'incomplete HDR':
-                if outcome.subcategory == "5' HDR, 3' imperfect":
-                    category_and_sides.append(('incomplete HDR, 3\' junction', 3))
-                elif outcome.subcategory == "5' imperfect, 3' HDR":
-                    category_and_sides.append(('incomplete HDR, 5\' junction', 5))
-
-            elif outcome.category == 'donor fragment':
-                integration = outcome_record.Integration.from_string(outcome.details)
-                strand = integration.donor_strand
-                category_and_sides.append((f'donor fragment, {strand}, 5\' junction', 5))
-                category_and_sides.append((f'donor fragment, {strand}, 3\' junction', 3))
-                
-            if len(category_and_sides) > 0:
-                integration = outcome_record.Integration.from_string(outcome.details)
-                junctions = {
-                    5: integration.mh_length_5,
-                    3: integration.mh_length_3,
-                }
-
-                for category, side in category_and_sides:
-                    length = junctions[side]
-                    if length >= 0:
-                        MH_lengths[category][length] += 1
-
-            #elif outcome.category == 'non-homologous donor' and outcome.subcategory == 'simple':
-            #    strand, NH_5, NH_3 = outcome.details.split(',')
-
-            #    NH_junctions = {
-            #        5: int(NH_5),
-            #        3: int(NH_3),
-            #    }
-
-            #    for junction in [5, 3]:
-            #        MH_category = f'non-homologous donor, {strand}, {junction}\' junction'
-            #        if NH_junctions[junction] >= 0:
-            #            MH_lengths[MH_category][NH_junctions[junction]] += 1
-
-        with self.fns['donor_microhomology_lengths'].open('w') as fh:
-            for MH_category, lengths in MH_lengths.items():
-                fh.write(f'{MH_category}\n')
-                counts_string = '\t'.join(map(str, lengths))
-                fh.write(f'{counts_string}\n')
-
-    @memoized_property
-    def donor_microhomology_lengths(self):
-        mh_lengths = {}
-        lines = open(self.fns['donor_microhomology_lengths'])
-        line_pairs = zip(*[lines]*2)
-        for MH_category_line, lengths_line in line_pairs:
-            MH_category = MH_category_line.strip()
-            lengths = np.array([int(v) for v in lengths_line.strip().split()])
-            mh_lengths[MH_category] = lengths
-
-        return mh_lengths
 
 def load_sample_sheet_from_csv(csv_fn):
     # Note: can't include comment='#' because of '#' in hex color specifications.

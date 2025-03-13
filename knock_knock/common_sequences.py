@@ -4,7 +4,8 @@ from collections import Counter
 
 import hits.fastq
 import hits.utilities
-import knock_knock.outcome_record
+
+import knock_knock.outcome
 
 memoized_property = hits.utilities.memoized_property
 
@@ -71,9 +72,9 @@ class CommonSequenceSplitter:
         self.close()
 
 class CommonSequencesExperiment:
-    @property
-    def final_Outcome(self):
-        return knock_knock.outcome_record.CommonSequenceOutcomeRecord
+    @memoized_property
+    def Outcome(self):
+        return knock_knock.outcome.CommonSequenceOutcome_binder(self.categorizer)
 
     @property
     def uncommon_read_type(self):

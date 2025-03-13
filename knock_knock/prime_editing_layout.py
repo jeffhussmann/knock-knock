@@ -15,116 +15,173 @@ from knock_knock.outcome import *
 
 class Layout(layout.Categorizer):
     category_order = [
-        ('wild type',
-            ('clean',
-             'short indel far from cut',
-             'mismatches',
+        (
+            'wild type',
+            (
+                'clean',
+                'short indel far from cut',
+                'mismatches',
             ),
+            DeletionsInsertionsMismatches,
         ),
-        ('intended edit',
-            ('substitution',
-             'deletion',
-             'deletion + substitution',
-             'insertion',
-             'insertion + substitution',
-             'combination',
+        (
+            'intended edit',
+            (
+                'substitution',
+                'deletion',
+                'deletion + substitution',
+                'insertion',
+                'insertion + substitution',
+                'combination',
             ),
+            ProgrammedEdit,
         ),
-        ('partial edit',
-            ('partial incorporation',
-             'other',
+        (
+            'partial edit',
+            (
+                'partial incorporation',
+                'other',
             ),
+            ProgrammedEdit,
         ),
-        ('unintended rejoining of RT\'ed sequence',
-            ('includes scaffold',
-             'includes scaffold, no substitution',
-             'includes scaffold, with deletion',
-             'includes scaffold, no substitution, with deletion',
-             'no scaffold',
-             'no scaffold, no substitution',
-             'no scaffold, with deletion',
-             'no scaffold, no substitution, with deletion',
-             'doesn\'t include insertion',
+        (
+            'unintended rejoining of RT\'ed sequence',
+            (
+                'includes scaffold',
+                'includes scaffold, no substitution',
+                'includes scaffold, with deletion',
+                'includes scaffold, no substitution, with deletion',
+                'no scaffold',
+                'no scaffold, no substitution',
+                'no scaffold, with deletion',
+                'no scaffold, no substitution, with deletion',
+                'doesn\'t include insertion',
             ),
+            UnintendedRejoining,
         ),
-        ('deletion',
-            ('clean',
-             'mismatches',
+        (
+            'deletion',
+            (
+                'clean',
+                'mismatches',
             ),
+            DeletionsInsertionsMismatches,
         ),
-        ('duplication',
-            ('simple',
-             'iterated',
-             'complex',
+        (
+            'duplication',
+            (
+                'simple',
+                'iterated',
+                'complex',
             ),
+            DuplicationJunctions,
         ),
-        ('insertion',
-            ('clean',
-             'mismatches',
+        (
+            'insertion',
+            (
+                'clean',
+                'mismatches',
             ),
+            DeletionsInsertionsMismatches,
         ),
-        ('edit + indel',
-            ('deletion',
-             'insertion',
-             'duplication',
+        (
+            'edit + indel',
+            (
+                'deletion',
+                'insertion',
             ),
+            ProgrammedEdit,
         ),
-        ('multiple indels',
-            ('multiple indels',
-             'duplication + deletion',
-             'duplication + insertion',
+        (
+            'edit + duplication',
+            (
+                'duplication',
             ),
+            StrDetail,
         ),
-        ('genomic insertion',
-            ('hg19',
-             'hg38',
-             'macFas5',
-             'mm10',
-             'bosTau7',
-             'e_coli',
-             'phiX',
+        (
+            'multiple indels',
+            (
+                'multiple indels',
+                'duplication + deletion',
+                'duplication + insertion',
             ),
+            DeletionsInsertionsMismatches,
         ),
-        ('inversion',
-            ('inversion',
+        (
+            'genomic insertion',
+            (
+                'hg19',
+                'hg38',
+                'macFas5',
+                'mm10',
+                'bosTau7',
+                'e_coli',
+                'phiX',
             ),
+            NotImplementedError,
         ),
-        ('incorporation of extra sequence',
-            ('has RT\'ed extension',
-             'no RT\'ed extension',
+        (
+            'inversion',
+            (
+                'inversion',
             ),
+            StrDetail,
         ),
-        ('complex incorporation of RT\'ed sequence',
-            ('n/a',
+        (
+            'incorporation of extra sequence',
+            (
+                'has RT\'ed extension',
+                'no RT\'ed extension',
             ),
+            StrDetail,
         ),
-        ('minimal alignment to intended target',
-            ('n/a',
+        (
+            'complex incorporation of RT\'ed sequence',
+            (
+                'n/a',
             ),
+            StrDetail,
         ),
-        ('uncategorized',
-            ('uncategorized',
-             'low quality',
-             'no alignments detected',
+        (
+            'minimal alignment to intended target',
+            (
+                'n/a',
             ),
+            StrDetail,
         ),
-        ('nonspecific amplification',
-            ('hg19',
-             'hg38',
-             'macFas5',
-             'T2T-MFA8v1.0',
-             'mm10',
-             'bosTau7',
-             'e_coli',
-             'b_subtilis',
-             'primer dimer',
-             'short unknown',
-             'extra sequence',
+        (
+            'uncategorized',
+            (
+                'uncategorized',
+                'low quality',
+                'no alignments detected',
             ),
+            StrDetail,
         ),
-        ('phiX',
-            ('phiX',
+        (
+            'nonspecific amplification',
+            (
+                'hg19',
+                'hg38',
+                'macFas5',
+                'T2T-MFA8v1.0',
+                'mm10',
+                'bosTau7',
+                'e_coli',
+                'b_subtilis',
+                'primer dimer',
+                'short unknown',
+                'extra sequence',
             ),
+            StrDetail,
+        ),
+        (
+            'phiX',
+            (
+                'phiX',
+            ),
+            StrDetail,
         ),
     ]
 
@@ -1256,10 +1313,10 @@ class Layout(layout.Categorizer):
                         matches_pegRNA = (pegRNA_base == read_b)
 
                     if not matches_pegRNA:
-                        SNV = knock_knock.target_info.SNV(ref_i, read_b)
-                        non_pegRNA_mismatches.append(SNV)
+                        mismatch = knock_knock.target_info.Mismatch(ref_i, read_b)
+                        non_pegRNA_mismatches.append(mismatch)
 
-        non_pegRNA_mismatches = knock_knock.target_info.SNVs(non_pegRNA_mismatches)
+        non_pegRNA_mismatches = knock_knock.target_info.Mismatches(non_pegRNA_mismatches)
 
         return read_bases_at_SNV_locii, non_pegRNA_mismatches
 
@@ -1827,6 +1884,16 @@ class Layout(layout.Categorizer):
 
         self.relevant_alignments = self.parsimonious_extension_chain_alignments
 
+        if single_target_alignment_without_indels:
+            target_als = [al for al in self.relevant_alignments if al.reference_name == self.target_info.target]
+            target_als.append(self.single_read_covering_target_alignment)
+            other_als = [al for al in self.relevant_alignments if al.reference_name != self.target_info.target]
+
+            self.relevant_alignments = sam.make_noncontained(target_als) + other_als
+
+        insertions = []
+        deletions = []
+
         if self.intended_edit_type == 'combination':
             if self.pegRNA_SNV_string == self.full_incorporation_pegRNA_SNV_string and not single_target_alignment_without_indels:
                 self.subcategory = 'combination'
@@ -1834,22 +1901,20 @@ class Layout(layout.Categorizer):
                 self.category = 'partial edit'
                 self.subcategory = 'partial incorporation'
 
-            indels = []
-
             if not single_target_alignment_without_indels:
                 if self.target_info.pegRNA_programmed_deletion is not None:
-                    indels.append(self.target_info.pegRNA_programmed_deletion)
+                    deletions.append(self.target_info.pegRNA_programmed_deletion)
 
                 if self.target_info.pegRNA_programmed_insertion is not None:
-                    indels.append(self.target_info.pegRNA_programmed_insertion)
+                    insertions.append(self.target_info.pegRNA_programmed_insertion)
 
         elif self.intended_edit_type == 'insertion':
             self.subcategory = 'insertion'
-            indels = [self.target_info.pegRNA_programmed_insertion]
+            insertions.append(self.target_info.pegRNA_programmed_insertion)
 
         elif self.intended_edit_type == 'deletion':
             self.subcategory = 'deletion'
-            indels = [self.target_info.pegRNA_programmed_deletion]
+            deletions.append(self.target_info.pegRNA_programmed_deletion)
 
         else:
             target_alignment = self.single_read_covering_target_alignment
@@ -1862,20 +1927,27 @@ class Layout(layout.Categorizer):
             else:
                 indels = []
 
+            deletions.extend([indel for indel in indels if indel.kind == 'D'])
+            insertions.extend([indel for indel in indels if indel.kind == 'I'])
+
             if self.pegRNA_SNV_string == self.full_incorporation_pegRNA_SNV_string:
                 self.subcategory = 'substitution'
             else:
                 self.category = 'partial edit'
                 self.subcategory = 'partial incorporation'
 
-        self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string,
-                                             self.non_pegRNA_mismatches_outcome,
-                                             self.non_programmed_edit_mismatches_outcome,
-                                             indels,
-                                            )
+        self.Details = ProgrammedEdit(self.pegRNA_SNV_string,
+                                      self.non_pegRNA_mismatches,
+                                      self.non_programmed_edit_mismatches,
+                                      deletions,
+                                      insertions,
+                                     )
 
     def register_indels_in_original_alignment(self):
         relevant_indels, other_indels = self.indels_in_original_target_covering_alignment
+
+        deletions = [indel for indel in relevant_indels if indel.kind == 'D']
+        insertions = [indel for indel in relevant_indels if indel.kind == 'I']
 
         if len(relevant_indels) == 1:
             indel = relevant_indels[0]
@@ -1888,6 +1960,7 @@ class Layout(layout.Categorizer):
                 # apparent ratio of intended edits to unintended rejoinings, since
                 # there is no equivalent catching of those.
                 self.register_intended_edit()
+
             else:
                 if self.has_pegRNA_SNV:
                     if indel.kind == 'D':
@@ -1901,33 +1974,31 @@ class Layout(layout.Categorizer):
                 else:
                     if indel.kind == 'D':
                         self.category = 'deletion'
-                        self.outcome = DeletionOutcome(indel)
                         self.relevant_alignments = [self.original_target_covering_alignment]
 
                     elif indel.kind == 'I':
                         self.category = 'insertion'
-                        self.outcome = InsertionOutcome(indel)
                         self.relevant_alignments = [self.original_target_covering_alignment] + self.non_protospacer_pegRNA_alignments
 
                     if len(self.mismatches_in_original_target_covering_alignment) > 0:
                         self.subcategory = 'mismatches'
                     else:
                         self.subcategory = 'clean'
+
+                    self.Details = DeletionsInsertionsMismatches(deletions, insertions, [])
+
         else:
             self.category = 'multiple indels'
             self.subcategory = 'multiple indels'
 
-            deletions = [DeletionOutcome(indel) for indel in relevant_indels if indel.kind == 'D']
-            insertions = [InsertionOutcome(indel) for indel in relevant_indels if indel.kind == 'I']
-            self.outcome = MultipleIndelOutcome(deletions, insertions)
-
             self.relevant_alignments = [self.original_target_covering_alignment]
+
+            self.Details = DeletionsInsertionsMismatches(deletions, insertions, [])
 
     def register_nonspecific_amplification(self):
         results = self.nonspecific_amplification
 
         self.category = 'nonspecific amplification'
-        self.details = 'n/a'
 
         if self.non_primer_nts <= 2:
             self.subcategory = 'primer dimer'
@@ -1968,6 +2039,9 @@ class Layout(layout.Categorizer):
         self.category = 'edit + indel'
         self.subcategory = subcategory
 
+        deletions = [indel for indel in indels if indel.kind == 'D']
+        insertions = [indel for indel in indels if indel.kind == 'I']
+
         # Can't just use self.pegRNA_extension_als_list since indel
         # might cut off extension chain on one side.
 
@@ -1976,16 +2050,17 @@ class Layout(layout.Categorizer):
         self.relevant_alignments = als
 
         if self.intended_edit_type == 'insertion':
-            indels = indels + [self.target_info.pegRNA_programmed_insertion]
+            insertions.append(self.target_info.pegRNA_programmed_insertion)
 
         elif self.intended_edit_type == 'deletion':
-            indels = indels + [self.target_info.pegRNA_programmed_deletion]
+            deletions.append(self.target_info.pegRNA_programmed_deletion)
 
-        self.outcome = ProgrammedEditOutcome(self.pegRNA_SNV_string,
-                                             self.non_pegRNA_mismatches_outcome,
-                                             self.non_programmed_edit_mismatches_outcome,
-                                             indels,
-                                            )
+        self.Details = ProgrammedEdit(self.pegRNA_SNV_string,
+                                      self.non_pegRNA_mismatches,
+                                      self.non_programmed_edit_mismatches,
+                                      deletions,
+                                      insertions,
+                                     )
 
     def is_valid_unintended_rejoining(self, chains):
         ''' There is RT'ed sequence, and the extension chains cover the whole read.
@@ -2042,7 +2117,13 @@ class Layout(layout.Categorizer):
         if not has_pegRNA_SNV:
             self.subcategory += ', no substitution'
 
-        self.outcome = UnintendedRejoiningOutcome(chain_edges['left'], chain_edges['right'], chain_junction_MH, [])
+        # TODO: need to add integrase sites here.
+        self.Details = UnintendedRejoining(
+            chain_edges['left'],
+            chain_edges['right'],
+            chain_junction_MH,
+            [],
+        )
 
         self.relevant_alignments = []
 
@@ -2061,8 +2142,6 @@ class Layout(layout.Categorizer):
             self.subcategory = 'has RT\'ed extension'
         else:
             self.subcategory = 'no RT\'ed extension'
-
-        self.details = 'n/a'
 
         alignments = (
             interval.make_parsimonious(self.target_alignments + self.pegRNA_alignments + self.nonredundant_extra_alignments) + 
@@ -2091,14 +2170,11 @@ class Layout(layout.Categorizer):
             else:
                 self.subcategory = 'uncategorized'
 
-        self.outcome = Outcome('n/a')
-
         self.relevant_alignments = self.uncategorized_relevant_alignments
 
     def register_minimal_alignments_detected(self):
         self.category = 'minimal alignment to intended target'
         self.subcategory = 'n/a'
-        self.outcome = Outcome('n/a')
         self.relevant_alignments = self.uncategorized_relevant_alignments
 
     @memoized_property
@@ -2129,7 +2205,7 @@ class Layout(layout.Categorizer):
         return all(al.is_unmapped for al in self.alignments)
 
     def categorize(self):
-        self.outcome = None
+        self.Details = StrDetail('n/a')
 
         if self.nonspecific_amplification:
             self.register_nonspecific_amplification()
@@ -2140,7 +2216,6 @@ class Layout(layout.Categorizer):
         elif self.aligns_to_phiX:
             self.category = 'phiX'
             self.subcategory = 'phiX'
-            self.details = 'n/a'
 
             self.relevant_alignments = [self.longest_phiX_alignment]
 
@@ -2151,41 +2226,35 @@ class Layout(layout.Categorizer):
             target_alignment = self.single_read_covering_target_alignment
             interesting_indels, uninteresting_indels = self.interesting_and_uninteresting_indels([target_alignment])
 
+            deletions = [indel for indel in interesting_indels + uninteresting_indels if indel.kind == 'D']
+            insertions = [indel for indel in interesting_indels + uninteresting_indels if indel.kind == 'I']
+
             if len(interesting_indels) == 0:
                 if self.starts_at_expected_location:
                     if self.specific_to_pegRNA(self.single_read_covering_target_alignment):
                         self.register_intended_edit(single_target_alignment_without_indels=True)
+
                     else:
                         self.category = 'wild type'
 
                         if len(self.non_pegRNA_mismatches) == 0 and len(uninteresting_indels) == 0:
                             self.subcategory = 'clean'
-                            self.outcome = Outcome('n/a')
 
                         elif len(uninteresting_indels) == 1:
                             self.subcategory = 'short indel far from cut'
-
-                            indel = uninteresting_indels[0]
-                            if indel.kind == 'D':
-                                self.outcome = DeletionOutcome(indel)
-                            elif indel.kind == 'I':
-                                self.outcome = InsertionOutcome(indel)
-                            else:
-                                raise ValueError(indel.kind)
 
                         elif len(uninteresting_indels) > 1:
                             self.register_uncategorized()
 
                         else:
                             self.subcategory = 'mismatches'
-                            self.outcome = self.non_pegRNA_mismatches_outcome
 
                         self.relevant_alignments = [target_alignment]
 
+                        self.Details = DeletionsInsertionsMismatches(deletions, insertions, self.non_pegRNA_mismatches)
+
                 else:
                     self.register_uncategorized()
-
-                    self.relevant_alignments = self.uncategorized_relevant_alignments
 
             elif self.max_scaffold_overlap >= 2 and self.is_unintended_rejoining:
                 self.register_unintended_rejoining()
@@ -2211,13 +2280,13 @@ class Layout(layout.Categorizer):
 
                     if indel.kind == 'D':
                         self.category = 'deletion'
-                        self.outcome = DeletionOutcome(indel)
                         self.relevant_alignments = self.target_edge_alignments_list
 
                     elif indel.kind == 'I':
                         self.category = 'insertion'
-                        self.outcome = InsertionOutcome(indel)
                         self.relevant_alignments = [target_alignment]
+
+                    self.Details = DeletionsInsertionsMismatches(deletions, insertions, self.non_pegRNA_mismatches)
 
             else: # more than one indel
                 if len(self.indels) == 2:
@@ -2237,9 +2306,7 @@ class Layout(layout.Categorizer):
                         self.category = 'multiple indels'
                         self.subcategory = 'multiple indels'
 
-                        deletions = [DeletionOutcome(indel) for indel in interesting_indels if indel.kind == 'D']
-                        insertions = [InsertionOutcome(indel) for indel in interesting_indels if indel.kind == 'I']
-                        self.outcome = MultipleIndelOutcome(deletions, insertions)
+                        self.Details = DeletionsInsertionsMismatches(deletions, insertions, self.non_pegRNA_mismatches)
                         self.relevant_alignments = [target_alignment]
 
                 else:
@@ -2254,7 +2321,6 @@ class Layout(layout.Categorizer):
         elif self.pegRNA_alignments_cover_target_gap:
             self.category = 'complex incorporation of RT\'ed sequence'
             self.subcategory = 'n/a'
-            self.details = 'n/a'
             ti = self.target_info
             PBS_al = self.generate_extended_pegRNA_PBS_alignment(self.target_edge_alignments[self.pegRNA_side], self.pegRNA_side)
             als = self.target_edge_alignments_list + interval.make_parsimonious(self.pegRNA_alignments_cover_target_gap)
@@ -2266,13 +2332,13 @@ class Layout(layout.Categorizer):
 
         elif self.duplication_covers_whole_read:
             subcategory, ref_junctions, indels, als_with_pegRNA_SNVs, merged_als = self.duplication
-            self.outcome = DuplicationOutcome(ref_junctions)
+            self.Details = DuplicationJunctions(ref_junctions)
 
             if als_with_pegRNA_SNVs == 0:
                 self.category = 'duplication'
                 self.subcategory = subcategory
             else:
-                self.category = 'edit + indel'
+                self.category = 'edit + duplication'
                 self.subcategory = 'duplication'
 
             self.relevant_alignments = self.pegRNA_extension_als_from_either_side_list + merged_als
@@ -2280,7 +2346,6 @@ class Layout(layout.Categorizer):
         elif self.inversion:
             self.category = 'inversion'
             self.subcategory = 'inversion'
-            self.details = 'n/a'
 
             self.relevant_alignments = self.target_edge_alignments_list + self.inversion
 
@@ -2291,7 +2356,7 @@ class Layout(layout.Categorizer):
             self.category = 'wild type'
             # Assume clean would have been caught before.
             self.subcategory = 'mismatches'
-            self.outcome = MismatchOutcome(self.mismatches_in_original_target_covering_alignment)
+            self.Details = DeletionsInsertionsMismatches([], [], self.mismatches_in_original_target_covering_alignment)
             self.relevant_alignments = [self.original_target_covering_alignment]
 
         elif self.duplication is not None:
@@ -2299,44 +2364,42 @@ class Layout(layout.Categorizer):
             self.relevant_alignments = self.pegRNA_extension_als_list + merged_als
 
             if len(indels) == 0:
-                self.outcome = DuplicationOutcome(ref_junctions)
-
                 if als_with_pegRNA_SNVs == 0:
                     self.category = 'duplication'
                     self.subcategory = subcategory
                 else:
-                    self.category = 'edit + indel'
+                    self.category = 'edit + duplication'
                     self.subcategory = 'duplication'
 
                 self.relevant_alignments = self.pegRNA_extension_als_from_either_side_list + merged_als
 
+                self.Details = DuplicationJunctions(ref_junctions)
+
             elif len(indels) == 1 and indels[0].kind == 'D':
                 indel = indels[0]
+
                 if indel == self.target_info.pegRNA_programmed_deletion:
-                    self.category = 'edit + indel'
+                    self.category = 'edit + duplication'
                     self.subcategory = 'duplication'
                 else:
                     self.category = 'multiple indels'
                     self.subcategory = 'duplication + deletion'
 
-                deletion_outcome = DeletionOutcome(indels[0])
-                duplication_outcome = DuplicationOutcome(ref_junctions)
-                self.outcome = DeletionPlusDuplicationOutcome(deletion_outcome, duplication_outcome)
+                self.Details = DeletionPlusDuplicationJunctions(indels, DuplicationJunctions(ref_junctions))
+
                 self.relevant_alignments = self.pegRNA_extension_als_from_either_side_list + merged_als
 
             elif len(indels) == 1 and indels[0].kind == 'I':
                 indel = indels[0]
                 self.category = 'multiple indels'
                 self.subcategory = 'duplication + insertion'
-                self.details = 'n/a'
 
             else:
                 raise ValueError('duplication shouldn\'t have >1 indel') 
 
         elif self.duplication_plus_edit is not None:
-            self.category = 'edit + indel'
+            self.category = 'edit + duplication'
             self.subcategory = 'duplication'
-            self.details = 'n/a'
             self.relevant_alignments = self.duplication_plus_edit
 
         elif self.is_deletion_plus_edit is not None:
@@ -2354,14 +2417,12 @@ class Layout(layout.Categorizer):
 
         self.relevant_alignments = sam.make_nonredundant(self.relevant_alignments)
 
-        if self.outcome is not None:
-            # Translate positions to be relative to a registered anchor
-            # on the target sequence.
-            self.details = str(self.outcome.perform_anchor_shift(self.target_info.anchor))
+        self.Details = self.Details.perform_anchor_shift(self.target_info.anchor)
+        self.details = str(self.Details)
 
         self.categorized = True
 
-        return self.category, self.subcategory, self.details, self.outcome
+        return self.category, self.subcategory, self.details, self.Details
 
     @memoized_property
     def nonredundant_extra_alignments(self):
@@ -2459,6 +2520,13 @@ class Layout(layout.Categorizer):
                         if uncovered.total_length == 0:
                             alignments = list(chain_als.values()) + duplication_als
 
+        if alignments is not None:
+            target_als = [al for al in alignments if al.reference_name == self.target_info.target]
+            target_als = sam.make_noncontained(target_als)
+            other_als = [al for al in alignments if al.reference_name != self.target_info.target]
+
+            alignments = target_als + other_als
+
         return alignments
 
     @memoized_property
@@ -2546,7 +2614,7 @@ class Layout(layout.Categorizer):
                 indels.append(indel)
                 continue
 
-            ref_junction = (lefts, rights)
+            ref_junction = DuplicationJunction(lefts, rights)
             ref_junctions.append(ref_junction)
 
         if len(indels) > 1:
@@ -2554,11 +2622,14 @@ class Layout(layout.Categorizer):
 
         if len(ref_junctions) == 0:
             return None
+
         elif len(ref_junctions) == 1:
             subcategory = 'simple'
+
         elif len(set(ref_junctions)) == 1:
             # There are multiple junctions but they are all identical.
             subcategory = 'iterated'
+
         else:
             subcategory = 'complex'
 
@@ -2625,23 +2696,13 @@ class Layout(layout.Categorizer):
         else:
             programmed_ps = self.target_info.pegRNA.programmed_substitution_target_ps
 
-        filtered_snvs = [snv for snv in non_pegRNA_mismatches.snvs if snv.position not in programmed_ps]
+        non_pegRNA_mismatches = [mismatch for mismatch in non_pegRNA_mismatches if mismatch.position not in programmed_ps]
 
-        filtered_mismatches = knock_knock.target_info.SNVs(filtered_snvs)
-
-        return filtered_mismatches
-
-    @memoized_property
-    def non_pegRNA_mismatches_outcome(self):
-        return MismatchOutcome(self.non_pegRNA_mismatches)
+        return non_pegRNA_mismatches
 
     @memoized_property
     def non_programmed_edit_mismatches(self):
-        return knock_knock.target_info.SNVs([])
-
-    @memoized_property
-    def non_programmed_edit_mismatches_outcome(self):
-        return MismatchOutcome(self.non_programmed_edit_mismatches)
+        return knock_knock.target_info.Mismatches([])
 
     @memoized_property
     def original_target_alignment_has_no_indels(self):
@@ -3002,41 +3063,3 @@ class Layout(layout.Categorizer):
             diagram.update_size()
 
         return diagram
-
-class UnintendedRejoiningOutcome(Outcome):
-    def __init__(self, left_edge, right_edge, MH_nts, integrase_sites):
-        self.edges = {
-            'left': left_edge,
-            'right': right_edge,
-        }
-
-        self.MH_nts = MH_nts
-
-        self.integrases_sites = integrase_sites
-
-    @classmethod
-    def from_string(cls, details_string):
-        def convert(s):
-            return int(s) if s != 'None' else None
-
-        left_edge, *other_fields = details_string.split(',')
-
-        right_edge = -1
-        MH_nts = -1
-        integrase_sites = ''
-
-        if len(other_fields) == 3:
-            right_edge, MH_nts, integrase_sites = other_fields
-        elif len(other_fields) == 2:
-            right_edge, MH_nts = other_fields
-
-        left_edge = convert(left_edge)
-        right_edge = convert(right_edge)
-        MH_nts = convert(MH_nts)
-
-        integrase_sites = integrase_sites.split(';')
-
-        return cls(left_edge, right_edge, MH_nts, integrase_sites)
-
-    def __str__(self):
-        return f'{self.edges["left"]},{self.edges["right"]},{self.MH_nts},{";".join(self.integrases_sites)}'

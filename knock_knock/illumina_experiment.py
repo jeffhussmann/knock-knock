@@ -9,6 +9,7 @@ import numpy as np
 import pysam
 
 import knock_knock.experiment
+import knock_knock.outcome
 from knock_knock import layout as layout_module
 
 import hits.visualize.fastq
@@ -273,13 +274,13 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
                 
                 outcomes[pair_layout.category, pair_layout.subcategory].append(name)
 
-                outcome = self.final_Outcome.from_layout(pair_layout,
-                                                         query_name=name,
-                                                         Q30_fraction=R1.Q30_fraction,
-                                                         mean_Q=R1.mean_Q,
-                                                         UMI_seq=UMI_seq,
-                                                         UMI_qual=UMI_qual,
-                                                        )
+                outcome = self.Outcome.from_layout(pair_layout,
+                                                   query_name=name,
+                                                   Q30_fraction=R1.Q30_fraction,
+                                                   mean_Q=R1.mean_Q,
+                                                   UMI_seq=UMI_seq,
+                                                   UMI_qual=UMI_qual,
+                                                  )
                 fh.write(f'{outcome}\n')
 
         # To make plotting easier, for each outcome, make a file listing all of
@@ -361,16 +362,16 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
                 UMI_qual = ''
 
             if len(trimmed) == 0:
-                outcome = self.final_Outcome(trimmed.name,
-                                             len(trimmed),
-                                             0,
-                                             0,
-                                             UMI_seq,
-                                             UMI_qual,
-                                             'nonspecific amplification',
-                                             'primer dimer',
-                                             'n/a',
-                                            )
+                outcome = self.Outcome(trimmed.name,
+                                       len(trimmed),
+                                       0,
+                                       0,
+                                       UMI_seq,
+                                       UMI_qual,
+                                       'nonspecific amplification',
+                                       'primer dimer',
+                                       knock_knock.outcome.StrDetail('n/a'),
+                                      )
                 too_short_outcomes.append(outcome)
             else:
                 trimmed_reads.append(trimmed)
@@ -381,7 +382,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
         with open(self.fns['too_short_outcome_list'], 'w') as too_short_fh:
             too_short_fh.write(f'## Generated at {utilities.current_time_string()}\n')
-            for outcome in sorted(too_short_outcomes, key=lambda outcome: outcome.query_name):
+            for outcome in sorted(too_short_outcomes, key=lambda outcome: outcome.query_name.value):
                 too_short_fh.write(f'{outcome}\n')
 
     def stitch_read_pairs(self):
@@ -447,16 +448,16 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
                     UMI_seq = ''
                     UMI_qual = ''
 
-                outcome = self.final_Outcome(stitched.name,
-                                             len(stitched),
-                                             0,
-                                             0,
-                                             UMI_seq,
-                                             UMI_qual,
-                                             'nonspecific amplification',
-                                             'primer dimer',
-                                             'n/a',
-                                            )
+                outcome = self.Outcome(stitched.name,
+                                       len(stitched),
+                                       0,
+                                       0,
+                                       UMI_seq,
+                                       UMI_qual,
+                                       'nonspecific amplification',
+                                       'primer dimer',
+                                       knock_knock.outcome.StrDetail('n/a'),
+                                      )
                 too_short_outcomes.append(outcome)
 
                 stitched_lengths[len(stitched)] += 1
