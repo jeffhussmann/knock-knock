@@ -56,7 +56,7 @@ class Batch:
 
         self.sample_sheet_fn = self.data_dir / 'sample_sheet.csv'
         # Note: set_index after construction is necessary to force dtype=str for the index.
-        self.sample_sheet = pd.read_csv(self.sample_sheet_fn, dtype=str).set_index('sample_name').fillna('')
+        self.sample_sheet = pd.read_csv(self.sample_sheet_fn, dtype=str).set_index('sample_name').fillna('').sort_index()
 
         self.group_descriptions_fn = self.data_dir / 'group_descriptions.csv'
         self.group_descriptions = pd.read_csv(self.group_descriptions_fn, index_col='group').replace({np.nan: None})
@@ -1440,6 +1440,9 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
         'sequencing_primers',
         'reverse_complement',
         'max_reads',
+        'plate',
+        'row',
+        'column',
     ]
 
     grouped = sample_sheet_df.groupby(group_keys)
