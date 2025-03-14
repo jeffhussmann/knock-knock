@@ -1980,6 +1980,13 @@ class TargetInfo:
                     insertion = self.pegRNA.edit_properties['insertions'][0]
                     name_to_description[str(self.pegRNA_programmed_insertion)] = insertion['description']
 
+            if self.pegRNA_programmed_deletion is not None:
+                if len(self.pegRNA.edit_properties['deletions']) != 1:
+                    logging.warning('multiple deletions')
+                else:
+                    deletion = self.pegRNA.edit_properties['deletions'][0]
+                    name_to_description[str(self.pegRNA_programmed_deletion)] = deletion['description']
+
         return name_to_description
 
     #@memoized_property

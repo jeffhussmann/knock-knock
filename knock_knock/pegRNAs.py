@@ -448,11 +448,24 @@ class pegRNA:
             # nick is deleted.
 
             if target_subsequences[0][0] != 0:
-                deletions.append((0, target_subsequences[0][0] - 1))
+                deletion = {
+                    'downstream_of_nick_start': 0,
+                    'downstream_of_nick_end': target_subsequences[0][0] - 1,
+                }
+                deletions.append(deletion)
                     
             for (_, left_target_end), (right_target_start, _) in zip(target_subsequences, target_subsequences[1:]):
                 if left_target_end != right_target_start:
-                    deletions.append((left_target_end, right_target_start - 1))
+                    deletion = {
+                        'downstream_of_nick_start': left_target_end,
+                        'downstream_of_nick_end': right_target_start - 1,
+                    }
+                    deletions.append(deletion)
+
+            for deletion in deletions:
+                sequence = self.target_downstream_of_nick[deletion['downstream_of_nick_start']:deletion['downstream_of_nick_end'] + 1]
+                position = deletion['downstream_of_nick_start'] + 1
+                deletion['description'] = f'+{position}del{sequence}'
 
         properties = {
             'SNVs': SNVs,
@@ -598,7 +611,7 @@ class pegRNA:
                 logging.warning(f'Inferred edit for {self.name} has multiple deletions')
 
             deletion = self.edit_properties['deletions'][0]
-            starts['target', 'deletion'], ends['target', 'deletion'] = sorted(map(convert_downstream_of_nick_to_target_coordinates, deletion))
+            starts['target', 'deletion'], ends['target', 'deletion'] = sorted(convert_downstream_of_nick_to_target_coordinates(deletion[k]) for k in ['downstream_of_nick_start', 'downstream_of_nick_end'])
             deletion_length = ends['target', 'deletion'] - starts['target', 'deletion'] + 1
 
             self.deletion = target_info.DegenerateDeletion([starts['target', 'deletion']], deletion_length)
@@ -757,9 +770,7 @@ class pegRNA:
                 strings.append((insertion['start_in_flap'], insertion['description']))
 
             for deletion in self.edit_properties['deletions']: 
-                sequence = self.target_downstream_of_nick[deletion[0]:deletion[1] + 1]
-                position = deletion[0] + 1
-                strings.append((deletion[0], f'+{position}del{sequence}'))
+                strings.append((deletion['downstream_of_nick_start'], deletion['description']))
 
             strings = [s for p, s in sorted(strings)]
 

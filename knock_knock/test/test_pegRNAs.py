@@ -1,5 +1,3 @@
-import textwrap
-
 import Bio.Align
 import numpy as np
 import pytest
@@ -15,6 +13,7 @@ base_dir = Path(__file__).parent
 def populate_source_dir(source_dir):
     if source_dir is None:
         source_dir = base_dir
+
     return Path(source_dir)
 
 def test_intended_insertion_inference():
@@ -31,7 +30,6 @@ def test_intended_insertion_inference():
         assert (inferred_insertion.end == end)
         assert (inferred_insertion.strand == strand)
 
-@pytest.mark.skip
 def test_intended_deletion_inference():
     for pegRNA, expected_as_string in [
         ('HEK3_4g_del1-5',  'D:{676|677},5'),
