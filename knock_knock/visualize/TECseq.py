@@ -56,6 +56,21 @@ def round_2_condition_to_color(condition):
 
     return color
 
+def ABD_round_1_condition_to_color(condition):
+    palette = bokeh.palettes.Dark2_8
+
+    if condition['in_vitro_Cas9_sgRNA'] == 'Mock':
+        color = palette[0]
+    elif condition['in_vitro_Cas9_sgRNA'] == 'Undigested +SPRI':
+        color = palette[1]
+    elif condition['in_vitro_Cas9_sgRNA'] == 'Undigested -SPRI':
+        color = palette[2]
+    else:
+        color = 'black'
+        #raise ValueError(condition)
+
+    return color
+
 def condition_to_label(condition, condition_keys_to_label):
     label = ', '.join([f'{key}={value}' for key, value in condition.items() if key in condition_keys_to_label])
     return label
@@ -367,8 +382,8 @@ class StrandsGrid:
         if self.pegRNA_name is not None:
             self.axs['pegRNA'].set_ylabel('% of top strand reads,\nRT\'ed flap', size=12)
 
-    def add_legend(self):
-        self.axs['top'].legend(markerscale=2)
+    def add_legend(self, ax_name='top'):
+        self.axs[ax_name].legend(markerscale=2)
 
     def plot_fractions(self,
                        data,
