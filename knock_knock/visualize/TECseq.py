@@ -404,6 +404,7 @@ class StrandsGrid:
                 color = condition_to_color(condition)
 
                 nonzero_ps = df[column]
+                nonzero_ps = nonzero_ps[nonzero_ps > 0]
 
                 if strand == 'top':
                     cumulative_nonzero_ps = nonzero_ps.cumsum()
