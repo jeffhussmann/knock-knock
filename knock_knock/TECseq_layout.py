@@ -7,23 +7,7 @@ import hits.utilities
 import knock_knock.prime_editing_layout
 import knock_knock.twin_prime_layout
 
-import knock_knock.outcome
-
-TargetEdge = knock_knock.outcome.Details_factory(
-    'TargetEdge',
-    [
-        ('edge', knock_knock.outcome.AnchoredIntDetail),
-        ('mismatches', knock_knock.outcome.Mismatches),
-    ],
-)
-
-pegRNAEdge = knock_knock.outcome.Details_factory(
-    'pegRNAEdge',
-    [
-        ('edge', knock_knock.outcome.IntDetail),
-        ('mismatches', knock_knock.outcome.Mismatches),
-    ],
-)
+from knock_knock.outcome import *
 
 memoized_property = hits.utilities.memoized_property
 memoized_with_args = hits.utilities.memoized_with_args
@@ -108,24 +92,22 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                 self.category = 'targeted genomic sequence'
                 self.subcategory = 'unedited'
                 edge = hits.sam.reference_edges(self.extension_chains_by_side['left']['alignments']['first target'])[3]
-                Edge = TargetEdge
+                self.Details = Details(target_edge=edge, mismatches=self.non_pegRNA_mismatches)
 
             elif self.minimal_cover in ['pegRNA', 'first pegRNA']:
                 self.category = 'RTed sequence'
                 self.subcategory = 'n/a'
                 edge = self.extension_chain_edges['left']
-                Edge = pegRNAEdge
+                self.Details = Details(pegRNA_edge=edge, mismatches=self.non_pegRNA_mismatches)
 
             elif self.minimal_cover == 'second target':
                 self.category = 'targeted genomic sequence'
                 self.subcategory = 'edited'
                 edge = hits.sam.reference_edges(self.extension_chains_by_side['left']['alignments']['second target'])[3]
-                Edge = TargetEdge
+                self.Details = Details(target_edge=edge, mismatches=self.non_pegRNA_mismatches)
             
             else:
                 raise ValueError
-
-            self.Details = Edge(edge, self.non_pegRNA_mismatches)
 
             self.relevant_alignments = self.parsimonious_extension_chain_alignments
 
@@ -307,7 +289,7 @@ class NoOverlapPairLayout(Layout):
         self.category = self.concordant_nonoverlapping['category']
         self.subcategory = self.concordant_nonoverlapping['subcategory']
 
-        self.outcome = TargetEdge(edge, R1.non_pegRNA_mismatches)
+        self.Details = Details(target_edge=edge, mismatches=R1.non_pegRNA_mismatches)
 
         self.relevant_alignments = {
             'R1': R1.parsimonious_extension_chain_alignments,

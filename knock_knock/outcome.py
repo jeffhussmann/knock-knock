@@ -1,4 +1,6 @@
-import functools
+import inspect
+import urllib.parse
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
@@ -10,25 +12,11 @@ class Detail:
     def perform_anchor_shift(self, anchor):
         return self
 
-def simple_Detail_factory(convertor):
-    class SimpleDetail(Detail):
-        def __init__(self, value):
-            self.value = value
-
-        @classmethod
-        def from_string(cls, details_string):
-            value = convertor(details_string)
-            return cls(value)
-
-        def __str__(self):
-            return str(self.value)
-
-        __repr__ = __str__
-
-    return SimpleDetail
+    def undo_anchor_shift(self, anchor):
+        return self.perform_anchor_shift(-anchor)
 
 def DetailList_factory(SpecificDetail):
-    INTERMEDIATE_DELIMITER = '__'
+    delimiter = ';'
 
     class DetailList(Detail):
         def __init__(self, fields):
@@ -45,61 +33,19 @@ def DetailList_factory(SpecificDetail):
             if details_string == '':
                 fields = []
             else:
-                fields_strings = details_string.split(INTERMEDIATE_DELIMITER)
+                fields_strings = details_string.split(delimiter)
                 fields = [SpecificDetail.from_string(s) for s in fields_strings]
 
             return cls(fields)
 
         def __str__(self):
-            return INTERMEDIATE_DELIMITER.join(str(field) for field in self.fields)
+            return delimiter.join(str(field) for field in self.fields)
 
         def perform_anchor_shift(self, anchor):
             shifted_fields = [field.perform_anchor_shift(anchor) for field in self.fields]
             return type(self)(shifted_fields)
             
     return DetailList
-
-def Details_factory(class_name, field_names_and_types, delimiter=';'):
-    class Details(Detail):
-        def __init__(self, *fields):
-            if len(fields) != len(field_names_and_types):
-                raise ValueError
-
-            self.fields = []
-
-            for (name, Field), field in zip(field_names_and_types, fields):
-                if not isinstance(field, Detail):
-                    field = Field(field)
-
-                self.fields.append(field)
-
-                setattr(self, name, field)
-                
-        @classmethod
-        def from_string(cls, details_string):
-            fields_strings = details_string.split(delimiter)
-
-            if len(fields_strings) != len(field_names_and_types):
-                raise ValueError
-
-            fields = [Field.from_string(s) for (_, Field), s in zip(field_names_and_types, fields_strings)]
-
-            return cls(*fields)
-        
-        def __str__(self):
-            return delimiter.join(str(field) for field in self.fields)
-
-        def perform_anchor_shift(self, anchor):
-            shifted_fields = [field.perform_anchor_shift(anchor) for field in self.fields]
-            return type(self)(*shifted_fields)
-            
-        def undo_anchor_shift(self, anchor):
-            return self.perform_anchor_shift(-anchor)
-
-    Details.__name__ = class_name
-    Details.__qualname__ = f'Details_factory.{class_name}'
-
-    return Details
 
 class DuplicationJunction(Detail):
     def __init__(self, lefts, rights):
@@ -133,139 +79,105 @@ Deletions = DetailList_factory(DegenerateDeletion)
 Insertions = DetailList_factory(DegenerateInsertion)
 DuplicationJunctions = DetailList_factory(DuplicationJunction)
 
-DeletionPlusDuplicationJunctions = Details_factory(
-    'DeletionPlusDuplicationJunctions',
-    [
-        ('deletions', Deletions),
-        ('duplication_junctions', DuplicationJunctions),
-    ],
-)
+class Int(int, Detail):
+    pass
 
-IntDetail = simple_Detail_factory(int)
-
-class AnchoredIntDetail(IntDetail):
+class AnchoredInt(Int):
     def perform_anchor_shift(self, anchor):
         return type(self)(self.value - anchor)
 
-FloatDetail = simple_Detail_factory(float)
-
-class FormattedFloatDetail(FloatDetail):
+class FormattedFloat(float):
     def __str__(self):
-        return f'{self.value:0.3f}'
+        return f'{self:0.3f}'
 
-StrDetail = simple_Detail_factory(str)
+class Str(str, Detail):
+    pass
 
-StrList = DetailList_factory(StrDetail)
+Strs = DetailList_factory(Str)
 
-DeletionsInsertionsMismatches = Details_factory(
-    'DeletionsInsertionsMismatches',
-    [
-        ('deletions', Deletions),
-        ('insertions', Insertions),
-        ('mismatches', Mismatches),
-    ],
-)
+tag_to_Detail = {
+    'deletions': Deletions,
+    'insertions': Insertions,
+    'mismatches': Mismatches,
+    'left_rejoining_edge': Int,
+    'right_rejoining_edge': Int,
+    'junction_microhomology_length': Int,
+    'integrase_sites': Strs,
+    'programmed_substitution_read_bases': Str,
+    'non_programmed_target_mismatches': Mismatches,
+    'non_programmed_edit_mismatches': Mismatches,
+    'duplication_junctions': DuplicationJunctions,
+    'target_edge': AnchoredInt,
+    'pegRNA_edge': Int,
+}
 
-UnintendedRejoining = Details_factory(
-    'UnintendedRejoining',
-    [
-        ('left_edge', IntDetail),
-        ('right_edge', IntDetail),
-        ('junction_microhomology_length', IntDetail),
-        ('integrase_sites', StrList),
-    ],
-)
+_safe_chars = r'#\{}()+-:|,'
 
-ProgrammedEdit = Details_factory(
-    'ProgrammedEdit', [
-        ('programmed_substitution_read_bases', StrDetail),
-        ('non_programmed_target_mismatches_outcome', Mismatches),
-        ('non_programmed_edit_mismatches_outcome', Mismatches),
-        ('deletions', Deletions),
-        ('insertions', Insertions),
-    ],
-)
+class Details:
+    def __init__(self, **details):
+        self._tags = sorted(details)
 
-def Outcome_factory(categorizer, class_name, field_names_and_types):
+        for tag, value in details.items():
+            _Detail = tag_to_Detail[tag]
+
+            if not isinstance(value, _Detail):
+                value = _Detail(value)
+
+            setattr(self, tag, value)
+    
+    @classmethod
+    def from_string(cls, string):
+        fields = string.split(';')
+        pairs = [field.split('=') for field in fields]
+        parsed = {tag: tag_to_Detail[tag](urllib.parse.unquote(value)) for tag, value in pairs}
+        return cls(**parsed)
+    
+    def __str__(self):
+        fields = []
+        for tag in self._tags:
+            value = str(getattr(self, tag))
+            if value != '':
+                field = f'{tag}={urllib.parse.quote(value, safe=_safe_chars)}' 
+                fields.append(field)
+
+        return ';'.join(fields)
+
+    def perform_anchor_shift(self, anchor):
+        return type(self)(**{tag: getattr(self, tag).perform_anchor_shift(anchor) for tag in self._tags})
+
+@dataclass
+class CategorizationRecord:
+    query_name: str
+    inferred_amplicon_length: int
+    Q30_fraction: FormattedFloat
+    mean_Q: FormattedFloat
+    UMI_seq: str
+    UMI_qual: str
+    category: str
+    subcategory: str
+    details: Details.from_string
+    seq: str
+
     delimiter = '\t'
-
-    Outcome = Details_factory(class_name, field_names_and_types, delimiter=delimiter)
-
-    category_to_Details = categorizer.build_category_to_Details()
 
     @classmethod
     def from_string(cls, line):
-        fields_strings = line.strip('\n').split(delimiter)
+        fields = line.strip('\n').split(cls.delimiter)
+        
+        if len(fields) != len(cls.parameters):
+            raise ValueError(f'expected {len(cls.parameters)} parameters, got {len(fields)}')
 
-        if len(fields_strings) != len(field_names_and_types):
-            raise ValueError
+        args = []
+        for field, (name, parameter) in zip(fields, cls.parameters):
+            args.append(parameter.annotation(field))
 
-        fields = []
+        return cls(*args)
 
-        for (name, Field), s in zip(field_names_and_types, fields_strings):
-            if name == 'category':
-                category = s
-            elif name == 'details':
-                Field = category_to_Details[category]
+    def __str__(self):
+        return '\t'.join(str(getattr(self, name)) for name, _ in self.parameters)
 
-            field = Field.from_string(s)
-            fields.append(field)
-
-        return cls(*fields)
-    
-    @classmethod
-    def from_layout(cls, layout, **overrides):
-        ''' Use case for overrides is providing a specific read name
-        to a layout looked up from a common sequences dictionary.
-        '''
-        fields = []
-        for name, _ in field_names_and_types:
-
-            if name in overrides:
-                field = overrides[name]
-            else:
-                if name == 'details':
-                    name = 'Details'
-
-                field = getattr(layout, name)
-
-            fields.append(field)
-
-        return cls(*fields)
-
-    Outcome.from_string = from_string
-    Outcome.from_layout = from_layout
-
-    return Outcome
-
-Outcome_binder = functools.partial(
-    Outcome_factory,
-    class_name='Outcome',
-    field_names_and_types=[
-        ('query_name', StrDetail),
-        ('inferred_amplicon_length', IntDetail),
-        ('Q30_fraction', FormattedFloatDetail),
-        ('mean_Q', FormattedFloatDetail),
-        ('UMI_seq', StrDetail),
-        ('UMI_qual', StrDetail),
-        ('category', StrDetail),
-        ('subcategory', StrDetail),
-        ('details', None),
-    ],
-)
-
-CommonSequenceOutcome_binder = functools.partial(
-    Outcome_factory,
-    class_name='CommonSequenceOutcome',
-    field_names_and_types=[
-        ('query_name', StrDetail),
-        ('inferred_amplicon_length', IntDetail),
-        ('category', StrDetail),
-        ('subcategory', StrDetail),
-        ('details', None),
-        ('seq', StrDetail),
-    ],
-)
+signature = inspect.signature(CategorizationRecord.__init__)
+CategorizationRecord.parameters = list(signature.parameters.items())[1:]
 
 def add_directionalities_to_deletions(outcomes, target_info):
     combined_categories = []
