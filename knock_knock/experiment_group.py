@@ -256,6 +256,7 @@ class ExperimentGroup:
             ]:
 
                 grid = self.make_partial_incorporation_figure(condition_labels='with keys', **kwargs)
+
                 if grid is not None:
                     grid.fig.savefig(self.fns[fn_key], dpi=200, bbox_inches='tight')
 
@@ -265,8 +266,10 @@ class ExperimentGroup:
 
         try:
             grid = self.make_deletion_boundaries_figure()
+
             if grid is not None:
                 grid.fig.savefig(self.fns['deletion_boundaries_figure'], dpi=200, bbox_inches='tight')
+
         except Exception as e:
             logging.warning(f'Failed to make deletion boundaries figure for {self}')
             logging.warning(e)
@@ -356,7 +359,7 @@ class ExperimentGroup:
             conditions = self.full_conditions
 
         if min_reads is not None:
-            conditions = [c for c in conditions if self.total_valid_reads.loc[c] >= min_reads]
+            conditions = [c for c in conditions if self.total_reads().loc[c] >= min_reads]
 
         if condition_colors is None:
             condition_colors = self.condition_colors(unique=unique_colors)
@@ -415,7 +418,7 @@ class ExperimentGroup:
 
         if min_reads is not None:
             # .sum() here handles if these are full conditions
-            conditions = [c for c in conditions if self.total_valid_reads.loc[c].sum() >= min_reads]
+            conditions = [c for c in conditions if self.total_reads().loc[c].sum() >= min_reads]
 
         columns_to_extract = [
             (condition_labels[condition], [condition], condition_colors[condition])
