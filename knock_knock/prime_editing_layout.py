@@ -2180,8 +2180,6 @@ class Layout(layout.Categorizer):
         return all(al.is_unmapped for al in self.alignments)
 
     def categorize(self):
-        self.Details = Details()
-
         if self.nonspecific_amplification:
             self.register_nonspecific_amplification()
 

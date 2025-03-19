@@ -274,7 +274,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
                 
                 outcomes[pair_layout.category, pair_layout.subcategory].append(name)
 
-                outcome = self.Outcome.from_layout(pair_layout,
+                outcome = knock_knock.outcome.CategorizationRecord.from_layout(pair_layout,
                                                    query_name=name,
                                                    Q30_fraction=R1.Q30_fraction,
                                                    mean_Q=R1.mean_Q,
@@ -362,17 +362,20 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
                 UMI_qual = ''
 
             if len(trimmed) == 0:
-                outcome = self.Outcome(trimmed.name,
-                                       len(trimmed),
-                                       0,
-                                       0,
-                                       UMI_seq,
-                                       UMI_qual,
-                                       'nonspecific amplification',
-                                       'primer dimer',
-                                       knock_knock.outcome.StrDetail('n/a'),
-                                      )
+                outcome = knock_knock.outcome.CategorizationRecord(
+                    query_name=trimmed.name,
+                    inferred_amplicon_length=len(trimmed),
+                    Q30_fraction=0,
+                    mean_Q=0,
+                    UMI_seq=UMI_seq,
+                    UMI_qual=UMI_qual,
+                    category='nonspecific amplification',
+                    subcategory='primer dimer',
+                    details=knock_knock.outcome.Details(),
+                )
+
                 too_short_outcomes.append(outcome)
+
             else:
                 trimmed_reads.append(trimmed)
 
@@ -448,16 +451,17 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
                     UMI_seq = ''
                     UMI_qual = ''
 
-                outcome = self.Outcome(stitched.name,
-                                       len(stitched),
-                                       0,
-                                       0,
-                                       UMI_seq,
-                                       UMI_qual,
-                                       'nonspecific amplification',
-                                       'primer dimer',
-                                       knock_knock.outcome.StrDetail('n/a'),
-                                      )
+                outcome = knock_knock.outcome.CategorizationRecord(
+                    query_name=stitched.name,
+                    inferred_amplicon_length=len(stitched),
+                    Q30_fraction=0,
+                    mean_Q=0,
+                    UMI_seq=UMI_seq,
+                    UMI_qual=UMI_qual,
+                    category='nonspecific amplification',
+                    subcategory='primer dimer',
+                    details=knock_knock.outcome.Details(),
+                )
                 too_short_outcomes.append(outcome)
 
                 stitched_lengths[len(stitched)] += 1

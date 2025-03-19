@@ -44,6 +44,8 @@ class Categorizer:
 
         self.categorized = False
 
+        self.Details = knock_knock.outcome.Details()
+
     @memoized_property
     def Q30_fractions(self):
         at_least_30 = np.array(self.qual) >= 30
@@ -103,11 +105,11 @@ class Categorizer:
     
     @classmethod
     def categories(cls):
-        return [c for c, scs, Details in cls.category_order]
+        return [c for c, scs in cls.category_order]
     
     @classmethod
     def subcategories(cls):
-        return {c: scs for c, scs, Details in cls.category_order}
+        return {c: scs for c, scs in cls.category_order}
 
     @classmethod
     def order(cls, outcome):
@@ -152,10 +154,6 @@ class Categorizer:
             c = int(match.group(1))
             category, subcats = cls.category_order[c]
             return category
-
-    @classmethod
-    def build_category_to_Details(cls):
-        return {c: Details for c, scs, Details in cls.category_order}
 
     def q_to_feature_offset(self, al, feature_name, target_info=None):
         ''' Returns dictionary of 

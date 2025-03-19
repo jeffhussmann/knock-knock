@@ -157,7 +157,7 @@ class ExperimentGroup:
         name_to_seq = {}
 
         for outcome in self.common_sequence_outcomes:
-            name_to_seq[outcome.query_name.value] = outcome.seq.value
+            name_to_seq[outcome.query_name] = outcome.seq
 
         return name_to_seq
 
@@ -179,7 +179,7 @@ class ExperimentGroup:
     def common_sequence_to_outcome(self):
         common_sequence_to_outcome = {}
         for outcome in self.common_sequence_outcomes:
-            common_sequence_to_outcome[outcome.seq.value] = outcome
+            common_sequence_to_outcome[outcome.seq] = outcome
 
         return common_sequence_to_outcome
 

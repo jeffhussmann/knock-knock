@@ -27,7 +27,7 @@ class OutcomeStratifiedLengths:
         subcategory_lengths = defaultdict(Counter)
 
         for outcome in outcome_iter:
-            subcategory_lengths[outcome.category.value, outcome.subcategory.value][outcome.inferred_amplicon_length.value] += 1
+            subcategory_lengths[outcome.category, outcome.subcategory][outcome.inferred_amplicon_length] += 1
 
         self.subcategory_length_arrays = {}
 

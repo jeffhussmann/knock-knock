@@ -740,8 +740,6 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         else:
             raise ValueError
 
-        self.details = 'n/a'
-
         self.relevant_alignments = self.extension_chains_by_side['left']['parsimonious_alignments'] + \
                                    self.extension_chains_by_side['right']['parsimonious_alignments'] + \
                                    self.extension_chain_gap_covers
@@ -767,15 +765,12 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         return converted_edge
 
     def categorize(self):
-        self.Details = Details()
-
         if self.nonspecific_amplification:
             self.register_nonspecific_amplification()
 
         elif self.aligns_to_phiX:
             self.category = 'phiX'
             self.subcategory = 'phiX'
-            self.details = 'n/a'
 
             self.relevant_alignments = [self.longest_phiX_alignment]
 
@@ -871,7 +866,6 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         elif self.inversion:
             self.category = 'inversion'
             self.subcategory = 'inversion'
-            self.details = 'n/a'
 
             self.relevant_alignments = self.target_edge_alignments_list + self.inversion
 

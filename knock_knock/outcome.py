@@ -127,9 +127,15 @@ class Details:
     
     @classmethod
     def from_string(cls, string):
-        fields = string.split(';')
+        if string == '':
+            fields = []
+        else:
+            fields = string.split(';')
+
         pairs = [field.split('=') for field in fields]
+
         parsed = {tag: tag_to_Detail[tag](urllib.parse.unquote(value)) for tag, value in pairs}
+
         return cls(**parsed)
     
     def __str__(self):
@@ -156,7 +162,7 @@ class CategorizationRecord:
     category: str
     subcategory: str
     details: Details.from_string
-    seq: str
+    seq: str = ''
 
     delimiter = '\t'
 
@@ -173,8 +179,22 @@ class CategorizationRecord:
 
         return cls(*args)
 
+    @classmethod
+    def from_layout(cls, layout, **overrides):
+        args = [overrides[name] if name in overrides else getattr(layout, name) for name, _ in cls.parameters]
+        return cls(*args)
+
     def __str__(self):
-        return '\t'.join(str(getattr(self, name)) for name, _ in self.parameters)
+        fields = []
+
+        for name, parameter in self.parameters:
+            field = getattr(self, name)
+            if type(parameter.annotation) == type and not isinstance(field, parameter.annotation):
+                field = parameter.annotation(field)
+
+            fields.append(field)
+
+        return '\t'.join(str(field) for field in fields)
 
 signature = inspect.signature(CategorizationRecord.__init__)
 CategorizationRecord.parameters = list(signature.parameters.items())[1:]

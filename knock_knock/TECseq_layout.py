@@ -81,9 +81,6 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         return self.minimal_cover_by_side('left')
 
     def categorize(self):
-        self.details = 'n/a'
-        self.outcome = None
-
         if self.nonspecific_amplification:
             self.register_nonspecific_amplification()
 
@@ -117,7 +114,6 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         else:
             self.category = 'uncategorized'
             self.subcategory = 'uncategorized'
-            self.details = 'n/a'
 
             self.relevant_alignments = self.uncategorized_relevant_alignments
 
@@ -302,16 +298,12 @@ class NoOverlapPairLayout(Layout):
         self.category = self.concordant_nonoverlapping['category']
         self.subcategory = self.concordant_nonoverlapping['subcategory']
 
-        self.details = 'n/a'
-
         self.relevant_alignments = {
             'R1': R1.target_edge_alignments_list + [R1 for R1, R2 in self.concordant_nonoverlapping['pairs']],
             'R2': [R2 for R1, R2 in self.concordant_nonoverlapping['pairs']],
         }
 
     def categorize(self):
-        self.details = 'n/a'
-        self.outcome = None
         self.relevant_alignments = self.alignments
 
         if self.concordant_nonoverlapping:

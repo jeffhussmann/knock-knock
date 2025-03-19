@@ -176,10 +176,6 @@ class Experiment:
     def length_to_store_unknown(self):
         return int(self.max_relevant_length * 1.05)
 
-    @memoized_property
-    def Outcome(self):
-        return knock_knock.outcome.Outcome_binder(self.categorizer)
-
     def load_description(self):
         sample_sheet = load_sample_sheet(self.base_dir, self.batch_name)
         return sample_sheet[self.sample_name]
@@ -715,7 +711,7 @@ class Experiment:
     
     def record_sanitized_category_names(self):
         sanitized_to_original = {}
-        for cat, subcats, Details in self.categorizer.category_order:
+        for cat, subcats in self.categorizer.category_order:
             sanitized_string = self.categorizer.outcome_to_sanitized_string(cat)
             sanitized_to_original[sanitized_string] = cat
             for subcat in subcats:
@@ -788,7 +784,7 @@ class Experiment:
 
                 outcome_to_qnames[layout.category, layout.subcategory].append(name)
 
-                outcome = self.Outcome.from_layout(layout,
+                outcome = knock_knock.outcome.CategorizationRecord.from_layout(layout,
                                                    query_name=name,
                                                    Q30_fraction=read.Q30_fraction,
                                                    mean_Q=read.mean_Q,
@@ -1060,7 +1056,7 @@ class Experiment:
                 if line.startswith('##'):
                     continue
 
-                outcome = self.Outcome.from_string(line)
+                outcome = knock_knock.outcome.CategorizationRecord.from_string(line)
 
                 yield outcome
 
