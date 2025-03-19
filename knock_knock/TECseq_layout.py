@@ -60,6 +60,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         ),
         ('nonspecific amplification',
             ('hg38',
+             'mm10',
              'primer dimer',
              'short unknown',
             ),
