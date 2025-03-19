@@ -26,6 +26,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         ),
         ('nonspecific amplification',
             ('hg38',
+             'mm10',
              'primer dimer',
              'short unknown',
             ),
@@ -135,20 +136,8 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
         return plot_parameters
 
-class NoOverlapPairLayout(Layout):
+class NoOverlapPairLayout(Layout, knock_knock.layout.NoOverlapPairCategorizer):
     individual_layout_class = Layout
-
-    def __init__(self, alignments, target_info):
-        self.alignments = alignments
-        self.target_info = target_info
-        self._flipped = False
-
-        self.layouts = {
-            'R1': type(self).individual_layout_class(alignments['R1'], target_info),
-            'R2': type(self).individual_layout_class(alignments['R2'], target_info, flipped=True),
-        }
-
-        self._inferred_amplicon_length = -1
 
     @property
     def inferred_amplicon_length(self):
@@ -329,12 +318,10 @@ class NoOverlapPairLayout(Layout):
             self.category = 'uncategorized'
             self.subcategory = 'uncategorized'
 
-        if self.outcome is not None:
-            # Translate positions to be relative to a registered anchor
-            # on the target sequence.
-            self.details = str(self.outcome.perform_anchor_shift(self.target_info.anchor))
+        self.Details = self.Details.perform_anchor_shift(self.target_info.anchor)
+        self.details = str(self.Details)
 
-        return self.category, self.subcategory, self.details, self.outcome
+        return self.category, self.subcategory, self.details, self.Details
 
     def plot(self,
              relevant=True,

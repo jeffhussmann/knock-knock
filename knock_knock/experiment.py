@@ -290,8 +290,6 @@ class Experiment:
             'dir': outcome_dir,
             'query_names': outcome_dir / 'qnames.txt',
             'no_overlap_query_names': outcome_dir / 'no_overlap_qnames.txt',
-            'special_alignments': outcome_dir / 'special_alignments.bam',
-            'filtered_cell_special_alignments': outcome_dir / 'filtered_cell_special_alignments.bam',
             'filtered_cell_bam': outcome_dir / 'filtered_cell_alignments.bam',
             'filtered_cell_bam_by_name': outcome_dir / 'filtered_cell_alignments.by_name.bam',
             'first_example': outcome_dir / 'first_examples.png',

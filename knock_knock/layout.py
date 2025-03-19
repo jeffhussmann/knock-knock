@@ -531,6 +531,21 @@ class Categorizer:
             
         return edge_al
 
+class NoOverlapPairCategorizer(Categorizer):
+    def __init__(self, alignments, target_info):
+        self.alignments = alignments
+        self.target_info = target_info
+        self._flipped = False
+
+        self.layouts = {
+            'R1': type(self).individual_layout_class(alignments['R1'], target_info),
+            'R2': type(self).individual_layout_class(alignments['R2'], target_info, flipped=True),
+        }
+
+        self._inferred_amplicon_length = -1
+
+        self.Details = knock_knock.outcome.Details()
+
 class Layout(Categorizer):
     category_order = [
         ('WT',

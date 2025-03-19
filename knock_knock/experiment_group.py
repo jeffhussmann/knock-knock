@@ -37,7 +37,6 @@ class ExperimentGroup:
         self.fns = {
             'common_sequences_dir': self.results_dir / 'common_sequences',
             'common_sequence_outcomes': self.results_dir / 'common_sequences' / 'common_sequence_outcomes.txt',
-            'common_sequence_special_alignments': self.results_dir / 'common_sequences' / 'all_special_alignments.bam',
 
             'total_outcome_counts': self.results_dir / 'total_outcome_counts.txt',
             'outcome_counts': self.results_dir  / 'outcome_counts.npz',
@@ -67,23 +66,23 @@ class ExperimentGroup:
             pool = multiprocessing.Pool(num_processes, maxtasksperchild=1, initializer=os.nice, initargs=(NICENESS,))
 
         with pool:
-            logger.info('Preprocessing')
+            #logger.info('Preprocessing')
 
-            args = [(type(self), self.group_args, sample_name, 'preprocess') for sample_name in self.sample_names]
-            pool.starmap(run_stage, args)
+            #args = [(type(self), self.group_args, sample_name, 'preprocess') for sample_name in self.sample_names]
+            #pool.starmap(run_stage, args)
 
-            self.make_common_sequences()
+            #self.make_common_sequences()
 
-            for stage in [
-                'align',
-                'categorize',
-            ]:
+            #for stage in [
+            #    'align',
+            #    'categorize',
+            #]:
 
-                logger.info(f'Processing common sequences, stage {stage}')
-                args = [(type(self), self.group_args, chunk_exp_name, stage) for chunk_exp_name in self.common_sequence_chunk_exp_names]
-                pool.starmap(run_stage, args)
+            #    logger.info(f'Processing common sequences, stage {stage}')
+            #    args = [(type(self), self.group_args, chunk_exp_name, stage) for chunk_exp_name in self.common_sequence_chunk_exp_names]
+            #    pool.starmap(run_stage, args)
 
-            self.merge_common_sequence_outcomes()
+            #self.merge_common_sequence_outcomes()
 
             stages = [
                 'align',
@@ -164,16 +163,6 @@ class ExperimentGroup:
     @memoized_property
     def common_sequence_to_common_name(self):
         return utilities.reverse_dictionary(self.common_name_to_common_sequence)
-
-    @memoized_property
-    def common_name_to_special_alignment(self):
-        name_to_al = {}
-
-        if self.fns['common_sequence_special_alignments'].exists():
-            for al in pysam.AlignmentFile(self.fns['common_sequence_special_alignments']):
-                name_to_al[al.query_name] = al
-
-        return name_to_al
 
     @memoized_property
     def common_sequence_to_outcome(self):

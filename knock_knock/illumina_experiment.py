@@ -39,7 +39,10 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
         self.sequencing_primers = {'R1': R1, 'R2': R2}
 
-        self.reverse_complement = bool(self.description.get('reverse_complement', False))
+        if knock_knock.utilities.is_one_sided(self.description.get('experiment_type')):
+            self.reverse_complement = True
+        else:
+            self.reverse_complement = bool(self.description.get('reverse_complement', False))
 
         self.x_tick_multiple = 100
 

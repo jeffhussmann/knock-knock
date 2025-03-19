@@ -179,6 +179,9 @@ class ReadDiagram:
 
         if isinstance(self.alignments, dict):
             self.R2_alignments, _ = clean_up_alignments(self.alignments['R2'])
+            if len(self.R2_alignments) == 0 and len(self.alignments['R2']) > 0:
+                self.R2_alignments = self.alignments['R2']
+
             self.alignments, _ = clean_up_alignments(self.alignments['R1'])
         else:
             self.alignments, self.all_alignments = clean_up_alignments(self.alignments)

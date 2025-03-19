@@ -15,6 +15,10 @@ class Detail:
     def undo_anchor_shift(self, anchor):
         return self.perform_anchor_shift(-anchor)
 
+    @classmethod
+    def from_string(cls, string):
+        return cls(string)
+
 def DetailList_factory(SpecificDetail):
     delimiter = ';'
 
@@ -84,7 +88,7 @@ class Int(int, Detail):
 
 class AnchoredInt(Int):
     def perform_anchor_shift(self, anchor):
-        return type(self)(self.value - anchor)
+        return type(self)(self - anchor)
 
 class FormattedFloat(float):
     def __str__(self):
@@ -134,7 +138,7 @@ class Details:
 
         pairs = [field.split('=') for field in fields]
 
-        parsed = {tag: tag_to_Detail[tag](urllib.parse.unquote(value)) for tag, value in pairs}
+        parsed = {tag: tag_to_Detail[tag].from_string(urllib.parse.unquote(value)) for tag, value in pairs}
 
         return cls(**parsed)
     
