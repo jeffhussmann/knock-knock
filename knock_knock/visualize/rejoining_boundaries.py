@@ -11,6 +11,7 @@ import hits.utilities
 import knock_knock.outcome
 import knock_knock.pegRNAs
 import knock_knock.target_info
+import knock_knock.TECseq_layout
 
 memoized_property = hits.utilities.memoized_property
 
@@ -175,6 +176,10 @@ class EfficientBoundaryProperties:
 
             if c == 'intended edit':
                 pegRNA_coord = last_HA_RT_nt_in_pegRNA
+            elif c == 'RTed sequence':
+                outcome = knock_knock.TECseq_layout.EdgeMismatchOutcome.from_string(d)
+                pegRNA_coord = outcome.undo_anchor_shift(self.target_info.anchor).edge_outcome.edge
+
             else:
                 ur_outcome = knock_knock.prime_editing_layout.UnintendedRejoiningOutcome.from_string(d)
                 pegRNA_coord = ur_outcome.edges[self.target_info.pegRNA_side]
@@ -205,6 +210,11 @@ class EfficientBoundaryProperties:
 
             if c == 'intended edit':
                 target_coord = first_nt_after_HA_RT_in_genome
+            elif c == 'targeted genomic sequence':
+                outcome = knock_knock.TECseq_layout.EdgeMismatchOutcome.from_string(d)
+                target_coord = outcome.undo_anchor_shift(self.target_info.anchor).edge_outcome.edge
+            elif c == 'RTed sequence':
+                target_coord = 0
             else:
                 ur_outcome = knock_knock.prime_editing_layout.UnintendedRejoiningOutcome.from_string(d)
                 target_coord = ur_outcome.edges[self.target_info.non_pegRNA_side]
