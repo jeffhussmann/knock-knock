@@ -142,7 +142,7 @@ effectors = {
 }
 
 effector_aliases = {
-    'AsCas12a': {'Cpf1', 'enAsCas12a'},
+    'AsCas12a': {'Cpf1', 'enAsCas12a', 'enCas12a'},
 }
 
 for main_name, aliases in effector_aliases.items():
