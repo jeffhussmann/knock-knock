@@ -346,7 +346,7 @@ class Experiment:
 
         counts = Counter()
         for outcome in self.outcome_iter():
-            counts[outcome.category, outcome.subcategory, outcome.details] += 1
+            counts[outcome.category, outcome.subcategory, str(outcome.details)] += 1
 
         counts = pd.Series(counts, dtype=int).sort_values(ascending=False)
         counts.to_csv(counts_fn, mode='a', sep='\t', header=False)

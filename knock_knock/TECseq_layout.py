@@ -46,6 +46,21 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         return self.read_length
 
     @memoized_property
+    def gap_covering_alignments(self):
+        return []
+
+    @memoized_property
+    def partial_gap_perfect_alignments(self):
+        return []
+
+    def realign_edges_to_primers(self, read_side):
+        return None
+
+    @memoized_property
+    def perfect_right_edge_alignment(self):
+        return None
+
+    @memoized_property
     def primer_alignments(self):
         primer_alignments = super().primer_alignments
         primer_alignments['right'] = None

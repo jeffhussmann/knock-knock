@@ -283,6 +283,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
                                                    mean_Q=R1.mean_Q,
                                                    UMI_seq=UMI_seq,
                                                    UMI_qual=UMI_qual,
+                                                   seq='',
                                                   )
                 fh.write(f'{outcome}\n')
 

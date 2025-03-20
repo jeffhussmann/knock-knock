@@ -171,7 +171,6 @@ class Layout(layout.Categorizer):
     def __init__(self, alignments, target_info, error_corrected=False, mode='illumina', flipped=False):
         super().__init__(alignments, target_info)
 
-        self.special_alignment = None
         self.ins_size_to_split_at = 1
         self.del_size_to_split_at = 1
 

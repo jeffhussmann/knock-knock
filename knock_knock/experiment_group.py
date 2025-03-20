@@ -66,23 +66,23 @@ class ExperimentGroup:
             pool = multiprocessing.Pool(num_processes, maxtasksperchild=1, initializer=os.nice, initargs=(NICENESS,))
 
         with pool:
-            #logger.info('Preprocessing')
+            logger.info('Preprocessing')
 
-            #args = [(type(self), self.group_args, sample_name, 'preprocess') for sample_name in self.sample_names]
-            #pool.starmap(run_stage, args)
+            args = [(type(self), self.group_args, sample_name, 'preprocess') for sample_name in self.sample_names]
+            pool.starmap(run_stage, args)
 
-            #self.make_common_sequences()
+            self.make_common_sequences()
 
-            #for stage in [
-            #    'align',
-            #    'categorize',
-            #]:
+            for stage in [
+                'align',
+                'categorize',
+            ]:
 
-            #    logger.info(f'Processing common sequences, stage {stage}')
-            #    args = [(type(self), self.group_args, chunk_exp_name, stage) for chunk_exp_name in self.common_sequence_chunk_exp_names]
-            #    pool.starmap(run_stage, args)
+                logger.info(f'Processing common sequences, stage {stage}')
+                args = [(type(self), self.group_args, chunk_exp_name, stage) for chunk_exp_name in self.common_sequence_chunk_exp_names]
+                pool.starmap(run_stage, args)
 
-            #self.merge_common_sequence_outcomes()
+            self.merge_common_sequence_outcomes()
 
             stages = [
                 'align',
