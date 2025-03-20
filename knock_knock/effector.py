@@ -134,6 +134,9 @@ effector_details = {
 
     'sRGN3.1': ('NNGG', 3, (-4, -4)),
     'evoCjCas9': ('NNNNNNN', 3, (-4, -4)),
+    
+    'SpCas9_RY': ('NNN', 3, (-4, -4)),
+    'SpCas9H840A_RY': ('NNN', 3, (-4, None)),
 }
 
 effectors = {
