@@ -133,7 +133,6 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
             self.relevant_alignments = self.uncategorized_relevant_alignments
 
-        self.Details = self.Details.perform_anchor_shift(self.target_info.anchor)
         self.details = str(self.Details)
 
         self.categorized = True
@@ -333,7 +332,6 @@ class NoOverlapPairLayout(Layout, knock_knock.layout.NoOverlapPairCategorizer):
             self.category = 'uncategorized'
             self.subcategory = 'uncategorized'
 
-        self.Details = self.Details.perform_anchor_shift(self.target_info.anchor)
         self.details = str(self.Details)
 
         return self.category, self.subcategory, self.details, self.Details

@@ -155,8 +155,9 @@ class ExperimentGroup:
     def common_name_to_common_sequence(self):
         name_to_seq = {}
 
-        for outcome in self.common_sequence_outcomes:
-            name_to_seq[outcome.query_name] = outcome.seq
+        for exp in self.common_sequence_chunk_exps():
+            for read in exp.reads_by_type(exp.preprocessed_read_type):
+                name_to_seq[read.name] = read.seq
 
         return name_to_seq
 
@@ -167,8 +168,10 @@ class ExperimentGroup:
     @memoized_property
     def common_sequence_to_outcome(self):
         common_sequence_to_outcome = {}
+
         for outcome in self.common_sequence_outcomes:
-            common_sequence_to_outcome[outcome.seq] = outcome
+            seq = self.common_name_to_common_sequence[outcome.query_name]
+            common_sequence_to_outcome[seq] = outcome
 
         return common_sequence_to_outcome
 
@@ -189,11 +192,6 @@ class ExperimentGroup:
             return chunk
 
         return name_to_chunk
-
-    def get_common_seq_alignments(self, seq):
-        name = self.common_sequence_to_common_name[seq]
-        als = self.get_read_alignments(name)
-        return als
 
     @memoized_property
     def common_sequence_to_alignments(self):
@@ -406,7 +404,7 @@ class ExperimentGroup:
 
         if min_reads is not None:
             # .sum() here handles if these are full conditions
-            conditions = [c for c in conditions if self.total_valid_reads.loc[c].sum() >= min_reads]
+            conditions = [c for c in conditions if self.total_reads().loc[c].sum() >= min_reads]
 
         columns_to_extract = [
             (condition_labels[condition], [condition], condition_colors[condition])

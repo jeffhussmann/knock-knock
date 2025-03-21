@@ -173,9 +173,14 @@ class EfficientBoundaryProperties:
         def csd_to_pegRNA_coords(csd):
             c, s, d = csd
 
+            details = knock_knock.outcome.Details.from_string(d)
+
             if c == 'intended edit':
                 pegRNA_coord = last_HA_RT_nt_in_pegRNA
+            elif c == 'RTed sequence':
+                pegRNA_coord = details.pegRNA_edge
             else:
+                raise NotImplementedError
                 ur_outcome = knock_knock.prime_editing_layout.UnintendedRejoiningOutcome.from_string(d)
                 pegRNA_coord = ur_outcome.edges[self.target_info.pegRNA_side]
 
@@ -205,7 +210,10 @@ class EfficientBoundaryProperties:
 
             if c == 'intended edit':
                 target_coord = first_nt_after_HA_RT_in_genome
+            elif c == 'RTed sequence':
+                target_coord = 0
             else:
+                raise NotImplementedError
                 ur_outcome = knock_knock.prime_editing_layout.UnintendedRejoiningOutcome.from_string(d)
                 target_coord = ur_outcome.edges[self.target_info.non_pegRNA_side]
 

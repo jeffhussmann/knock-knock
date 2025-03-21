@@ -1810,9 +1810,19 @@ class Layout(layout.Categorizer):
             covers = True
 
         else:
-            HA_RT = ti.features[ti.target, f'HA_RT_{ti.pegRNA.name}']
-            HA_PBS = ti.features[ti.target, f'HA_PBS_{ti.pegRNA.name}']
-            need_to_cover = interval.DisjointIntervals([interval.Interval.from_feature(f) for f in [HA_RT, HA_PBS]])
+            HA_names = [
+                f'HA_PBS_{ti.pegRNA.name}',
+                f'HA_RT_{ti.pegRNA.name}',
+            ]
+
+            intervals = []
+
+            for HA_name in HA_names:
+                HA_feature = ti.features.get((ti.target, HA_name))
+                if HA_feature is not None:
+                    intervals.append(interval.Interval.from_feature(HA_feature))
+
+            need_to_cover = interval.DisjointIntervals(intervals)
 
             chain_als = self.extension_chains_by_side['left']['alignments']
             chain_target_als = [chain_als[key] for key in ['first target', 'second target'] if key in chain_als]
@@ -1913,7 +1923,7 @@ class Layout(layout.Categorizer):
                 self.subcategory = 'partial incorporation'
 
         self.Details = Details(programmed_substitution_read_bases=self.pegRNA_SNV_string,
-                               non_programmed_target_mismatches=self.non_pegRNA_mismatches,
+                               mismatches=self.non_pegRNA_mismatches,
                                non_programmed_edit_mismatches=self.non_programmed_edit_mismatches,
                                deletions=deletions,
                                insertions=insertions,
@@ -2031,7 +2041,7 @@ class Layout(layout.Categorizer):
             deletions.append(self.target_info.pegRNA_programmed_deletion)
 
         self.Details = Details(programmed_substitution_read_bases=self.pegRNA_SNV_string,
-                               non_programmed_target_mismatches=self.non_pegRNA_mismatches,
+                               mismatches=self.non_pegRNA_mismatches,
                                non_programmed_edit_mismatches=self.non_programmed_edit_mismatches,
                                deletions=deletions,
                                insertions=insertions,
@@ -2385,7 +2395,6 @@ class Layout(layout.Categorizer):
 
         self.relevant_alignments = sam.make_nonredundant(self.relevant_alignments)
 
-        self.Details = self.Details.perform_anchor_shift(self.target_info.anchor)
         self.details = str(self.Details)
 
         self.categorized = True

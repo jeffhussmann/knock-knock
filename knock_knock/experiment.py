@@ -783,12 +783,12 @@ class Experiment:
                 outcome_to_qnames[layout.category, layout.subcategory].append(name)
 
                 outcome = knock_knock.outcome.CategorizationRecord.from_layout(layout,
-                                                   query_name=name,
-                                                   Q30_fraction=read.Q30_fraction,
-                                                   mean_Q=read.mean_Q,
-                                                   UMI_seq=UMI_seq,
-                                                   UMI_qual=UMI_qual,
-                                                  )
+                    query_name=name,
+                    Q30_fraction=read.Q30_fraction,
+                    mean_Q=read.mean_Q,
+                    UMI_seq=UMI_seq,
+                    UMI_qual=UMI_qual,
+                )
                 outcome_fh.write(f'{outcome}\n')
 
         # To make plotting easier, for each outcome, make a file listing all of

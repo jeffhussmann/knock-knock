@@ -1,5 +1,6 @@
 import inspect
 import urllib.parse
+from collections import OrderedDict
 from dataclasses import dataclass
 
 import numpy as np
@@ -23,7 +24,10 @@ def DetailList_factory(SpecificDetail):
     delimiter = ';'
 
     class DetailList(Detail):
-        def __init__(self, fields):
+        def __init__(self, fields=None):
+            if fields is None:
+                fields = []
+
             self.fields = []
 
             for field in fields:
@@ -48,7 +52,13 @@ def DetailList_factory(SpecificDetail):
         def perform_anchor_shift(self, anchor):
             shifted_fields = [field.perform_anchor_shift(anchor) for field in self.fields]
             return type(self)(shifted_fields)
-            
+
+        def __len__(self):
+            return len(self.fields)
+
+        def __getitem__(self, index):
+            return self.fields[index]
+
     return DetailList
 
 class DuplicationJunction(Detail):
@@ -99,10 +109,7 @@ class Str(str, Detail):
 
 Strs = DetailList_factory(Str)
 
-tag_to_Detail = {
-    'deletions': Deletions,
-    'insertions': Insertions,
-    'mismatches': Mismatches,
+tag_to_Detail = OrderedDict({
     'left_rejoining_edge': Int,
     'right_rejoining_edge': Int,
     'junction_microhomology_length': Int,
@@ -113,13 +120,18 @@ tag_to_Detail = {
     'duplication_junctions': DuplicationJunctions,
     'target_edge': AnchoredInt,
     'pegRNA_edge': Int,
-}
+    'deletions': Deletions,
+    'insertions': Insertions,
+    'mismatches': Mismatches,
+})
+
+tag_order = {tag: i for i, tag in enumerate(tag_to_Detail)}.__getitem__
 
 _safe_chars = r'#\{}()+-:|,'
 
-class Details:
+class Details(Detail):
     def __init__(self, **details):
-        self._tags = sorted(details)
+        self._tags = sorted(details, key=tag_order)
 
         for tag, value in details.items():
             _Detail = tag_to_Detail[tag]
@@ -155,18 +167,22 @@ class Details:
     def perform_anchor_shift(self, anchor):
         return type(self)(**{tag: getattr(self, tag).perform_anchor_shift(anchor) for tag in self._tags})
 
+    def __getitem__(self, tag):
+        return getattr(self, tag, tag_to_Detail[tag]())
+
+    __repr__ = __str__
+
 @dataclass
 class CategorizationRecord:
     query_name: str
     inferred_amplicon_length: int
     Q30_fraction: FormattedFloat
     mean_Q: FormattedFloat
-    UMI_seq: str
-    UMI_qual: str
     category: str
     subcategory: str
     details: Details.from_string
-    seq: str = ''
+    UMI_seq: str = ''
+    UMI_qual: str = ''
 
     delimiter = '\t'
 
@@ -242,17 +258,14 @@ def extract_deletion_boundaries(target_info,
     stops = np.zeros_like(fraction_removed)
 
     for (c, s, d), row in deletion_fractions.iterrows():
-        # Undo anchor shift to make coordinates relative to full target sequence.
-        if c == 'deletion':
-            deletion = DeletionOutcome.from_string(d).undo_anchor_shift(target_info.anchor).deletion
-        elif c == 'edit + indel':
-            deletions = ProgrammedEditOutcome.from_string(d).undo_anchor_shift(target_info.anchor).deletions
-            if len(deletions) != 1:
-                raise NotImplementedError
-            else:
-                deletion = deletions[0]
+        details = knock_knock.outcome.Details.from_string(d)
+
+        deletions = details['deletions']
+
+        if len(deletions) == 1:
+            deletion = deletions[0]
         else:
-            raise ValueError
+            raise NotImplementedError
         
         per_possible_start = row.values / len(deletion.starts_ats)
         

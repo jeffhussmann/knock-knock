@@ -19,6 +19,8 @@ import knock_knock.pegRNAs
 from knock_knock.target_info import degenerate_indel_from_string
 from knock_knock.outcome import *
 
+import knock_knock.outcome
+
 @dataclass
 class StackedDiagrams:
     outcome_order: list
@@ -552,13 +554,11 @@ class StackedDiagrams:
                              clip_on=False,
                             )
 
-    def draw_non_programmed_mismatches(self, y, details, source_name):
+    def draw_non_programmed_mismatches(self, y, mismatches, source_name):
         ti = self.target_infos[source_name]
         offset = self.offsets[source_name]
         transform_seq = self.transform_seqs[source_name]
         window_left, window_right = self.windows[source_name]
-
-        mismatches = MismatchOutcome.from_string(details).undo_anchor_shift(ti.anchor).snvs
 
         mismatch_xs = set()
 
@@ -593,7 +593,7 @@ class StackedDiagrams:
             right = position - offset + 0.5
             self.draw_rect(source_name, left, right, bottom, top, alpha, color=color)
 
-    def draw_programmed_edit(self, y, programmed_edit_outcome, source_name):
+    def draw_programmed_edit(self, y, details, source_name):
         ti = self.target_infos[source_name]
         transform_seq = self.transform_seqs[source_name]
         window_left, window_right = self.windows[source_name]
@@ -612,7 +612,7 @@ class StackedDiagrams:
             observed_SNP_idxs = set()
 
             SNV_names = sorted(ti.pegRNA_SNVs[ti.target])
-            for SNV_name, read_base in zip(SNV_names, programmed_edit_outcome.SNV_read_bases):
+            for SNV_name, read_base in zip(SNV_names, details['programmed_substitution_read_bases']):
                 position = ti.pegRNA_SNVs[ti.target][SNV_name]['position']
 
                 pegRNA_bases = set()
@@ -691,30 +691,27 @@ class StackedDiagrams:
                     end = i_to_p[block[-1]] - offset
                     self.draw_rect(source_name, start - x_buffer, end + x_buffer, bottom, top, 0.5, fill=False)
 
-        if len(programmed_edit_outcome.deletions) == 0:
+        if len(details['deletions']) == 0:
             bottom, top = self.get_bottom_and_top(y)
             self.draw_rect(source_name, window_left - 0.5, window_right + 0.5, bottom, top, self.block_alpha)
         else:
-            if len(programmed_edit_outcome.deletions) > 1:
-                logging.warning(f'Multiple deletions in {programmed_edit_outcome}')
+            if len(details['deletions']) > 1:
+                logging.warning(f'Multiple deletions in {details}')
 
-            for deletion in programmed_edit_outcome.deletions:
-                deletion = DeletionOutcome(deletion).undo_anchor_shift(ti.anchor).deletion
+            for deletion in details['deletions']:
                 self.draw_deletion(y, deletion, source_name, color='black', draw_MH=False)
 
-        if len(programmed_edit_outcome.insertions) == 0:
+        if len(details['insertions']) == 0:
             pass
         else:
-            if len(programmed_edit_outcome.insertions) > 1:
-                print(f'Warning: multiple insertions in {programmed_edit_outcome}')
+            if len(details['insertions']) > 1:
+                print(f'Warning: multiple insertions in {details}')
 
-            for insertion in programmed_edit_outcome.insertions:
-                insertion = InsertionOutcome(insertion).undo_anchor_shift(ti.anchor).insertion
+            for insertion in details['insertions']:
                 insertion = ti.expand_degenerate_indel(insertion)
                 self.draw_insertion(y, insertion, source_name, draw_sequence=True)
 
-        non_programmed_mismatches_string = str(programmed_edit_outcome.non_programmed_target_mismatches_outcome)
-        mismatch_xs = self.draw_non_programmed_mismatches(y, non_programmed_mismatches_string, source_name)
+        mismatch_xs = self.draw_non_programmed_mismatches(y, details['mismatches'], source_name)
         
         if self.draw_all_sequence:
             self.draw_sequence(y, source_name, xs_to_skip=SNP_xs | mismatch_xs, alpha=self.sequence_alpha)
@@ -1088,9 +1085,11 @@ class StackedDiagrams:
     def draw_outcomes(self):
         for i, (source_name, category, subcategory, details) in enumerate(self.outcome_order):
             ti = self.target_infos[source_name]
+
+            details = knock_knock.outcome.Details.from_string(details)
+
             transform_seq = self.transform_seqs[source_name]
             window_left, window_right = self.windows[source_name]
-            offset = self.offsets[source_name]
             y = self.num_outcomes - i - 1
 
             bottom, top = self.get_bottom_and_top(y)
@@ -1104,22 +1103,29 @@ class StackedDiagrams:
                (category == 'simple indel' and subcategory.startswith('deletion')) or \
                (category == 'wild type' and subcategory == 'short indel far from cut' and details != 'collapsed' and degenerate_indel_from_string(details).kind == 'D'):
 
-                deletion = DeletionOutcome.from_string(details).undo_anchor_shift(ti.anchor).deletion
+                deletion = details['deletions'][0]
                 deletion = ti.expand_degenerate_indel(deletion)
 
                 xs_to_skip = self.draw_deletion(y, deletion, source_name, background_color=background_color)
+
+                mismatch_xs = self.draw_non_programmed_mismatches(y, details['mismatches'], source_name)
+
+                xs_to_skip.update(mismatch_xs)
+
                 if self.draw_all_sequence:
                     self.draw_sequence(y, source_name, xs_to_skip, alpha=self.sequence_alpha)
             
             elif category == 'insertion' or (category == 'simple indel' and subcategory.startswith('insertion')):
-                insertion = InsertionOutcome.from_string(details).undo_anchor_shift(ti.anchor).insertion
+                insertion = details['insertions'][0]
                 insertion = ti.expand_degenerate_indel(insertion)
 
                 self.draw_rect(source_name, window_left - 0.5, window_right + 0.5, bottom, top, self.block_alpha, color=background_color)
                 self.draw_insertion(y, insertion, source_name)
 
+                mismatch_xs = self.draw_non_programmed_mismatches(y, details['mismatches'], source_name)
+
                 if self.draw_all_sequence:
-                    self.draw_sequence(y, source_name, alpha=self.sequence_alpha)
+                    self.draw_sequence(y, source_name, mismatch_xs, alpha=self.sequence_alpha)
 
             elif category == 'insertion with deletion':
                 outcome = InsertionWithDeletionOutcome.from_string(details).undo_anchor_shift(ti.anchor)
@@ -1131,7 +1137,7 @@ class StackedDiagrams:
             elif category == 'mismatches' or (category == 'wild type' and subcategory == 'mismatches'):
                 self.draw_rect(source_name, window_left - 0.5, window_right + 0.5, bottom, top, self.block_alpha)
 
-                mismatch_xs = self.draw_non_programmed_mismatches(y, details, source_name)
+                mismatch_xs = self.draw_non_programmed_mismatches(y, details['mismatches'], source_name)
 
                 self.highlight_programmed_edit_positions(y, source_name)
 
@@ -1211,12 +1217,11 @@ class StackedDiagrams:
             elif category in ['intended edit', 'partial replacement', 'partial edit'] or \
                  (category == 'edit + indel' and subcategory == 'deletion'):
 
-                self.draw_programmed_edit(y, ProgrammedEditOutcome.from_string(details), source_name)
+                self.draw_programmed_edit(y, details, source_name)
 
             elif category == 'duplication' and subcategory == 'simple':
 
-                duplication_outcome = DuplicationOutcome.from_string(details).undo_anchor_shift(ti.anchor)
-                self.draw_duplication(y, duplication_outcome, source_name)
+                self.draw_duplication(y, details['duplication_junctions'], source_name)
                 
             else:
                 label = f'{category}, {subcategory}, {details}'
@@ -2203,7 +2208,7 @@ def make_deletion_boundaries_figure(target_info,
 
     return grid
 
-def restrict_mismatches_to_window(csd, window_interval, anchor):
+def restrict_mismatches_to_window(csd, window_interval):
     ''' Return a transformed version of csd in which all non-programmed mismatches
     outside of window_interval have been removed.
 
@@ -2212,62 +2217,42 @@ def restrict_mismatches_to_window(csd, window_interval, anchor):
     ''' 
 
     c, s, d = csd
-    
-    if (c, s) == ('wild type', 'mismatches'):
-        outcome = knock_knock.outcome.MismatchOutcome.from_string(d).undo_anchor_shift(anchor)
-        snvs = outcome.snvs.snvs
-    
-    elif (c, s) == ('intended edit', 'substitution') or \
-         (c, s) == ('intended edit', 'insertion') or \
-         (c, s) == ('intended edit', 'deletion') or \
-         (c, s) == ('intended edit', 'replacement') or \
-         (c, s) == ('intended edit', 'combination') or \
-         (c, s) == ('partial edit', 'partial incorporation'):
 
-        outcome = knock_knock.outcome.ProgrammedEditOutcome.from_string(d).undo_anchor_shift(anchor)
-        snvs = outcome.non_programmed_target_mismatches_outcome.snvs.snvs
+    details = knock_knock.outcome.Details.from_string(d)
+    
+    if (c, s) in {
+        ('wild type', 'mismatches'),
+        ('intended edit', 'substitution'),
+        ('intended edit', 'insertion'),
+        ('intended edit', 'deletion'),
+        ('intended edit', 'replacement'),
+        ('intended edit', 'combination'),
+        ('partial edit', 'partial incorporation'),
+    }:
+
+        mismatches = details['mismatches']
         
     else:
         return c, s, d
     
-    SNVs_in_window = knock_knock.target_info.SNVs([snv for snv in snvs if snv.position in window_interval])
-    
-    restricted_mismatch_outcome = knock_knock.outcome.MismatchOutcome(SNVs_in_window)
-    
-    if (c, s) == ('wild type', 'mismatches'):
-        restricted_outcome = restricted_mismatch_outcome
-        if len(restricted_mismatch_outcome.snvs.snvs) == 0:
-            restricted_s = 'clean'
-        else:
-            restricted_s = s
-    
-    elif (c, s) == ('intended edit', 'substitution') or \
-         (c, s) == ('intended edit', 'insertion') or \
-         (c, s) == ('intended edit', 'deletion') or \
-         (c, s) == ('intended edit', 'replacement') or \
-         (c, s) == ('intended edit', 'combination') or \
-         (c, s) == ('partial edit', 'partial incorporation'):
-        
-        restricted_outcome = knock_knock.outcome.ProgrammedEditOutcome(outcome.SNV_read_bases,
-                                                                       restricted_mismatch_outcome,
-                                                                       outcome.non_programmed_edit_mismatches_outcome,
-                                                                       outcome.indels,
-                                                                      )
-        restricted_s = s
-                                                                         
-    restricted_outcome = restricted_outcome.perform_anchor_shift(anchor)
+    mismatches_in_window = knock_knock.target_info.Mismatches([m for m in mismatches if m.position in window_interval])
 
+    details.mismatches = mismatches_in_window
+    
+    if (c, s) == ('wild type', 'mismatches') and len(mismatches_in_window) == 0:
+        restricted_s = 'clean'
+    else:
+        restricted_s = s
+    
     restricted_c = c
     
-    if (restricted_c, restricted_s) == ('wild type', 'clean'):
-        restricted_d = 'n/a'
-    else:
-        restricted_d = str(restricted_outcome)
+    restricted_d = str(details)
     
     return restricted_c, restricted_s, restricted_d
 
-def marginalize_over_mismatches_outside_window(outcome_fractions, window_interval, anchor):
-    outcome_fractions = outcome_fractions.groupby(by=lambda csd: restrict_mismatches_to_window(csd, window_interval, anchor)).sum()
+def marginalize_over_mismatches_outside_window(outcome_fractions, window_interval):
+    print(f'{window_interval=}')
+    outcome_fractions = outcome_fractions.groupby(by=lambda csd: restrict_mismatches_to_window(csd, window_interval)).sum()
     outcome_fractions.index = pd.MultiIndex.from_tuples(outcome_fractions.index, names=('category', 'subcategory', 'details'))
     return outcome_fractions
 
@@ -2370,11 +2355,11 @@ def make_partial_incorporation_figure(target_info,
         window_interval = hits.interval.Interval(ti.cut_after - window[1], ti.cut_after - window[0])
 
     if perform_marginalization_over_mismatches_outside_window:
-        outcome_fractions = marginalize_over_mismatches_outside_window(outcome_fractions, window_interval, target_info.anchor)
+        outcome_fractions = marginalize_over_mismatches_outside_window(outcome_fractions, window_interval)
 
     def mismatch_in_window(d):
-        SNVs = MismatchOutcome.from_string(d).undo_anchor_shift(ti.anchor).snvs
-        return any(p in window_interval for p in SNVs.positions)
+        details = knock_knock.outcome.Details.from_string(d).undo_anchor_shift(ti.anchor)
+        return any(p in window_interval for p in details['mismatches'].positions)
 
     def indel_in_window(d):
         if d == 'collapsed':

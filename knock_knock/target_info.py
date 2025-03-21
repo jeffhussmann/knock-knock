@@ -2228,7 +2228,9 @@ class Mismatch:
         return f'{self.position}{self.basecall}'
 
 class Mismatches:
-    def __init__(self, mismatches):
+    def __init__(self, mismatches=None):
+        if mismatches is None:
+            mismatches = []
         self.mismatches = sorted(mismatches, key=lambda mismatch: mismatch.position)
     
     def __str__(self):

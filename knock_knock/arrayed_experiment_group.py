@@ -877,18 +877,18 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
             
         for c, s, d  in self.outcome_fractions().index:
             if c in {'intended edit', 'partial replacement', 'partial edit'}:
-                Details = knock_knock.outcome.ProgrammedEdit.from_string(d).undo_anchor_shift(self.target_info.anchor)
+                details = knock_knock.outcome.Details.from_string(d)
 
                 if SNVs is not None:
-                    for SNV_name, read_base in zip(SNV_order, Details.programmed_substitution_read_bases):
+                    for SNV_name, read_base in zip(SNV_order, details.programmed_substitution_read_bases):
                         SNV = SNVs[SNV_name]
                         if read_base == SNV['alternative_base']:
                             outcomes_containing_pegRNA_programmed_edits[SNV_name].append((c, s, d))
 
-                if insertion is not None and insertion in Details.insertions:
+                if insertion is not None and insertion in details.insertions:
                     outcomes_containing_pegRNA_programmed_edits[str(insertion)].append((c, s, d))
 
-                if deletion is not None and deletion in Details.deletions:
+                if deletion is not None and deletion in details.deletions:
                     outcomes_containing_pegRNA_programmed_edits[str(deletion)].append((c, s, d))
 
         return outcomes_containing_pegRNA_programmed_edits

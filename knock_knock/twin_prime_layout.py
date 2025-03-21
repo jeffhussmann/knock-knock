@@ -623,7 +623,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                 raise ValueError
 
         self.Details = Details(programmed_substitution_read_bases=self.pegRNA_SNV_string,
-                               non_programmed_target_mismatches=self.non_pegRNA_mismatches,
+                               mismatches=self.non_pegRNA_mismatches,
                                non_programmed_edit_mismatches=self.non_programmed_edit_mismatches,
                                deletions=[],
                                insertions=[],
@@ -784,7 +784,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             self.category = 'intended edit'
             self.subcategory = 'deletion'
             self.Details = Details(programmed_substitution_read_bases=self.pegRNA_SNV_string,
-                                   non_programmed_target_mismatches=self.non_pegRNA_mismatches,
+                                   mismatches=self.non_pegRNA_mismatches,
                                    non_programmed_edit_mismatches=self.non_programmed_edit_mismatches,
                                    deletions=[self.target_info.pegRNA_programmed_deletion],
                                    insertions=[],
@@ -898,7 +898,6 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
         self.relevant_alignments = sam.make_nonredundant(self.relevant_alignments)
 
-        self.Details = self.Details.perform_anchor_shift(self.target_info.anchor)
         self.details = str(self.Details)
 
         self.categorized = True
