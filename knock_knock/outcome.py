@@ -262,19 +262,15 @@ def extract_deletion_boundaries(target_info,
 
         deletions = details['deletions']
 
-        if len(deletions) == 1:
-            deletion = deletions[0]
-        else:
-            raise NotImplementedError
-        
-        per_possible_start = row.values / len(deletion.starts_ats)
-        
-        for start, stop in zip(deletion.starts_ats, deletion.ends_ats):
-            deletion_slice = slice(start, stop + 1)
+        for deletion in deletions:
+            per_possible_start = row.values / len(deletion.starts_ats)
+            
+            for start, stop in zip(deletion.starts_ats, deletion.ends_ats):
+                deletion_slice = slice(start, stop + 1)
 
-            fraction_removed[deletion_slice] += per_possible_start
-            starts[start] += per_possible_start
-            stops[stop] += per_possible_start
+                fraction_removed[deletion_slice] += per_possible_start
+                starts[start] += per_possible_start
+                stops[stop] += per_possible_start
 
     fraction_removed = pd.DataFrame(fraction_removed, index=index, columns=columns)
     starts = pd.DataFrame(starts, index=index, columns=columns)
