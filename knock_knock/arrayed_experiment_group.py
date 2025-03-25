@@ -307,7 +307,7 @@ class Batch:
                     grouped[genome, protospacer][sgRNAs] = group.pegRNA_conversion_fractions_by_edit_description.T
 
         def by_position(description):
-            match = re.match('\+(\d+)(.+)', description)
+            match = re.match(r'\+(\d+)(.+)', description)
             return int(match.group(1)), match.group(2)
 
         def vectorized_by_position(columns):
