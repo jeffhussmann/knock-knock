@@ -35,6 +35,10 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             ('n/a',
             ),
         ),
+        ('phiX',
+            ('phiX',
+            ),
+        ),
         ('uncategorized',
             ('uncategorized',
             ),
@@ -99,6 +103,12 @@ class Layout(knock_knock.prime_editing_layout.Layout):
     def categorize(self):
         if self.nonspecific_amplification:
             self.register_nonspecific_amplification()
+
+        elif self.aligns_to_phiX:
+            self.category = 'phiX'
+            self.subcategory = 'phiX'
+
+            self.relevant_alignments = [self.longest_phiX_alignment]
 
         elif self.starts_at_expected_location and self.minimal_cover is not None:
             if self.minimal_cover == 'first target':
