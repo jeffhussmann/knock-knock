@@ -343,7 +343,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
         trimmed_reads = []
         too_short_outcomes = []
 
-        sequencing_primer_rc = hits.utilities.reverse_complement(adapters.primers[self.sequencing_primers['R1']]['R1'])
+        sequencing_primer_rc = hits.utilities.reverse_complement(adapters.primers[self.sequencing_primers['R2']]['R2'])
 
         for read in self.progress(self.reads, desc='Trimming reads'):
             try:

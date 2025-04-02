@@ -345,7 +345,7 @@ class ExperimentGroup:
             conditions = self.full_conditions
 
         if min_reads is not None:
-            conditions = [c for c in conditions if self.total_valid_reads.loc[c] >= min_reads]
+            conditions = [c for c in conditions if self.total_reads().loc[c] >= min_reads]
 
         if condition_colors is None:
             condition_colors = self.condition_colors(unique=unique_colors)
