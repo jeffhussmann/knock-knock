@@ -58,7 +58,48 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         return []
 
     def realign_edges_to_primers(self, read_side):
-        return None
+        if read_side == 3:
+            edge_al = None
+
+        else:
+            ti = self.target_info
+
+            buffer = 0
+
+            primer_feature = ti.primers_by_side_of_read['left']
+
+            primer_interval = hits.interval.Interval.from_feature(primer_feature)
+
+            if primer_feature.strand == '+':
+                primer_interval.end = primer_interval.end + buffer
+                alignment_type = 'fixed_start'
+            else:
+                primer_interval.start = primer_interval.start - buffer
+                alignment_type = 'fixed_end'
+
+            als = hits.sw.align_read(
+                self.read,
+                [(ti.target, ti.target_sequence)],
+                0,
+                ti.header,
+                alignment_type=alignment_type,
+                read_interval=hits.interval.Interval(0, len(primer_feature) + buffer),
+                ref_intervals={ti.target: primer_interval},
+                min_score_ratio=0.5,
+            )
+
+            als = [al for al in als if hits.sam.get_strand(al) == primer_feature.strand]
+
+            if len(als) == 1:
+
+                edge_al = als[0]
+
+                edge_al = hits.sw.extend_alignment(edge_al, ti.reference_sequence_bytes[ti.target])
+                
+            else:
+                edge_al = None
+
+        return edge_al
 
     @memoized_property
     def perfect_right_edge_alignment(self):
