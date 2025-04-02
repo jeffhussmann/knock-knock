@@ -683,6 +683,7 @@ class TargetInfo:
     @memoized_property
     def anchor(self):
         feature = self.features.get((self.target, 'anchor'))
+
         if feature is not None:
             return feature.start
         else:
@@ -2017,6 +2018,8 @@ def degenerate_indel_from_string(details_string):
             DegenerateIndel = DegenerateDeletion
         elif kind == 'I':
             DegenerateIndel = DegenerateInsertion
+        else:
+            raise ValueError(kind)
 
         return DegenerateIndel.from_string(details_string)
 

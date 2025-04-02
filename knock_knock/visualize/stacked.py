@@ -1101,7 +1101,7 @@ class StackedDiagrams:
                 
             if (category == 'deletion') or \
                (category == 'simple indel' and subcategory.startswith('deletion')) or \
-               (category == 'wild type' and subcategory == 'short indel far from cut' and details != 'collapsed' and degenerate_indel_from_string(details).kind == 'D'):
+               (category == 'wild type' and subcategory == 'short indel far from cut' and len(details['deletions']) == 1):
 
                 deletion = details['deletions'][0]
                 deletion = ti.expand_degenerate_indel(deletion)
@@ -2011,6 +2011,7 @@ class DiagramGrid:
 def make_deletion_boundaries_figure(target_info,
                                     outcome_fractions,
                                     deletion_boundaries_retriever,
+                                    plot_boundaries=True,
                                     frequency_cutoff=5e-4,
                                     conditions=None,
                                     condition_colors=None,
@@ -2022,6 +2023,7 @@ def make_deletion_boundaries_figure(target_info,
                                     show_log_scale=False,
                                     window=None,
                                     sort_by_condition=None,
+                                    perform_marginalization_over_mismatches_outside_window=True,
                                     **kwargs,
                                    ):
     ti = target_info
@@ -2040,56 +2042,6 @@ def make_deletion_boundaries_figure(target_info,
 
     if condition_labels is None:
         condition_labels = {}
-
-    outcome_fractions = outcome_fractions[conditions]
-
-    if 'deletion' in outcome_fractions.index.levels[0]:
-        deletions = outcome_fractions.xs('deletion', drop_level=False).groupby('details').sum()
-        deletions.index = pd.MultiIndex.from_tuples([('deletion', 'collapsed', details) for details in deletions.index])
-    else:
-        deletions = None
-
-    if 'insertion' in outcome_fractions.index.levels[0]:
-        insertions = outcome_fractions.xs('insertion', drop_level=False).groupby('details').sum()
-        insertions.index = pd.MultiIndex.from_tuples([('insertion', 'collapsed', details) for details in insertions.index])
-    else:
-        insertions = None
-
-    edit_plus_deletions = [
-        (c, s, d) for c, s, d in outcome_fractions.index
-        if (c, s) == ('edit + indel', 'deletion')
-    ] 
-
-    wild_type = [
-        (c, s, d) for c, s, d in outcome_fractions.index
-        if c == 'wild type'
-    ] 
-
-    to_concat = []
-
-    if include_simple_deletions and deletions is not None:
-        to_concat.append(deletions)
-
-    if include_edit_plus_deletions:
-        to_concat.append(outcome_fractions.loc[edit_plus_deletions])
-
-    if include_insertions and insertions is not None:
-        to_concat.append(insertions)
-
-    if include_wild_type:
-        to_concat.append(outcome_fractions.loc[wild_type])
-
-    outcome_fractions = pd.concat(to_concat)
-
-    outcomes = [
-        (c, s, d) for (c, s, d), f_row in outcome_fractions.iterrows()
-        if max(f_row) > frequency_cutoff
-    ]
-
-    if sort_by_condition is not None:
-        outcomes = outcome_fractions.loc[outcomes][sort_by_condition].sort_values(ascending=False).index
-    else:
-        outcomes = outcome_fractions.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
 
     color_overrides = {primer_name: 'grey' for primer_name in ti.primers}
 
@@ -2115,16 +2067,86 @@ def make_deletion_boundaries_figure(target_info,
             window = (ti.amplicon_interval.start - center, ti.amplicon_interval.end - center)
             
         window = (window[0] - 5, window[1] + 5)
+
+    if ti.protospacer_feature is None:
+        window_interval = hits.interval.Interval(ti.center_of_amplicon + window[0], ti.center_of_amplicon + window[1])
+    elif ti.protospacer_feature.strand == '+':
+        window_interval = hits.interval.Interval(ti.cut_after + window[0], ti.cut_after + window[1])
+    else:
+        window_interval = hits.interval.Interval(ti.cut_after - window[1], ti.cut_after - window[0])
+
+    outcome_fractions = outcome_fractions[conditions]
+
+    if 'deletion' in outcome_fractions.index.levels[0]:
+        deletions = outcome_fractions.xs('deletion', drop_level=False).groupby('details').sum()
+        deletions.index = pd.MultiIndex.from_tuples([('deletion', 'collapsed', details) for details in deletions.index])
+    else:
+        deletions = None
+
+    if 'insertion' in outcome_fractions.index.levels[0]:
+        insertions = outcome_fractions.xs('insertion', drop_level=False).groupby('details').sum()
+        insertions.index = pd.MultiIndex.from_tuples([('insertion', 'collapsed', details) for details in insertions.index])
+    else:
+        insertions = None
+
+    deletions = [
+        (c, s, d) for c, s, d in outcome_fractions.index
+        if c == 'deletion'
+    ] 
+
+    insertions = [
+        (c, s, d) for c, s, d in outcome_fractions.index
+        if c == 'insertion'
+    ] 
+
+    edit_plus_deletions = [
+        (c, s, d) for c, s, d in outcome_fractions.index
+        if (c, s) == ('edit + indel', 'deletion')
+    ] 
+
+    wild_type = [
+        (c, s, d) for c, s, d in outcome_fractions.index
+        if c == 'wild type'
+    ]
+
+    to_concat = []
+
+    if include_simple_deletions:
+        to_concat.append(outcome_fractions.loc[deletions])
+
+    if include_edit_plus_deletions:
+        to_concat.append(outcome_fractions.loc[edit_plus_deletions])
+
+    if include_insertions:
+        to_concat.append(outcome_fractions.loc[insertions])
+
+    if include_wild_type:
+        to_concat.append(outcome_fractions.loc[wild_type])
+
+    outcome_fractions = pd.concat(to_concat)
+
+    if perform_marginalization_over_mismatches_outside_window:
+        outcome_fractions = marginalize_over_mismatches_outside_window(outcome_fractions, window_interval)
         
-    grid = knock_knock.visualize.stacked.DiagramGrid(outcomes, 
-                                                     ti,
-                                                     draw_wild_type_on_top=True,
-                                                     window=window,
-                                                     block_alpha=0.1,
-                                                     color_overrides=color_overrides,
-                                                     features_to_draw=sorted(ti.primers), 
-                                                     **kwargs,
-                                                    )
+    outcomes = [
+        (c, s, d) for (c, s, d), f_row in outcome_fractions.iterrows()
+        if max(f_row) > frequency_cutoff
+    ]
+
+    if sort_by_condition is not None:
+        outcomes = outcome_fractions.loc[outcomes][sort_by_condition].sort_values(ascending=False).index
+    else:
+        outcomes = outcome_fractions.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
+
+    grid = DiagramGrid(outcomes, 
+                       ti,
+                       draw_wild_type_on_top=True,
+                       window=window,
+                       block_alpha=0.1,
+                       color_overrides=color_overrides,
+                       features_to_draw=sorted(ti.primers), 
+                       **kwargs,
+                       )
 
     grid.add_ax('fractions', width_multiple=12, title='% of reads\nwith specific outcome')
 
@@ -2156,7 +2178,7 @@ def make_deletion_boundaries_figure(target_info,
     grid.set_xlim('log10_fractions', (np.log10(0.49 * frequency_cutoff), np.log10(x_max)))
     grid.style_log10_frequency_ax('log10_fractions')
 
-    if deletion_boundaries_retriever is not None:
+    if plot_boundaries:
         if flip:
             panel_order = [
                 'fraction_removed',
@@ -2222,6 +2244,8 @@ def restrict_mismatches_to_window(csd, window_interval):
     
     if (c, s) in {
         ('wild type', 'mismatches'),
+        ('deletion', 'mismatches'),
+        ('insertion', 'mismatches'),
         ('intended edit', 'substitution'),
         ('intended edit', 'insertion'),
         ('intended edit', 'deletion'),
@@ -2239,7 +2263,7 @@ def restrict_mismatches_to_window(csd, window_interval):
 
     details.mismatches = mismatches_in_window
     
-    if (c, s) == ('wild type', 'mismatches') and len(mismatches_in_window) == 0:
+    if s == 'mismatches' and len(mismatches_in_window) == 0:
         restricted_s = 'clean'
     else:
         restricted_s = s
@@ -2251,7 +2275,6 @@ def restrict_mismatches_to_window(csd, window_interval):
     return restricted_c, restricted_s, restricted_d
 
 def marginalize_over_mismatches_outside_window(outcome_fractions, window_interval):
-    print(f'{window_interval=}')
     outcome_fractions = outcome_fractions.groupby(by=lambda csd: restrict_mismatches_to_window(csd, window_interval)).sum()
     outcome_fractions.index = pd.MultiIndex.from_tuples(outcome_fractions.index, names=('category', 'subcategory', 'details'))
     return outcome_fractions
@@ -2358,21 +2381,19 @@ def make_partial_incorporation_figure(target_info,
         outcome_fractions = marginalize_over_mismatches_outside_window(outcome_fractions, window_interval)
 
     def mismatch_in_window(d):
-        details = knock_knock.outcome.Details.from_string(d).undo_anchor_shift(ti.anchor)
+        details = knock_knock.outcome.Details.from_string(d)
         return any(p in window_interval for p in details['mismatches'].positions)
 
     def indel_in_window(d):
         if d == 'collapsed':
             in_window = True
         else:
-            indel = degenerate_indel_from_string(d)
+            details = knock_knock.outcome.Details.from_string(d)
 
-            if indel.kind == 'D':
-                outcome = DeletionOutcome.from_string(d).undo_anchor_shift(ti.anchor).deletion
-            elif indel.kind == 'I':
-                outcome = InsertionOutcome.from_string(d).undo_anchor_shift(ti.anchor).insertion
-
-            in_window = hits.interval.are_overlapping(window_interval, outcome.possibly_involved_interval)
+            in_window = any(
+                hits.interval.are_overlapping(window_interval, indel.possibly_involved_interval)
+                for indel in list(details['insertions']) + list(details['deletions'])
+            )
 
         return in_window
 
@@ -2401,14 +2422,14 @@ def make_partial_incorporation_figure(target_info,
         outcomes = outcome_fractions.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
 
     if len(outcomes) > 0:
-        grid = knock_knock.visualize.stacked.DiagramGrid(outcomes, 
-                                                         ti,
-                                                         draw_wild_type_on_top=True,
-                                                         window=window,
-                                                         block_alpha=0.1,
-                                                         color_overrides=color_overrides,
-                                                         **diagram_kwargs,
-                                                        )
+        grid = DiagramGrid(outcomes, 
+                           ti,
+                           draw_wild_type_on_top=True,
+                           window=window,
+                           block_alpha=0.1,
+                           color_overrides=color_overrides,
+                           **diagram_kwargs,
+                          )
 
         if difference_from_condition is None:
             title = '% of reads with\nspecific outcome'

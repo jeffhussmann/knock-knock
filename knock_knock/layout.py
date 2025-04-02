@@ -524,6 +524,7 @@ class Categorizer:
                     edge_als.append((edits_in_primer, edge_al))
 
         edge_als = sorted(edge_als, key=lambda t: t[0])
+
         if len(edge_als) == 0:
             edge_al = None
         else:
