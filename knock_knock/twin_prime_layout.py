@@ -574,9 +574,9 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             if not self.has_intended_pegRNA_overlap:
                 status = False
             else:
-                if self.target_info.pegRNA_SNVs is None:
+                if self.target_info.pegRNA_substitutions is None:
                     status = True
-                elif not self.has_pegRNA_SNV:
+                elif not self.has_pegRNA_substitution:
                     status = False
                 else:
                     status = True
@@ -605,24 +605,24 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         return mismatches
 
     def register_intended_replacement(self):
-        if self.pegRNA_SNV_string == self.full_incorporation_pegRNA_SNV_string:
+        if self.pegRNA_substitution_string == self.full_incorporation_pegRNA_substitution_string:
             self.category = 'intended edit'
             self.subcategory = 'replacement'
         else:
             self.category = 'partial replacement'
 
-            if len(self.pegRNAs_that_explain_all_SNVs) == 0:
+            if len(self.pegRNAs_that_explain_all_substitutions) == 0:
                 self.subcategory = 'both pegRNAs'
-            elif len(self.pegRNAs_that_explain_all_SNVs) == 2:
+            elif len(self.pegRNAs_that_explain_all_substitutions) == 2:
                 self.subcategory = 'single pegRNA (ambiguous)'
-            elif self.pegRNA_names_by_side_of_read['left'] in self.pegRNAs_that_explain_all_SNVs:
+            elif self.pegRNA_names_by_side_of_read['left'] in self.pegRNAs_that_explain_all_substitutions:
                 self.subcategory = 'left pegRNA'
-            elif self.pegRNA_names_by_side_of_read['right'] in self.pegRNAs_that_explain_all_SNVs:
+            elif self.pegRNA_names_by_side_of_read['right'] in self.pegRNAs_that_explain_all_substitutions:
                 self.subcategory = 'right pegRNA'
             else:
                 raise ValueError
 
-        self.Details = Details(programmed_substitution_read_bases=self.pegRNA_SNV_string,
+        self.Details = Details(programmed_substitution_read_bases=self.pegRNA_substitution_string,
                                mismatches=self.non_pegRNA_mismatches,
                                non_programmed_edit_mismatches=self.non_programmed_edit_mismatches,
                                deletions=[],
@@ -699,12 +699,18 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                 if edges[side] >= threshold:
                     integrase_sites.append(label)
 
-        self.Details = Details(
-            left_rejoining_edge=edges['left'],
-            right_rejoining_edge=edges['right'],
+        details_kwargs = dict(
             junction_microhomology_length=MH_nts,
             integrase_sites=integrase_sites,
         )
+
+        if edges['left'] is not None:
+            details_kwargs['left_rejoining_edge'] = edges['left']
+
+        if edges['right'] is not None:
+            details_kwargs['right_rejoining_edge'] = edges['right']
+
+        self.Details = Details(**details_kwargs)
 
         als_by_ref = defaultdict(list)
         for al in list(chains['left']['alignments'].values()) + list(chains['right']['alignments'].values()):
@@ -783,7 +789,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         elif self.is_intended_deletion:
             self.category = 'intended edit'
             self.subcategory = 'deletion'
-            self.Details = Details(programmed_substitution_read_bases=self.pegRNA_SNV_string,
+            self.Details = Details(programmed_substitution_read_bases=self.pegRNA_substitution_string,
                                    mismatches=self.non_pegRNA_mismatches,
                                    non_programmed_edit_mismatches=self.non_programmed_edit_mismatches,
                                    deletions=[self.target_info.pegRNA_programmed_deletion],
@@ -855,7 +861,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
                 self.register_uncategorized()
 
         elif self.duplication_covers_whole_read:
-            subcategory, ref_junctions, indels, als_with_donor_SNVs, merged_als = self.duplication
+            subcategory, ref_junctions, indels, als_with_donor_substitutions, merged_als = self.duplication
             self.Details = Details(duplication_junctions=ref_junctions)
 
             self.category = 'duplication'
@@ -1100,7 +1106,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             color_overrides=color_overrides,
             feature_heights=feature_heights,
             supplementary_reference_sequences=supplementary_reference_sequences,
-            highlight_SNPs=True,
+            highlight_programmed_substitutions=True,
             invisible_references=invisible_references,
         )
 

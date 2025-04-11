@@ -47,7 +47,7 @@ class ReadDiagram:
     draw_ref_sequences: bool = False
     max_qual: int = 41
     detect_orientation: bool = False
-    highlight_SNPs: bool = False
+    highlight_programmed_substitutions: bool = False
     reverse_complement: bool = False
     label_left: bool = False
     flip_donor: bool = False
@@ -851,31 +851,31 @@ class ReadDiagram:
                     if r is not None and q is not None
                 }
 
-                if self.highlight_SNPs:
-                    SNVs = {}
+                if self.highlight_programmed_substitutions:
+                    substitutions = {}
 
-                    if ti.pegRNA_SNVs is not None:
-                        if ref_name in ti.pegRNA_SNVs:
-                            SNVs = ti.pegRNA_SNVs[ref_name]
+                    if ti.pegRNA_substitutions is not None:
+                        if ref_name in ti.pegRNA_substitutions:
+                            substitutions = ti.pegRNA_substitutions[ref_name]
                     
                     elif ti.donor is not None:
                         donor_name = ti.donor
 
                         if ref_name == donor_name:
-                            SNVs = ti.donor_SNVs['donor']
+                            substitutions = ti.donor_SNVs['donor']
                         elif ref_name == ti.target:
-                            SNVs = ti.donor_SNVs['target']
+                            substitutions = ti.donor_SNVs['target']
 
-                    if len(SNVs) == 1:
+                    if len(substitutions) == 1:
                         box_half_width = self.cross_x * 1.5
                         box_half_height = self.cross_y * 2.5
                     else:
                         box_half_width = 0.5
                         box_half_height = self.cross_y * 2.5
 
-                    for SNV_name, SNV_info in SNVs.items():
-                        SNV_r = SNV_info['position']
-                        qs = [q for q, r in q_to_r.items() if r == SNV_r]
+                    for substitution_name, substitution_info in substitutions.items():
+                        substitution_r = substitution_info['position']
+                        qs = [q for q, r in q_to_r.items() if r == substitution_r]
                         if len(qs) != 1:
                             continue
 

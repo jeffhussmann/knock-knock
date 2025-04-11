@@ -95,7 +95,7 @@ class Categorizer:
     @classmethod
     def full_index(cls):
         full_index = []
-        for cat, subcats, Details in cls.category_order:
+        for cat, subcats in cls.category_order:
             for subcat in subcats:
                 full_index.append((cat, subcat))
                 
@@ -2439,7 +2439,7 @@ class Layout(Categorizer):
             label_offsets=label_offsets,
             label_overrides=label_overrides,
             inferred_amplicon_length=self.inferred_amplicon_length,
-            highlight_SNPs=True,
+            highlight_programmed_substitutions=True,
             feature_heights=feature_heights,
             layout_mode=self.mode,
         )

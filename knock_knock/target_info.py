@@ -1815,11 +1815,11 @@ class TargetInfo:
         return is_prime_del
 
     @memoized_property
-    def pegRNA_SNVs(self):
+    def pegRNA_substitutions(self):
         ''' Format:
         {
             target_name: {
-                SNV_name: {
+                substitution_name: {
                     'position': position in target,
                     'strand': '+',
                     'base': base on + strand of target at position,
@@ -1841,10 +1841,10 @@ class TargetInfo:
         } 
         '''
         if len(self.pegRNA_names) == 0:
-            SNVs = None
+            substitutions = None
 
         elif len(self.pegRNA_names) == 1:
-            SNVs = self.pegRNAs[0].SNVs
+            substitutions = self.pegRNAs[0].substitutions
 
         elif len(self.pegRNA_names) == 2:
             results = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNAs,
@@ -1852,44 +1852,44 @@ class TargetInfo:
                                                                      self.features,
                                                                      self.reference_sequences,
                                                                     )
-            SNVs = results['SNVs']
+            substitutions = results['substitutions']
 
         else:
-            SNVs = None
+            substitutions = None
 
-        return SNVs
+        return substitutions
 
     @memoized_property
-    def simple_pegRNA_SNVs(self):
+    def simple_pegRNA_substitutions(self):
         ''' {ref_name, position: base identity in pegRNA if on forward strand}}'''
-        simple_pegRNA_SNVs = {}
+        simple_pegRNA_substitutions = {}
 
-        if self.pegRNA_SNVs is not None:
+        if self.pegRNA_substitutions is not None:
             ref_names = [self.target] + self.pegRNA_names
             for ref_name in ref_names:
-                if ref_name in self.pegRNA_SNVs:
-                    SNVs = self.pegRNA_SNVs[ref_name]
-                    for SNV_name, details in SNVs.items():
+                if ref_name in self.pegRNA_substitutions:
+                    substitutions = self.pegRNA_substitutions[ref_name]
+                    for SNV_name, details in substitutions.items():
                         if ref_name in self.pegRNA_names:
                             base = details['base']
                         else:
                             base = details['alternative_base']
 
-                        simple_pegRNA_SNVs[ref_name, details['position']] = base
+                        simple_pegRNA_substitutions[ref_name, details['position']] = base
 
-        return simple_pegRNA_SNVs
+        return simple_pegRNA_substitutions
 
     @memoized_property
     def pegRNA_programmed_alternative_bases(self):
         programmed_subs = {}
 
-        if self.pegRNA_SNVs is not None:
+        if self.pegRNA_substitutions is not None:
             ref_names = [self.target] + self.pegRNA_names
             for ref_name in ref_names:
-                if ref_name in self.pegRNA_SNVs:
-                    SNVs = self.pegRNA_SNVs[ref_name]
+                if ref_name in self.pegRNA_substitutions:
+                    substitutions = self.pegRNA_substitutions[ref_name]
                     programmed_subs[ref_name] = {}
-                    for SNV_name, SNV in SNVs.items():
+                    for SNV_name, SNV in substitutions.items():
                         programmed_subs[ref_name][SNV['position']] = SNV['alternative_base']
 
         return programmed_subs
@@ -1970,8 +1970,8 @@ class TargetInfo:
         name_to_description = {}
 
         if self.pegRNA is not None:
-            if self.pegRNA.SNVs is not None:
-                for SNV_name, details in self.pegRNA.SNVs[self.target].items():
+            if self.pegRNA.substitutions is not None:
+                for SNV_name, details in self.pegRNA.substitutions[self.target].items():
                     name_to_description[SNV_name] = details['description']
 
             if self.pegRNA_programmed_insertion is not None:

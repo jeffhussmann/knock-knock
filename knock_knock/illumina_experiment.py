@@ -389,7 +389,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
         with open(self.fns['too_short_outcome_list'], 'w') as too_short_fh:
             too_short_fh.write(f'## Generated at {utilities.current_time_string()}\n')
-            for outcome in sorted(too_short_outcomes, key=lambda outcome: outcome.query_name.value):
+            for outcome in sorted(too_short_outcomes, key=lambda outcome: outcome.query_name):
                 too_short_fh.write(f'{outcome}\n')
 
     def stitch_read_pairs(self):

@@ -409,7 +409,7 @@ class NoOverlapPairLayout(Layout, knock_knock.layout.NoOverlapPairCategorizer):
 
         diagram = knock_knock.visualize.architecture.ReadDiagram(als_to_plot,
                                                                  self.target_info,
-                                                                 highlight_SNPs=True,
+                                                                 highlight_programmed_substitutions=True,
                                                                  flip_target=self.sequencing_direction == '-',
                                                                  inferred_amplicon_length=self.inferred_amplicon_length,
                                                                  features_to_show=self.plot_parameters['features_to_show'],

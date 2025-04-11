@@ -603,28 +603,28 @@ class StackedDiagrams:
 
         SNP_xs = set()
 
-        if ti.pegRNA_SNVs is not None:
-            SNP_ps = sorted(SNV['position'] for SNV_name, SNV in ti.pegRNA_SNVs[ti.target].items())
+        if ti.pegRNA_substitutions is not None:
+            SNP_ps = sorted(substitution['position'] for substitution_name, substitution in ti.pegRNA_substitutions[ti.target].items())
 
             p_to_i = SNP_ps.index
             i_to_p = dict(enumerate(SNP_ps))
 
             observed_SNP_idxs = set()
 
-            SNV_names = sorted(ti.pegRNA_SNVs[ti.target])
-            for SNV_name, read_base in zip(SNV_names, details['programmed_substitution_read_bases']):
-                position = ti.pegRNA_SNVs[ti.target][SNV_name]['position']
+            substitution_names = sorted(ti.pegRNA_substitutions[ti.target])
+            for substitution_name, read_base in zip(substitution_names, details['programmed_substitution_read_bases']):
+                position = ti.pegRNA_substitutions[ti.target][substitution_name]['position']
 
                 pegRNA_bases = set()
                 for pegRNA_name in ti.pegRNA_names:
-                    if SNV_name in ti.pegRNA_SNVs[pegRNA_name]:
-                        pegRNA_base = ti.pegRNA_SNVs[pegRNA_name][SNV_name]['base']
-                        if ti.pegRNA_SNVs[pegRNA_name][SNV_name]['strand'] == '-':
+                    if substitution_name in ti.pegRNA_substitutions[pegRNA_name]:
+                        pegRNA_base = ti.pegRNA_substitutions[pegRNA_name][substitution_name]['base']
+                        if ti.pegRNA_substitutions[pegRNA_name][substitution_name]['strand'] == '-':
                             pegRNA_base = hits.utilities.reverse_complement(pegRNA_base)
                         pegRNA_bases.add(pegRNA_base)
                     
                 if len(pegRNA_bases) != 1:
-                    raise ValueError(SNV_name, pegRNA_bases)
+                    raise ValueError(substitution_name, pegRNA_bases)
                 else:
                     pegRNA_base = list(pegRNA_bases)[0]
 
@@ -665,7 +665,7 @@ class StackedDiagrams:
 
                     self.draw_rect(source_name, x - 0.5, x + 0.5, bottom, top, rect_alpha, color=rect_color)
 
-            # Draw rectangles around blocks of consecutive incorporated programmed SNVs. 
+            # Draw rectangles around blocks of consecutive incorporated programmed substitutions. 
             observed_SNP_idxs = sorted(observed_SNP_idxs)
             if observed_SNP_idxs:
                 # no SNPs if just a donor deletion
@@ -718,10 +718,10 @@ class StackedDiagrams:
 
     def edit_name_to_x(self, source_name, edit_name):
         ti = self.target_infos[source_name]
-        SNVs = ti.pegRNA_SNVs
+        substitutions = ti.pegRNA_substitutions
         
-        if SNVs is not None and edit_name in SNVs[ti.target]:
-            p = SNVs[ti.target][edit_name]['position']
+        if substitutions is not None and edit_name in substitutions[ti.target]:
+            p = substitutions[ti.target][edit_name]['position']
         else:
             indel = knock_knock.target_info.degenerate_indel_from_string(edit_name)
             # Note: indels are not anchor shifted, so don't need to be un-shifted.

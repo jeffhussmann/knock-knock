@@ -539,14 +539,20 @@ class ExperimentGroup:
 
         key = prefix + 'outcome_counts'
 
-        sparse_counts = scipy.sparse.load_npz(self.fns[key])
-        df = pd.DataFrame(sparse_counts.toarray(),
-                          index=self.total_outcome_counts(collapsed).index,
-                          columns=pd.MultiIndex.from_tuples(self.full_conditions),
-                         )
+        total_counts = self.total_outcome_counts(collapsed)
 
-        df.index.names = self.outcome_index_levels
-        df.columns.names = self.outcome_column_levels
+        if self.fns[key].exists() and total_counts is not None:
+            sparse_counts = scipy.sparse.load_npz(self.fns[key])
+            df = pd.DataFrame(sparse_counts.toarray(),
+                              index=total_counts.index,
+                              columns=pd.MultiIndex.from_tuples(self.full_conditions),
+                             )
+
+            df.index.names = self.outcome_index_levels
+            df.columns.names = self.outcome_column_levels
+
+        else:
+            df = None
 
         return df
 
@@ -559,10 +565,9 @@ class ExperimentGroup:
 
         key = prefix + 'total_outcome_counts'
 
-        return pd.read_csv(self.fns[key], header=None, index_col=list(range(len(self.outcome_index_levels))), na_filter=False)
+        if self.fns[key].exists():
+            counts = pd.read_csv(self.fns[key], header=None, index_col=list(range(len(self.outcome_index_levels))), na_filter=False)
+        else:
+            counts = None
 
-    @memoized_property
-    def genomic_insertion_length_distributions(self):
-        df = pd.read_csv(self.fns['genomic_insertion_length_distributions'], index_col=[0, 1, 2])
-        df.columns = [int(c) for c in df.columns]
-        return df
+        return counts
