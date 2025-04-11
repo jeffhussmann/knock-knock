@@ -2087,6 +2087,9 @@ class DegenerateDeletion:
         else:
             return self.starts_ats == other.starts_ats and self.length == other.length
 
+    def __lt__(self, other):
+        return (self.starts_ats[0] < other.starts_ats[0]) or (self.starts_ats[0] == other.starts_ats[0] and self.length < other.length)
+
     def __hash__(self):
         return hash((self.starts_ats, self.length))
 

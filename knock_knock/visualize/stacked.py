@@ -230,74 +230,123 @@ class StackedDiagrams:
                                  annotation_clip=False,
                                 )
 
-    def draw_deletion(self, y, deletion, source_name, color='black', draw_MH=True, background_color='black'):
+    def draw_deletions(self, y, deletions, source_name, color='black', draw_MH=True, background_color='black'):
         xs_to_skip = set()
 
         seq = self.seqs[source_name]
         transform_seq = self.transform_seqs[source_name]
         window_left, window_right = self.windows[source_name]
 
-        starts = np.array(deletion.starts_ats) - self.offsets[source_name]
-        if draw_MH and self.draw_perfect_MH and len(starts) > 1:
-            for x, b in zip(range(window_left, window_right + 1), self.seqs[source_name]):
-                if (starts[0] <= x < starts[-1]) or (starts[0] + deletion.length <= x < starts[-1] + deletion.length):
-                    self.ax.annotate(transform_seq(b),
-                                     xy=(x, y),
-                                     xycoords='data', 
-                                     ha='center',
-                                     va='center',
-                                     size=self.text_size,
-                                     color=hits.visualize.igv_colors[transform_seq(b)],
-                                     weight='bold',
-                                    )
+        block_starts = [window_left - 0.5]
+        block_ends = []
 
+        text = {
+            'left': [],
+            'right': [],
+        }
+
+        for deletion in sorted(deletions):
+
+            starts = np.array(deletion.starts_ats) - self.offsets[source_name]
+            if draw_MH and self.draw_perfect_MH and len(starts) > 1:
+                for x, b in zip(range(window_left, window_right + 1), self.seqs[source_name]):
+                    if (starts[0] <= x < starts[-1]) or (starts[0] + deletion.length <= x < starts[-1] + deletion.length):
+                        self.ax.annotate(transform_seq(b),
+                                        xy=(x, y),
+                                        xycoords='data', 
+                                        ha='center',
+                                        va='center',
+                                        size=self.text_size,
+                                        color=hits.visualize.igv_colors[transform_seq(b)],
+                                        weight='bold',
+                                        )
+
+                        xs_to_skip.add(x)
+
+            if self.draw_imperfect_MH:
+                before_MH = np.arange(starts.min() - 5, starts.min())
+                after_MH = np.arange(starts.max(), starts.max() + 5)
+                left_xs = np.concatenate((before_MH, after_MH))
+                for left_x in left_xs:
+                    right_x = left_x + deletion.length
+
+                    # Ignore if overlaps perfect MH as a heuristic for whether interesting 
+                    if right_x < starts.max() or left_x >= starts.min() + deletion.length:
+                        continue
+
+                    if all(0 <= x - window_left < len(seq) for x in [left_x, right_x]):
+                        left_b = seq[left_x - window_left]
+                        right_b = seq[right_x - window_left]
+                        if left_b == right_b:
+                            for x, b in ((left_x, left_b), (right_x, right_b)):
+                                self.ax.annotate(transform_seq(b),
+                                                xy=(x, y),
+                                                xycoords='data', 
+                                                ha='center',
+                                                va='center',
+                                                size=self.text_size,
+                                                color=hits.visualize.igv_colors[b],
+                                                )
+                                xs_to_skip.add(x)
+
+            if self.flip_MH_deletion_boundaries == False:
+                del_start = starts[0] - 0.5
+                del_end = starts[0] + deletion.length - 1 + 0.5
+
+                for x in range(starts[0], starts[0] + deletion.length):
                     xs_to_skip.add(x)
+            else:
+                del_start = starts[-1] - 0.5
+                del_end = starts[-1] + deletion.length - 1 + 0.5
 
-        if self.draw_imperfect_MH:
-            before_MH = np.arange(starts.min() - 5, starts.min())
-            after_MH = np.arange(starts.max(), starts.max() + 5)
-            left_xs = np.concatenate((before_MH, after_MH))
-            for left_x in left_xs:
-                right_x = left_x + deletion.length
+                for x in range(starts[-1], starts[-1] + deletion.length):
+                    xs_to_skip.add(x)
+            
+            bottom, top = self.get_bottom_and_top(y, multiple=StackedDiagrams.del_multiple)
+            self.draw_rect(source_name, del_start, del_end, bottom, top, 0.4, color=color)
 
-                # Ignore if overlaps perfect MH as a heuristic for whether interesting 
-                if right_x < starts.max() or left_x >= starts.min() + deletion.length:
-                    continue
+            block_starts.append(del_end)
+            block_ends.append(del_start)
 
-                if all(0 <= x - window_left < len(seq) for x in [left_x, right_x]):
-                    left_b = seq[left_x - window_left]
-                    right_b = seq[right_x - window_left]
-                    if left_b == right_b:
-                        for x, b in ((left_x, left_b), (right_x, right_b)):
-                            self.ax.annotate(transform_seq(b),
-                                             xy=(x, y),
-                                             xycoords='data', 
-                                             ha='center',
-                                             va='center',
-                                             size=self.text_size,
-                                             color=hits.visualize.igv_colors[b],
-                                            )
-                            xs_to_skip.add(x)
+            if self.flip[source_name]:
+                flipped_sides = {'left': 'right', 'right': 'left'}
+            else:
+                flipped_sides = {'left': 'left', 'right': 'right'}
 
-        if self.flip_MH_deletion_boundaries == False:
-            del_start = starts[0] - 0.5
-            del_end = starts[0] + deletion.length - 1 + 0.5
+            
+            if del_end < window_left:
+                text[flipped_sides['left']].append(deletion)
 
-            for x in range(starts[0], starts[0] + deletion.length):
-                xs_to_skip.add(x)
-        else:
-            del_start = starts[-1] - 0.5
-            del_end = starts[-1] + deletion.length - 1 + 0.5
+            if del_start > window_right:
+                text[flipped_sides['right']].append(deletion)
 
-            for x in range(starts[-1], starts[-1] + deletion.length):
-                xs_to_skip.add(x)
-        
-        bottom, top = self.get_bottom_and_top(y, multiple=StackedDiagrams.del_multiple)
-        self.draw_rect(source_name, del_start, del_end, bottom, top, 0.4, color=color)
+        block_ends.append(window_right + 0.5)
 
         bottom, top = self.get_bottom_and_top(y)
-        self.draw_rect(source_name, window_left - 0.5, del_start, bottom, top, self.block_alpha, color=background_color)
-        self.draw_rect(source_name, del_end, window_right + 0.5, bottom, top, self.block_alpha, color=background_color)
+
+        for start, end in zip(block_starts, block_ends):
+            self.draw_rect(source_name, start, end, bottom, top, self.block_alpha, color=background_color)
+
+        for side, to_write in text.items():
+            if to_write:
+                if side == 'left':
+                    x = 0
+                    ha = 'left'
+                    offset = 5
+                else:
+                    x = 1
+                    ha = 'right'
+                    offset = -5
+
+                self.ax.annotate(', '.join(map(str, to_write)),
+                                 xy=(x, y),
+                                 xycoords=('axes fraction', 'data'), 
+                                 xytext=(offset, 0),
+                                 textcoords='offset points',
+                                 ha=ha,
+                                 va='center',
+                                 size=self.text_size,
+                                )
 
         return xs_to_skip
 
@@ -519,7 +568,7 @@ class StackedDiagrams:
             else:
                 background_color = 'black'
 
-            self.draw_deletion(y, deletion, source_name, color=color, draw_MH=draw_MH, background_color=background_color)
+            self.draw_deletions(y, [deletion], source_name, color=color, draw_MH=draw_MH, background_color=background_color)
 
         elif len(all_deletions) > 1:
             raise NotImplementedError
@@ -698,8 +747,7 @@ class StackedDiagrams:
             if len(details['deletions']) > 1:
                 logging.warning(f'Multiple deletions in {details}')
 
-            for deletion in details['deletions']:
-                self.draw_deletion(y, deletion, source_name, color='black', draw_MH=False)
+            self.draw_deletions(y, details['deletions'], source_name, color='black', draw_MH=False)
 
         if len(details['insertions']) == 0:
             pass
@@ -1104,9 +1152,9 @@ class StackedDiagrams:
                (category == 'wild type' and subcategory == 'short indel far from cut' and len(details['deletions']) == 1):
 
                 deletion = details['deletions'][0]
-                deletion = ti.expand_degenerate_indel(deletion)
+                deletions = [ti.expand_degenerate_indel(deletion) for deletion in details['deletions']]
 
-                xs_to_skip = self.draw_deletion(y, deletion, source_name, background_color=background_color)
+                xs_to_skip = self.draw_deletions(y, deletions, source_name, background_color=background_color)
 
                 mismatch_xs = self.draw_non_programmed_mismatches(y, details['mismatches'], source_name)
 
@@ -1132,7 +1180,7 @@ class StackedDiagrams:
                 insertion = outcome.insertion_outcome.insertion
                 deletion = outcome.deletion_outcome.deletion
                 self.draw_insertion(y, insertion, source_name)
-                self.draw_deletion(y, deletion, source_name, background_color=background_color)
+                self.draw_deletions(y, [deletion], source_name, background_color=background_color)
                     
             elif category == 'mismatches' or (category == 'wild type' and subcategory == 'mismatches'):
                 self.draw_rect(source_name, window_left - 0.5, window_right + 0.5, bottom, top, self.block_alpha)
@@ -1149,7 +1197,7 @@ class StackedDiagrams:
 
             elif category == 'deletion + adjacent mismatch' or category == 'deletion + mismatches':
                 outcome = DeletionPlusMismatchOutcome.from_string(details).undo_anchor_shift(ti.anchor)
-                xs_to_skip = self.draw_deletion(y, outcome.deletion_outcome.deletion, draw_MH=True)
+                xs_to_skip = self.draw_deletions(y, [outcome.deletion_outcome.deletion], draw_MH=True)
                 
                 for snv in outcome.mismatch_outcome.snvs:
                     x = snv.position - self.offsets
