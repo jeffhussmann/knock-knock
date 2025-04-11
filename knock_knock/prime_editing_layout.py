@@ -135,7 +135,6 @@ class Layout(layout.Categorizer):
             (
                 'uncategorized',
                 'low quality',
-                'no alignments detected',
             ),
         ),
         (

@@ -142,7 +142,6 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             (
                 'uncategorized',
                 'low quality', 
-                'no alignments detected',
             ),
         ),
         (
@@ -207,6 +206,8 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
         if extension_results['status'] == 'definite':
             status = 'definite'
+        elif extension_results['status'] == 'possible':
+            status = 'possible'
         else:
             status = None
 
@@ -238,7 +239,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         
         for candidate_al in sorted(candidate_als, key=lambda al: al.query_length, reverse=True):
             status = self.pegRNA_alignment_extends_pegRNA_alignment(pegRNA_al_to_extend, candidate_al)
-            if status == 'definite':
+            if status == 'definite' or (status == 'possible' and self.target_info.pegRNA_pair.is_prime_del):
                 relevant_pegRNA_al = candidate_al
                 break
                 
@@ -281,7 +282,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
                 contribution_from_overlap_extended = not (interval.get_covered(cropped_overlap_extended_pegRNA_al) - interval.get_covered(cropped_pegRNA_al)).is_empty
 
-                if contribution_from_overlap_extended:
+                if contribution_from_overlap_extended or (overlap_extended_pegRNA_al is not None and self.target_info.pegRNA_pair.is_prime_del):
                     als['second pegRNA'] = overlap_extended_pegRNA_al
                     
                     overlap_extended_target_al, _, _ = self.find_target_alignment_extending_pegRNA_alignment(overlap_extended_pegRNA_al, 'PBS')
