@@ -970,6 +970,8 @@ def build_target_infos_from_csv(base_dir, defer_HA_identification=False):
 
         looked_up = []
         for value_to_lookup in values_to_lookup:
+            value_to_lookup = value_to_lookup.strip()
+
             if value_to_lookup in registered_values:
                 value_name = value_to_lookup
                 seq = registered_values[value_to_lookup]

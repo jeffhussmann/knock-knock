@@ -78,16 +78,27 @@ class TargetInfo:
         self.gb_records = gb_records
         self.manual_sgRNA_components = manual_sgRNA_components
 
+        def strip_if_string(v):
+            if isinstance(v, list):
+                v = list(map(strip_if_string, v))
+
+            elif isinstance(v, str):
+                v = v.strip()
+
+            return v
+
         def populate_attribute(attribute_name, value, force_list=False, default_value=None):
             if value is None:
                 value = self.manifest.get(attribute_name, default_value)
-
+                
             if force_list:
                 if isinstance(value, str):
                     if value == '':
                         value = []
                     else:
                         value = value.split(';')
+
+            value = strip_if_string(value)
 
             setattr(self, attribute_name, value)
 
