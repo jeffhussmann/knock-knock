@@ -459,6 +459,16 @@ class pegRNA:
                 if left_target_end != right_target_start:
                     deletions.append((left_target_end, right_target_start - 1))
 
+        # If the inferred alignment ends in mismatches, reject it and assume this is a non-homologous flap.
+
+        substitution_flap_ps = {substitution['flap'] for name, substitution in substitutions.items()}
+
+        if len(self.intended_flap_sequence) - 1 in substitution_flap_ps:
+            substitutions = {}
+            deletions = []
+            insertions = []
+            HA_RT = None
+
         properties = {
             'substitutions': substitutions,
             'deletions': deletions,
