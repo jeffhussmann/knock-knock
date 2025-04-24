@@ -25,6 +25,9 @@ def read_and_sanitize_csv(csv_fn, index_col=None):
 
     df.columns = df.columns.str.strip()
 
+    if 'sgRNAs' in df.columns:
+        df['sgRNAs'] = df['sgRNAs'].fillna('')
+
     df = df.dropna(axis='index', how='all')
     
     if not df.empty:
