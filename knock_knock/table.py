@@ -668,19 +668,26 @@ def make_self_contained_zip(base_dir,
                     else:
                         fns_to_zip.add(fn)
 
-            add_fn(exp.experiment_group.batch.fns['group_name_to_sanitized_group_name'])
-            add_fn(exp.experiment_group.batch.fns['performance_metrics'])
+            group = exp.experiment_group
+            batch = group.batch
 
-            add_fn(exp.experiment_group.fns['pegRNA_conversion_fractions'])
+            add_fn(batch.fns['group_name_to_sanitized_group_name'])
+            add_fn(batch.fns['performance_metrics'])
 
-            add_fn(exp.experiment_group.fns['partial_incorporation_figure_high_threshold'])
-            add_fn(exp.experiment_group.fns['partial_incorporation_figure_low_threshold'])
-            add_fn(exp.experiment_group.fns['deletion_boundaries_figure'])
+            for fn in batch.pegRNA_conversion_fractions_fns():
+                print(fn)
+                add_fn(fn)
 
-            add_fn(exp.experiment_group.fns['single_flap_rejoining_boundaries_figure'])
-            add_fn(exp.experiment_group.fns['single_flap_rejoining_boundaries_figure_normalized'])
-            add_fn(exp.experiment_group.fns['single_flap_rejoining_boundaries_figure_individual_samples'])
-            add_fn(exp.experiment_group.fns['single_flap_rejoining_boundaries_figure_individual_samples_normalized'])
+            add_fn(group.fns['pegRNA_conversion_fractions'])
+
+            add_fn(group.fns['partial_incorporation_figure_high_threshold'])
+            add_fn(group.fns['partial_incorporation_figure_low_threshold'])
+            add_fn(group.fns['deletion_boundaries_figure'])
+
+            add_fn(group.fns['single_flap_rejoining_boundaries_figure'])
+            add_fn(group.fns['single_flap_rejoining_boundaries_figure_normalized'])
+            add_fn(group.fns['single_flap_rejoining_boundaries_figure_individual_samples'])
+            add_fn(group.fns['single_flap_rejoining_boundaries_figure_individual_samples_normalized'])
             
             add_fn(exp.fns['outcome_browser'])
             add_fn(exp.fns['lengths_figure'])

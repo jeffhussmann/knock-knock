@@ -16,8 +16,10 @@ import hits.utilities
 import hits.visualize
 
 import knock_knock.pegRNAs
-from knock_knock.target_info import degenerate_indel_from_string
+import knock_knock.target_info
 from knock_knock.outcome import *
+
+import knock_knock.outcome
 
 @dataclass
 class StackedDiagrams:
@@ -45,6 +47,7 @@ class StackedDiagrams:
     line_widths: float = 1.5
     num_outcomes: Optional[int] = None
     color_overrides: dict = field(default_factory=dict)
+    label_overrides: dict = field(default_factory=dict)
     preserve_x_lims: bool = False
     replacement_text_for_complex: dict = field(default_factory=dict)
     shift_x: float = 0
@@ -228,74 +231,123 @@ class StackedDiagrams:
                                  annotation_clip=False,
                                 )
 
-    def draw_deletion(self, y, deletion, source_name, color='black', draw_MH=True, background_color='black'):
+    def draw_deletions(self, y, deletions, source_name, color='black', draw_MH=True, background_color='black'):
         xs_to_skip = set()
 
         seq = self.seqs[source_name]
         transform_seq = self.transform_seqs[source_name]
         window_left, window_right = self.windows[source_name]
 
-        starts = np.array(deletion.starts_ats) - self.offsets[source_name]
-        if draw_MH and self.draw_perfect_MH and len(starts) > 1:
-            for x, b in zip(range(window_left, window_right + 1), self.seqs[source_name]):
-                if (starts[0] <= x < starts[-1]) or (starts[0] + deletion.length <= x < starts[-1] + deletion.length):
-                    self.ax.annotate(transform_seq(b),
-                                     xy=(x, y),
-                                     xycoords='data', 
-                                     ha='center',
-                                     va='center',
-                                     size=self.text_size,
-                                     color=hits.visualize.igv_colors[transform_seq(b)],
-                                     weight='bold',
-                                    )
+        block_starts = [window_left - 0.5]
+        block_ends = []
 
+        text = {
+            'left': [],
+            'right': [],
+        }
+
+        for deletion in sorted(deletions):
+
+            starts = np.array(deletion.starts_ats) - self.offsets[source_name]
+            if draw_MH and self.draw_perfect_MH and len(starts) > 1:
+                for x, b in zip(range(window_left, window_right + 1), self.seqs[source_name]):
+                    if (starts[0] <= x < starts[-1]) or (starts[0] + deletion.length <= x < starts[-1] + deletion.length):
+                        self.ax.annotate(transform_seq(b),
+                                        xy=(x, y),
+                                        xycoords='data', 
+                                        ha='center',
+                                        va='center',
+                                        size=self.text_size,
+                                        color=hits.visualize.igv_colors[transform_seq(b)],
+                                        weight='bold',
+                                        )
+
+                        xs_to_skip.add(x)
+
+            if self.draw_imperfect_MH:
+                before_MH = np.arange(starts.min() - 5, starts.min())
+                after_MH = np.arange(starts.max(), starts.max() + 5)
+                left_xs = np.concatenate((before_MH, after_MH))
+                for left_x in left_xs:
+                    right_x = left_x + deletion.length
+
+                    # Ignore if overlaps perfect MH as a heuristic for whether interesting 
+                    if right_x < starts.max() or left_x >= starts.min() + deletion.length:
+                        continue
+
+                    if all(0 <= x - window_left < len(seq) for x in [left_x, right_x]):
+                        left_b = seq[left_x - window_left]
+                        right_b = seq[right_x - window_left]
+                        if left_b == right_b:
+                            for x, b in ((left_x, left_b), (right_x, right_b)):
+                                self.ax.annotate(transform_seq(b),
+                                                xy=(x, y),
+                                                xycoords='data', 
+                                                ha='center',
+                                                va='center',
+                                                size=self.text_size,
+                                                color=hits.visualize.igv_colors[b],
+                                                )
+                                xs_to_skip.add(x)
+
+            if self.flip_MH_deletion_boundaries == False:
+                del_start = starts[0] - 0.5
+                del_end = starts[0] + deletion.length - 1 + 0.5
+
+                for x in range(starts[0], starts[0] + deletion.length):
                     xs_to_skip.add(x)
+            else:
+                del_start = starts[-1] - 0.5
+                del_end = starts[-1] + deletion.length - 1 + 0.5
 
-        if self.draw_imperfect_MH:
-            before_MH = np.arange(starts.min() - 5, starts.min())
-            after_MH = np.arange(starts.max(), starts.max() + 5)
-            left_xs = np.concatenate((before_MH, after_MH))
-            for left_x in left_xs:
-                right_x = left_x + deletion.length
+                for x in range(starts[-1], starts[-1] + deletion.length):
+                    xs_to_skip.add(x)
+            
+            bottom, top = self.get_bottom_and_top(y, multiple=StackedDiagrams.del_multiple)
+            self.draw_rect(source_name, del_start, del_end, bottom, top, 0.4, color=color)
 
-                # Ignore if overlaps perfect MH as a heuristic for whether interesting 
-                if right_x < starts.max() or left_x >= starts.min() + deletion.length:
-                    continue
+            block_starts.append(del_end)
+            block_ends.append(del_start)
 
-                if all(0 <= x - window_left < len(seq) for x in [left_x, right_x]):
-                    left_b = seq[left_x - window_left]
-                    right_b = seq[right_x - window_left]
-                    if left_b == right_b:
-                        for x, b in ((left_x, left_b), (right_x, right_b)):
-                            self.ax.annotate(transform_seq(b),
-                                             xy=(x, y),
-                                             xycoords='data', 
-                                             ha='center',
-                                             va='center',
-                                             size=self.text_size,
-                                             color=hits.visualize.igv_colors[b],
-                                            )
-                            xs_to_skip.add(x)
+            if self.flip[source_name]:
+                flipped_sides = {'left': 'right', 'right': 'left'}
+            else:
+                flipped_sides = {'left': 'left', 'right': 'right'}
 
-        if self.flip_MH_deletion_boundaries == False:
-            del_start = starts[0] - 0.5
-            del_end = starts[0] + deletion.length - 1 + 0.5
+            
+            if del_end < window_left:
+                text[flipped_sides['left']].append(deletion)
 
-            for x in range(starts[0], starts[0] + deletion.length):
-                xs_to_skip.add(x)
-        else:
-            del_start = starts[-1] - 0.5
-            del_end = starts[-1] + deletion.length - 1 + 0.5
+            if del_start > window_right:
+                text[flipped_sides['right']].append(deletion)
 
-            for x in range(starts[-1], starts[-1] + deletion.length):
-                xs_to_skip.add(x)
-        
-        bottom, top = self.get_bottom_and_top(y, multiple=StackedDiagrams.del_multiple)
-        self.draw_rect(source_name, del_start, del_end, bottom, top, 0.4, color=color)
+        block_ends.append(window_right + 0.5)
 
         bottom, top = self.get_bottom_and_top(y)
-        self.draw_rect(source_name, window_left - 0.5, del_start, bottom, top, self.block_alpha, color=background_color)
-        self.draw_rect(source_name, del_end, window_right + 0.5, bottom, top, self.block_alpha, color=background_color)
+
+        for start, end in zip(block_starts, block_ends):
+            self.draw_rect(source_name, start, end, bottom, top, self.block_alpha, color=background_color)
+
+        for side, to_write in text.items():
+            if to_write:
+                if side == 'left':
+                    x = 0
+                    ha = 'left'
+                    offset = 5
+                else:
+                    x = 1
+                    ha = 'right'
+                    offset = -5
+
+                self.ax.annotate(', '.join(map(str, to_write)),
+                                 xy=(x, y),
+                                 xycoords=('axes fraction', 'data'), 
+                                 xytext=(offset, 0),
+                                 textcoords='offset points',
+                                 ha=ha,
+                                 va='center',
+                                 size=self.text_size,
+                                )
 
         return xs_to_skip
 
@@ -421,14 +473,17 @@ class StackedDiagrams:
                 end = feature.end + 0.5 - offset
 
                 if hits.interval.are_overlapping(hits.interval.Interval(window_left, window_right), hits.interval.Interval(start, end)):
-                    color = self.color_overrides.get(feature_name, feature.attribute.get('color', 'grey'))
+                    feature_color = self.color_overrides.get(feature_name, feature.attribute.get('color', 'grey'))
+                    label = self.label_overrides.get(feature_name, feature_name)
+                    label_color = hits.visualize.scale_darkness(feature_color, 1.2)
 
-                    self.draw_rect(source_name, start, end, bottom, top, None, color)
-                    self.ax.annotate(feature_name,
+                    self.draw_rect(source_name, start, end, bottom, top, None, feature_color)
+
+                    self.ax.annotate(label,
                                      xy=(np.mean([start, end]), top),
                                      xytext=(0, 5),
                                      textcoords='offset points',
-                                     color='black',
+                                     color=label_color,
                                      annotation_clip=False,
                                      ha='center',
                                      va='bottom',
@@ -517,7 +572,7 @@ class StackedDiagrams:
             else:
                 background_color = 'black'
 
-            self.draw_deletion(y, deletion, source_name, color=color, draw_MH=draw_MH, background_color=background_color)
+            self.draw_deletions(y, [deletion], source_name, color=color, draw_MH=draw_MH, background_color=background_color)
 
         elif len(all_deletions) > 1:
             raise NotImplementedError
@@ -552,13 +607,11 @@ class StackedDiagrams:
                              clip_on=False,
                             )
 
-    def draw_non_programmed_mismatches(self, y, details, source_name):
+    def draw_non_programmed_mismatches(self, y, mismatches, source_name):
         ti = self.target_infos[source_name]
         offset = self.offsets[source_name]
         transform_seq = self.transform_seqs[source_name]
         window_left, window_right = self.windows[source_name]
-
-        mismatches = MismatchOutcome.from_string(details).undo_anchor_shift(ti.anchor).snvs
 
         mismatch_xs = set()
 
@@ -593,7 +646,7 @@ class StackedDiagrams:
             right = position - offset + 0.5
             self.draw_rect(source_name, left, right, bottom, top, alpha, color=color)
 
-    def draw_programmed_edit(self, y, programmed_edit_outcome, source_name):
+    def draw_programmed_edit(self, y, details, source_name):
         ti = self.target_infos[source_name]
         transform_seq = self.transform_seqs[source_name]
         window_left, window_right = self.windows[source_name]
@@ -603,28 +656,28 @@ class StackedDiagrams:
 
         SNP_xs = set()
 
-        if ti.pegRNA_SNVs is not None:
-            SNP_ps = sorted(SNV['position'] for SNV_name, SNV in ti.pegRNA_SNVs[ti.target].items())
+        if ti.pegRNA_substitutions is not None:
+            SNP_ps = sorted(substitution['position'] for substitution_name, substitution in ti.pegRNA_substitutions[ti.target].items())
 
             p_to_i = SNP_ps.index
             i_to_p = dict(enumerate(SNP_ps))
 
             observed_SNP_idxs = set()
 
-            SNV_names = sorted(ti.pegRNA_SNVs[ti.target])
-            for SNV_name, read_base in zip(SNV_names, programmed_edit_outcome.SNV_read_bases):
-                position = ti.pegRNA_SNVs[ti.target][SNV_name]['position']
+            substitution_names = sorted(ti.pegRNA_substitutions[ti.target])
+            for substitution_name, read_base in zip(substitution_names, details['programmed_substitution_read_bases']):
+                position = ti.pegRNA_substitutions[ti.target][substitution_name]['position']
 
                 pegRNA_bases = set()
                 for pegRNA_name in ti.pegRNA_names:
-                    if SNV_name in ti.pegRNA_SNVs[pegRNA_name]:
-                        pegRNA_base = ti.pegRNA_SNVs[pegRNA_name][SNV_name]['base']
-                        if ti.pegRNA_SNVs[pegRNA_name][SNV_name]['strand'] == '-':
+                    if substitution_name in ti.pegRNA_substitutions[pegRNA_name]:
+                        pegRNA_base = ti.pegRNA_substitutions[pegRNA_name][substitution_name]['base']
+                        if ti.pegRNA_substitutions[pegRNA_name][substitution_name]['strand'] == '-':
                             pegRNA_base = hits.utilities.reverse_complement(pegRNA_base)
                         pegRNA_bases.add(pegRNA_base)
                     
                 if len(pegRNA_bases) != 1:
-                    raise ValueError(SNV_name, pegRNA_bases)
+                    raise ValueError(substitution_name, pegRNA_bases)
                 else:
                     pegRNA_base = list(pegRNA_bases)[0]
 
@@ -665,7 +718,7 @@ class StackedDiagrams:
 
                     self.draw_rect(source_name, x - 0.5, x + 0.5, bottom, top, rect_alpha, color=rect_color)
 
-            # Draw rectangles around blocks of consecutive incorporated programmed SNVs. 
+            # Draw rectangles around blocks of consecutive incorporated programmed substitutions. 
             observed_SNP_idxs = sorted(observed_SNP_idxs)
             if observed_SNP_idxs:
                 # no SNPs if just a donor deletion
@@ -691,40 +744,36 @@ class StackedDiagrams:
                     end = i_to_p[block[-1]] - offset
                     self.draw_rect(source_name, start - x_buffer, end + x_buffer, bottom, top, 0.5, fill=False)
 
-        if len(programmed_edit_outcome.deletions) == 0:
+        if len(details['deletions']) == 0:
             bottom, top = self.get_bottom_and_top(y)
             self.draw_rect(source_name, window_left - 0.5, window_right + 0.5, bottom, top, self.block_alpha)
         else:
-            if len(programmed_edit_outcome.deletions) > 1:
-                logging.warning(f'Multiple deletions in {programmed_edit_outcome}')
+            if len(details['deletions']) > 1:
+                logging.warning(f'Multiple deletions in {details}')
 
-            for deletion in programmed_edit_outcome.deletions:
-                deletion = DeletionOutcome(deletion).undo_anchor_shift(ti.anchor).deletion
-                self.draw_deletion(y, deletion, source_name, color='black', draw_MH=False)
+            self.draw_deletions(y, details['deletions'], source_name, color='black', draw_MH=False)
 
-        if len(programmed_edit_outcome.insertions) == 0:
+        if len(details['insertions']) == 0:
             pass
         else:
-            if len(programmed_edit_outcome.insertions) > 1:
-                print(f'Warning: multiple insertions in {programmed_edit_outcome}')
+            if len(details['insertions']) > 1:
+                print(f'Warning: multiple insertions in {details}')
 
-            for insertion in programmed_edit_outcome.insertions:
-                insertion = InsertionOutcome(insertion).undo_anchor_shift(ti.anchor).insertion
+            for insertion in details['insertions']:
                 insertion = ti.expand_degenerate_indel(insertion)
                 self.draw_insertion(y, insertion, source_name, draw_sequence=True)
 
-        non_programmed_mismatches_string = str(programmed_edit_outcome.non_programmed_target_mismatches_outcome)
-        mismatch_xs = self.draw_non_programmed_mismatches(y, non_programmed_mismatches_string, source_name)
+        mismatch_xs = self.draw_non_programmed_mismatches(y, details['mismatches'], source_name)
         
         if self.draw_all_sequence:
             self.draw_sequence(y, source_name, xs_to_skip=SNP_xs | mismatch_xs, alpha=self.sequence_alpha)
 
     def edit_name_to_x(self, source_name, edit_name):
         ti = self.target_infos[source_name]
-        SNVs = ti.pegRNA_SNVs
+        substitutions = ti.pegRNA_substitutions
         
-        if SNVs is not None and edit_name in SNVs[ti.target]:
-            p = SNVs[ti.target][edit_name]['position']
+        if substitutions is not None and edit_name in substitutions[ti.target]:
+            p = substitutions[ti.target][edit_name]['position']
         else:
             indel = knock_knock.target_info.degenerate_indel_from_string(edit_name)
             # Note: indels are not anchor shifted, so don't need to be un-shifted.
@@ -1088,9 +1137,11 @@ class StackedDiagrams:
     def draw_outcomes(self):
         for i, (source_name, category, subcategory, details) in enumerate(self.outcome_order):
             ti = self.target_infos[source_name]
+
+            details = knock_knock.outcome.Details.from_string(details)
+
             transform_seq = self.transform_seqs[source_name]
             window_left, window_right = self.windows[source_name]
-            offset = self.offsets[source_name]
             y = self.num_outcomes - i - 1
 
             bottom, top = self.get_bottom_and_top(y)
@@ -1102,36 +1153,43 @@ class StackedDiagrams:
                 
             if (category == 'deletion') or \
                (category == 'simple indel' and subcategory.startswith('deletion')) or \
-               (category == 'wild type' and subcategory == 'short indel far from cut' and details != 'collapsed' and degenerate_indel_from_string(details).kind == 'D'):
+               (category == 'wild type' and subcategory == 'short indel far from cut' and len(details['deletions']) == 1):
 
-                deletion = DeletionOutcome.from_string(details).undo_anchor_shift(ti.anchor).deletion
-                deletion = ti.expand_degenerate_indel(deletion)
+                deletion = details['deletions'][0]
+                deletions = [ti.expand_degenerate_indel(deletion) for deletion in details['deletions']]
 
-                xs_to_skip = self.draw_deletion(y, deletion, source_name, background_color=background_color)
+                xs_to_skip = self.draw_deletions(y, deletions, source_name, background_color=background_color)
+
+                mismatch_xs = self.draw_non_programmed_mismatches(y, details['mismatches'], source_name)
+
+                xs_to_skip.update(mismatch_xs)
+
                 if self.draw_all_sequence:
                     self.draw_sequence(y, source_name, xs_to_skip, alpha=self.sequence_alpha)
             
             elif category == 'insertion' or (category == 'simple indel' and subcategory.startswith('insertion')):
-                insertion = InsertionOutcome.from_string(details).undo_anchor_shift(ti.anchor).insertion
+                insertion = details['insertions'][0]
                 insertion = ti.expand_degenerate_indel(insertion)
 
                 self.draw_rect(source_name, window_left - 0.5, window_right + 0.5, bottom, top, self.block_alpha, color=background_color)
                 self.draw_insertion(y, insertion, source_name)
 
+                mismatch_xs = self.draw_non_programmed_mismatches(y, details['mismatches'], source_name)
+
                 if self.draw_all_sequence:
-                    self.draw_sequence(y, source_name, alpha=self.sequence_alpha)
+                    self.draw_sequence(y, source_name, mismatch_xs, alpha=self.sequence_alpha)
 
             elif category == 'insertion with deletion':
                 outcome = InsertionWithDeletionOutcome.from_string(details).undo_anchor_shift(ti.anchor)
                 insertion = outcome.insertion_outcome.insertion
                 deletion = outcome.deletion_outcome.deletion
                 self.draw_insertion(y, insertion, source_name)
-                self.draw_deletion(y, deletion, source_name, background_color=background_color)
+                self.draw_deletions(y, [deletion], source_name, background_color=background_color)
                     
             elif category == 'mismatches' or (category == 'wild type' and subcategory == 'mismatches'):
                 self.draw_rect(source_name, window_left - 0.5, window_right + 0.5, bottom, top, self.block_alpha)
 
-                mismatch_xs = self.draw_non_programmed_mismatches(y, details, source_name)
+                mismatch_xs = self.draw_non_programmed_mismatches(y, details['mismatches'], source_name)
 
                 self.highlight_programmed_edit_positions(y, source_name)
 
@@ -1143,7 +1201,7 @@ class StackedDiagrams:
 
             elif category == 'deletion + adjacent mismatch' or category == 'deletion + mismatches':
                 outcome = DeletionPlusMismatchOutcome.from_string(details).undo_anchor_shift(ti.anchor)
-                xs_to_skip = self.draw_deletion(y, outcome.deletion_outcome.deletion, draw_MH=True)
+                xs_to_skip = self.draw_deletions(y, [outcome.deletion_outcome.deletion], draw_MH=True)
                 
                 for snv in outcome.mismatch_outcome.snvs:
                     x = snv.position - self.offsets
@@ -1211,12 +1269,11 @@ class StackedDiagrams:
             elif category in ['intended edit', 'partial replacement', 'partial edit'] or \
                  (category == 'edit + indel' and subcategory == 'deletion'):
 
-                self.draw_programmed_edit(y, ProgrammedEditOutcome.from_string(details), source_name)
+                self.draw_programmed_edit(y, details, source_name)
 
             elif category == 'duplication' and subcategory == 'simple':
 
-                duplication_outcome = DuplicationOutcome.from_string(details).undo_anchor_shift(ti.anchor)
-                self.draw_duplication(y, duplication_outcome, source_name)
+                self.draw_duplication(y, details['duplication_junctions'], source_name)
                 
             else:
                 label = f'{category}, {subcategory}, {details}'
@@ -2006,6 +2063,7 @@ class DiagramGrid:
 def make_deletion_boundaries_figure(target_info,
                                     outcome_fractions,
                                     deletion_boundaries_retriever,
+                                    plot_boundaries=True,
                                     frequency_cutoff=5e-4,
                                     conditions=None,
                                     condition_colors=None,
@@ -2017,12 +2075,10 @@ def make_deletion_boundaries_figure(target_info,
                                     show_log_scale=False,
                                     window=None,
                                     sort_by_condition=None,
+                                    perform_marginalization_over_mismatches_outside_window=True,
                                     **kwargs,
                                    ):
     ti = target_info
-
-    if ti.primary_protospacer is None:
-        return
 
     if isinstance(outcome_fractions, pd.Series):
         outcome_fractions = outcome_fractions.to_frame()
@@ -2031,60 +2087,10 @@ def make_deletion_boundaries_figure(target_info,
         conditions = outcome_fractions.columns
 
     if condition_colors is None:
-        condition_colors = {}
+        condition_colors = dict(zip(conditions, [f'C{i}' for i in range(len(conditions))]))
 
     if condition_labels is None:
         condition_labels = {}
-
-    outcome_fractions = outcome_fractions[conditions]
-
-    if 'deletion' in outcome_fractions.index.levels[0]:
-        deletions = outcome_fractions.xs('deletion', drop_level=False).groupby('details').sum()
-        deletions.index = pd.MultiIndex.from_tuples([('deletion', 'collapsed', details) for details in deletions.index])
-    else:
-        deletions = None
-
-    if 'insertion' in outcome_fractions.index.levels[0]:
-        insertions = outcome_fractions.xs('insertion', drop_level=False).groupby('details').sum()
-        insertions.index = pd.MultiIndex.from_tuples([('insertion', 'collapsed', details) for details in insertions.index])
-    else:
-        insertions = None
-
-    edit_plus_deletions = [
-        (c, s, d) for c, s, d in outcome_fractions.index
-        if (c, s) == ('edit + indel', 'deletion')
-    ] 
-
-    wild_type = [
-        (c, s, d) for c, s, d in outcome_fractions.index
-        if c == 'wild type'
-    ] 
-
-    to_concat = []
-
-    if include_simple_deletions and deletions is not None:
-        to_concat.append(deletions)
-
-    if include_edit_plus_deletions:
-        to_concat.append(outcome_fractions.loc[edit_plus_deletions])
-
-    if include_insertions and insertions is not None:
-        to_concat.append(insertions)
-
-    if include_wild_type:
-        to_concat.append(outcome_fractions.loc[wild_type])
-
-    outcome_fractions = pd.concat(to_concat)
-
-    outcomes = [
-        (c, s, d) for (c, s, d), f_row in outcome_fractions.iterrows()
-        if max(f_row) > frequency_cutoff
-    ]
-
-    if sort_by_condition is not None:
-        outcomes = outcome_fractions.loc[outcomes][sort_by_condition].sort_values(ascending=False).index
-    else:
-        outcomes = outcome_fractions.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
 
     color_overrides = {primer_name: 'grey' for primer_name in ti.primers}
 
@@ -2110,16 +2116,91 @@ def make_deletion_boundaries_figure(target_info,
             window = (ti.amplicon_interval.start - center, ti.amplicon_interval.end - center)
             
         window = (window[0] - 5, window[1] + 5)
+
+    if ti.protospacer_feature is None:
+        window_interval = hits.interval.Interval(ti.center_of_amplicon + window[0], ti.center_of_amplicon + window[1])
+    elif ti.protospacer_feature.strand == '+':
+        window_interval = hits.interval.Interval(ti.cut_after + window[0], ti.cut_after + window[1])
+    else:
+        window_interval = hits.interval.Interval(ti.cut_after - window[1], ti.cut_after - window[0])
+
+    outcome_fractions = outcome_fractions[conditions]
+
+    if 'deletion' in outcome_fractions.index.levels[0]:
+        deletions = outcome_fractions.xs('deletion', drop_level=False).groupby('details').sum()
+        deletions.index = pd.MultiIndex.from_tuples([('deletion', 'collapsed', details) for details in deletions.index])
+    else:
+        deletions = None
+
+    if 'insertion' in outcome_fractions.index.levels[0]:
+        insertions = outcome_fractions.xs('insertion', drop_level=False).groupby('details').sum()
+        insertions.index = pd.MultiIndex.from_tuples([('insertion', 'collapsed', details) for details in insertions.index])
+    else:
+        insertions = None
+
+    deletions = [
+        (c, s, d) for c, s, d in outcome_fractions.index
+        if c == 'deletion'
+    ] 
+
+    insertions = [
+        (c, s, d) for c, s, d in outcome_fractions.index
+        if c == 'insertion'
+    ] 
+
+    edit_plus_deletions = [
+        (c, s, d) for c, s, d in outcome_fractions.index
+        if (c, s) == ('edit + indel', 'deletion')
+    ] 
+
+    wild_type = [
+        (c, s, d) for c, s, d in outcome_fractions.index
+        if c == 'wild type'
+    ]
+
+    to_concat = []
+
+    if include_simple_deletions:
+        to_concat.append(outcome_fractions.loc[deletions])
+
+    if include_edit_plus_deletions:
+        to_concat.append(outcome_fractions.loc[edit_plus_deletions])
+
+    if include_insertions:
+        to_concat.append(outcome_fractions.loc[insertions])
+
+    if include_wild_type:
+        to_concat.append(outcome_fractions.loc[wild_type])
+
+    outcome_fractions = pd.concat(to_concat)
+
+    if perform_marginalization_over_mismatches_outside_window:
+        outcome_fractions = marginalize_over_mismatches_outside_window(outcome_fractions, window_interval)
         
-    grid = knock_knock.visualize.stacked.DiagramGrid(outcomes, 
-                                                     ti,
-                                                     draw_wild_type_on_top=True,
-                                                     window=window,
-                                                     block_alpha=0.1,
-                                                     color_overrides=color_overrides,
-                                                     features_to_draw=sorted(ti.primers), 
-                                                     **kwargs,
-                                                    )
+    outcomes = [
+        (c, s, d) for (c, s, d), f_row in outcome_fractions.iterrows()
+        if max(f_row) > frequency_cutoff
+    ]
+
+    if sort_by_condition is not None:
+        outcomes = outcome_fractions.loc[outcomes][sort_by_condition].sort_values(ascending=False).index
+    else:
+        outcomes = outcome_fractions.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
+
+    features_to_draw = set(ti.primers)
+    features_to_draw.update(kwargs.pop('features_to_draw', []))
+
+    color_overrides.update(kwargs.pop('color_overrides', {}))
+
+    grid = DiagramGrid(outcomes, 
+                       ti,
+                       draw_wild_type_on_top=True,
+                       window=window,
+                       block_alpha=0.1,
+                       color_overrides=color_overrides,
+                       features_to_draw=features_to_draw,
+                       **kwargs,
+                       )
 
     grid.add_ax('fractions', width_multiple=12, title='% of reads\nwith specific outcome')
 
@@ -2151,7 +2232,7 @@ def make_deletion_boundaries_figure(target_info,
     grid.set_xlim('log10_fractions', (np.log10(0.49 * frequency_cutoff), np.log10(x_max)))
     grid.style_log10_frequency_ax('log10_fractions')
 
-    if deletion_boundaries_retriever is not None:
+    if plot_boundaries:
         if flip:
             panel_order = [
                 'fraction_removed',
@@ -2203,7 +2284,7 @@ def make_deletion_boundaries_figure(target_info,
 
     return grid
 
-def restrict_mismatches_to_window(csd, window_interval, anchor):
+def restrict_mismatches_to_window(csd, window_interval):
     ''' Return a transformed version of csd in which all non-programmed mismatches
     outside of window_interval have been removed.
 
@@ -2212,62 +2293,43 @@ def restrict_mismatches_to_window(csd, window_interval, anchor):
     ''' 
 
     c, s, d = csd
-    
-    if (c, s) == ('wild type', 'mismatches'):
-        outcome = knock_knock.outcome.MismatchOutcome.from_string(d).undo_anchor_shift(anchor)
-        snvs = outcome.snvs.snvs
-    
-    elif (c, s) == ('intended edit', 'substitution') or \
-         (c, s) == ('intended edit', 'insertion') or \
-         (c, s) == ('intended edit', 'deletion') or \
-         (c, s) == ('intended edit', 'replacement') or \
-         (c, s) == ('intended edit', 'combination') or \
-         (c, s) == ('partial edit', 'partial incorporation'):
 
-        outcome = knock_knock.outcome.ProgrammedEditOutcome.from_string(d).undo_anchor_shift(anchor)
-        snvs = outcome.non_programmed_target_mismatches_outcome.snvs.snvs
+    details = knock_knock.outcome.Details.from_string(d)
+    
+    if (c, s) in {
+        ('wild type', 'mismatches'),
+        ('deletion', 'mismatches'),
+        ('insertion', 'mismatches'),
+        ('intended edit', 'substitution'),
+        ('intended edit', 'insertion'),
+        ('intended edit', 'deletion'),
+        ('intended edit', 'replacement'),
+        ('intended edit', 'combination'),
+        ('partial edit', 'partial incorporation'),
+    }:
+
+        mismatches = details['mismatches']
         
     else:
         return c, s, d
     
-    SNVs_in_window = knock_knock.target_info.SNVs([snv for snv in snvs if snv.position in window_interval])
-    
-    restricted_mismatch_outcome = knock_knock.outcome.MismatchOutcome(SNVs_in_window)
-    
-    if (c, s) == ('wild type', 'mismatches'):
-        restricted_outcome = restricted_mismatch_outcome
-        if len(restricted_mismatch_outcome.snvs.snvs) == 0:
-            restricted_s = 'clean'
-        else:
-            restricted_s = s
-    
-    elif (c, s) == ('intended edit', 'substitution') or \
-         (c, s) == ('intended edit', 'insertion') or \
-         (c, s) == ('intended edit', 'deletion') or \
-         (c, s) == ('intended edit', 'replacement') or \
-         (c, s) == ('intended edit', 'combination') or \
-         (c, s) == ('partial edit', 'partial incorporation'):
-        
-        restricted_outcome = knock_knock.outcome.ProgrammedEditOutcome(outcome.SNV_read_bases,
-                                                                       restricted_mismatch_outcome,
-                                                                       outcome.non_programmed_edit_mismatches_outcome,
-                                                                       outcome.indels,
-                                                                      )
-        restricted_s = s
-                                                                         
-    restricted_outcome = restricted_outcome.perform_anchor_shift(anchor)
+    mismatches_in_window = knock_knock.target_info.Mismatches([m for m in mismatches if m.position in window_interval])
 
+    details.mismatches = mismatches_in_window
+    
+    if s == 'mismatches' and len(mismatches_in_window) == 0:
+        restricted_s = 'clean'
+    else:
+        restricted_s = s
+    
     restricted_c = c
     
-    if (restricted_c, restricted_s) == ('wild type', 'clean'):
-        restricted_d = 'n/a'
-    else:
-        restricted_d = str(restricted_outcome)
+    restricted_d = str(details)
     
     return restricted_c, restricted_s, restricted_d
 
-def marginalize_over_mismatches_outside_window(outcome_fractions, window_interval, anchor):
-    outcome_fractions = outcome_fractions.groupby(by=lambda csd: restrict_mismatches_to_window(csd, window_interval, anchor)).sum()
+def marginalize_over_mismatches_outside_window(outcome_fractions, window_interval):
+    outcome_fractions = outcome_fractions.groupby(by=lambda csd: restrict_mismatches_to_window(csd, window_interval)).sum()
     outcome_fractions.index = pd.MultiIndex.from_tuples(outcome_fractions.index, names=('category', 'subcategory', 'details'))
     return outcome_fractions
 
@@ -2370,24 +2432,22 @@ def make_partial_incorporation_figure(target_info,
         window_interval = hits.interval.Interval(ti.cut_after - window[1], ti.cut_after - window[0])
 
     if perform_marginalization_over_mismatches_outside_window:
-        outcome_fractions = marginalize_over_mismatches_outside_window(outcome_fractions, window_interval, target_info.anchor)
+        outcome_fractions = marginalize_over_mismatches_outside_window(outcome_fractions, window_interval)
 
     def mismatch_in_window(d):
-        SNVs = MismatchOutcome.from_string(d).undo_anchor_shift(ti.anchor).snvs
-        return any(p in window_interval for p in SNVs.positions)
+        details = knock_knock.outcome.Details.from_string(d)
+        return any(p in window_interval for p in details['mismatches'].positions)
 
     def indel_in_window(d):
         if d == 'collapsed':
             in_window = True
         else:
-            indel = degenerate_indel_from_string(d)
+            details = knock_knock.outcome.Details.from_string(d)
 
-            if indel.kind == 'D':
-                outcome = DeletionOutcome.from_string(d).undo_anchor_shift(ti.anchor).deletion
-            elif indel.kind == 'I':
-                outcome = InsertionOutcome.from_string(d).undo_anchor_shift(ti.anchor).insertion
-
-            in_window = hits.interval.are_overlapping(window_interval, outcome.possibly_involved_interval)
+            in_window = any(
+                hits.interval.are_overlapping(window_interval, indel.possibly_involved_interval)
+                for indel in list(details['insertions']) + list(details['deletions'])
+            )
 
         return in_window
 
@@ -2416,14 +2476,14 @@ def make_partial_incorporation_figure(target_info,
         outcomes = outcome_fractions.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
 
     if len(outcomes) > 0:
-        grid = knock_knock.visualize.stacked.DiagramGrid(outcomes, 
-                                                         ti,
-                                                         draw_wild_type_on_top=True,
-                                                         window=window,
-                                                         block_alpha=0.1,
-                                                         color_overrides=color_overrides,
-                                                         **diagram_kwargs,
-                                                        )
+        grid = DiagramGrid(outcomes, 
+                           ti,
+                           draw_wild_type_on_top=True,
+                           window=window,
+                           block_alpha=0.1,
+                           color_overrides=color_overrides,
+                           **diagram_kwargs,
+                          )
 
         if difference_from_condition is None:
             title = '% of reads with\nspecific outcome'

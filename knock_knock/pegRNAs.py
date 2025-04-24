@@ -116,7 +116,7 @@ class pegRNA:
         self.PBS_name = PBS_name(self.name)
         self.protospacer_name = protospacer_name(self.name)
 
-        self.SNVs = None
+        self.substitutions = None
         self.deletion = None
         self.insertion = None
 
@@ -322,8 +322,11 @@ class pegRNA:
         alignments = aligner.align(self.intended_flap_sequence, self.target_downstream_of_nick)
 
         min_aligned_nts = min(len(self.intended_flap_sequence), 5)
+
         best_alignment = alignments[0]
+
         gaps, identities, mismatches = best_alignment.counts()
+
         if identities + mismatches < min_aligned_nts:
             sequences = [self.intended_flap_sequence, self.target_downstream_of_nick]
             coordinates = np.array([[0, len(self.intended_flap_sequence), len(self.intended_flap_sequence)],
@@ -343,12 +346,12 @@ class pegRNA:
     @memoized_property
     def programmed_substitution_target_ps(self):
 
-        if self.SNVs is None:
-            target_SNVs = {}
+        if self.substitutions is None:
+            target_substitutions = {}
         else:
-            target_SNVs = self.SNVs[self.target_name]
+            target_substitutions = self.substitutions[self.target_name]
 
-        ps = {SNV_details['position'] for _, SNV_details in target_SNVs.items()}
+        ps = {substitution_details['position'] for _, substitution_details in target_substitutions.items()}
 
         return ps
 
@@ -356,7 +359,7 @@ class pegRNA:
     def edit_properties(self):
         ''' Align the intended flap sequence to genomic sequence downstream
         of the nick using Biopython's dynamic programming.
-        Return representations of SNVs, deletions, insertions, and
+        Return representations of substitutions, deletions, insertions, and
         of the exactly-matching terminal HA_RT in coordinates relative to the 
         start of the flap and the nick, respectively. 
         ''' 
@@ -365,7 +368,7 @@ class pegRNA:
 
         best_alignment = trim_excess_target_from_alignment(alignments[0])
 
-        SNVs = {}
+        substitutions = {}
         deletions = []
         insertions = []
         HA_RT = None
@@ -384,7 +387,7 @@ class pegRNA:
             mismatches_in_subsequences = []
 
             # Compare the sequences of each aligned flap and target subsequences to
-            # identify programmed SNVs.
+            # identify programmed substitutions.
             for flap_subsequence, target_subsequence in zip(flap_subsequences, target_subsequences):
                 flap_ps = range(*flap_subsequence)
                 target_ps = range(*target_subsequence)
@@ -394,11 +397,13 @@ class pegRNA:
                 for i, (flap_p, target_p) in enumerate(zip(flap_ps, target_ps)):
                     flap_b = self.intended_flap_sequence[flap_p]
                     target_b = self.target_downstream_of_nick[target_p]
+
                     if flap_b != target_b:
                         mismatches.append(i)
                         
-                        SNV_name = f'SNV_{target_p}_{target_b}_{flap_p}_{flap_b}'
-                        SNVs[SNV_name] = {
+                        substitution_name = f'substitution_{target_p}_{target_b}_{flap_p}_{flap_b}'
+
+                        substitutions[substitution_name] = {
                             'flap': flap_p,
                             'target_downstream': target_p,
                             'description': f'+{target_p + 1}{target_b}→{flap_b}',
@@ -467,8 +472,18 @@ class pegRNA:
                 position = deletion['downstream_of_nick_start'] + 1
                 deletion['description'] = f'+{position}del{sequence}'
 
+        # If the inferred alignment ends in mismatches, reject it and assume this is a non-homologous flap.
+
+        substitution_flap_ps = {substitution['flap'] for name, substitution in substitutions.items()}
+
+        if len(self.intended_flap_sequence) - 1 in substitution_flap_ps:
+            substitutions = {}
+            deletions = []
+            insertions = []
+            HA_RT = None
+
         properties = {
-            'SNVs': SNVs,
+            'substitutions': substitutions,
             'deletions': deletions,
             'insertions': insertions,
             'HA_RT': HA_RT,
@@ -547,7 +562,7 @@ class pegRNA:
 
         # Align the intended flap sequence to the target downstream of the nick.
 
-        if len(self.edit_properties['SNVs']) > 0:
+        if len(self.edit_properties['substitutions']) > 0:
             if len(self.edit_properties['deletions']) == 0 and len(self.edit_properties['insertions']) == 0:
                 self.edit_type = 'substitution(s)'
             else:
@@ -626,18 +641,18 @@ class pegRNA:
             deletion_feature.attribute['color'] = default_feature_colors['deletion']
             new_features[names['target'], deletion_name] = deletion_feature
 
-        if len(self.edit_properties['SNVs']) > 0:
-            self.SNVs = {
+        if len(self.edit_properties['substitutions']) > 0:
+            self.substitutions = {
                 self.target_name: {},
                 self.name: {},
                 'flap': {},
                 'target_downstream': {},
             }
 
-            for SNV in self.edit_properties['SNVs'].values():
+            for substitution in self.edit_properties['substitutions'].values():
                 positions = {
-                    'pegRNA': convert_flap_to_pegRNA_coordinates(SNV['flap']),
-                    'target': convert_downstream_of_nick_to_target_coordinates(SNV['target_downstream']),
+                    'pegRNA': convert_flap_to_pegRNA_coordinates(substitution['flap']),
+                    'target': convert_downstream_of_nick_to_target_coordinates(substitution['target_downstream']),
                 }
 
                 if strands['target'] == '+':
@@ -655,34 +670,34 @@ class pegRNA:
                     pegRNA_base_effective = utilities.reverse_complement(pegRNA_base_plus)
                     target_base_effective = utilities.reverse_complement(target_base_plus)
 
-                SNV_name = f'SNV_{positions["target"]}_{target_base_plus}-{pegRNA_base_effective}'
+                substitution_name = f'substitution_{positions["target"]}_{target_base_plus}-{pegRNA_base_effective}'
 
-                self.SNVs['flap'][SNV_name] = {
-                    'position': SNV['flap'],
-                    'base': self.intended_flap_sequence[SNV['flap']],
-                    'description': SNV['description'],
+                self.substitutions['flap'][substitution_name] = {
+                    'position': substitution['flap'],
+                    'base': self.intended_flap_sequence[substitution['flap']],
+                    'description': substitution['description'],
                 }
 
-                self.SNVs['target_downstream'][SNV_name] = {
-                    'position': SNV['target_downstream'],
-                    'base': self.target_downstream_of_nick[SNV['target_downstream']],
-                    'description': SNV['description'],
+                self.substitutions['target_downstream'][substitution_name] = {
+                    'position': substitution['target_downstream'],
+                    'base': self.target_downstream_of_nick[substitution['target_downstream']],
+                    'description': substitution['description'],
                 }
 
-                self.SNVs[self.target_name][SNV_name] = {
+                self.substitutions[self.target_name][substitution_name] = {
                     'position': positions['target'],
                     'strand': '+',
                     'base': target_base_plus,
                     'alternative_base': pegRNA_base_effective,
-                    'description': SNV['description'],
+                    'description': substitution['description'],
                 }
 
-                self.SNVs[self.name][SNV_name] = {
+                self.substitutions[self.name][substitution_name] = {
                     'position': positions['pegRNA'],
                     'strand': pegRNA_strand,
                     'base': pegRNA_base_plus,
                     'alternative_base': target_base_effective,
-                    'description': SNV['description'],
+                    'description': substitution['description'],
                 }
 
                 for seq_name in names:
@@ -690,10 +705,10 @@ class pegRNA:
                                                       start=positions[seq_name],
                                                       end=positions[seq_name],
                                                       strand=strands[seq_name],
-                                                      ID=SNV_name,
+                                                      ID=substitution_name,
                                                      )
                 
-                    new_features[names[seq_name], SNV_name] = feature
+                    new_features[names[seq_name], substitution_name] = feature
 
         # When interpreting alignments to pegRNAs, it is useful to know
         # the point in pegRNA sequence at which it first diverges from
@@ -763,7 +778,7 @@ class pegRNA:
         else:
             strings = []
 
-            for name, details in self.edit_properties['SNVs'].items():
+            for name, details in self.edit_properties['substitutions'].items():
                 strings.append((details['target_downstream'], details['description']))
 
             for insertion in self.edit_properties['insertions']:
@@ -803,33 +818,33 @@ class pegRNA:
         return flipped_total_bpps, flipped_propensity
 
     @memoized_property
-    def SNV_string_to_edit_description(self):
-        SNVs = self.SNVs
+    def substitution_string_to_edit_description(self):
+        substitutions = self.substitutions
 
-        SNV_name_to_target_order = {SNV_name: i for i, SNV_name in enumerate(sorted(SNVs[self.target_name]))}
+        substitution_name_to_target_order = {substitution_name: i for i, substitution_name in enumerate(sorted(substitutions[self.target_name]))}
 
-        SNV_names_in_flap_order = sorted(SNVs['flap'], key=lambda SNV_name: SNVs['flap'][SNV_name]['position'])
-        SNV_name_to_flap_order = {SNV_name: i for i, SNV_name in enumerate(SNV_names_in_flap_order)}
+        substitution_names_in_flap_order = sorted(substitutions['flap'], key=lambda substitution_name: substitutions['flap'][substitution_name]['position'])
+        substitution_name_to_flap_order = {substitution_name: i for i, substitution_name in enumerate(substitution_names_in_flap_order)}
 
-        SNV_string_to_edit_description = {}
+        substitution_string_to_edit_description = {}
 
-        for SNV_subset in utilities.powerset(SNVs['flap']):
-            if len(SNV_subset) == 0:
+        for substitution_subset in utilities.powerset(substitutions['flap']):
+            if len(substitution_subset) == 0:
                 continue
 
-            chars = ['_' for _ in SNVs['flap']]
-            for name in SNV_subset:
-                chars[SNV_name_to_target_order[name]] = SNVs[self.target_name][name]['alternative_base']
+            chars = ['_' for _ in substitutions['flap']]
+            for name in substitution_subset:
+                chars[substitution_name_to_target_order[name]] = substitutions[self.target_name][name]['alternative_base']
             
-            SNV_string = (''.join(chars))
+            substitution_string = (''.join(chars))
             
-            subset_in_flap_order = sorted(SNV_subset, key=SNV_name_to_flap_order.get)
+            subset_in_flap_order = sorted(substitution_subset, key=substitution_name_to_flap_order.get)
             
-            description = ','.join(SNVs[self.target_name][name]['description'] for name in subset_in_flap_order)
+            description = ','.join(substitutions[self.target_name][name]['description'] for name in subset_in_flap_order)
             
-            SNV_string_to_edit_description[SNV_string] = description
+            substitution_string_to_edit_description[substitution_string] = description
 
-        return SNV_string_to_edit_description
+        return substitution_string_to_edit_description
 
 def get_pegRNAs_by_strand(pegRNAs):
     pegRNAs_by_strand = {}
@@ -989,7 +1004,7 @@ class pegRNA_pair:
 
             elif len(complete_sites) == 1:
                 complete_site = complete_sites[0]
-                label = f'{complete_site.attribute["recombinase"]}_{complete_site.attribute["site"]}_{complete_site.attribute["central_dinucleotide"]}'
+                label = f'{complete_site.attribute["recombinase"]}_{complete_site.attribute["site"]}_{complete_site.attribute["CD"]}'
                 if strand == '+':
                     end = complete_site.end - (len(self.target_sequence_up_to_nick['+']) - 1) + (len(self.pegRNAs_by_strand['+'].components['PBS']) - 1)
                 elif strand == '-':
@@ -1022,7 +1037,7 @@ class pegRNA_pair:
             }
         elif len(complete_sites) == 1:
             complete_site = complete_sites[0]
-            label = f'{complete_site.attribute["recombinase"]}_{complete_site.attribute["site"]}_{complete_site.attribute["central_dinucleotide"]}'
+            label = f'{complete_site.attribute["recombinase"]}_{complete_site.attribute["site"]}_{complete_site.attribute["CD"]}'
 
             # First get coordinates relative to last nt before the nick, then translate
             # to the start of the PBS.
@@ -1306,14 +1321,14 @@ class pegRNA_pair:
         for pegRNA in self.pegRNAs:
             ps[pegRNA.name] = set()
 
-            for SNV_name, SNV_details in self.SNVs[pegRNA.name].items():
-                ps[pegRNA.name].add(SNV_details['position'])
+            for substitution_name, substitution_details in self.substitutions[pegRNA.name].items():
+                ps[pegRNA.name].add(substitution_details['position'])
 
         return ps
 
     def extract_edits(self):
 
-        self.SNVs = {
+        self.substitutions = {
             self.target_name: {},
             self.pegRNAs[0].name: {},
             self.pegRNAs[1].name: {},
@@ -1340,9 +1355,9 @@ class pegRNA_pair:
                     target_p = self.WT_between_nick_coords_to_target_coords[WT_between_nicks_p]
 
                     if edit_b != target_b:
-                        SNV_name = f'SNV_{target_p}_{target_b}-{edit_b}'
+                        substitution_name = f'substitution_{target_p}_{target_b}-{edit_b}'
 
-                        self.SNVs[self.target_name][SNV_name] = {
+                        self.substitutions[self.target_name][substitution_name] = {
                             'position': target_p,
                             'strand': '+',
                             'base': target_b,
@@ -1358,7 +1373,7 @@ class pegRNA_pair:
 
                                 opposite_strand = '-' if pegRNA_strand == '+' else '+'
 
-                                self.SNVs[self.pegRNAs_by_strand[pegRNA_strand].name][SNV_name] = {
+                                self.substitutions[self.pegRNAs_by_strand[pegRNA_strand].name][substitution_name] = {
                                     'position': pegRNA_p,
                                     'strand': opposite_strand,
                                     'base': pegRNA_b,
@@ -1647,7 +1662,7 @@ def infer_twin_pegRNA_features(pegRNAs,
     intended_edit_seqs[3] = target_with_RTed[5][:start + length] + target_with_RTed[3][length:]
 
     deletion = None
-    SNVs = None
+    substitutions = None
 
     if (overlap_seqs[5] != overlap_seqs[3]) or (intended_edit_seqs[5] != intended_edit_seqs[3]):
         intended_edit_seq = None
@@ -1689,7 +1704,7 @@ def infer_twin_pegRNA_features(pegRNAs,
 
         elif len(intended_edit_seq) == len(unedited_seq):
 
-            SNVs = {
+            substitutions = {
                 target_name: {},
                 pegRNA_names[0]: {},
                 pegRNA_names[1]: {},
@@ -1700,9 +1715,9 @@ def infer_twin_pegRNA_features(pegRNAs,
 
                     positions = offset_to_positions[offset]
 
-                    SNV_name = f'SNV_{positions[target_name]}_{target_b}-{pegRNAs_b}'
+                    substitution_name = f'substitution_{positions[target_name]}_{target_b}-{pegRNAs_b}'
 
-                    SNVs[target_name][SNV_name] = {
+                    substitutions[target_name][substitution_name] = {
                         'position': positions[target_name],
                         'strand': '+',
                         'base': target_b,
@@ -1713,10 +1728,10 @@ def infer_twin_pegRNA_features(pegRNAs,
                                                       start=positions[target_name],
                                                       end=positions[target_name],
                                                       strand='+',
-                                                      ID=SNV_name,
+                                                      ID=substitution_name,
                                                      )
                 
-                    new_features[target_name, SNV_name] = feature
+                    new_features[target_name, substitution_name] = feature
 
                     if pegRNA_names_by_side[5] in positions:
                         pegRNA_name = pegRNA_names_by_side[5]
@@ -1726,7 +1741,7 @@ def infer_twin_pegRNA_features(pegRNAs,
                         pegRNA_base_effective = utilities.reverse_complement(pegRNAs_b)
                         target_base_effective = utilities.reverse_complement(target_b)
 
-                        SNVs[pegRNA_name][SNV_name] = {
+                        substitutions[pegRNA_name][substitution_name] = {
                             'position': positions[pegRNA_name],
                             'strand': '-',
                             'base': pegRNA_base_effective,
@@ -1737,10 +1752,10 @@ def infer_twin_pegRNA_features(pegRNAs,
                                                           start=positions[pegRNA_name],
                                                           end=positions[pegRNA_name],
                                                           strand='-',
-                                                          ID=SNV_name,
+                                                          ID=substitution_name,
                                                          )
                     
-                        new_features[pegRNA_name, SNV_name] = feature
+                        new_features[pegRNA_name, substitution_name] = feature
 
                     if pegRNA_names_by_side[3] in positions:
                         pegRNA_name = pegRNA_names_by_side[3]
@@ -1748,7 +1763,7 @@ def infer_twin_pegRNA_features(pegRNAs,
                         pegRNA_base_effective = pegRNAs_b
                         target_base_effective = target_b
 
-                        SNVs[pegRNA_name][SNV_name] = {
+                        substitutions[pegRNA_name][substitution_name] = {
                             'position': positions[pegRNA_name],
                             'strand': '+',
                             'base': pegRNA_base_effective,
@@ -1759,14 +1774,14 @@ def infer_twin_pegRNA_features(pegRNAs,
                                                           start=positions[pegRNA_name],
                                                           end=positions[pegRNA_name],
                                                           strand='+',
-                                                          ID=SNV_name,
+                                                          ID=substitution_name,
                                                          )
                     
-                        new_features[pegRNA_name, SNV_name] = feature
+                        new_features[pegRNA_name, substitution_name] = feature
 
     results = {
         'deletion': deletion,
-        'SNVs': SNVs,
+        'substitutions': substitutions,
         'new_features': new_features,
         'is_prime_del': is_prime_del,
         'intended_edit_seq': intended_edit_seq,

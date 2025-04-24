@@ -9,6 +9,7 @@ import numpy as np
 import pysam
 
 import knock_knock.experiment
+import knock_knock.outcome
 from knock_knock import layout as layout_module
 
 import hits.visualize.fastq
@@ -71,6 +72,15 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
             self.trim_to_max_length = int(self.trim_to_max_length)
 
     @property
+    def preprocessed_read_type(self):
+        if self.paired_end:
+            preprocessed_read_type = 'stitched'
+        else:
+            preprocessed_read_type = 'trimmed'
+
+        return preprocessed_read_type
+
+    @property
     def read_types(self):
         read_types = {self.preprocessed_read_type}
 
@@ -81,15 +91,6 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
             ])
 
         return read_types
-
-    @property
-    def preprocessed_read_type(self):
-        if self.paired_end:
-            preprocessed_read_type = 'stitched'
-        else:
-            preprocessed_read_type = 'trimmed'
-
-        return preprocessed_read_type
 
     @property
     def read_types_to_align(self):
@@ -276,13 +277,14 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
                 
                 outcomes[pair_layout.category, pair_layout.subcategory].append(name)
 
-                outcome = self.final_Outcome.from_layout(pair_layout,
-                                                         query_name=name,
-                                                         Q30_fraction=R1.Q30_fraction,
-                                                         mean_Q=R1.mean_Q,
-                                                         UMI_seq=UMI_seq,
-                                                         UMI_qual=UMI_qual,
-                                                        )
+                outcome = knock_knock.outcome.CategorizationRecord.from_layout(pair_layout,
+                                                   query_name=name,
+                                                   Q30_fraction=R1.Q30_fraction,
+                                                   mean_Q=R1.mean_Q,
+                                                   UMI_seq=UMI_seq,
+                                                   UMI_qual=UMI_qual,
+                                                   seq='',
+                                                  )
                 fh.write(f'{outcome}\n')
 
         # To make plotting easier, for each outcome, make a file listing all of
@@ -364,17 +366,20 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
                 UMI_qual = ''
 
             if len(trimmed) == 0:
-                outcome = self.final_Outcome(trimmed.name,
-                                             len(trimmed),
-                                             0,
-                                             0,
-                                             UMI_seq,
-                                             UMI_qual,
-                                             'nonspecific amplification',
-                                             'primer dimer',
-                                             'n/a',
-                                            )
+                outcome = knock_knock.outcome.CategorizationRecord(
+                    query_name=trimmed.name,
+                    inferred_amplicon_length=len(trimmed),
+                    Q30_fraction=0,
+                    mean_Q=0,
+                    UMI_seq=UMI_seq,
+                    UMI_qual=UMI_qual,
+                    category='nonspecific amplification',
+                    subcategory='primer dimer',
+                    details=knock_knock.outcome.Details(),
+                )
+
                 too_short_outcomes.append(outcome)
+
             else:
                 trimmed_reads.append(trimmed)
 
@@ -450,16 +455,17 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
                     UMI_seq = ''
                     UMI_qual = ''
 
-                outcome = self.final_Outcome(stitched.name,
-                                             len(stitched),
-                                             0,
-                                             0,
-                                             UMI_seq,
-                                             UMI_qual,
-                                             'nonspecific amplification',
-                                             'primer dimer',
-                                             'n/a',
-                                            )
+                outcome = knock_knock.outcome.CategorizationRecord(
+                    query_name=stitched.name,
+                    inferred_amplicon_length=len(stitched),
+                    Q30_fraction=0,
+                    mean_Q=0,
+                    UMI_seq=UMI_seq,
+                    UMI_qual=UMI_qual,
+                    category='nonspecific amplification',
+                    subcategory='primer dimer',
+                    details=knock_knock.outcome.Details(),
+                )
                 too_short_outcomes.append(outcome)
 
                 stitched_lengths[len(stitched)] += 1

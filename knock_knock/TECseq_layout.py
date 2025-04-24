@@ -7,41 +7,7 @@ import hits.utilities
 import knock_knock.prime_editing_layout
 import knock_knock.twin_prime_layout
 
-import knock_knock.outcome
-
-class EdgeOutcome(knock_knock.outcome.Outcome):
-    def __init__(self, edge):
-        self.edge = edge
-
-    def __str__(self):
-        return str(self.edge)
-
-    def perform_anchor_shift(self, anchor):
-        return EdgeOutcome(self.edge - anchor)
-
-    @classmethod
-    def from_string(cls, details_string):
-        return cls(int(details_string))
-
-class EdgeMismatchOutcome(knock_knock.outcome.Outcome):
-    def __init__(self, edge_outcome, mismatch_outcome):
-        self.edge_outcome = edge_outcome
-        self.mismatch_outcome = mismatch_outcome
-
-    def __str__(self):
-        return f'{self.edge_outcome};{self.mismatch_outcome}'
-
-    @classmethod
-    def from_string(cls, details_string):
-        edge_string, mismatch_string = details_string.split(';')
-        edge_outcome = EdgeOutcome.from_string(edge_string)
-        mismatch_outcome = knock_knock.outcome.MismatchOutcome.from_string(mismatch_string)
-        return cls(edge_outcome, mismatch_outcome)
-
-    def perform_anchor_shift(self, anchor):
-        shifted_edge = self.edge_outcome.perform_anchor_shift(anchor)
-        shifted_mismatch = self.mismatch_outcome.perform_anchor_shift(anchor)
-        return type(self)(shifted_edge, shifted_mismatch)
+from knock_knock.outcome import *
 
 memoized_property = hits.utilities.memoized_property
 memoized_with_args = hits.utilities.memoized_with_args
@@ -69,6 +35,10 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             ('n/a',
             ),
         ),
+        ('phiX',
+            ('phiX',
+            ),
+        ),
         ('uncategorized',
             ('uncategorized',
             ),
@@ -78,6 +48,62 @@ class Layout(knock_knock.prime_editing_layout.Layout):
     @property
     def inferred_amplicon_length(self):
         return self.read_length
+
+    @memoized_property
+    def gap_covering_alignments(self):
+        return []
+
+    @memoized_property
+    def partial_gap_perfect_alignments(self):
+        return []
+
+    def realign_edges_to_primers(self, read_side):
+        if read_side == 3:
+            edge_al = None
+
+        else:
+            ti = self.target_info
+
+            buffer = 0
+
+            primer_feature = ti.primers_by_side_of_read['left']
+
+            primer_interval = hits.interval.Interval.from_feature(primer_feature)
+
+            if primer_feature.strand == '+':
+                primer_interval.end = primer_interval.end + buffer
+                alignment_type = 'fixed_start'
+            else:
+                primer_interval.start = primer_interval.start - buffer
+                alignment_type = 'fixed_end'
+
+            als = hits.sw.align_read(
+                self.read,
+                [(ti.target, ti.target_sequence)],
+                0,
+                ti.header,
+                alignment_type=alignment_type,
+                read_interval=hits.interval.Interval(0, len(primer_feature) + buffer),
+                ref_intervals={ti.target: primer_interval},
+                min_score_ratio=0.5,
+            )
+
+            als = [al for al in als if hits.sam.get_strand(al) == primer_feature.strand]
+
+            if len(als) == 1:
+
+                edge_al = als[0]
+
+                edge_al = hits.sw.extend_alignment(edge_al, ti.reference_sequence_bytes[ti.target])
+                
+            else:
+                edge_al = None
+
+        return edge_al
+
+    @memoized_property
+    def perfect_right_edge_alignment(self):
+        return None
 
     @memoized_property
     def primer_alignments(self):
@@ -116,32 +142,36 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         return self.minimal_cover_by_side('left')
 
     def categorize(self):
-        self.details = 'n/a'
-        self.outcome = None
-
         if self.nonspecific_amplification:
             self.register_nonspecific_amplification()
+
+        elif self.aligns_to_phiX:
+            self.category = 'phiX'
+            self.subcategory = 'phiX'
+
+            self.relevant_alignments = [self.longest_phiX_alignment]
 
         elif self.starts_at_expected_location and self.minimal_cover is not None:
             if self.minimal_cover == 'first target':
                 self.category = 'targeted genomic sequence'
                 self.subcategory = 'unedited'
                 edge = hits.sam.reference_edges(self.extension_chains_by_side['left']['alignments']['first target'])[3]
+                self.Details = Details(target_edge=edge, mismatches=self.non_pegRNA_mismatches)
 
             elif self.minimal_cover in ['pegRNA', 'first pegRNA']:
                 self.category = 'RTed sequence'
                 self.subcategory = 'n/a'
                 edge = self.extension_chain_edges['left']
+                self.Details = Details(pegRNA_edge=edge, mismatches=self.non_pegRNA_mismatches)
 
             elif self.minimal_cover == 'second target':
                 self.category = 'targeted genomic sequence'
                 self.subcategory = 'edited'
                 edge = hits.sam.reference_edges(self.extension_chains_by_side['left']['alignments']['second target'])[3]
+                self.Details = Details(target_edge=edge, mismatches=self.non_pegRNA_mismatches)
             
             else:
                 raise ValueError
-
-            self.outcome = EdgeMismatchOutcome(EdgeOutcome(edge), self.non_pegRNA_mismatches_outcome)
 
             self.relevant_alignments = self.parsimonious_extension_chain_alignments
 
@@ -151,18 +181,14 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         else:
             self.category = 'uncategorized'
             self.subcategory = 'uncategorized'
-            self.details = 'n/a'
 
             self.relevant_alignments = self.uncategorized_relevant_alignments
 
-        if self.outcome is not None:
-            # Translate positions to be relative to a registered anchor
-            # on the target sequence.
-            self.details = str(self.outcome.perform_anchor_shift(self.target_info.anchor))
+        self.details = str(self.Details)
 
         self.categorized = True
 
-        return self.category, self.subcategory, self.details, self.outcome
+        return self.category, self.subcategory, self.details, self.Details
 
     @memoized_property
     def plot_parameters(self):
@@ -175,20 +201,8 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
         return plot_parameters
 
-class NoOverlapPairLayout(Layout):
+class NoOverlapPairLayout(Layout, knock_knock.layout.NoOverlapPairCategorizer):
     individual_layout_class = Layout
-
-    def __init__(self, alignments, target_info):
-        self.alignments = alignments
-        self.target_info = target_info
-        self._flipped = False
-
-        self.layouts = {
-            'R1': type(self).individual_layout_class(alignments['R1'], target_info),
-            'R2': type(self).individual_layout_class(alignments['R2'], target_info, flipped=True),
-        }
-
-        self._inferred_amplicon_length = -1
 
     @property
     def inferred_amplicon_length(self):
@@ -325,7 +339,7 @@ class NoOverlapPairLayout(Layout):
         self.category = self.concordant_nonoverlapping['category']
         self.subcategory = self.concordant_nonoverlapping['subcategory']
 
-        self.outcome = EdgeMismatchOutcome(EdgeOutcome(edge), R1.non_pegRNA_mismatches_outcome)
+        self.Details = Details(target_edge=edge, mismatches=R1.non_pegRNA_mismatches)
 
         self.relevant_alignments = {
             'R1': R1.parsimonious_extension_chain_alignments,
@@ -338,16 +352,12 @@ class NoOverlapPairLayout(Layout):
         self.category = self.concordant_nonoverlapping['category']
         self.subcategory = self.concordant_nonoverlapping['subcategory']
 
-        self.details = 'n/a'
-
         self.relevant_alignments = {
             'R1': R1.target_edge_alignments_list + [R1 for R1, R2 in self.concordant_nonoverlapping['pairs']],
             'R2': [R2 for R1, R2 in self.concordant_nonoverlapping['pairs']],
         }
 
     def categorize(self):
-        self.details = 'n/a'
-        self.outcome = None
         self.relevant_alignments = self.alignments
 
         if self.concordant_nonoverlapping:
@@ -373,12 +383,9 @@ class NoOverlapPairLayout(Layout):
             self.category = 'uncategorized'
             self.subcategory = 'uncategorized'
 
-        if self.outcome is not None:
-            # Translate positions to be relative to a registered anchor
-            # on the target sequence.
-            self.details = str(self.outcome.perform_anchor_shift(self.target_info.anchor))
+        self.details = str(self.Details)
 
-        return self.category, self.subcategory, self.details, self.outcome
+        return self.category, self.subcategory, self.details, self.Details
 
     def plot(self,
              relevant=True,
@@ -402,7 +409,7 @@ class NoOverlapPairLayout(Layout):
 
         diagram = knock_knock.visualize.architecture.ReadDiagram(als_to_plot,
                                                                  self.target_info,
-                                                                 highlight_SNPs=True,
+                                                                 highlight_programmed_substitutions=True,
                                                                  flip_target=self.sequencing_direction == '-',
                                                                  inferred_amplicon_length=self.inferred_amplicon_length,
                                                                  features_to_show=self.plot_parameters['features_to_show'],

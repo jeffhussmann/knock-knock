@@ -8,7 +8,6 @@ import pysam
 
 from hits import sam, interval, utilities, fastq, sw
 from .target_info import DegenerateDeletion, DegenerateInsertion
-from .outcome_record import Integration
 
 import knock_knock.outcome
 import knock_knock.visualize.architecture
@@ -44,6 +43,8 @@ class Categorizer:
         self.relevant_alignments = self.alignments
 
         self.categorized = False
+
+        self.Details = knock_knock.outcome.Details()
 
     @memoized_property
     def Q30_fractions(self):
@@ -108,7 +109,7 @@ class Categorizer:
     
     @classmethod
     def subcategories(cls):
-        return dict(cls.category_order)
+        return {c: scs for c, scs in cls.category_order}
 
     @classmethod
     def order(cls, outcome):
@@ -123,6 +124,7 @@ class Categorizer:
                 raise ValueError(category, subcategory)
         else:
             category = outcome
+
             try:
                 return cls.categories().index(category)
             except:
@@ -522,12 +524,28 @@ class Categorizer:
                     edge_als.append((edits_in_primer, edge_al))
 
         edge_als = sorted(edge_als, key=lambda t: t[0])
+
         if len(edge_als) == 0:
             edge_al = None
         else:
             edge_al = edge_als[0][1]
             
         return edge_al
+
+class NoOverlapPairCategorizer(Categorizer):
+    def __init__(self, alignments, target_info):
+        self.alignments = alignments
+        self.target_info = target_info
+        self._flipped = False
+
+        self.layouts = {
+            'R1': type(self).individual_layout_class(alignments['R1'], target_info),
+            'R2': type(self).individual_layout_class(alignments['R2'], target_info, flipped=True),
+        }
+
+        self._inferred_amplicon_length = -1
+
+        self.Details = knock_knock.outcome.Details()
 
 class Layout(Categorizer):
     category_order = [
@@ -2421,7 +2439,7 @@ class Layout(Categorizer):
             label_offsets=label_offsets,
             label_overrides=label_overrides,
             inferred_amplicon_length=self.inferred_amplicon_length,
-            highlight_SNPs=True,
+            highlight_programmed_substitutions=True,
             feature_heights=feature_heights,
             layout_mode=self.mode,
         )

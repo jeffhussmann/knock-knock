@@ -95,6 +95,10 @@ class Batch:
     def write_performance_metrics(self):
         self.performance_metrics.to_csv(self.fns['performance_metrics'])
 
+    def pegRNA_conversion_fractions_fns(self):
+        ''' For adding to zips '''
+        return self.results_dir.glob('pegRNA_conversion_fractions*')
+
     def write_pegRNA_conversion_fractions(self):
         for (genome, protospacer), df in self.pegRNA_conversion_fractions.items():
             fn = self.results_dir / f'pegRNA_conversion_fractions_{genome}_{protospacer}.csv'
@@ -303,8 +307,17 @@ class Batch:
                 genome = group.description['genome']
                 protospacer = group.target_info.pegRNA.components['protospacer']
 
-                if group.pegRNA_conversion_fractions_by_edit_description is not None:
-                    grouped[genome, protospacer][sgRNAs] = group.pegRNA_conversion_fractions_by_edit_description.T
+                fn = group.fns['pegRNA_conversion_fractions']
+
+                if fn.exists():
+                    df = pd.read_csv(fn, index_col=group.full_condition_keys)
+                elif group.pegRNA_conversion_fractions_by_edit_description is not None:
+                    df = group.pegRNA_conversion_fractions_by_edit_description.T
+                else:
+                    df = None
+
+                if df is not None:
+                    grouped[genome, protospacer][sgRNAs] = df
 
         def by_position(description):
             match = re.match(r'\+(\d+)(.+)', description)
@@ -650,65 +663,32 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
         return condition_labels
 
-    def extract_genomic_insertion_length_distributions(self):
-        length_distributions = {}
-        
-        for condition, exp in self.progress(self.full_condition_to_experiment.items()):
-            for organism in ['hg19', 'bosTau7']:
-                key = (*condition, organism)
-                length_distributions[key] = np.zeros(1600)
-
-            for outcome in exp.outcome_iter():
-                if outcome.category == 'genomic insertion':
-                    organism = outcome.subcategory
-                    
-                    lti  = knock_knock.outcome.LongTemplatedInsertionOutcome.from_string(outcome.details)
-                    key = (*condition, organism)
-                    length_distributions[key][lti.insertion_length()] += 1
-
-        length_distributions_df = pd.DataFrame(length_distributions).T
-
-        length_distributions_df.index.names = list(self.outcome_column_levels) + ['organism']
-
-        # Normalize to number of valid reads in each sample.
-        length_distributions_df = length_distributions_df.div(self.total_reads(only_relevant=True), axis=0)
-
-        length_distributions_df = length_distributions_df.reorder_levels(['organism'] + list(self.outcome_column_levels))
-
-        length_distributions_df.to_csv(self.fns['genomic_insertion_length_distributions'])
-
-    @memoized_property
-    def genomic_insertion_length_distributions(self):
-        num_index_cols = len(self.outcome_column_levels) + 1
-        df = pd.read_csv(self.fns['genomic_insertion_length_distributions'], index_col=list(range(num_index_cols)))
-        df.columns = [int(c) for c in df.columns]
-        return df
-
     @memoized_with_kwargs
     def outcome_counts(self, *, level='details', only_relevant=True):
         outcome_counts = self.outcome_counts_df(False)
 
-        if only_relevant:
-            # Exclude reads that are not from the targeted locus (e.g. phiX, 
-            # nonspecific amplification products, or cross-contamination
-            # from other samples) and therefore are not relevant to the 
-            # performance of the editing strategy.
-            outcome_counts = outcome_counts.drop(self.categorizer.non_relevant_categories, errors='ignore')
+        if outcome_counts is not None:
+            if only_relevant:
+                # Exclude reads that are not from the targeted locus (e.g. phiX, 
+                # nonspecific amplification products, or cross-contamination
+                # from other samples) and therefore are not relevant to the 
+                # performance of the editing strategy.
+                outcome_counts = outcome_counts.drop(self.categorizer.non_relevant_categories, errors='ignore')
 
-        # Sort columns to avoid annoying pandas PerformanceWarnings.
-        outcome_counts = outcome_counts.sort_index(axis='columns')
+            # Sort columns to avoid annoying pandas PerformanceWarnings.
+            outcome_counts = outcome_counts.sort_index(axis='columns')
 
-        if level == 'details':
-            pass
-        else:
-            if level == 'subcategory':
-                keys = ['category', 'subcategory']
-            elif level == 'category':
-                keys = ['category']
+            if level == 'details':
+                pass
             else:
-                raise ValueError
+                if level == 'subcategory':
+                    keys = ['category', 'subcategory']
+                elif level == 'category':
+                    keys = ['category']
+                else:
+                    raise ValueError
 
-            outcome_counts = outcome_counts.groupby(keys).sum()
+                outcome_counts = outcome_counts.groupby(keys).sum()
 
         return outcome_counts
 
@@ -732,9 +712,17 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
     @memoized_with_kwargs
     def outcome_fractions(self, *, level='details', only_relevant=True):
-        fractions = self.outcome_counts(level=level, only_relevant=only_relevant) / self.total_reads(only_relevant=only_relevant)
-        order = fractions[self.baseline_condition].mean(axis='columns').sort_values(ascending=False).index
-        fractions = fractions.loc[order]
+        counts = self.outcome_counts(level=level, only_relevant=only_relevant)
+
+        if counts is not None:
+            denominator = self.total_reads(only_relevant=only_relevant)
+            fractions = counts / denominator
+            order = fractions[self.baseline_condition].mean(axis='columns').sort_values(ascending=False).index
+            fractions = fractions.loc[order]
+        
+        else:
+            fractions = None
+
         return fractions
 
     @memoized_with_kwargs
@@ -852,48 +840,53 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
     @memoized_property
     def outcomes_containing_pegRNA_programmed_edits(self):
         outcomes_containing_pegRNA_programmed_edits = {}
-        if self.target_info.pegRNA_SNVs is not None:
-            SNVs = self.target_info.pegRNA_SNVs[self.target_info.target]
-            # Note: sorting SNVs is critical here to match the order in outcome.SNV_read_bases.
-            SNV_order = sorted(SNVs)
 
-            for SNV_name in SNVs:
-                outcomes_containing_pegRNA_programmed_edits[SNV_name] = []
+        outcome_fractions = self.outcome_fractions()
 
-        else:
-            SNVs = None
-        
-        if self.target_info.pegRNA_programmed_insertion is not None:
-            insertion = self.target_info.pegRNA_programmed_insertion
+        if outcome_fractions is not None:
 
-            outcomes_containing_pegRNA_programmed_edits[str(insertion)] = []
+            if self.target_info.pegRNA_substitutions is not None:
+                SNVs = self.target_info.pegRNA_substitutions[self.target_info.target]
+                # Note: sorting SNVs is critical here to match the order in outcome.SNV_read_bases.
+                SNV_order = sorted(SNVs)
 
-        else:
-            insertion = None
+                for SNV_name in SNVs:
+                    outcomes_containing_pegRNA_programmed_edits[SNV_name] = []
 
-        if self.target_info.pegRNA_programmed_deletion is not None:
-            deletion = self.target_info.pegRNA_programmed_deletion
-
-            outcomes_containing_pegRNA_programmed_edits[str(deletion)] = []
-
-        else:
-            deletion = None
+            else:
+                SNVs = None
             
-        for c, s, d  in self.outcome_fractions().index:
-            if c in {'intended edit', 'partial replacement', 'partial edit'}:
-                outcome = knock_knock.outcome.ProgrammedEditOutcome.from_string(d).undo_anchor_shift(self.target_info.anchor)
+            if self.target_info.pegRNA_programmed_insertion is not None:
+                insertion = self.target_info.pegRNA_programmed_insertion
 
-                if SNVs is not None:
-                    for SNV_name, read_base in zip(SNV_order, outcome.SNV_read_bases):
-                        SNV = SNVs[SNV_name]
-                        if read_base == SNV['alternative_base']:
-                            outcomes_containing_pegRNA_programmed_edits[SNV_name].append((c, s, d))
+                outcomes_containing_pegRNA_programmed_edits[str(insertion)] = []
 
-                if insertion is not None and insertion in outcome.insertions:
-                    outcomes_containing_pegRNA_programmed_edits[str(insertion)].append((c, s, d))
+            else:
+                insertion = None
 
-                if deletion is not None and deletion in outcome.deletions:
-                    outcomes_containing_pegRNA_programmed_edits[str(deletion)].append((c, s, d))
+            if self.target_info.pegRNA_programmed_deletion is not None:
+                deletion = self.target_info.pegRNA_programmed_deletion
+
+                outcomes_containing_pegRNA_programmed_edits[str(deletion)] = []
+
+            else:
+                deletion = None
+
+            for c, s, d  in outcome_fractions.index:
+                if c in {'intended edit', 'partial replacement', 'partial edit'}:
+                    details = knock_knock.outcome.Details.from_string(d)
+
+                    if SNVs is not None:
+                        for SNV_name, read_base in zip(SNV_order, details.programmed_substitution_read_bases):
+                            SNV = SNVs[SNV_name]
+                            if read_base == SNV['alternative_base']:
+                                outcomes_containing_pegRNA_programmed_edits[SNV_name].append((c, s, d))
+
+                    if insertion is not None and insertion in details['insertions']:
+                        outcomes_containing_pegRNA_programmed_edits[str(insertion)].append((c, s, d))
+
+                    if deletion is not None and deletion in details['deletions']:
+                        outcomes_containing_pegRNA_programmed_edits[str(deletion)].append((c, s, d))
 
         return outcomes_containing_pegRNA_programmed_edits
 
@@ -930,6 +923,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
             return df
 
     def write_pegRNA_conversion_fractions(self):
+        ''' Note that this writes transposed. '''
         if self.target_info.pegRNA is not None and self.pegRNA_conversion_fractions is not None:
             self.pegRNA_conversion_fractions_by_edit_description.T.to_csv(self.fns['pegRNA_conversion_fractions'])
 

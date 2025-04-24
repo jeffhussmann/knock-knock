@@ -37,7 +37,6 @@ class ExperimentGroup:
         self.fns = {
             'common_sequences_dir': self.results_dir / 'common_sequences',
             'common_sequence_outcomes': self.results_dir / 'common_sequences' / 'common_sequence_outcomes.txt',
-            'common_sequence_special_alignments': self.results_dir / 'common_sequences' / 'all_special_alignments.bam',
 
             'total_outcome_counts': self.results_dir / 'total_outcome_counts.txt',
             'outcome_counts': self.results_dir  / 'outcome_counts.npz',
@@ -145,6 +144,7 @@ class ExperimentGroup:
     @memoized_property
     def common_sequence_outcomes(self):
         outcomes = []
+
         for exp in self.common_sequence_chunk_exps():
             for outcome in exp.outcome_iter():
                 outcomes.append(outcome)
@@ -154,8 +154,10 @@ class ExperimentGroup:
     @memoized_property
     def common_name_to_common_sequence(self):
         name_to_seq = {}
-        for outcome in self.common_sequence_outcomes:
-            name_to_seq[outcome.query_name] = outcome.seq
+
+        for exp in self.common_sequence_chunk_exps():
+            for read in exp.reads_by_type(exp.preprocessed_read_type):
+                name_to_seq[read.name] = read.seq
 
         return name_to_seq
 
@@ -164,22 +166,25 @@ class ExperimentGroup:
         return utilities.reverse_dictionary(self.common_name_to_common_sequence)
 
     @memoized_property
-    def common_name_to_special_alignment(self):
-        name_to_al = {}
-
-        if self.fns['common_sequence_special_alignments'].exists():
-            for al in pysam.AlignmentFile(self.fns['common_sequence_special_alignments']):
-                name_to_al[al.query_name] = al
-
-        return name_to_al
-
-    @memoized_property
     def common_sequence_to_outcome(self):
         common_sequence_to_outcome = {}
+
         for outcome in self.common_sequence_outcomes:
-            common_sequence_to_outcome[outcome.seq] = outcome
+            seq = self.common_name_to_common_sequence[outcome.query_name]
+            common_sequence_to_outcome[seq] = outcome
 
         return common_sequence_to_outcome
+
+    @memoized_property
+    def common_sequence_to_alignments(self):
+        common_sequence_to_alignments = {}
+
+        for chunk_exp in self.common_sequence_chunk_exps():
+            for common_name, als in chunk_exp.alignment_groups():
+                seq = self.common_name_to_common_sequence[common_name]
+                common_sequence_to_alignments[seq] = als
+
+        return common_sequence_to_alignments
 
     def merge_common_sequence_outcomes(self):
         with self.fns['common_sequence_outcomes'].open('w') as fh:
@@ -198,20 +203,6 @@ class ExperimentGroup:
             return chunk
 
         return name_to_chunk
-
-    def get_common_seq_alignments(self, seq):
-        name = self.common_sequence_to_common_name[seq]
-        als = self.get_read_alignments(name)
-        return als
-
-    @memoized_property
-    def common_sequence_to_alignments(self):
-        common_sequence_to_alignments = {}
-        for chunk_exp in self.common_sequence_chunk_exps():
-            for common_name, als in chunk_exp.alignment_groups():
-                seq = self.common_name_to_common_sequence[common_name]
-                common_sequence_to_alignments[seq] = als
-        return common_sequence_to_alignments
 
     def get_read_alignments(self, name):
         if isinstance(name, int):
@@ -553,14 +544,20 @@ class ExperimentGroup:
 
         key = prefix + 'outcome_counts'
 
-        sparse_counts = scipy.sparse.load_npz(self.fns[key])
-        df = pd.DataFrame(sparse_counts.toarray(),
-                          index=self.total_outcome_counts(collapsed).index,
-                          columns=pd.MultiIndex.from_tuples(self.full_conditions),
-                         )
+        total_counts = self.total_outcome_counts(collapsed)
 
-        df.index.names = self.outcome_index_levels
-        df.columns.names = self.outcome_column_levels
+        if self.fns[key].exists() and total_counts is not None:
+            sparse_counts = scipy.sparse.load_npz(self.fns[key])
+            df = pd.DataFrame(sparse_counts.toarray(),
+                              index=total_counts.index,
+                              columns=pd.MultiIndex.from_tuples(self.full_conditions),
+                             )
+
+            df.index.names = self.outcome_index_levels
+            df.columns.names = self.outcome_column_levels
+
+        else:
+            df = None
 
         return df
 
@@ -573,10 +570,9 @@ class ExperimentGroup:
 
         key = prefix + 'total_outcome_counts'
 
-        return pd.read_csv(self.fns[key], header=None, index_col=list(range(len(self.outcome_index_levels))), na_filter=False)
+        if self.fns[key].exists():
+            counts = pd.read_csv(self.fns[key], header=None, index_col=list(range(len(self.outcome_index_levels))), na_filter=False)
+        else:
+            counts = None
 
-    @memoized_property
-    def genomic_insertion_length_distributions(self):
-        df = pd.read_csv(self.fns['genomic_insertion_length_distributions'], index_col=[0, 1, 2])
-        df.columns = [int(c) for c in df.columns]
-        return df
+        return counts

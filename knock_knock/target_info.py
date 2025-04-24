@@ -78,16 +78,27 @@ class TargetInfo:
         self.gb_records = gb_records
         self.manual_sgRNA_components = manual_sgRNA_components
 
+        def strip_if_string(v):
+            if isinstance(v, list):
+                v = list(map(strip_if_string, v))
+
+            elif isinstance(v, str):
+                v = v.strip()
+
+            return v
+
         def populate_attribute(attribute_name, value, force_list=False, default_value=None):
             if value is None:
                 value = self.manifest.get(attribute_name, default_value)
-
+                
             if force_list:
                 if isinstance(value, str):
                     if value == '':
                         value = []
                     else:
                         value = value.split(';')
+
+            value = strip_if_string(value)
 
             setattr(self, attribute_name, value)
 
@@ -683,6 +694,7 @@ class TargetInfo:
     @memoized_property
     def anchor(self):
         feature = self.features.get((self.target, 'anchor'))
+
         if feature is not None:
             return feature.start
         else:
@@ -1814,11 +1826,11 @@ class TargetInfo:
         return is_prime_del
 
     @memoized_property
-    def pegRNA_SNVs(self):
+    def pegRNA_substitutions(self):
         ''' Format:
         {
             target_name: {
-                SNV_name: {
+                substitution_name: {
                     'position': position in target,
                     'strand': '+',
                     'base': base on + strand of target at position,
@@ -1840,10 +1852,10 @@ class TargetInfo:
         } 
         '''
         if len(self.pegRNA_names) == 0:
-            SNVs = None
+            substitutions = None
 
         elif len(self.pegRNA_names) == 1:
-            SNVs = self.pegRNAs[0].SNVs
+            substitutions = self.pegRNAs[0].substitutions
 
         elif len(self.pegRNA_names) == 2:
             results = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNAs,
@@ -1851,44 +1863,44 @@ class TargetInfo:
                                                                      self.features,
                                                                      self.reference_sequences,
                                                                     )
-            SNVs = results['SNVs']
+            substitutions = results['substitutions']
 
         else:
-            SNVs = None
+            substitutions = None
 
-        return SNVs
+        return substitutions
 
     @memoized_property
-    def simple_pegRNA_SNVs(self):
+    def simple_pegRNA_substitutions(self):
         ''' {ref_name, position: base identity in pegRNA if on forward strand}}'''
-        simple_pegRNA_SNVs = {}
+        simple_pegRNA_substitutions = {}
 
-        if self.pegRNA_SNVs is not None:
+        if self.pegRNA_substitutions is not None:
             ref_names = [self.target] + self.pegRNA_names
             for ref_name in ref_names:
-                if ref_name in self.pegRNA_SNVs:
-                    SNVs = self.pegRNA_SNVs[ref_name]
-                    for SNV_name, details in SNVs.items():
+                if ref_name in self.pegRNA_substitutions:
+                    substitutions = self.pegRNA_substitutions[ref_name]
+                    for SNV_name, details in substitutions.items():
                         if ref_name in self.pegRNA_names:
                             base = details['base']
                         else:
                             base = details['alternative_base']
 
-                        simple_pegRNA_SNVs[ref_name, details['position']] = base
+                        simple_pegRNA_substitutions[ref_name, details['position']] = base
 
-        return simple_pegRNA_SNVs
+        return simple_pegRNA_substitutions
 
     @memoized_property
     def pegRNA_programmed_alternative_bases(self):
         programmed_subs = {}
 
-        if self.pegRNA_SNVs is not None:
+        if self.pegRNA_substitutions is not None:
             ref_names = [self.target] + self.pegRNA_names
             for ref_name in ref_names:
-                if ref_name in self.pegRNA_SNVs:
-                    SNVs = self.pegRNA_SNVs[ref_name]
+                if ref_name in self.pegRNA_substitutions:
+                    substitutions = self.pegRNA_substitutions[ref_name]
                     programmed_subs[ref_name] = {}
-                    for SNV_name, SNV in SNVs.items():
+                    for SNV_name, SNV in substitutions.items():
                         programmed_subs[ref_name][SNV['position']] = SNV['alternative_base']
 
         return programmed_subs
@@ -1969,8 +1981,8 @@ class TargetInfo:
         name_to_description = {}
 
         if self.pegRNA is not None:
-            if self.pegRNA.SNVs is not None:
-                for SNV_name, details in self.pegRNA.SNVs[self.target].items():
+            if self.pegRNA.substitutions is not None:
+                for SNV_name, details in self.pegRNA.substitutions[self.target].items():
                     name_to_description[SNV_name] = details['description']
 
             if self.pegRNA_programmed_insertion is not None:
@@ -2024,10 +2036,12 @@ def degenerate_indel_from_string(details_string):
             DegenerateIndel = DegenerateDeletion
         elif kind == 'I':
             DegenerateIndel = DegenerateInsertion
+        else:
+            raise ValueError(kind)
 
         return DegenerateIndel.from_string(details_string)
 
-class DegenerateDeletion():
+class DegenerateDeletion:
     def __init__(self, starts_ats, length):
         self.kind = 'D'
         self.starts_ats = tuple(sorted(starts_ats))
@@ -2043,7 +2057,7 @@ class DegenerateDeletion():
         starts_ats = [int(s) for s in starts_string.strip('{}').split('|')]
         length = int(length_string)
 
-        return DegenerateDeletion(starts_ats, length)
+        return cls(starts_ats, length)
 
     @classmethod
     def collapse(cls, degenerate_deletions):
@@ -2060,7 +2074,7 @@ class DegenerateDeletion():
 
         starts_ats = sorted(starts_ats)
 
-        return DegenerateDeletion(starts_ats, length)
+        return cls(starts_ats, length)
 
     def __str__(self):
         starts_string = '|'.join(map(str, self.starts_ats))
@@ -2080,17 +2094,70 @@ class DegenerateDeletion():
         else:
             return self.starts_ats == other.starts_ats and self.length == other.length
 
+    def __lt__(self, other):
+        return (self.starts_ats[0] < other.starts_ats[0]) or (self.starts_ats[0] == other.starts_ats[0] and self.length < other.length)
+
     def __hash__(self):
         return hash((self.starts_ats, self.length))
 
     def singletons(self):
-        return (DegenerateDeletion([starts_at], self.length) for starts_at in self.starts_ats)
+        return (type(self)([starts_at], self.length) for starts_at in self.starts_ats)
 
     @property
     def possibly_involved_interval(self):
         return interval.Interval(min(self.starts_ats), max(self.ends_ats))
 
-class DegenerateInsertion():
+    def perform_anchor_shift(self, anchor):
+        shifted_starts_ats = [starts_at - anchor for starts_at in self.starts_ats]
+        return type(self)(shifted_starts_ats, self.length)
+
+    def get_min_removed(self, ti):
+        min_removed = {
+            5: max(0, ti.cut_after - max(self.deletion.starts_ats) + 1),
+            3: max(0, min(self.deletion.ends_ats) - ti.cut_after),
+        }
+        for target_side, PAM_side in ti.target_side_to_PAM_side.items():
+            min_removed[PAM_side] = min_removed[target_side]
+
+        return min_removed
+
+    def classify_directionality(self, ti):
+        if ti.effector.name == 'SpCas9':
+            min_removed = self.get_min_removed(ti)
+
+            if min_removed['PAM-proximal'] > 0 and min_removed['PAM-distal'] > 0:
+                directionality = 'bidirectional'
+            elif min_removed['PAM-proximal'] > 0 and min_removed['PAM-distal'] <= 0:
+                directionality = 'PAM-proximal'
+            elif min_removed['PAM-proximal'] <= 0 and min_removed['PAM-distal'] > 0:
+                directionality = 'PAM-distal'
+            else:
+                directionality = 'ambiguous'
+        
+        elif ti.effector.name in ['Cpf1', 'AsCas12a']:
+            start = min(self.deletion.starts_ats)
+            end = max(self.deletion.ends_ats)
+            first_nick, second_nick = sorted(ti.cut_afters.values())
+            includes_first_nick = start - 0.5 <= first_nick + 0.5 <= end + 0.5
+            includes_second_nick = start - 0.5 <= second_nick + 0.5 <= end + 0.5
+
+            if not includes_first_nick and not includes_second_nick:
+                includes = 'spans neither'
+            elif includes_first_nick and not includes_second_nick:
+                includes = 'spans PAM-distal nick'
+            elif not includes_first_nick and includes_second_nick:
+                includes = 'spans PAM-proximal nick'
+            else:
+                includes = 'spans both nicks'
+
+            directionality = includes
+
+        else:
+            raise NotImplementedError(ti.effector.name)
+
+        return directionality
+
+class DegenerateInsertion:
     def __init__(self, starts_afters, seqs):
         self.kind = 'I'
         order = np.argsort(starts_afters)
@@ -2162,54 +2229,62 @@ class DegenerateInsertion():
     def possibly_involved_interval(self):
         return interval.Interval(min(self.starts_afters), max(self.starts_afters) + 1)
 
-class SNV():
+    def perform_anchor_shift(self, anchor):
+        shifted_starts_afters = [starts_after - anchor for starts_after in self.starts_afters]
+        return type(self)(shifted_starts_afters, self.seqs)
+
+class Mismatch:
     def __init__(self, position, basecall):
         self.position = position
         self.basecall = basecall
 
     @classmethod
     def from_string(cls, details_string):
+        position = int(details_string[:-1])
         basecall = details_string[-1]
 
-        position = int(details_string[:-1])
+        return cls(position, basecall)
 
-        return SNV(position, basecall)
+    def perform_anchor_shift(self, anchor):
+        return type(self)(self.position - anchor, self.basecall)
 
     def __str__(self):
         return f'{self.position}{self.basecall}'
 
-class SNVs():
-    def __init__(self, snvs):
-        self.snvs = sorted(snvs, key=lambda snv: snv.position)
+class Mismatches:
+    def __init__(self, mismatches=None):
+        if mismatches is None:
+            mismatches = []
+        self.mismatches = sorted(mismatches, key=lambda mismatch: mismatch.position)
     
     def __str__(self):
-        return ','.join(str(snv) for snv in self.snvs)
+        return ','.join(str(mismatch) for mismatch in self.mismatches)
 
     @classmethod
     def from_string(cls, details_string):
         if details_string == '' or details_string == 'collapsed':
-            snvs = []
+            mismatches = []
         else:
-            snvs = [SNV.from_string(s) for s in details_string.split(',')]
+            mismatches = [Mismatch.from_string(s) for s in details_string.split(',')]
 
-        return SNVs(snvs)
+        return cls(mismatches)
 
     def __repr__(self):
         return str(self)
 
     def __len__(self):
-        return len(self.snvs)
+        return len(self.mismatches)
 
     def __iter__(self):
-        return iter(self.snvs)
+        return iter(self.mismatches)
 
     @property
     def positions(self):
-        return [snv.position for snv in self.snvs]
+        return [mismatch.position for mismatch in self.mismatches]
     
     @property
     def basecalls(self):
-        return [snv.basecall for snv in self.snvs]
+        return [mismatch.basecall for mismatch in self.mismatches]
 
     def __lt__(self, other):
         if max(self.positions) != max(other.positions):
@@ -2224,6 +2299,9 @@ class SNVs():
                     return self.basecalls < other.basecalls
             else:
                 return False
+
+    def perform_anchor_shift(self, anchor):
+        return type(self)([mismatch.perform_anchor_shift(anchor) for mismatch in self.mismatches])
 
 def parse_benchling_genbank(gb_record):
     convert_strand = {

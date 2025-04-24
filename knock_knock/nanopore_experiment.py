@@ -2,12 +2,16 @@ import itertools
 import logging
 import multiprocessing
 import os
+import shutil
 
+from collections import defaultdict
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 import hits.fastq
+import hits.interval
 import hits.utilities as utilities
 
 import knock_knock.experiment
@@ -31,11 +35,13 @@ class Experiment(knock_knock.experiment.Experiment):
 
         self.preprocessed_read_type = 'nanopore_by_name'
 
-        self.max_relevant_length = 10000
+        self.max_relevant_length = int(self.description.get('max_relevant_length', 10000))
         self.x_tick_multiple = 500
         self.length_plot_smooth_window = 1
 
         self.max_insertion_length = 20
+
+        #self.supplemental_index_names = []
 
     @memoized_property
     def categorizer(self):
@@ -83,6 +89,94 @@ class Experiment(knock_knock.experiment.Experiment):
         self.generate_outcome_stratified_lengths()
 
         self.record_sanitized_category_names()
+
+    def length_ranges(self, outcome=None):
+        interval_length = self.max_relevant_length // 50
+        starts = np.arange(0, self.max_relevant_length + interval_length, interval_length)
+
+        if outcome is None:
+            lengths = self.read_lengths
+        else:
+            if isinstance(outcome, str):
+                all_lengths = self.outcome_stratified_lengths.lengths_df(level='category')
+            else:
+                all_lengths = self.outcome_stratified_lengths.lengths_df(level='subcategory')
+
+            lengths = all_lengths.loc[outcome]
+
+        ranges = []
+
+        for start in starts:
+            if sum(lengths[start:start + interval_length]) > 0:
+                ranges.append((start, start + interval_length - 1))
+
+        return pd.DataFrame(ranges, columns=['start', 'end'])
+
+    def generate_length_range_figures(self, specific_outcome=None, num_examples=1):
+        by_length_range = defaultdict(lambda: utilities.ReservoirSampler(num_examples))
+        length_ranges = [hits.interval.Interval(row['start'], row['end']) for _, row in self.length_ranges(specific_outcome).iterrows()]
+
+        if isinstance(specific_outcome, str):
+            def is_relevant(outcome):
+                return outcome.category == specific_outcome
+
+        elif isinstance(specific_outcome, tuple):
+            category, subcategory = specific_outcome
+
+            def is_relevant(outcome):
+                return outcome.category == category and outcome.subcategory == subcategory
+        
+        elif specific_outcome is None:
+            def is_relevant(outcome):
+                return True
+
+        else:
+            raise ValueError(specific_outcome)
+
+        outcomes = filter(is_relevant, self.outcome_iter())
+
+        al_groups = self.alignment_groups(outcome=specific_outcome)
+
+        for outcome, (name, group) in zip(outcomes, al_groups):
+            if outcome.query_name != name:
+                raise ValueError('iters out of sync')
+
+            if outcome.inferred_amplicon_length >= self.max_relevant_length:
+                last_range = length_ranges[-1]
+                if last_range.start == self.max_relevant_length:
+                    by_length_range[last_range.start, last_range.end].add((name, group))
+
+            else:
+                for length_range in length_ranges:
+                    if outcome.inferred_amplicon_length in length_range:
+                        by_length_range[length_range.start, length_range.end].add((name, group))
+
+        if specific_outcome is None:
+            fns = self.fns
+        else:
+            fns = self.outcome_fns(specific_outcome)
+
+        fig_dir = fns['length_ranges_dir']
+            
+        if fig_dir.is_dir():
+            shutil.rmtree(str(fig_dir))
+
+        fig_dir.mkdir(exist_ok=True, parents=True)
+
+        if specific_outcome is not None:
+            description = ': '.join(specific_outcome)
+        else:
+            description = 'Generating length-specific diagrams'
+
+        items = self.progress(by_length_range.items(), desc=description, total=len(by_length_range))
+
+        for (start, end), sampler in items:
+            diagrams = self.alignment_groups_to_diagrams(sampler.sample,
+                                                         num_examples=num_examples,
+                                                        )
+            im = hits.visualize.make_stacked_Image([d.fig for d in diagrams])
+            fn = fns['length_range_figure'](start, end)
+            im.save(fn)
 
 class ChunkedExperiment(Experiment):
     def __init__(self, *args, **kwargs):
@@ -132,10 +226,10 @@ class ChunkedExperiment(Experiment):
             chunk_exp = self.chunk_experiments[chunk_number]
             yield from chunk_exp.outcome_iter()
 
-    def alignment_groups(self):
+    def alignment_groups(self, **kwargs):
         for chunk_number in self.chunk_numbers:
             chunk_exp = self.chunk_experiments[chunk_number]
-            yield from chunk_exp.alignment_groups()
+            yield from chunk_exp.alignment_groups(**kwargs)
 
     def reads_by_type(self, read_type):
         for chunk_number in self.chunk_numbers:
@@ -287,7 +381,7 @@ def convert_sample_sheet(base_dir, sample_sheet_df, batch_name):
 
         supplemental_indices = set()
 
-        for name in [genome] + extra_sequences.split(';'):
+        for name in [genome, genome_source] + extra_sequences.split(';'):
             if name in valid_supplemental_indices:
                 supplemental_indices.add(name)
 
@@ -313,3 +407,14 @@ def convert_sample_sheet(base_dir, sample_sheet_df, batch_name):
     samples_df.to_csv(samples_csv_fn)
 
     return samples_df
+
+def experiments(base_dir, batch_name):
+    base_dir = Path(base_dir)
+
+    sample_sheet = pd.read_csv(base_dir / 'data' / batch_name / 'sample_sheet.csv', index_col='sample_name')
+
+    experiments = {}
+    for sample_name in sample_sheet.index:
+        experiments[sample_name] = ChunkedExperiment(base_dir, batch_name, sample_name)
+
+    return experiments

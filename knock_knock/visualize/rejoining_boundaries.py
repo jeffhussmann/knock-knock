@@ -174,15 +174,14 @@ class EfficientBoundaryProperties:
         def csd_to_pegRNA_coords(csd):
             c, s, d = csd
 
+            details = knock_knock.outcome.Details.from_string(d)
+
             if c == 'intended edit':
                 pegRNA_coord = last_HA_RT_nt_in_pegRNA
             elif c == 'RTed sequence':
-                outcome = knock_knock.TECseq_layout.EdgeMismatchOutcome.from_string(d)
-                pegRNA_coord = outcome.undo_anchor_shift(self.target_info.anchor).edge_outcome.edge
-
+                pegRNA_coord = details.pegRNA_edge
             else:
-                ur_outcome = knock_knock.prime_editing_layout.UnintendedRejoiningOutcome.from_string(d)
-                pegRNA_coord = ur_outcome.edges[self.target_info.pegRNA_side]
+                raise NotImplementedError
 
             return pegRNA_coord
 
@@ -210,14 +209,16 @@ class EfficientBoundaryProperties:
 
             if c == 'intended edit':
                 target_coord = first_nt_after_HA_RT_in_genome
+<<<<<<< HEAD
             elif c == 'targeted genomic sequence':
                 outcome = knock_knock.TECseq_layout.EdgeMismatchOutcome.from_string(d)
                 target_coord = outcome.undo_anchor_shift(self.target_info.anchor).edge_outcome.edge
+=======
+>>>>>>> serialization_with_tags
             elif c == 'RTed sequence':
                 target_coord = 0
             else:
-                ur_outcome = knock_knock.prime_editing_layout.UnintendedRejoiningOutcome.from_string(d)
-                target_coord = ur_outcome.edges[self.target_info.non_pegRNA_side]
+                raise NotImplementedError
 
             return target_coord
 
@@ -276,8 +277,8 @@ class EfficientDualFlapBoundaryProperties:
         def csd_to_left_coords(csd):
             c, s, d = csd
 
-            ur_outcome = knock_knock.prime_editing_layout.UnintendedRejoiningOutcome.from_string(d)
-            pegRNA_coord = ur_outcome.edges['left']
+            details = knock_knock.outcome.Details.from_string(d)
+            pegRNA_coord = details.left_rejoining_edge
 
             return pegRNA_coord
 
@@ -289,8 +290,8 @@ class EfficientDualFlapBoundaryProperties:
         def csd_to_right_coords(csd):
             c, s, d = csd
 
-            ur_outcome = knock_knock.prime_editing_layout.UnintendedRejoiningOutcome.from_string(d)
-            pegRNA_coord = ur_outcome.edges['right']
+            details = knock_knock.outcome.Details.from_string(d)
+            pegRNA_coord = details.right_rejoining_edge
 
             return pegRNA_coord
 
