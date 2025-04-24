@@ -6,7 +6,6 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-import knock_knock.target_info
 from knock_knock.target_info import DegenerateDeletion, DegenerateInsertion, Mismatches
 
 class Detail:
@@ -258,7 +257,7 @@ def extract_deletion_boundaries(target_info,
     stops = np.zeros_like(fraction_removed)
 
     for (c, s, d), row in deletion_fractions.iterrows():
-        details = knock_knock.outcome.Details.from_string(d)
+        details = Details.from_string(d)
 
         deletions = details['deletions']
 
