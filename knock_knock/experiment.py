@@ -1103,8 +1103,7 @@ class Experiment:
     def expected_lengths(self):
         ti = self.target_info
 
-        expected_lengths = {
-        }
+        expected_lengths = {}
 
         if not knock_knock.utilities.is_one_sided(self.description.get('experiment_type')):
             expected_lengths['WT'] = ti.amplicon_length
@@ -1158,8 +1157,10 @@ class Experiment:
 
         for name, als in al_groups:
             length = self.qname_to_inferred_length[name]
+
             if length == -1:
                 length = self.length_to_store_unknown
+
             by_length[length].add((name, als))
 
         if specific_outcome is None:

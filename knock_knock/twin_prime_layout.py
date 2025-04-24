@@ -722,7 +722,6 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
         MH_nts = self.extension_chain_junction_microhomology
 
-
         details_kwargs = dict(
             junction_microhomology_length=MH_nts,
             integrase_sites=self.integrase_sites_in_chains,

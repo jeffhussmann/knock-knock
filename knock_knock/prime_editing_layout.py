@@ -5,6 +5,7 @@ import pysam
 
 from hits import interval, sam, sw, utilities
 from hits.utilities import memoized_property
+import hits.visualize
 
 import knock_knock.pegRNAs
 import knock_knock.target_info
@@ -961,7 +962,11 @@ class Layout(layout.Categorizer):
 
             last_als[side] = last_al
 
-        return knock_knock.layout.junction_microhomology(ti.reference_sequences, last_als['left'], last_als['right'])
+        mh = knock_knock.layout.junction_microhomology(ti.reference_sequences, last_als['left'], last_als['right'])
+
+        mh = max(mh, 0)
+
+        return mh
 
     @memoized_property
     def extension_chain_junction_microhomology(self):
