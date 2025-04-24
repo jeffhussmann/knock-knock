@@ -56,7 +56,8 @@ class ReadDiagram:
     donor_below: bool = False
     target_above: bool = False
     manual_refs_below: list = field(default_factory=list)
-    features_on_alignments: bool = True
+    draw_features_on_alignments: bool = True
+    label_features_on_alignments: bool = False
     ax: Optional[plt.Axes] = None
     features_to_hide: set = field(default_factory=set)
     features_to_show: Optional[set] = None
@@ -242,6 +243,11 @@ class ReadDiagram:
                 self.width_per_unit = 0.003
 
         self.height_per_unit = 40
+
+        if self.layout_mode == 'illumina':
+            self.dimple_height = 0.003
+        else:
+            self.dimple_height = 0.001
 
         if self.ref_centric:
             self.arrow_linewidth = 3
@@ -441,7 +447,7 @@ class ReadDiagram:
         # Ensure that target and donor are closest to the read, followed by other references.
         reference_order = [ti.target, ti.donor]
 
-        reference_order.extend([ref_name for ref_name in ti.reference_sequences if ti not in reference_order])
+        reference_order.extend([ref_name for ref_name in ti.reference_sequences if ref_name not in reference_order])
         reference_order.extend(ti.all_supplemental_reference_names)
 
         all_alignments = self.alignments
@@ -497,6 +503,7 @@ class ReadDiagram:
             initial_offset = 1
 
         offsets = {}
+
         for names, sign in [(self.references_below, -1), (self.references_above, 1)]:
             block_sizes = [initial_offset] + [len(by_reference_name.get(n, [])) + 1 for n in names]
             cumulative_block_sizes = np.cumsum(block_sizes)
@@ -707,7 +714,6 @@ class ReadDiagram:
                         capped_length = min(max_length, length)
                         
                         width = self.width_per_unit
-                        height = 0.003
 
                         indel_xs = [
                             centered_at - width,
@@ -727,11 +733,11 @@ class ReadDiagram:
                         next_ref_p = next_ref_p + (length + 1) * ref_direction_multiplier
                         alignment_edge_ref_ps.append(next_ref_p)
 
-                        indel_ys = [y, y + height, y + height, y]
+                        indel_ys = [y, y + self.dimple_height, y + self.dimple_height, y]
 
                         if self.label_dimples:
                             ax.annotate(label,
-                                        xy=(middle_offset(centered_at), y + height),
+                                        xy=(middle_offset(centered_at), y + self.dimple_height),
                                         xytext=(0, 1),
                                         textcoords='offset points',
                                         ha='center',
@@ -916,17 +922,27 @@ class ReadDiagram:
                     if not qs:
                         continue
 
+                    if self.layout_mode == 'illumina':
+                        gap_allowed = 1
+                    else:
+                        gap_allowed = 4
+
                     query_extents = []
+
                     while len(qs) > 0:
                         block_start = qs.pop(0)
+
                         current_q = block_start
-                        while(len(qs) > 0 and qs[0] == current_q + 1):
+
+                        while(len(qs) > 0 and qs[0] <= current_q + gap_allowed):
                             current_q = qs.pop(0)
+
                         block_end = current_q
+
                         query_extents.append((block_start, block_end))
 
                     for query_extent in query_extents:
-                        if not self.ref_centric:
+                        if self.label_features_on_alignments and feature_reference not in self.refs_to_draw:
                             rs = [feature.start, feature.end]
                             if strand == '-':
                                 rs = rs[::-1]
@@ -954,25 +970,27 @@ class ReadDiagram:
                                 label = self.get_feature_label(feature_reference, feature_name)
 
                                 label_offset = self.label_offsets.get(label, 0)
-                                y_points = -5 - label_offset * self.font_sizes['feature_label']
+                                y_points = (5 + label_offset * self.font_sizes['feature_label']) * np.sign(y)
+
+                                label_color = hits.visualize.scale_darkness(feature_color, 1.2)
 
                                 ax.annotate(label,
-                                            xy=(np.mean(query_extent), 0),
+                                            xy=(np.mean(query_extent), y),
                                             xycoords='data',
                                             xytext=(0, y_points),
                                             textcoords='offset points',
-                                            va='top',
+                                            va='top' if y < 0 else 'bottom',
                                             ha='center',
-                                            color=feature_color,
+                                            color=label_color,
                                             size=10,
                                             weight='bold',
                                            )
 
-                        if self.features_on_alignments:
+                        if self.draw_features_on_alignments:
                             xs = [query_extent[0] - 0.5 + x_offset, query_extent[1] + 0.5 + x_offset]
                             final_feature_color = hits.visualize.apply_alpha(feature_color, alpha=0.7 * alpha_multiplier, multiplicative=True)
                             ax.fill_between(xs, [y] * 2, [0] * 2, color=final_feature_color, edgecolor='none')
-                        
+
     def plot_read(self):
         ax = self.ax
 
@@ -1233,11 +1251,12 @@ class ReadDiagram:
                 and feature_ref_name == ref_name
              }
 
-            min_feature_start = min(feature.start for feature in features)
-            max_feature_end = max(feature.end for feature in features)
+            if len(features) > 0:
+                min_feature_start = min(feature.start for feature in features)
+                max_feature_end = max(feature.end for feature in features)
 
-            ref_al_min = min(ref_al_min, min_feature_start)
-            ref_al_max = max(ref_al_max, max_feature_end)
+                ref_al_min = min(ref_al_min, min_feature_start)
+                ref_al_max = max(ref_al_max, max_feature_end)
 
         self.min_y = min(self.min_y, ref_y)
         self.max_y = max(self.max_y, ref_y)

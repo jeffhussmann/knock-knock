@@ -49,18 +49,13 @@ def identify_split_recognition_sequences(ref_seqs):
                     for match_start, strand in all_matches:
                         match_end = match_start + len(seq) - 1
                         
-                        full_name = f'{source}_{site_name}_{side}_{match_start}'
-                        feature = hits.gff.Feature.from_fields(seqname=ref_name,
-                                                               start=match_start,
-                                                               end=match_end,
-                                                               ID=full_name,
-                                                               strand=strand,
-                                                              )
-                        feature.attribute['color'] = colors.get((site_name, side))
-                        feature.attribute['component'] = side
-
-                        component_features[side].append(feature)
-                        all_features[ref_name, full_name] = feature
+                        side_feature = hits.gff.Feature.from_fields(seqname=ref_name,
+                                                                    start=match_start,
+                                                                    end=match_end,
+                                                                    strand=strand,
+                                                                   )
+                        side_feature.attribute['color'] = colors.get((site_name, side))
+                        side_feature.attribute['component'] = side
 
                         # Annotate the central dinucleotide after the left half.
                         if side == 'left':
@@ -79,17 +74,25 @@ def identify_split_recognition_sequences(ref_seqs):
                         CD_end = CD_start + 1
 
                         if CD_start >= 0 and CD_end < len(ref_seq):
-                            full_name = f'{source}_{site_name}_CD_{CD_start}'
-                            feature = hits.gff.Feature.from_fields(seqname=ref_name,
-                                                                   start=CD_start,
-                                                                   end=CD_end,
-                                                                   ID=full_name,
-                                                                   strand=strand,
-                                                                  )
-                            feature.attribute['component'] = 'CD'
+                            CD_feature = hits.gff.Feature.from_fields(seqname=ref_name,
+                                                                      start=CD_start,
+                                                                      end=CD_end,
+                                                                      strand=strand,
+                                                                     )
+                            
+                            CD_feature.attribute['component'] = 'CD'
+                            CD = CD_feature.sequence(ref_seqs)
+                            CD_feature.attribute['CD'] = CD
+                            CD_full_name = f'{source}_{site_name}_{CD}_CD_{CD_start}'
+                            CD_feature.attribute['ID'] = CD_full_name
 
-                            component_features['CD'].append(feature)
-                            all_features[ref_name, full_name] = feature
+                            component_features['CD'].append(CD_feature)
+                            all_features[ref_name, CD_full_name] = CD_feature
+
+                            side_full_name = f'{source}_{site_name}_{CD}_{side}_{match_start}'
+                            side_feature.attribute['ID'] = side_full_name
+                            component_features[side].append(side_feature)
+                            all_features[ref_name, side_full_name] = side_feature
 
                 for left, CD, right in itertools.product(component_features['left'], component_features['CD'], component_features['right']):
                     full_name = f'{source}_{site_name}_{left.start}'
@@ -124,7 +127,7 @@ def identify_split_recognition_sequences(ref_seqs):
                         feature.children.add(child)
                         child.parent = feature
 
-                    feature.attribute['central_dinucleotide'] = CD.sequence(ref_seqs)
+                    feature.attribute['CD'] = CD.sequence(ref_seqs)
                     feature.attribute['component'] = 'complete_site'
                     feature.attribute['recombinase'] = source
                     feature.attribute['site'] = site_name
@@ -149,7 +152,7 @@ def recombine(ref_seqs, target, donor):
     for (ref_name, feature_name), feature in features.items():
         if feature.attribute['component'] == 'complete_site':
             source, site_name, *rest = feature_name.split('_')
-            sites[ref_name][source, site_name, feature.attribute['central_dinucleotide']] = feature
+            sites[ref_name][source, site_name, feature.attribute['CD']] = feature
 
     pairs = []
 

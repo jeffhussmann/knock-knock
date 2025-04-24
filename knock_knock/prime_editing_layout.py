@@ -304,9 +304,15 @@ class Layout(layout.Categorizer):
             if (not al.is_unmapped) and al.reference_name not in self.primary_ref_names
         ]
 
+        if self.mode == 'nanopore':
+            # TODO: use property value here?
+            ins_size_to_split_at = 10
+        else:
+            ins_size_to_split_at = 2
+
         split_als = []
         for supp_al in supp_als:
-            split_als.extend(sam.split_at_large_insertions(supp_al, 2))
+            split_als.extend(sam.split_at_large_insertions(supp_al, ins_size_to_split_at))
         
         few_mismatches = []
         # Alignments generated with STAR will have MD tags, but alignments
@@ -1471,27 +1477,29 @@ class Layout(layout.Categorizer):
     def alignment_scaffold_overlap(self, al):
         ti = self.target_info
 
-        if len(ti.pegRNA_names) != 1:
-            raise ValueError(ti.pegRNA_names)
-
-        pegRNA_name = ti.pegRNA_names[0]
-        pegRNA_seq = ti.reference_sequences[pegRNA_name]
-
-        scaffold_feature = ti.features[pegRNA_name, 'scaffold']
-        cropped = sam.crop_al_to_ref_int(al, scaffold_feature.start, scaffold_feature.end)
-        if cropped is None:
+        if al.reference_name not in ti.pegRNA_names:
             scaffold_overlap = 0
+
         else:
-            scaffold_overlap = cropped.query_alignment_length
 
-            # Try to filter out junk alignments.
-            edits = sam.edit_distance_in_query_interval(cropped, ref_seq=pegRNA_seq)
-            if edits / scaffold_overlap > 0.2:
-                scaffold_overlap = 0
+            pegRNA_name = al.reference_name
+            pegRNA_seq = ti.reference_sequences[pegRNA_name]
 
-            # Insist on overlapping HA_RT to prevent false positive from protospacer alignment.            
-            if self.HA_RT is not None and not sam.overlaps_feature(al, self.HA_RT, require_same_strand=False):
+            scaffold_feature = ti.features[pegRNA_name, 'scaffold']
+            cropped = sam.crop_al_to_ref_int(al, scaffold_feature.start, scaffold_feature.end)
+            if cropped is None:
                 scaffold_overlap = 0
+            else:
+                scaffold_overlap = cropped.query_alignment_length
+
+                # Try to filter out junk alignments.
+                edits = sam.edit_distance_in_query_interval(cropped, ref_seq=pegRNA_seq)
+                if edits / scaffold_overlap > 0.2:
+                    scaffold_overlap = 0
+
+                # Insist on overlapping HA_RT to prevent false positive from protospacer alignment.            
+                if self.HA_RT is not None and not sam.overlaps_feature(al, self.HA_RT, require_same_strand=False):
+                    scaffold_overlap = 0
 
         return scaffold_overlap
 
@@ -1921,8 +1929,13 @@ class Layout(layout.Categorizer):
                 self.category = 'partial edit'
                 self.subcategory = 'partial incorporation'
 
+        if self.mode == 'nanopore':
+            mismatches = []
+        else:
+            mismatches = self.non_pegRNA_mismatches
+
         self.Details = Details(programmed_substitution_read_bases=self.pegRNA_substitution_string,
-                               mismatches=self.non_pegRNA_mismatches,
+                               mismatches=mismatches,
                                non_programmed_edit_mismatches=self.non_programmed_edit_mismatches,
                                deletions=deletions,
                                insertions=insertions,
@@ -2179,6 +2192,102 @@ class Layout(layout.Categorizer):
                 
         return meaningful_gap_covers
 
+    def register_single_read_covering_target_alignment(self):
+        target_alignment = self.single_read_covering_target_alignment
+        interesting_indels, uninteresting_indels = self.interesting_and_uninteresting_indels([target_alignment])
+
+        deletions = [indel for indel in interesting_indels + uninteresting_indels if indel.kind == 'D']
+        insertions = [indel for indel in interesting_indels + uninteresting_indels if indel.kind == 'I']
+
+        if self.mode == 'nanopore':
+            mismatches = []
+        else:
+            mismatches = self.non_pegRNA_mismatches
+
+        self.Details = Details(
+            deletions=deletions,
+            insertions=insertions,
+            mismatches=mismatches,
+        )
+
+        if len(interesting_indels) == 0:
+            if self.starts_at_expected_location:
+                if self.specific_to_pegRNA(self.single_read_covering_target_alignment):
+                    self.register_intended_edit(single_target_alignment_without_indels=True)
+
+                else:
+                    self.category = 'wild type'
+
+                    if len(self.non_pegRNA_mismatches) == 0 and len(uninteresting_indels) == 0:
+                        self.subcategory = 'clean'
+
+                    elif len(uninteresting_indels) == 1:
+                        self.subcategory = 'short indel far from cut'
+
+                    elif len(uninteresting_indels) > 1:
+                        self.register_uncategorized()
+
+                    else:
+                        self.subcategory = 'mismatches'
+
+                    self.relevant_alignments = [target_alignment]
+
+            else:
+                self.register_uncategorized()
+
+        elif self.max_scaffold_overlap >= 2 and self.is_unintended_rejoining:
+            self.register_unintended_rejoining()
+
+        elif len(interesting_indels) == 1:
+            indel = interesting_indels[0]
+
+            if self.has_pegRNA_substitution:
+                if indel.kind == 'D':
+                    if self.is_unintended_rejoining:
+                        self.register_unintended_rejoining()
+                    else:
+                        self.register_edit_plus_indel('deletion', [indel])
+
+                else:
+                    self.register_uncategorized()
+
+            else: # no pegRNA mismatches
+                if len(self.non_pegRNA_mismatches) > 0:
+                    self.subcategory = 'mismatches'
+                else:
+                    self.subcategory = 'clean'
+
+                if indel.kind == 'D':
+                    self.category = 'deletion'
+                    self.relevant_alignments = self.target_edge_alignments_list
+
+                elif indel.kind == 'I':
+                    self.category = 'insertion'
+                    self.relevant_alignments = [target_alignment]
+
+        else: # more than one indel
+            if len(self.indels) == 2:
+
+                indels = [indel for indel, near_cut in self.indels]
+
+                if self.target_info.pegRNA_programmed_deletion in indels:
+                    indel = [indel for indel in indels if indel != self.target_info.pegRNA_programmed_deletion][0]
+
+                    if indel.kind  == 'D':
+                        self.register_edit_plus_indel('deletion', [indel])
+
+                    else:
+                        self.register_uncategorized()
+
+                else:
+                    self.category = 'multiple indels'
+                    self.subcategory = 'multiple indels'
+
+                    self.relevant_alignments = [target_alignment]
+
+            else:
+                self.register_uncategorized()
+
     @memoized_property
     def no_alignments_detected(self):
         return all(al.is_unmapped for al in self.alignments)
@@ -2200,90 +2309,7 @@ class Layout(layout.Categorizer):
             self.register_intended_edit()
 
         elif self.single_read_covering_target_alignment:
-            target_alignment = self.single_read_covering_target_alignment
-            interesting_indels, uninteresting_indels = self.interesting_and_uninteresting_indels([target_alignment])
-
-            deletions = [indel for indel in interesting_indels + uninteresting_indels if indel.kind == 'D']
-            insertions = [indel for indel in interesting_indels + uninteresting_indels if indel.kind == 'I']
-            self.Details = Details(deletions=deletions, insertions=insertions, mismatches=self.non_pegRNA_mismatches)
-
-            if len(interesting_indels) == 0:
-                if self.starts_at_expected_location:
-                    if self.specific_to_pegRNA(self.single_read_covering_target_alignment):
-                        self.register_intended_edit(single_target_alignment_without_indels=True)
-
-                    else:
-                        self.category = 'wild type'
-
-                        if len(self.non_pegRNA_mismatches) == 0 and len(uninteresting_indels) == 0:
-                            self.subcategory = 'clean'
-
-                        elif len(uninteresting_indels) == 1:
-                            self.subcategory = 'short indel far from cut'
-
-                        elif len(uninteresting_indels) > 1:
-                            self.register_uncategorized()
-
-                        else:
-                            self.subcategory = 'mismatches'
-
-                        self.relevant_alignments = [target_alignment]
-
-                else:
-                    self.register_uncategorized()
-
-            elif self.max_scaffold_overlap >= 2 and self.is_unintended_rejoining:
-                self.register_unintended_rejoining()
-
-            elif len(interesting_indels) == 1:
-                indel = interesting_indels[0]
-
-                if self.has_pegRNA_substitution:
-                    if indel.kind == 'D':
-                        if self.is_unintended_rejoining:
-                            self.register_unintended_rejoining()
-                        else:
-                            self.register_edit_plus_indel('deletion', [indel])
-
-                    else:
-                        self.register_uncategorized()
-
-                else: # no pegRNA mismatches
-                    if len(self.non_pegRNA_mismatches) > 0:
-                        self.subcategory = 'mismatches'
-                    else:
-                        self.subcategory = 'clean'
-
-                    if indel.kind == 'D':
-                        self.category = 'deletion'
-                        self.relevant_alignments = self.target_edge_alignments_list
-
-                    elif indel.kind == 'I':
-                        self.category = 'insertion'
-                        self.relevant_alignments = [target_alignment]
-
-            else: # more than one indel
-                if len(self.indels) == 2:
-
-                    indels = [indel for indel, near_cut in self.indels]
-
-                    if self.target_info.pegRNA_programmed_deletion in indels:
-                        indel = [indel for indel in indels if indel != self.target_info.pegRNA_programmed_deletion][0]
-
-                        if indel.kind  == 'D':
-                            self.register_edit_plus_indel('deletion', [indel])
-
-                        else:
-                            self.register_uncategorized()
-
-                    else:
-                        self.category = 'multiple indels'
-                        self.subcategory = 'multiple indels'
-
-                        self.relevant_alignments = [target_alignment]
-
-                else:
-                    self.register_uncategorized()
+            self.register_single_read_covering_target_alignment()
 
         elif self.is_unintended_rejoining:
             self.register_unintended_rejoining()
@@ -2856,7 +2882,6 @@ class Layout(layout.Categorizer):
                 
         return manual_anchors
 
-    @memoized_property
     def plot_parameters(self):
         ti = self.target_info
 
@@ -2864,20 +2889,68 @@ class Layout(layout.Categorizer):
         label_overrides = {}
         label_offsets = {}
         feature_heights = {}
+        color_overrides = {}
 
-        if ti.pegRNA_names is not None and len(ti.pegRNA_names) > 0:
+        flip_target = (self.sequencing_direction == '-')
+        flip_pegRNA = False
+
+        if len(ti.pegRNA_names) == 1:
             pegRNA_name = ti.pegRNA_names[0]
 
+            PBS_name = knock_knock.pegRNAs.PBS_name(pegRNA_name)
+            PBS_strand = ti.features[ti.target, PBS_name].strand
+
+            flip_pegRNA = (flip_target and PBS_strand == '-') or (not flip_target and PBS_strand == '+')
+
+            label_overrides[f'HA_RT_{pegRNA_name}'] = 'HA_RT'
+
+            for HA_side in ['PBS', 'RT']:
+                name = f'HA_{HA_side}_{pegRNA_name}'
+                label_overrides[ti.target, name] = None
+                feature_heights[ti.target, name] = 0.5
+
+                features_to_show.add((ti.target, name))
+
+            for name in ti.protospacer_names:
+                if name == ti.primary_protospacer:
+                    new_name = 'pegRNA\nprotospacer'
+                else:
+                    new_name = 'ngRNA\nprotospacer'
+
+                label_overrides[name] = new_name
+
+        else:
             for pegRNA_name in ti.pegRNA_names:
-                label_overrides[f'HA_RT_{pegRNA_name}'] = 'HA_RT'
-                label_overrides[pegRNA_name, 'protospacer'] = 'pegRNA\nprotospacer'
+                color = ti.pegRNA_name_to_color[pegRNA_name]
+                light_color = hits.visualize.apply_alpha(color, 0.5)
+                color_overrides[pegRNA_name] = color
+                color_overrides[pegRNA_name, 'protospacer'] = light_color
+                ps_name = knock_knock.pegRNAs.protospacer_name(pegRNA_name)
+                color_overrides[ps_name] = light_color
 
-                for HA_side in ['PBS', 'RT']:
-                    name = f'HA_{HA_side}_{pegRNA_name}'
-                    label_overrides[ti.target, name] = None
-                    feature_heights[ti.target, name] = 0.5
+                PAM_name = f'{ps_name}_PAM'
+                color_overrides[PAM_name] = color
 
-                    features_to_show.add((ti.target, name))
+            for name in ti.protospacer_names:
+                label_overrides[name] = 'protospacer'
+
+            for name in ti.PAM_features:
+                label_overrides[name] = 'PAM'
+                features_to_show.add((ti.target, name))
+
+        for primer_name in ti.primer_names:
+            color_overrides[primer_name] = 'lightgrey'
+
+        for pegRNA_name in ti.pegRNA_names:
+            PBS_name = knock_knock.pegRNAs.PBS_name(pegRNA_name)
+            features_to_show.add((ti.target, PBS_name))
+            label_overrides[PBS_name] = None
+            feature_heights[PBS_name] = 0.5
+
+            # Draw PBS feature on the same side as corresponding nick.
+            feature = ti.features[ti.target, PBS_name]
+            if (feature.strand == '+' and not flip_target) or (feature.strand == '-' and flip_target):
+                feature_heights[PBS_name] *= -1
 
         for deletion in ti.pegRNA_programmed_deletions:
             label_overrides[deletion.ID] = f'programmed deletion ({len(deletion)} nts)'
@@ -2887,16 +2960,20 @@ class Layout(layout.Categorizer):
             label_overrides[insertion.ID] = 'insertion'
             label_offsets[insertion.ID] = 1
 
-        for name in ti.protospacer_names:
-            if name not in label_overrides:
-                if name == ti.primary_protospacer and name not in label_overrides:
-                    new_name = 'pegRNA\nprotospacer'
-                else:
-                    new_name = 'ngRNA\nprotospacer'
+        for feature_name, feature in ti.PAM_features.items():
+            if (feature.strand == '+' and not flip_target) or (feature.strand == '-' and flip_target):
+                feature_heights[feature_name] = -1
 
-                label_overrides[name] = new_name
+            if len(ti.pegRNA_names) == 1:
+                offset = 2
+            else:
+                offset = 1
 
-        label_overrides.update({feature_name: None for feature_name in ti.PAM_features})
+            label_offsets[feature_name] = offset
+
+        for feature_name, feature in ti.protospacer_features.items():
+            if (feature.strand == '+' and not flip_target) or (feature.strand == '-' and flip_target):
+                feature_heights[feature_name] = -1
 
         features_to_show.update({(ti.target, name) for name in ti.protospacer_names})
         features_to_show.update({(ti.target, name) for name in ti.PAM_features})
@@ -2906,6 +2983,9 @@ class Layout(layout.Categorizer):
             'label_overrides': label_overrides,
             'label_offsets': label_offsets,
             'feature_heights': feature_heights,
+            'color_overrides': color_overrides,
+            'flip_target': flip_target,
+            'flip_pegRNA': flip_pegRNA,
         }
 
         return plot_parameters
@@ -2913,46 +2993,26 @@ class Layout(layout.Categorizer):
     def plot(self,
              relevant=True,
              manual_alignments=None,
-             draw_protospacers_on_nicked_strand=True,
              **manual_diagram_kwargs,
             ):
 
-        features_to_show = manual_diagram_kwargs.pop('features_to_show', self.plot_parameters['features_to_show'].copy())
-        label_overrides = manual_diagram_kwargs.pop('label_overrides', self.plot_parameters['label_overrides'].copy())
-        label_offsets = manual_diagram_kwargs.pop('label_offsets', self.plot_parameters['label_offsets'].copy())
-        feature_heights = manual_diagram_kwargs.pop('feature_heights', self.plot_parameters['feature_heights'].copy())
+        plot_parameters = self.plot_parameters()
+
+        features_to_show = manual_diagram_kwargs.pop('features_to_show', plot_parameters['features_to_show'])
+        label_overrides = manual_diagram_kwargs.pop('label_overrides', plot_parameters['label_overrides'])
+        label_offsets = manual_diagram_kwargs.pop('label_offsets', plot_parameters['label_offsets'])
+        feature_heights = manual_diagram_kwargs.pop('feature_heights', plot_parameters['feature_heights'])
+
+        flip_target = plot_parameters['flip_target']
+        flip_pegRNA = plot_parameters['flip_pegRNA']
 
         if relevant and not self.categorized:
             self.categorize()
 
         ti = self.target_info
 
-        flip_target = self.sequencing_direction == '-'
-        flip_pegRNA = False
-
-        if ti.pegRNA_names is not None and len(ti.pegRNA_names) > 0:
-            pegRNA_name = ti.pegRNA_names[0]
-
-            PBS_name = knock_knock.pegRNAs.PBS_name(pegRNA_name)
-            PBS_strand = ti.features[ti.target, PBS_name].strand
-
-            if (flip_target and PBS_strand == '-') or (not flip_target and PBS_strand == '+'):
-                flip_pegRNA = True
-
         if manual_diagram_kwargs.get('reverse_complement', False):
             flip_pegRNA = not flip_pegRNA
-
-        if draw_protospacers_on_nicked_strand:
-            # Draw protospacer features on the same side as their nick.
-            for feature_name, feature in ti.PAM_features.items():
-                if (feature.strand == '+' and not flip_target) or (feature.strand == '-' and flip_target):
-                    feature_heights[feature_name] = -1
-
-                label_offsets[feature_name] = 1
-
-            for feature_name, feature in ti.protospacer_features.items():
-                if (feature.strand == '+' and not flip_target) or (feature.strand == '-' and flip_target):
-                    feature_heights[feature_name] = -1
 
         if 'refs_to_draw' in manual_diagram_kwargs:
             refs_to_draw = manual_diagram_kwargs.pop('refs_to_draw')
@@ -3012,6 +3072,9 @@ class Layout(layout.Categorizer):
 
         # Draw the pegRNA.
         if ti.pegRNA_names is not None and any(al.reference_name in ti.pegRNA_names for al in diagram.alignments):
+
+            pegRNA_name = ti.pegRNA_names[0]
+
             ref_y = diagram.max_y + diagram.target_and_donor_y_gap
 
             # To ensure that features on pegRNAs that extend far to the right of

@@ -983,7 +983,7 @@ class pegRNA_pair:
 
             elif len(complete_sites) == 1:
                 complete_site = complete_sites[0]
-                label = f'{complete_site.attribute["recombinase"]}_{complete_site.attribute["site"]}_{complete_site.attribute["central_dinucleotide"]}'
+                label = f'{complete_site.attribute["recombinase"]}_{complete_site.attribute["site"]}_{complete_site.attribute["CD"]}'
                 if strand == '+':
                     end = complete_site.end - (len(self.target_sequence_up_to_nick['+']) - 1) + (len(self.pegRNAs_by_strand['+'].components['PBS']) - 1)
                 elif strand == '-':
@@ -1016,7 +1016,7 @@ class pegRNA_pair:
             }
         elif len(complete_sites) == 1:
             complete_site = complete_sites[0]
-            label = f'{complete_site.attribute["recombinase"]}_{complete_site.attribute["site"]}_{complete_site.attribute["central_dinucleotide"]}'
+            label = f'{complete_site.attribute["recombinase"]}_{complete_site.attribute["site"]}_{complete_site.attribute["CD"]}'
 
             # First get coordinates relative to last nt before the nick, then translate
             # to the start of the PBS.

@@ -65,4 +65,4 @@ def configure_standard_logger(results_dir, verbose=True):
     return logger, file_handler
 
 def is_one_sided(experiment_type):
-    return any(experiment_type.startswith(name) for name in ['TECseq', 'seeseq']) 
+    return experiment_type is not None and any(experiment_type.startswith(name) for name in ['TECseq', 'seeseq']) 

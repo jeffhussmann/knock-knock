@@ -16,7 +16,7 @@ import hits.utilities
 import hits.visualize
 
 import knock_knock.pegRNAs
-from knock_knock.target_info import degenerate_indel_from_string
+import knock_knock.target_info
 from knock_knock.outcome import *
 
 import knock_knock.outcome
@@ -47,6 +47,7 @@ class StackedDiagrams:
     line_widths: float = 1.5
     num_outcomes: Optional[int] = None
     color_overrides: dict = field(default_factory=dict)
+    label_overrides: dict = field(default_factory=dict)
     preserve_x_lims: bool = False
     replacement_text_for_complex: dict = field(default_factory=dict)
     shift_x: float = 0
@@ -472,14 +473,17 @@ class StackedDiagrams:
                 end = feature.end + 0.5 - offset
 
                 if hits.interval.are_overlapping(hits.interval.Interval(window_left, window_right), hits.interval.Interval(start, end)):
-                    color = self.color_overrides.get(feature_name, feature.attribute.get('color', 'grey'))
+                    feature_color = self.color_overrides.get(feature_name, feature.attribute.get('color', 'grey'))
+                    label = self.label_overrides.get(feature_name, feature_name)
+                    label_color = hits.visualize.scale_darkness(feature_color, 1.2)
 
-                    self.draw_rect(source_name, start, end, bottom, top, None, color)
-                    self.ax.annotate(feature_name,
+                    self.draw_rect(source_name, start, end, bottom, top, None, feature_color)
+
+                    self.ax.annotate(label,
                                      xy=(np.mean([start, end]), top),
                                      xytext=(0, 5),
                                      textcoords='offset points',
-                                     color='black',
+                                     color=label_color,
                                      annotation_clip=False,
                                      ha='center',
                                      va='bottom',
@@ -2076,9 +2080,6 @@ def make_deletion_boundaries_figure(target_info,
                                    ):
     ti = target_info
 
-    if ti.primary_protospacer is None:
-        return
-
     if isinstance(outcome_fractions, pd.Series):
         outcome_fractions = outcome_fractions.to_frame()
 
@@ -2086,7 +2087,7 @@ def make_deletion_boundaries_figure(target_info,
         conditions = outcome_fractions.columns
 
     if condition_colors is None:
-        condition_colors = {}
+        condition_colors = dict(zip(conditions, [f'C{i}' for i in range(len(conditions))]))
 
     if condition_labels is None:
         condition_labels = {}
@@ -2186,13 +2187,18 @@ def make_deletion_boundaries_figure(target_info,
     else:
         outcomes = outcome_fractions.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
 
+    features_to_draw = set(ti.primers)
+    features_to_draw.update(kwargs.pop('features_to_draw', []))
+
+    color_overrides.update(kwargs.pop('color_overrides', {}))
+
     grid = DiagramGrid(outcomes, 
                        ti,
                        draw_wild_type_on_top=True,
                        window=window,
                        block_alpha=0.1,
                        color_overrides=color_overrides,
-                       features_to_draw=sorted(ti.primers), 
+                       features_to_draw=features_to_draw,
                        **kwargs,
                        )
 
