@@ -9,7 +9,6 @@ import matplotlib.pyplot as plt
 import hits.utilities
 import hits.visualize
 import knock_knock.target_info
-import knock_knock.outcome_record
 import knock_knock.outcome
 
 memoized_property = hits.utilities.memoized_property

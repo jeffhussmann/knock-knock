@@ -175,6 +175,17 @@ class ExperimentGroup:
 
         return common_sequence_to_outcome
 
+    @memoized_property
+    def common_sequence_to_alignments(self):
+        common_sequence_to_alignments = {}
+
+        for chunk_exp in self.common_sequence_chunk_exps():
+            for common_name, als in chunk_exp.alignment_groups():
+                seq = self.common_name_to_common_sequence[common_name]
+                common_sequence_to_alignments[seq] = als
+
+        return common_sequence_to_alignments
+
     def merge_common_sequence_outcomes(self):
         with self.fns['common_sequence_outcomes'].open('w') as fh:
             for outcome in self.common_sequence_outcomes:
@@ -192,17 +203,6 @@ class ExperimentGroup:
             return chunk
 
         return name_to_chunk
-
-    @memoized_property
-    def common_sequence_to_alignments(self):
-        common_sequence_to_alignments = {}
-
-        for chunk_exp in self.common_sequence_chunk_exps():
-            for common_name, als in chunk_exp.alignment_groups():
-                seq = self.common_name_to_common_sequence[common_name]
-                common_sequence_to_alignments[seq] = als
-
-        return common_sequence_to_alignments
 
     def get_read_alignments(self, name):
         if isinstance(name, int):

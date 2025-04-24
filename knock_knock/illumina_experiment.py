@@ -72,6 +72,15 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
             self.trim_to_max_length = int(self.trim_to_max_length)
 
     @property
+    def preprocessed_read_type(self):
+        if self.paired_end:
+            preprocessed_read_type = 'stitched'
+        else:
+            preprocessed_read_type = 'trimmed'
+
+        return preprocessed_read_type
+
+    @property
     def read_types(self):
         read_types = {self.preprocessed_read_type}
 
@@ -82,15 +91,6 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
             ])
 
         return read_types
-
-    @property
-    def preprocessed_read_type(self):
-        if self.paired_end:
-            preprocessed_read_type = 'stitched'
-        else:
-            preprocessed_read_type = 'trimmed'
-
-        return preprocessed_read_type
 
     @property
     def read_types_to_align(self):
