@@ -56,9 +56,36 @@ def round_2_condition_to_color(condition):
 
     return color
 
+def ABD_round_1_condition_to_color(condition):
+    palette = bokeh.palettes.Category20b_20
+
+    start = {'WT': 19, 'MLH1 KO': 7, 'MLH1_KO': 7}[condition['cell_line']]
+
+    offset = {'00': 0, '06': -1, '12': -2, '72': -3, '': None}[condition['time_point']]
+
+    if offset is None:
+        color = 'black'
+    else:
+        color = palette[start + offset]
+
+    return color
+
 def condition_to_label(condition, condition_keys_to_label):
     label = ', '.join([f'{key}={value}' for key, value in condition.items() if key in condition_keys_to_label])
     return label
+
+base_dir = '/home/jah/projects/knock-knock_prime/ashley'
+
+target_name = 'HEK3_annotated'
+
+sgRNAs = [
+    'PRS26322',
+    'PRS26323',
+    'sgRNA2483',
+    'ngRNA_+26',
+]
+
+ti = knock_knock.target_info.TargetInfo(base_dir, target_name, sgRNAs=sgRNAs)
 
 class StrandsGrid:
     def __init__(self,
@@ -112,8 +139,8 @@ class StrandsGrid:
             ax_p = self.axs['top'].get_position()
 
             self.axs['pegRNA'] = self.fig.add_axes((ax_p.x0, ax_p.y1 + ax_p.height * 0.15, ax_p.width, ax_p.height),
-                                                sharex=self.axs['top'],
-                                                )
+                                                   sharex=self.axs['top'],
+                                                  )
 
         self.axs['top'].set_xlim(self.x_min, self.x_max)
 
@@ -160,9 +187,9 @@ class StrandsGrid:
             ('sgRNA2483', 'pegRNA', 'tab:red'),
             ('PRS26322', 'PRS26322', bottom_color),
             ('PRS26323', 'PRS26323', top_color),
-            ('PRS26583', 'PRS26583', 'tab:grey'),
-            ('PRS26584', 'PRS26584', 'tab:grey'),
-            ('ngRNA2433', 'PE3 ngRNA', 'tab:grey'),
+            #('PRS26583', 'PRS26583', 'tab:grey'),
+            #('PRS26584', 'PRS26584', 'tab:grey'),
+            #('ngRNA2433', 'PE3 ngRNA', 'tab:grey'),
         ]
 
         transform = ax.get_xaxis_transform()
@@ -404,8 +431,9 @@ class StrandsGrid:
                 color = condition_to_color(condition)
 
                 nonzero_ps = df[column]
+                nonzero_ps = nonzero_ps[nonzero_ps > 0]
 
-                if strand == 'top':
+                if strand == 'top' or strand == self.pegRNA_name:
                     cumulative_nonzero_ps = nonzero_ps.cumsum()
                 else:
                     cumulative_nonzero_ps = nonzero_ps[::-1].cumsum()[::-1]
@@ -415,40 +443,29 @@ class StrandsGrid:
                 else:
                     to_plot = nonzero_ps
 
-                ax.plot(to_plot, 'o', color=color, markersize=2, clip_on=True, label=label)
+                ax.plot(to_plot, 'o', color=color, markersize=3, clip_on=True, label=label)
 
-                all_xs = np.arange(min(nonzero_ps.index), max(nonzero_ps.index) + 1)
-                all_ys = nonzero_ps.reindex(all_xs, fill_value=0)
+                if len(nonzero_ps) > 0:
+                    all_xs = np.arange(min(nonzero_ps.index), max(nonzero_ps.index) + 1)
+                    all_ys = nonzero_ps.reindex(all_xs, fill_value=0)
 
-                if strand == 'top':
-                    cumulative_all_ys = all_ys.cumsum()
-                else:
-                    cumulative_all_ys = all_ys[::-1].cumsum()[::-1]
+                    if strand == 'top' or strand == self.pegRNA_name:
+                        cumulative_all_ys = all_ys.cumsum()
+                    else:
+                        cumulative_all_ys = all_ys[::-1].cumsum()[::-1]
 
-                if cumulative:
-                    to_plot = cumulative_all_ys
-                else:
-                    to_plot = all_ys
+                    if cumulative:
+                        to_plot = cumulative_all_ys
+                    else:
+                        to_plot = all_ys
 
-                ax.plot(all_xs, to_plot, '-', color=color, markersize=2, clip_on=True)
+                    ax.plot(all_xs, to_plot, '-', color=color, linewidth=1.5, clip_on=True)
 
 def load_group_denominator(group):
     denominator = group.outcome_counts(level='category').reindex(['RTed sequence', 'targeted genomic sequence'], fill_value=0).sum()
     return denominator
 
 def load_group_counts(group, key=('targeted genomic sequence', 'unedited')):
-    base_dir = '/home/jah/projects/knock-knock_prime/ashley'
-
-    target_name = 'HEK3_annotated'
-
-    sgRNAs = [
-        'PRS26322',
-        'PRS26323',
-        'sgRNA2483',
-        'ngRNA_+26',
-    ]
-
-    ti = knock_knock.target_info.TargetInfo(base_dir, target_name, sgRNAs=sgRNAs)
 
     if key not in group.outcome_counts().index:
         return None
@@ -457,8 +474,13 @@ def load_group_counts(group, key=('targeted genomic sequence', 'unedited')):
     
     if counts.index.nlevels > 1:
         counts = counts.groupby(level='details').sum()
+
+    if key[0] == 'targeted genomic sequence':
+        details_key = 'target_edge'
+    else:
+        details_key = 'pegRNA_edge'
         
-    just_edges = [knock_knock.TECseq_layout.EdgeMismatchOutcome.from_string(d).undo_anchor_shift(group.target_info.anchor).edge_outcome.edge for d in counts.index]
+    just_edges = [knock_knock.outcome.Details.from_string(d)[details_key] for d in counts.index]
 
     counts.index = just_edges
 

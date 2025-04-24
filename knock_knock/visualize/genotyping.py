@@ -13,15 +13,31 @@ def plot(group):
 
     half_window = window_size // 2
 
+    grids = {}
+
     for condition in conditions_with_enough_reads:
+        sample_name = group.full_condition_to_sample_name[condition]
+        color = group.condition_colors(unique=True)[condition]
+        
+        condition_fs = marginalized_fs[condition][marginalized_fs[condition] > 1e-2].sort_values(ascending=False)
+        grid = knock_knock.visualize.stacked.DiagramGrid(condition_fs.index[:10],
+                                                         group.target_info,
+                                                         draw_wild_type_on_top=True,
+                                                         window=(-half_window, half_window),
+                                                         title=condition[1],
+                                                         title_color=color,
+                                                         block_alpha=0.2,
+                                                         draw_insertion_degeneracy=False,
+                                                        )
+        grid.add_ax('ps')
+        grid.plot_on_ax('ps', condition_fs, transform='percentage', color='black')
+        grid.set_xlim('ps', (0, 100))
+        grid.style_frequency_ax('ps')
     
         fig, axs = plt.subplots(1, 2,
                                 figsize=(16, 3),
                                 gridspec_kw=dict(hspace=0.5, width_ratios=[4, 1],),
                                )
-        
-        sample_name = group.full_condition_to_sample_name[condition]
-        color = group.condition_colors(unique=True)[condition]
         
         exp = group.sample_name_to_experiment(sample_name)
         expected_length = len(exp.target_info.wild_type_amplicon_sequence)
@@ -66,10 +82,8 @@ def plot(group):
         ax.axhline(50, alpha=0.5, color='black')
         
         ax.set_xlabel('Frameshift')
+
+        grids[condition] = grid
+
+    return grids
         
-        condition_fs = marginalized_fs[condition][marginalized_fs[condition] > 1e-2].sort_values(ascending=False)
-        grid = knock_knock.visualize.stacked.DiagramGrid(condition_fs.index[:10], group.target_info, draw_wild_type_on_top=True, window=(-half_window, half_window), title=condition[1], title_color=color)
-        grid.add_ax('ps')
-        grid.plot_on_ax('ps', condition_fs, transform='percentage', color='black')
-        grid.set_xlim('ps', (0, 100))
-        grid.style_frequency_ax('ps')
