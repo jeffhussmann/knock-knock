@@ -42,16 +42,6 @@ class Explorer:
                 options=[],
                 layout=Layout(height='200px', width='500px'),
             ),
-            'alignment_registration': ToggleButtons(
-                description='Alignment registration:',
-                options=['centered on primers', 'left', 'right'],
-                value='centered on primers',
-                style=dict(
-                    button_width='120px',
-                    description_width='initial',
-                ),
-                layout={'width': '290px'},
-            ),
         }
 
         selection_widget_keys = self.set_up_read_selection_widgets()
@@ -73,7 +63,6 @@ class Explorer:
         }
 
         draw_button_info = [
-            ('draw_sequence', True, 'sequence'),
             ('draw_qualities', False, 'qualities'),
             ('draw_mismatches', True, 'mismatches'),
         ]
@@ -82,13 +71,6 @@ class Explorer:
         for key, default_value, label in draw_button_info:
             value = self.plot_kwargs.pop(key, default_value)
             self.draw_buttons[key] = ToggleButton(value=value, description=label)
-
-        toggles = [
-            ('split_at_indels', False),
-        ]
-        for key, default_value in toggles:
-            value = self.plot_kwargs.pop(key, default_value)
-            self.widgets[key] = ToggleButton(value=value)
 
         all_kwargs = {
             **{k: ipywidgets.fixed(v) for k, v in self.plot_kwargs.items()},
@@ -99,7 +81,6 @@ class Explorer:
         self.interactive.update()
 
         self.non_widgets['alignments_to_show'].observe(self.interactive.update, names='value')
-        self.widgets['alignment_registration'].observe(self.interactive.update, names='value')
 
         for key in self.draw_buttons:
             self.draw_buttons[key].observe(self.interactive.update, names='value')
@@ -119,10 +100,13 @@ class Explorer:
         self.layout = ipywidgets.VBox(
             [make_row(selection_widget_keys),
              HBox([self.non_widgets['alignments_to_show'],
-                   self.widgets['alignment_registration'],
-                   make_col(['draw_sequence', 'draw_qualities', 'draw_mismatches'], description='Draw:'),
+                   make_col([
+                       'draw_qualities',
+                       'draw_mismatches',
+                     ],
+                     description='Draw:',
+                   ),
                   ]),
-             make_row([k for k, d in toggles]),
              make_row(['file_name', 'save']),
              self.interactive.children[-1],
              make_row(['read_details']),
