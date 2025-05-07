@@ -209,12 +209,6 @@ class EfficientBoundaryProperties:
 
             if c == 'intended edit':
                 target_coord = first_nt_after_HA_RT_in_genome
-<<<<<<< HEAD
-            elif c == 'targeted genomic sequence':
-                outcome = knock_knock.TECseq_layout.EdgeMismatchOutcome.from_string(d)
-                target_coord = outcome.undo_anchor_shift(self.target_info.anchor).edge_outcome.edge
-=======
->>>>>>> serialization_with_tags
             elif c == 'RTed sequence':
                 target_coord = 0
             else:
