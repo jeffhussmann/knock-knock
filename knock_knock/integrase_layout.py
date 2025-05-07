@@ -12,135 +12,35 @@ from knock_knock.outcome import *
 
 memoized_property = hits.utilities.memoized_property
 
+additional_categories = [
+    (
+        'intended integration',
+        (
+            'single',
+            'multiple',
+        ),
+    ),
+    (
+        'unintended integration',
+        (
+            'messy',
+            'internal priming',
+            'contains genomic sequence',
+        ),
+    ),
+    (
+        'malformed',
+        (
+            'missing primer(s)',
+            'likely concatamer',
+        ),
+    ),
+]
+
+original_order =  knock_knock.twin_prime_layout.Layout.category_order
+
 class Layout(knock_knock.twin_prime_layout.Layout):
-    category_order = [
-        ('wild type',
-            ('clean',
-             'mismatches',
-             'short indel far from cut',
-            ),
-        ),
-        ('intended edit',
-            ('replacement',
-             'partial replacement',
-             'deletion',
-            ),
-        ),
-        ('partial replacement',
-            ('left pegRNA',
-             'right pegRNA',
-             'both pegRNAs',
-             'single pegRNA (ambiguous)',
-            ),
-        ),
-        ('intended integration',
-            ('single',
-             'multiple',
-             'messy',
-             'internal priming',
-            ),
-        ),
-        ('unintended rejoining of RT\'ed sequence',
-            ('left RT\'ed, right RT\'ed',
-             'left RT\'ed, right not RT\'ed',
-             'left not RT\'ed, right RT\'ed',
-             'left RT\'ed, right not seen',
-             'left not seen, right RT\'ed',
-            ),
-        ),
-        ('unintended rejoining of overlap-extended sequence',
-            ('left RT\'ed + overlap-extended, right RT\'ed + overlap-extended',
-             'left RT\'ed + overlap-extended, right RT\'ed',
-             'left RT\'ed, right RT\'ed + overlap-extended',
-             'left RT\'ed + overlap-extended, right not RT\'ed',
-             'left not RT\'ed, right RT\'ed + overlap-extended',
-             'left RT\'ed + overlap-extended, right not seen',
-             'left not seen, right RT\'ed + overlap-extended',
-            ),
-        ),
-        ('multistep unintended rejoining of RT\'ed sequence',
-            ('left RT\'ed, right RT\'ed',
-             'left RT\'ed, right indel',
-             'left indel, right RT\'ed',
-            ),
-        ),
-        ('flipped pegRNA incorporation',
-            ('left pegRNA',
-             'right pegRNA',
-             'both pegRNAs',
-            ),
-        ),
-        ('deletion',
-            ('clean',
-             'mismatches',
-             'multiple',
-            ),
-        ),
-        ('duplication',
-            ('simple',
-             'iterated',
-             'complex',
-            ),
-        ),
-        ('insertion',
-            ('clean',
-             'mismatches',
-            ),
-        ),
-        ('edit + indel',
-            ('deletion',
-             'insertion',
-             'duplication',
-            ),
-        ),
-        ('multiple indels',
-            ('multiple indels',
-            ),
-        ),
-        ('genomic insertion',
-            ('hg19',
-             'hg38',
-             'macFas5',
-             'mm10',
-             'bosTau7',
-             'e_coli',
-             'phiX',
-            ),
-        ),
-        ('inversion',
-            ('inversion',
-            ),
-        ),
-        ('uncategorized',
-            ('uncategorized',
-             'low quality', 
-             'no alignments detected',
-            ),
-        ),
-        ('malformed',
-            ('doesn\'t have both primers',
-            ),
-        ),
-        ('nonspecific amplification',
-            ('hg19',
-             'hg38',
-             'macFas5',
-             'T2T-MFA8v1.0',
-             'mm10',
-             'bosTau7',
-             'e_coli',
-             'b_subtilis',
-             'phiX',
-             'primer dimer',
-             'short unknown',
-             'extra sequence',
-            ),
-        ),
-        ('phiX',
-            ('phiX',
-            ),
-        ),
-    ]
+    category_order = original_order[:3] + additional_categories + original_order[3:]
 
     non_relevant_categories = [
         'phiX',
@@ -151,6 +51,28 @@ class Layout(knock_knock.twin_prime_layout.Layout):
 
     @property
     def inferred_amplicon_length(self):
+        if self.is_malformed:
+            inferred_length = len(self.seq)
+
+        else:
+            
+            offset_to_q = {
+                strand: self.feature_offset_to_q(self.longest_primer_alignments[strand], self.target_info.primers_by_strand[strand].ID)
+                for strand in ['+', '-']
+            }
+
+            inner_edge_offsets = {strand: max(d) for strand, d in offset_to_q.items()}
+            inner_edge_qs = {strand: offset_to_q[strand][offset] for strand, offset in inner_edge_offsets.items()}
+            
+            # inner_edge_qs are last positions in the primer. + 1 to get length of interval that includes them, then - 2 to exclude them 
+            length_seen_between_primers = abs(inner_edge_qs['-'] - inner_edge_qs['+']) + 1 - 2
+
+            inferred_length = length_seen_between_primers + len(self.target_info.primers_by_strand['+']) + len(self.target_info.primers_by_strand['-'])
+
+        return inferred_length
+
+    @property
+    def old_inferred_amplicon_length(self):
         if self.primer_alignments['left'] is not None:
             left = interval.get_covered(self.primer_alignments['left']).start
         else:
@@ -177,6 +99,24 @@ class Layout(knock_knock.twin_prime_layout.Layout):
         overlaps = sam.overlaps_feature(al, primer, require_same_strand=False)
 
         return overlaps
+
+    @memoized_property
+    def long_primer_alignments(self):
+        by_strand = {
+            strand: [al for al in self.target_alignments if self.overlaps_primer(al, strand) and al.query_alignment_length > 50]
+            for strand in ['+', '-']
+        }
+        
+        return by_strand
+
+    @memoized_property
+    def longest_primer_alignments(self):
+        by_strand = {
+            strand: max(als, key=lambda al: al.query_alignment_length, default=None)
+            for strand, als in self.long_primer_alignments
+        }
+        
+        return by_strand
 
     @memoized_property
     def longest_primer_alignments(self):
@@ -243,23 +183,6 @@ class Layout(knock_knock.twin_prime_layout.Layout):
     def starts_at_expected_location(self):
         edge_al = self.target_edge_alignments['left']
         return edge_al is not None
-
-    @memoized_property
-    def donor_alignments(self):
-        ''' Donor meaning integrase donor '''
-        if self.target_info.donor is not None:
-            valid_names = [self.target_info.donor]
-        else:
-            valid_names = []
-
-        donor_als = [
-            al for al in self.alignments
-            if al.reference_name in valid_names
-        ]
-
-        donor_als = self.split_and_extend_alignments(donor_als)
-        
-        return donor_als
 
     @memoized_property
     def integrase_sites(self):
@@ -525,37 +448,81 @@ class Layout(knock_knock.twin_prime_layout.Layout):
         return chains
 
     @memoized_property
-    def nonspecific_amplification_of_donor(self):
-        covering_donor_als = []
-
-        if self.primer_alignments['left'] is not None and self.donor_alignments:
-            covered = interval.get_disjoint_covered(self.donor_alignments)
-            if (self.not_covered_by_primers - covered).total_length == 0:
-                covering_donor_als = self.donor_alignments
-
-        return covering_donor_als
-
-    @memoized_property
     def is_intended_integration(self):
         chains = self.donor_extension_chains_by_side
-        return chains['left']['description'] in {'integration', 'one-sided integration'} or chains['right']['description'] in {'integration', 'one-sided integration'}
+        # This needs more.
+        return chains['left']['description'] == 'integration' and chains['right']['description'] == 'integration'
+
+    @memoized_property
+    def nonredundant_donor_alignments(self):
+        parsimonious_alignments = interval.make_parsimonious(self.alignments)
+        return [al for al in parsimonious_alignments if al.reference_name == self.target_info.donor]
+
+    @memoized_property
+    def is_unintended_integration(self):
+        return (not self.is_intended_integration) and (self.nonredundant_donor_alignments or self.nonredundant_supplemental_alignments)
+
+    @memoized_property
+    def rejoining_edges(self):
+        gap = self.not_covered_by_primers - hits.interval.get_disjoint_covered(self.target_edge_alignments_list)
+
+        overlap_gap = [al for al in self.nonredundant_donor_alignments + self.nonredundant_supplemental_alignments if (hits.interval.get_covered(al) & gap).total_length  > 0]
+
+        farthest = {
+            'left': min(overlap_gap, key=lambda al: hits.interval.get_covered(al).start, default=None),
+            'right': max(overlap_gap, key=lambda al: hits.interval.get_covered(al).end, default=None),
+        }
+        
+        rejoining_edges = {}
+        
+        if self.sequencing_direction == '+':
+            side_to_side = {'left': 'left', 'right': 'right'} 
+            strand_to_sign = {'+': 1, '-': -1}
+        else:
+            side_to_side = {'left': 'right', 'right': 'left'} 
+            strand_to_sign = {'+': -1, '-': 1}
+            
+        side_to_key = {'left': 5, 'right': 3}
+        
+        for read_side, al in farthest.items():
+            if al is None or al.reference_name != self.target_info.donor:
+                if self.target_info.donor_sequence is None:
+                    edge = 0
+                else:
+                    edge = len(self.target_info.donor_sequence)
+
+                sign = 1
+                
+            else:
+                if read_side == 'left':
+                    left_al, right_al = self.target_edge_alignments['left'], al
+                else:
+                    left_al, right_al = al, self.target_edge_alignments['right']
+
+                cropped_als = hits.sam.crop_to_best_switch_point(left_al, right_al, self.target_info.reference_sequences)
+
+                if read_side == 'left':
+                    relevant_al = cropped_als['right']
+                else:
+                    relevant_al = cropped_als['left']
+
+                edge = hits.sam.reference_edges(relevant_al)[side_to_key[read_side]]
+                
+                sign = strand_to_sign[hits.sam.get_strand(al)]
+
+            rejoining_edges[side_to_side[read_side]] = edge * sign
+            
+        return rejoining_edges
 
     def register_intended_integration(self):
         chains = self.donor_extension_chains_by_side
 
         self.category = 'intended integration'
 
-        if chains['left']['description'] == 'integration' and chains['right']['description'] == 'integration':
-            if chains['left']['query_covered'] == chains['right']['query_covered']:
-                self.subcategory = 'single'
-            else:
-                self.subcategory = 'multiple'
-
-        elif 'no target' in {chains['left']['description'], chains['right']['description']}:
-            self.subcategory = 'internal priming'
-
+        if chains['left']['query_covered'] == chains['right']['query_covered']:
+            self.subcategory = 'single'
         else:
-            self.subcategory = 'messy'
+            self.subcategory = 'multiple'
 
         if len(self.target_info.pegRNA_names) > 0:
             als = [al for side, chain in self.donor_extension_chains_by_side.items() for al in chain['alignments'].values()]
@@ -563,6 +530,35 @@ class Layout(knock_knock.twin_prime_layout.Layout):
             als = interval.make_parsimonious(self.target_alignments + self.donor_alignments)
 
         self.relevant_alignments = sam.make_nonredundant(als)
+
+        self.Details = Details(
+            left_rejoining_edge=self.rejoining_edges['left'],
+            right_rejoining_edge=self.rejoining_edges['right'],
+        )
+
+    def register_unintended_integration(self):
+        chains = self.donor_extension_chains_by_side
+
+        self.category = 'unintended integration'
+
+        if 'no target' in {chains['left']['description'], chains['right']['description']}:
+            self.subcategory = 'internal priming'
+        elif self.nonredundant_supplemental_alignments:
+            self.subcategory = 'contains genomic sequence'
+        else:
+            self.subcategory = 'messy'
+
+        if len(self.target_info.pegRNA_names) > 0:
+            als = [al for side, chain in self.donor_extension_chains_by_side.items() for al in chain['alignments'].values()]
+        else:
+            als = interval.make_parsimonious(self.target_alignments + self.donor_alignments + self.supplemental_alignments)
+
+        self.relevant_alignments = sam.make_nonredundant(als)
+
+        self.Details = Details(
+            left_rejoining_edge=self.rejoining_edges['left'],
+            right_rejoining_edge=self.rejoining_edges['right'],
+        )
 
     def plot_parameters(self):
         plot_parameters = super().plot_parameters()
@@ -584,7 +580,7 @@ class Layout(knock_knock.twin_prime_layout.Layout):
         for (ref_name, feature_name), feature in self.target_info.integrase_sites.items():
             if feature.attribute['component'] == 'complete_site':
                 plot_parameters['features_to_show'].add((ref_name, feature_name))
-                plot_parameters['color_overrides'][ref_name, feature_name] = hits.visualize.apply_alpha(colors[feature.attribute['site']], 0.7)
+                plot_parameters['color_overrides'][ref_name, feature_name] = hits.visualize.apply_alpha(feature.attribute['color'], 0.7)
                 plot_parameters['label_overrides'][feature_name] = f'{feature.attribute["site"]}-{feature.attribute["CD"]}'
 
             if feature.attribute['component'] == 'CD':
@@ -596,12 +592,13 @@ class Layout(knock_knock.twin_prime_layout.Layout):
             if '5\'-ITR' in feature_name:
                 plot_parameters['features_to_show'].add((ref_name, feature_name))
                 plot_parameters['label_overrides'][feature_name] = '5\' ITR'
-                plot_parameters['color_overrides'][ref_name, feature_name] = hits.visualize.apply_alpha('orangered', 0.7)
 
             if '3\'-ITR' in feature_name:
                 plot_parameters['features_to_show'].add((ref_name, feature_name))
                 plot_parameters['label_overrides'][feature_name] = '3\' ITR'
-                plot_parameters['color_overrides'][ref_name, feature_name] = hits.visualize.apply_alpha('firebrick', 0.7)
+
+        for feature_name, new_name in zip(sorted(self.target_info.primers), ['forward primer', 'reverse primer']):
+            plot_parameters['label_overrides'][feature_name] = new_name
 
         return plot_parameters
 
@@ -616,10 +613,26 @@ class Layout(knock_knock.twin_prime_layout.Layout):
 
         return relevant_alignments
 
+    @memoized_property
+    def is_malformed(self):
+        if any(len(als) == 0 for side, als in self.long_primer_alignments.items()):
+            malformed = 'missing primer(s)'
+
+        elif any(len(als) > 1 for side, als in self.long_primer_alignments.items()):
+            malformed = 'likely concatamer'
+
+        elif (self.whole_read - self.between_primers).total_length > 500:
+            malformed = 'likely concatamer'
+
+        else:
+            malformed = False
+
+        return malformed
+
     def categorize(self):
-        if self.primer_alignments['left'] is None or self.primer_alignments['right'] is None:
+        if self.is_malformed:
             self.category = 'malformed'
-            self.subcategory = 'doesn\'t have both primers'
+            self.subcategory = self.is_malformed
 
         elif self.nonspecific_amplification:
             self.register_nonspecific_amplification()
@@ -638,6 +651,9 @@ class Layout(knock_knock.twin_prime_layout.Layout):
 
         elif self.is_intended_integration:
             self.register_intended_integration()
+
+        elif self.is_unintended_integration:
+            self.register_unintended_integration()
 
         elif self.is_unintended_rejoining:
             self.register_unintended_rejoining()
@@ -690,10 +706,13 @@ class Layout(knock_knock.twin_prime_layout.Layout):
                                annotate_overlap=False,
                                label_pegRNAs=True,
                                draw_pegRNAs=False,
-                               label_features_on_alignments=True,
+                               label_features_on_alignments=False,
                                layout_mode='nanopore',
                                flip_donor=(self.sequencing_direction == '-'),
-                               refs_to_draw={self.target_info.target, self.target_info.donor},
+                               refs_to_draw={
+                                   self.target_info.target,
+                                   #self.target_info.donor,
+                                },
                                **kwargs,
                               )
 

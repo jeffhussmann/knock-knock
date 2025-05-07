@@ -1,11 +1,12 @@
 import itertools
 from collections import defaultdict
 
-import bokeh.palettes
 import Bio.SeqUtils
 
 import hits.utilities
 import hits.gff
+
+import matplotlib.colors
 
 recognition_sequences = {
     'Bxb1': {
@@ -22,10 +23,8 @@ for source, site_seqs in recognition_sequences.items():
         split_recognition_sequences[source][site_name] = split_seq
 
 colors = {
-    ('attP', 'left'): bokeh.palettes.Category20b_20[10],
-    ('attP', 'right'): bokeh.palettes.Category20b_20[11],
-    ('attB', 'left'): bokeh.palettes.Category20b_20[18],
-    ('attB', 'right'): bokeh.palettes.Category20b_20[19],
+    'attP': matplotlib.colors.to_hex('tab:olive'),
+    'attB': matplotlib.colors.to_hex('tab:cyan'),
 }
 
 def identify_split_recognition_sequences(ref_seqs):
@@ -54,7 +53,7 @@ def identify_split_recognition_sequences(ref_seqs):
                                                                     end=match_end,
                                                                     strand=strand,
                                                                    )
-                        side_feature.attribute['color'] = colors.get((site_name, side))
+                        side_feature.attribute['color'] = colors[site_name]
                         side_feature.attribute['component'] = side
 
                         # Annotate the central dinucleotide after the left half.
@@ -85,6 +84,7 @@ def identify_split_recognition_sequences(ref_seqs):
                             CD_feature.attribute['CD'] = CD
                             CD_full_name = f'{source}_{site_name}_{CD}_CD_{CD_start}'
                             CD_feature.attribute['ID'] = CD_full_name
+                            CD_feature.attribute['color'] = colors[site_name]
 
                             component_features['CD'].append(CD_feature)
                             all_features[ref_name, CD_full_name] = CD_feature
@@ -131,6 +131,7 @@ def identify_split_recognition_sequences(ref_seqs):
                     feature.attribute['component'] = 'complete_site'
                     feature.attribute['recombinase'] = source
                     feature.attribute['site'] = site_name
+                    feature.attribute['color'] = colors[site_name]
 
                     all_features[ref_name, full_name] = feature
 

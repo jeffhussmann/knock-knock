@@ -279,6 +279,23 @@ class Layout(layout.Categorizer):
         return als
 
     @memoized_property
+    def donor_alignments(self):
+        ''' Donor meaning integrase donor '''
+        if self.target_info.donor is not None:
+            valid_names = [self.target_info.donor]
+        else:
+            valid_names = []
+
+        donor_als = [
+            al for al in self.alignments
+            if al.reference_name in valid_names
+        ]
+
+        donor_als = self.split_and_extend_alignments(donor_als)
+        
+        return donor_als
+
+    @memoized_property
     def extra_alignments(self):
         # Any alignments not to the target, pegRNAs, or donor.
 
@@ -1614,6 +1631,12 @@ class Layout(layout.Categorizer):
         return uncovered
 
     @memoized_property
+    def not_covered_by_donor_alignments(self):
+        als = self.donor_alignments
+        uncovered = (self.whole_read - interval.get_disjoint_covered(als)) & self.not_covered_by_primers
+        return uncovered
+
+    @memoized_property
     def query_length_covered_by_on_target_alignments(self):
         return (self.not_covered_by_primers & self.covered_by_split_target_or_pegRNA_alignments).total_length
 
@@ -1627,7 +1650,14 @@ class Layout(layout.Categorizer):
                 continue
 
             covered = interval.get_covered(al)
-            novel_covered = covered & self.not_covered_by_split_target_or_pegRNA_alignments & self.not_covered_by_extra_alignments
+
+            novel_covered = (
+                covered & 
+                self.not_covered_by_split_target_or_pegRNA_alignments &
+                self.not_covered_by_extra_alignments &
+                self.not_covered_by_donor_alignments
+            )
+
             if novel_covered:
                 nonredundant.append(al)
 
@@ -2998,6 +3028,7 @@ class Layout(layout.Categorizer):
     def plot(self,
              relevant=True,
              manual_alignments=None,
+             extra_features_to_show=None,
              **manual_diagram_kwargs,
             ):
 
@@ -3007,6 +3038,9 @@ class Layout(layout.Categorizer):
         label_overrides = manual_diagram_kwargs.pop('label_overrides', plot_parameters['label_overrides'])
         label_offsets = manual_diagram_kwargs.pop('label_offsets', plot_parameters['label_offsets'])
         feature_heights = manual_diagram_kwargs.pop('feature_heights', plot_parameters['feature_heights'])
+
+        if extra_features_to_show is not None:
+            features_to_show.update(extra_features_to_show)
 
         flip_target = plot_parameters['flip_target']
         flip_pegRNA = plot_parameters['flip_pegRNA']

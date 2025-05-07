@@ -18,7 +18,7 @@ import knock_knock.outcome
 import knock_knock.illumina_experiment
 import knock_knock.prime_editing_layout
 import knock_knock.twin_prime_layout
-import knock_knock.Bxb1_layout
+import knock_knock.integrase_layout
 import knock_knock.target_info
 import knock_knock.utilities
 
@@ -972,7 +972,7 @@ class ArrayedExperiment(knock_knock.illumina_experiment.IlluminaExperiment):
         experiment_type_to_categorizer = {
             'prime_editing': knock_knock.prime_editing_layout.Layout,
             'twin_prime': knock_knock.twin_prime_layout.Layout,
-            'Bxb1_twin_prime': knock_knock.Bxb1_layout.Layout,
+            'Bxb1_twin_prime': knock_knock.integrase_layout.Layout,
             'TECseq': knock_knock.TECseq_layout.Layout,
             'TECseq_dual_flap': knock_knock.TECseq_layout.TwinPrimeLayout,
             'seeseq': knock_knock.seeseq_layout.Layout,

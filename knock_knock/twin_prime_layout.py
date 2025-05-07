@@ -1,11 +1,9 @@
 from collections import defaultdict
 
-import hits.visualize
 from hits import interval, sam
 from hits.utilities import memoized_property
 
 import knock_knock.layout
-import knock_knock.pegRNAs
 import knock_knock.prime_editing_layout
 import knock_knock.target_info
 import knock_knock.visualize.architecture
@@ -746,7 +744,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
     @memoized_property
     def extension_chain_gap_covers(self):
         def covers_all_uncovered(al):
-            not_covered_by_al = self.uncovered_by_extension_chains - hits.interval.get_covered(al)
+            not_covered_by_al = self.uncovered_by_extension_chains - interval.get_covered(al)
             return not_covered_by_al.total_length == 0
 
         covers = [al for al in self.target_alignments if covers_all_uncovered(al)]
@@ -999,6 +997,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
              draw_pegRNAs=True,
              label_pegRNAs=False,
              extra_features_to_show=None,
+             extra_label_overrides=None,
              **manual_diagram_kwargs,
             ):
 
@@ -1012,6 +1011,9 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
         if extra_features_to_show is not None:
             features_to_show.update(extra_features_to_show)
+
+        if extra_label_overrides is not None:
+            label_overrides.update(extra_label_overrides)
 
         flip_target = plot_parameters['flip_target']
 

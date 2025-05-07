@@ -17,7 +17,7 @@ import hits.utilities as utilities
 import knock_knock.experiment
 import knock_knock.arrayed_experiment_group
 
-import knock_knock.Bxb1_layout
+import knock_knock.integrase_layout
 
 memoized_property = utilities.memoized_property
 
@@ -41,11 +41,15 @@ class Experiment(knock_knock.experiment.Experiment):
 
         self.max_insertion_length = 20
 
+        self.fns.update({
+            'parsimonious_oriented_donor_als': self.results_dir / 'parsimonious_oriented_donor_als.bam',
+        })
+
         #self.supplemental_index_names = []
 
     @memoized_property
     def categorizer(self):
-        return knock_knock.Bxb1_layout.Layout
+        return knock_knock.integrase_layout.Layout
 
     @memoized_property
     def expected_lengths(self):
@@ -72,8 +76,7 @@ class Experiment(knock_knock.experiment.Experiment):
         hits.fastq.ExternalSorter(self.reads, by_name_fn).sort()
 
     def align(self):
-        self.generate_alignments_with_blast(self.preprocessed_read_type,
-                                           )
+        self.generate_alignments_with_blast(self.preprocessed_read_type)
 
         self.generate_supplemental_alignments_with_minimap2(read_type=self.preprocessed_read_type,
                                                             report_all=False,
@@ -91,7 +94,7 @@ class Experiment(knock_knock.experiment.Experiment):
         self.record_sanitized_category_names()
 
     def length_ranges(self, outcome=None):
-        interval_length = self.max_relevant_length // 50
+        interval_length = 25
         starts = np.arange(0, self.max_relevant_length + interval_length, interval_length)
 
         if outcome is None:
@@ -178,6 +181,25 @@ class Experiment(knock_knock.experiment.Experiment):
             fn = fns['length_range_figure'](start, end)
             im.save(fn)
 
+    def extract_parsimonious_oriented_donor_als(self):
+        all_donor_als = []
+    
+        for qname, als in self.progress(self.alignment_groups()):
+            layout = self.categorizer(als, self.target_info, mode='nanopore')
+
+            if not layout.is_malformed:
+                donor_als = layout.nonredundant_donor_alignments
+
+                if layout.sequencing_direction == '-':
+                    for al in donor_als:
+                        al.is_reverse = not al.is_reverse
+                        
+                all_donor_als.extend(donor_als)
+
+        with hits.sam.AlignmentSorter(self.fns['parsimonious_oriented_donor_als'], header=self.target_info.header) as fh:
+            for al in all_donor_als:
+                fh.write(al)
+                
 class ChunkedExperiment(Experiment):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -408,13 +430,13 @@ def convert_sample_sheet(base_dir, sample_sheet_df, batch_name):
 
     return samples_df
 
-def experiments(base_dir, batch_name):
+def experiments(base_dir, batch_name, **kwargs):
     base_dir = Path(base_dir)
 
     sample_sheet = pd.read_csv(base_dir / 'data' / batch_name / 'sample_sheet.csv', index_col='sample_name')
 
     experiments = {}
     for sample_name in sample_sheet.index:
-        experiments[sample_name] = ChunkedExperiment(base_dir, batch_name, sample_name)
+        experiments[sample_name] = ChunkedExperiment(base_dir, batch_name, sample_name, **kwargs)
 
     return experiments
