@@ -113,6 +113,7 @@ class ReadDiagram:
 
         if len(self.refs_to_draw) == 0 and self.ref_centric:
             self.refs_to_draw.add(self.target_info.target)
+
             if self.target_info.donor is not None:
                 self.refs_to_draw.add(self.target_info.donor)
 

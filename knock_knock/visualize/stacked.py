@@ -2200,7 +2200,7 @@ def make_deletion_boundaries_figure(target_info,
                        color_overrides=color_overrides,
                        features_to_draw=features_to_draw,
                        **kwargs,
-                       )
+                      )
 
     grid.add_ax('fractions', width_multiple=12, title='% of reads\nwith specific outcome')
 
@@ -2274,6 +2274,7 @@ def make_deletion_boundaries_figure(target_info,
             grid.diagrams.draw_pegRNA(ti.name, pegRNA_name, y_offset=pegRNA_i + 1, label_features=False)
 
         grid.axs_by_name['fraction_removed'].set_ylabel('% of reads with\nposition deleted', size=14)
+        
         grid.axs_by_name[panel_order[1]].set_ylabel('% of reads\nwith deletion\nstarting at', size=14)
         grid.axs_by_name[panel_order[2]].set_ylabel('% of reads\nwith deletion\nending at', size=14)
 

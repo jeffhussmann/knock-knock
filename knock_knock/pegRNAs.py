@@ -53,7 +53,6 @@ default_feature_colors = {
     'extension': '#777777',
     'insertion': '#b1ff67',
     'deletion': 'darkgrey',
-    'DR_WT': '#75c6a9',
 }
 
 def PBS_name(pegRNA_name):

@@ -364,7 +364,7 @@ def make_table(base_dir,
                    vmax=df.loc[subset_slice].max(axis=None) * vmax_multiple,
                   )
 
-    def make_outcome_browswer_link(name_tuple):
+    def make_outcome_browser_link(name_tuple):
         sample_name = name_tuple[-1]
 
         exp = exps[name_tuple]
@@ -375,7 +375,7 @@ def make_table(base_dir,
 
     styled.format_index(axis=0,
                         level=1,
-                        formatter=make_outcome_browswer_link,
+                        formatter=make_outcome_browser_link,
                        )
 
     styled.set_table_attributes('style="border-collapse: separate"')
