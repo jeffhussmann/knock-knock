@@ -494,7 +494,12 @@ class ExperimentGroup:
                                                                                                     ) 
 
         if plot_kwargs.get('include_genome', True):
-            fig.suptitle(f'{self.target_info.target} - {",".join(self.target_info.sgRNAs)}')
+            if self.target_info.sgRNAs is not None:
+                sgRNAs = ','.join(self.target_info.sgRNAs)
+            else:
+                sgRNAs = 'no sgRNAs'
+
+            fig.suptitle(f'{self.target_info.target} - {sgRNAs}')
 
         return fig, axs
 

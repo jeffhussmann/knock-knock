@@ -181,7 +181,7 @@ class EfficientBoundaryProperties:
             elif c == 'RTed sequence':
                 pegRNA_coord = details.pegRNA_edge
             else:
-                raise NotImplementedError
+                pegRNA_coord = details[f'{self.target_info.pegRNA_side}_rejoining_edge']
 
             return pegRNA_coord
 
@@ -207,12 +207,14 @@ class EfficientBoundaryProperties:
         def csd_to_target_coords(csd):
             c, s, d = csd
 
+            details = knock_knock.outcome.Details.from_string(d)
+
             if c == 'intended edit':
                 target_coord = first_nt_after_HA_RT_in_genome
             elif c == 'RTed sequence':
                 target_coord = 0
             else:
-                raise NotImplementedError
+                target_coord = details[f'{self.target_info.non_pegRNA_side}_rejoining_edge']
 
             return target_coord
 
@@ -341,6 +343,9 @@ def plot_single_flap_extension_chain_edges(target_info,
     figsize = (16, 6)
 
     fig, axs = plt.subplots(2, 2, figsize=figsize)
+
+    if len(ti.pegRNAs) != 1:
+        return fig, axs
 
     for ax_col, (side, subcategory_key) in zip(axs.T, side_and_subcategories):
         for ax, cumulative in zip(ax_col, [True, False]):
