@@ -1494,7 +1494,7 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
 
         supplemental_indices = set()
 
-        for name in [genome] + extra_sequences.split(';'):
+        for name in [genome, genome_source] + extra_sequences.split(';'):
             if name in valid_supplemental_indices:
                 supplemental_indices.add(name)
 
