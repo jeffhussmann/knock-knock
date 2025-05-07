@@ -654,13 +654,20 @@ def make_self_contained_zip(base_dir,
     else:
         exps = knock_knock.experiment.get_all_experiments(base_dir, conditions)
 
-    exps_missing_files = defaultdict(list)
+    missing_files = {
+        'experiment': defaultdict(list),
+        'batch': defaultdict(list),
+        'group': defaultdict(list),
+    }
+
+    batches = {}
+    groups = {}
 
     if include_images:
         for exp in exps.values():
             def add_fn(fn):
                 if not fn.exists():
-                    exps_missing_files[exp.group_name, exp.sample_name].append(fn)
+                    missing_files['experiment'][exp.group_name, exp.sample_name].append(fn)
                 else:
                     if fn.is_dir():
                         for child_fn in fn.iterdir():
@@ -671,17 +678,54 @@ def make_self_contained_zip(base_dir,
             group = exp.experiment_group
             batch = group.batch
 
+            batches[batch.batch_name] = batch
+            groups[batch.batch_name, group.group_name] = group
+
+            add_fn(exp.fns['outcome_browser'])
+            add_fn(exp.fns['lengths_figure'])
+
+            if exp.categories_by_frequency is not None:
+                for outcome in exp.categories_by_frequency:
+                    outcome_fns = exp.outcome_fns(outcome)
+
+                    if include_details:
+                        add_fn(outcome_fns['diagrams_html'])
+                        add_fn(outcome_fns['first_example'])
+
+                    add_fn(outcome_fns['length_ranges_dir'])
+
+                categories = set(c for c, s in exp.categories_by_frequency)
+                for category in categories:
+                    outcome_fns = exp.outcome_fns(category)
+
+                    add_fn(outcome_fns['diagrams_html'])
+                    add_fn(outcome_fns['first_example'])
+
+        for batch in batches.values():
+            def add_fn(fn):
+                if not fn.exists():
+                    missing_files['batch'][batch.batch_name].append(fn)
+                else:
+                    fns_to_zip.add(fn)
+
             add_fn(batch.fns['group_name_to_sanitized_group_name'])
             add_fn(batch.fns['performance_metrics'])
 
             for fn in batch.pegRNA_conversion_fractions_fns():
-                print(fn)
                 add_fn(fn)
+
+        for group in groups.values():
+            def add_fn(fn):
+                if not fn.exists():
+                    missing_files['group'][group.group_name].append(fn)
+                else:
+                    fns_to_zip.add(fn)
 
             add_fn(group.fns['pegRNA_conversion_fractions'])
 
             add_fn(group.fns['partial_incorporation_figure_high_threshold'])
             add_fn(group.fns['partial_incorporation_figure_low_threshold'])
+
             add_fn(group.fns['deletion_boundaries_figure'])
 
             add_fn(group.fns['single_flap_rejoining_boundaries_figure'])
@@ -689,37 +733,23 @@ def make_self_contained_zip(base_dir,
             add_fn(group.fns['single_flap_rejoining_boundaries_figure_individual_samples'])
             add_fn(group.fns['single_flap_rejoining_boundaries_figure_individual_samples_normalized'])
             
-            add_fn(exp.fns['outcome_browser'])
-            add_fn(exp.fns['lengths_figure'])
+    for kind, missing_files_for_kind in missing_files.items():
+        if len(missing_files_for_kind) > 0:
+            list_sources = (len(missing_files_for_kind) <= 10)
 
-            if exp.categories_by_frequency is not None:
-                for outcome in exp.categories_by_frequency:
-                    outcome_fns = exp.outcome_fns(outcome)
-                    if include_details:
-                        add_fn(outcome_fns['diagrams_html'])
-                        add_fn(outcome_fns['first_example'])
-                    add_fn(outcome_fns['length_ranges_dir'])
+            logging.warning(f'{len(missing_files_for_kind)} {kind}{"s are" if len(missing_files_for_kind) > 1 else " is"} missing output files{":" if list_sources else "."}')
 
-                categories = set(c for c, s in exp.categories_by_frequency)
-                for category in categories:
-                    outcome_fns = exp.outcome_fns(category)
-                    add_fn(outcome_fns['diagrams_html'])
-                    add_fn(outcome_fns['first_example'])
-
-    if len(exps_missing_files) > 0:
-        list_exps = (len(exps_missing_files) <= 10)
-
-        logging.warning(f'{len(exps_missing_files)} experiment(s) are missing output files{":" if list_exps else "."}')
-
-        if list_exps:
-            for group, exp_name in sorted(exps_missing_files):
-                logging.warning(f'\t{group} {exp_name}')
-                if len(exps_missing_files[group, exp_name]) <= 10:
-                    for fn in exps_missing_files[group, exp_name]:
-                        logging.warning(f'\t\t{fn}')
+            if list_sources:
+                for key in sorted(missing_files_for_kind):
+                    logging.warning(f'\t{key}')
+                    if len(missing_files_for_kind[key]) <= 10:
+                        for fn in missing_files_for_kind[key]:
+                            logging.warning(f'\t\t{fn}')
 
     zip_fn = fn_prefix.with_suffix('.zip')
+
     archive_base = Path(fn_prefix.name)
+
     with zipfile.ZipFile(zip_fn, mode='w', compression=zipfile.ZIP_DEFLATED) as zip_fh:
 
         if show_progress:
