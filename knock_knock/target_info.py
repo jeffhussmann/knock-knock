@@ -1807,7 +1807,8 @@ class TargetInfo:
                                                                     )
             deletion = results['deletion']
 
-        deletion = self.expand_degenerate_indel(deletion)
+        if deletion is not None:
+            deletion = self.expand_degenerate_indel(deletion)
 
         return deletion
 
