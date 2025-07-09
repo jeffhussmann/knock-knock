@@ -716,7 +716,18 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         else:
             self.category = 'unintended rejoining of RT\'ed sequence'
 
-        self.subcategory = f'left {chains["left"]["description"]}, right {chains["right"]["description"]}'
+        if self.flipped:
+            possibly_flipped_side = {
+                'left': 'right',
+                'right': 'left',
+            }
+        else:
+            possibly_flipped_side = {
+                'left': 'left',
+                'right': 'right',
+            }
+
+        self.subcategory = f'left {chains[possibly_flipped_side["left"]]["description"]}, right {chains[possibly_flipped_side["right"]]["description"]}'
 
         MH_nts = self.extension_chain_junction_microhomology
 
@@ -725,11 +736,11 @@ class Layout(knock_knock.prime_editing_layout.Layout):
             integrase_sites=self.integrase_sites_in_chains,
         )
 
-        if edges['left'] is not None:
-            details_kwargs['left_rejoining_edge'] = edges['left']
+        if edges[possibly_flipped_side['left']] is not None:
+            details_kwargs['left_rejoining_edge'] = edges[possibly_flipped_side['left']]
 
-        if edges['right'] is not None:
-            details_kwargs['right_rejoining_edge'] = edges['right']
+        if edges[possibly_flipped_side['right']] is not None:
+            details_kwargs['right_rejoining_edge'] = edges[possibly_flipped_side['right']]
 
         self.Details = Details(**details_kwargs)
 

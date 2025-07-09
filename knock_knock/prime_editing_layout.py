@@ -2136,6 +2136,17 @@ class Layout(layout.Categorizer):
         else:
             raise ValueError
 
+        if self.flipped:
+            possibly_flipped_side = {
+                'left': 'right',
+                'right': 'left',
+            }
+        else:
+            possibly_flipped_side = {
+                'left': 'left',
+                'right': 'right',
+            }
+
         pegRNA_al = chain['alignments']['pegRNA']
         has_pegRNA_substitution = self.specific_to_pegRNA(pegRNA_al)
 
@@ -2150,11 +2161,19 @@ class Layout(layout.Categorizer):
             self.subcategory += ', no substitution'
 
         # TODO: need to add integrase sites here.
-        self.Details = Details(
-            left_rejoining_edge=chain_edges['left'],
-            right_rejoining_edge=chain_edges['right'],
-            junction_microhomology_length=chain_junction_MH,
-        )
+
+        details_kwargs = {}
+
+        if chain_edges[possibly_flipped_side['left']] is not None:
+            details_kwargs['left_rejoining_edge'] = chain_edges[possibly_flipped_side['left']]
+
+        if chain_edges[possibly_flipped_side['right']] is not None:
+            details_kwargs['right_rejoining_edge'] = chain_edges[possibly_flipped_side['right']]
+
+        if chain_junction_MH is not None:
+            details_kwargs['junction_microhomology_length'] = chain_junction_MH
+
+        self.Details = Details(**details_kwargs)
 
         self.relevant_alignments = []
 
