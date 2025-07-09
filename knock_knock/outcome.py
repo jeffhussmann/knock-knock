@@ -169,6 +169,9 @@ class Details(Detail):
     def __getitem__(self, tag):
         return getattr(self, tag, tag_to_Detail[tag]())
 
+    def __eq__(self, other):
+        return str(self) == str(other)
+
     __repr__ = __str__
 
 @dataclass
