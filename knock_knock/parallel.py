@@ -76,3 +76,13 @@ class PoolWithLoggerThread:
 
     def join(self):
         self.pool.join()
+
+class MockPool:
+    def __enter__(self):
+        pass
+
+    def __exit__(self, *args):
+        pass
+
+    def starmap(self, func, iterable):
+        return [func(*args) for args in iterable]

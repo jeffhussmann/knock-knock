@@ -4,7 +4,6 @@ import multiprocessing
 import os
 
 import pandas as pd
-import pysam
 import scipy.sparse
 
 from hits import utilities
@@ -59,11 +58,15 @@ class ExperimentGroup:
 
         logger, file_handler = knock_knock.utilities.configure_standard_logger(self.results_dir, verbose=verbose)
 
-        if use_logger_thread:
-            pool = knock_knock.parallel.PoolWithLoggerThread(num_processes, logger)
+        if num_processes == 1:
+            pool = knock_knock.parallel.MockPool()
+
         else:
-            NICENESS = 3
-            pool = multiprocessing.Pool(num_processes, maxtasksperchild=1, initializer=os.nice, initargs=(NICENESS,))
+            if use_logger_thread:
+                pool = knock_knock.parallel.PoolWithLoggerThread(num_processes, logger)
+            else:
+                NICENESS = 3
+                pool = multiprocessing.Pool(num_processes, maxtasksperchild=1, initializer=os.nice, initargs=(NICENESS,))
 
         with pool:
             logger.info('Preprocessing')
