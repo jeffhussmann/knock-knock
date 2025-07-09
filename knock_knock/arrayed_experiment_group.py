@@ -634,7 +634,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         informative_condition_idxs = []
 
         conditions_array = np.array(self.conditions)
-        if conditions_array.ndim == 1:
+        if conditions_array.ndim == 1 and conditions_array.size > 0:
             conditions_array = conditions_array.reshape((conditions_array.size, -1))
 
         for c_i, row in enumerate(conditions_array.T):
