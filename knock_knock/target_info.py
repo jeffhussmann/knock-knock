@@ -1880,7 +1880,7 @@ class TargetInfo:
             for ref_name in ref_names:
                 if ref_name in self.pegRNA_substitutions:
                     substitutions = self.pegRNA_substitutions[ref_name]
-                    for SNV_name, details in substitutions.items():
+                    for substitution_name, details in substitutions.items():
                         if ref_name in self.pegRNA_names:
                             base = details['base']
                         else:
@@ -1900,8 +1900,8 @@ class TargetInfo:
                 if ref_name in self.pegRNA_substitutions:
                     substitutions = self.pegRNA_substitutions[ref_name]
                     programmed_subs[ref_name] = {}
-                    for SNV_name, SNV in substitutions.items():
-                        programmed_subs[ref_name][SNV['position']] = SNV['alternative_base']
+                    for substitution_name, details in substitutions.items():
+                        programmed_subs[ref_name][details['position']] = details['alternative_base']
 
         return programmed_subs
 
@@ -1982,8 +1982,8 @@ class TargetInfo:
 
         if self.pegRNA is not None:
             if self.pegRNA.substitutions is not None:
-                for SNV_name, details in self.pegRNA.substitutions[self.target].items():
-                    name_to_description[SNV_name] = details['description']
+                for subsitution_name, details in self.pegRNA.substitutions[self.target].items():
+                    name_to_description[subsitution_name] = details['description']
 
             if self.pegRNA_programmed_insertion is not None:
                 if len(self.pegRNA.edit_properties['insertions']) != 1:
