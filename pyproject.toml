@@ -1,0 +1,44 @@
+[build-system]
+requires = [
+    "setuptools",
+    "setuptools-scm",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "knock_knock"
+authors = [
+    {name = "Jeff Hussmann", email = "jeff.hussmann@gmail.com"},
+]
+description = "Exploring, categorizing, and quantifying the sequence outcomes produced by genome editing experiments"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+dynamic = ["version"]
+requires-python = ">= 3.8"
+dependencies = [
+    "bokeh>=2.4.2",
+    "biopython>=1.81",
+    "h5py>=3.1.0",
+    "ipywidgets>=7.1.2",
+    "matplotlib>=2.1.2",
+    "nbconvert>=6.0.7",
+    "nbformat>=4.4.0",
+    "numpy>=1.14.2",
+    "pandas>=0.22.0",
+    "Pillow>=5.0.0",
+    "pysam>=0.14",
+    "PyYAML>=3.12",
+    "hits>=0.4.3",
+    "tqdm>=4.31.1",
+    "viennarna>=2.6.4",
+]
+
+[project.scripts]
+knock-knock = "knock_knock.cli:main"
+
+[project.urls]
+Repository = "https://github.com/jeffhussmann/knock-knock.git"
+
+[tool.setuptools.dynamic]
+version = {attr = "knock_knock.__version__"}

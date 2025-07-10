@@ -222,7 +222,7 @@ def print_citation(args):
     '''
     print(textwrap.dedent(citation))
 
-if __name__ == '__main__':
+def main():
     parser = argparse.ArgumentParser(prog='knock-knock')
 
     parser.add_argument('--version', action='version', version=knock_knock.__version__)
