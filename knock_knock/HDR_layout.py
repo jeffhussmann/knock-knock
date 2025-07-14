@@ -1,103 +1,140 @@
-import knock_knock.layout
+import itertools
 
-from hits import interval, sam, sw
+import numpy as np
+
+import knock_knock.layout
+import knock_knock.visualize.architecture
+
+from hits import fastq, interval, sam, sw
 from hits.utilities import memoized_property, memoized_with_args
 
 class Layout(knock_knock.layout.Categorizer):
     category_order = [
-        ('WT',
-            ('WT',
+        (
+            'WT',
+            (
+                'WT',
             ),
         ),
-        ('simple indel',
-            ('insertion',
-             'deletion',
-             'deletion <50 nt',
-             'deletion >=50 nt',
+        (
+            'simple indel',
+            (
+                'insertion',
+                'deletion',
+                'deletion <50 nt',
+                'deletion >=50 nt',
             ),
         ),
-        ('complex indel',
-            ('complex indel',
+        (
+            'complex indel',
+            (
+                'complex indel',
              'multiple indels',
             ),
         ),
-        ('HDR',
-            ('HDR',
+        (
+            'HDR',
+            (
+                'HDR',
             ),
         ),
-        ('blunt misintegration',
-            ("5' HDR, 3' blunt",
-             "5' blunt, 3' HDR",
-             "5' blunt, 3' blunt",
-             "5' blunt, 3' imperfect",
-             "5' imperfect, 3' blunt",
+        (
+            'blunt misintegration',
+            (
+                "5' HDR, 3' blunt",
+                "5' blunt, 3' HDR",
+                "5' blunt, 3' blunt",
+                "5' blunt, 3' imperfect",
+                "5' imperfect, 3' blunt",
             ),
         ),
-        ('incomplete HDR',
-            ("5' HDR, 3' imperfect",
-             "5' imperfect, 3' HDR",
+        (
+            'incomplete HDR',
+            (
+                "5' HDR, 3' imperfect",
+                "5' imperfect, 3' HDR",
             ),
         ),
-        ('donor fragment',
-            ("5' imperfect, 3' imperfect",
+        (
+            'donor fragment',
+            (
+                "5' imperfect, 3' imperfect",
             ),
         ),
-        ('complex misintegration',
-            ('complex misintegration',
+        (
+            'complex misintegration',
+            (
+                'complex misintegration',
             ),
         ),
-        ('concatenated misintegration',
-            ('HDR',
-             '5\' blunt',
-             '3\' blunt',
-             '5\' and 3\' blunt',
-             'incomplete',
+        (
+            'concatenated misintegration',
+            (
+                'HDR',
+                '5\' blunt',
+                '3\' blunt',
+                '5\' and 3\' blunt',
+                'incomplete',
             ),
         ),
-        ('non-homologous donor',
-            ('simple',
-             'complex',
+        (
+            'non-homologous donor',
+            (
+                'simple',
+                'complex',
             ),
         ),
-        ('genomic insertion',
-            ('hg38',
-             'hg19',
-             'mm10',
-             'e_coli',
+        (
+            'genomic insertion',
+            (
+                'hg38',
+                'hg19',
+                'mm10',
+                'e_coli',
             ),
         ),
-        ('uncategorized',
-            ('uncategorized',
-             'donor with indel',
-             'mismatch(es) near cut',
-             'multiple indels near cut',
-             'donor specific present',
-             'other',
+        (
+            'uncategorized',
+            (
+                'uncategorized',
+                'donor with indel',
+                'mismatch(es) near cut',
+                'multiple indels near cut',
+                'donor specific present',
+                'other',
             ),
         ),
-        ('unexpected source',
-            ('flipped',
-             'e coli',
-             'uncategorized',
+        (
+            'unexpected source',
+            (
+                'flipped',
+                'e coli',
+                'uncategorized',
             ),
         ),
-        ('nonspecific amplification',
-            ('hg38',
-             'hg19',
-             'mm10',
+        (
+            'nonspecific amplification',
+            (
+                'hg38',
+                'hg19',
+                'mm10',
             ),
         ),
-        ('malformed layout',
-            ('extra copy of primer',
-             'missing a primer',
-             'too short',
-             'primer far from read edge',
-             'primers not in same orientation',
-             'no alignments detected',
+        (
+            'malformed layout',
+            (
+                'extra copy of primer',
+                'missing a primer',
+                'too short',
+                'primer far from read edge',
+                'primers not in same orientation',
+                'no alignments detected',
             ),
         ),
-        ('bad sequence',
-            ('non-overlapping',
+        (
+            'bad sequence',
+            (
+                'non-overlapping',
             ),
         ),
     ]
@@ -167,7 +204,7 @@ class Layout(knock_knock.layout.Categorizer):
             if extend_before or extend_after:
                 al = sw.extend_repeatedly(al, target_seq_bytes, extend_before=extend_before, extend_after=extend_after)
 
-            split_als = comprehensively_split_alignment(al, ti, self.mode)
+            split_als = knock_knock.layout.comprehensively_split_alignment(al, ti, self.mode)
 
             extended = [sw.extend_alignment(split_al, target_seq_bytes) for split_al in split_als]
 
@@ -203,7 +240,7 @@ class Layout(knock_knock.layout.Categorizer):
         processed_als = []
 
         for al in original_als:
-            split_als = comprehensively_split_alignment(al, self.target_info, self.mode)
+            split_als = knock_knock.layout.comprehensively_split_alignment(al, self.target_info, self.mode)
             processed_als.extend(split_als)
 
         return processed_als
@@ -217,7 +254,7 @@ class Layout(knock_knock.layout.Categorizer):
         processed_als = []
 
         for al in original_als:
-            split_als = comprehensively_split_alignment(al, self.target_info, self.mode)
+            split_als = knock_knock.layout.comprehensively_split_alignment(al, self.target_info, self.mode)
             processed_als.extend(split_als)
 
         return processed_als
@@ -1124,7 +1161,7 @@ class Layout(knock_knock.layout.Categorizer):
         }
 
         max_indel_near_junction = {
-            side: max_indel_nearby(closest_donor[side], junction[side], 10)
+            side: knock_knock.layout.max_indel_nearby(closest_donor[side], junction[side], 10)
             for side in [5, 3]
         }
 
@@ -1248,7 +1285,7 @@ class Layout(knock_knock.layout.Categorizer):
         for side in [5, 3]:
             primer_al = self.primer_alignments[side]
             donor_al = self.closest_donor_alignment_to_edge[side]
-            overlap = junction_microhomology(self.target_info.reference_sequences, primer_al, donor_al)
+            overlap = knock_knock.layout.junction_microhomology(self.target_info.reference_sequences, primer_al, donor_al)
             short_gap[side] = overlap > -10
 
         is_blunt = {side: reaches_end[side] and short_gap[side] for side in [5, 3]}
@@ -1514,7 +1551,7 @@ class Layout(knock_knock.layout.Categorizer):
                     nucs_before = sam.total_reference_nucs(al.cigar[:i])
                     starts_at = al.reference_start + nucs_before
 
-                    indel = DegenerateDeletion([starts_at], length)
+                    indel = knock_knock.layout.DegenerateDeletion([starts_at], length)
 
                 elif kind == sam.BAM_CINS:
                     ref_nucs_before = sam.total_reference_nucs(al.cigar[:i])
@@ -1523,7 +1560,7 @@ class Layout(knock_knock.layout.Categorizer):
                     read_nucs_before = sam.total_read_nucs(al.cigar[:i])
                     insertion = al.query_sequence[read_nucs_before:read_nucs_before + length]
 
-                    indel = DegenerateInsertion([starts_after], [insertion])
+                    indel = knock_knock.layout.DegenerateInsertion([starts_after], [insertion])
                     
                 else:
                     continue
@@ -1850,7 +1887,7 @@ class Layout(knock_knock.layout.Categorizer):
         else:
             donor_al = None
             
-        MH_nts = {side: junction_microhomology(self.target_info.reference_sequences, self.primer_alignments[side], donor_al) for side in [5, 3]}
+        MH_nts = {side: knock_knock.layout.junction_microhomology(self.target_info.reference_sequences, self.primer_alignments[side], donor_al) for side in [5, 3]}
 
         return MH_nts
 
@@ -1861,7 +1898,7 @@ class Layout(knock_knock.layout.Categorizer):
         else:
             nh_al = None
 
-        MH_nts = {side: junction_microhomology(self.target_info.reference_sequences, self.primer_alignments[side], nh_al) for side in [5, 3]}
+        MH_nts = {side: knock_knock.layout.junction_microhomology(self.target_info.reference_sequences, self.primer_alignments[side], nh_al) for side in [5, 3]}
 
         return MH_nts
 
