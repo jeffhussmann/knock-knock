@@ -979,9 +979,13 @@ class Layout(layout.Categorizer):
 
             last_als[side] = last_al
 
-        mh = knock_knock.layout.junction_microhomology(ti.reference_sequences, last_als['left'], last_als['right'])
+        if None in last_als.values():
+            mh = None
+        
+        else:
+            mh = knock_knock.layout.junction_microhomology(ti.reference_sequences, last_als['left'], last_als['right'])
 
-        mh = max(mh, 0)
+            mh = max(mh, 0)
 
         return mh
 
