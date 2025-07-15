@@ -1,16 +1,13 @@
 import copy
-import itertools
 import re
 
 import numpy as np
 import pandas as pd
 import pysam
 
-from hits import sam, interval, utilities, fastq, sw
-from .target_info import DegenerateDeletion, DegenerateInsertion
+from hits import sam, interval, utilities, sw
 
 import knock_knock.outcome
-import knock_knock.visualize.architecture
 
 memoized_property = utilities.memoized_property
 memoized_with_args = utilities.memoized_with_args

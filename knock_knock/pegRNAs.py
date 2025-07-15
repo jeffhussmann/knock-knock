@@ -17,6 +17,8 @@ from knock_knock import target_info
 
 memoized_property = utilities.memoized_property
 
+logger = logging.getLogger(__name__)
+
 def read_csv(csv_fn, process=True):
     df = knock_knock.utilities.read_and_sanitize_csv(csv_fn, index_col='name')
 
@@ -591,7 +593,7 @@ class pegRNA:
 
         if len(self.edit_properties['insertions']) > 0:
             if len(self.edit_properties['insertions']) > 1:
-                logging.warning('multiple insertions')
+                logger.warning('multiple insertions')
             
             insertion = self.edit_properties['insertions'][0]
             flap_coords = (insertion['start_in_flap'], insertion['end_in_flap'])
@@ -622,7 +624,7 @@ class pegRNA:
 
         if len(self.edit_properties['deletions']) > 0:
             if len(self.edit_properties['deletions']) > 1:
-                logging.warning(f'Inferred edit for {self.name} has multiple deletions')
+                logger.warning(f'Inferred edit for {self.name} has multiple deletions')
 
             deletion = self.edit_properties['deletions'][0]
             starts['target', 'deletion'], ends['target', 'deletion'] = sorted(convert_downstream_of_nick_to_target_coordinates(deletion[k]) for k in ['downstream_of_nick_start', 'downstream_of_nick_end'])
@@ -1665,7 +1667,7 @@ def infer_twin_pegRNA_features(pegRNAs,
 
     if (overlap_seqs[5] != overlap_seqs[3]) or (intended_edit_seqs[5] != intended_edit_seqs[3]):
         intended_edit_seq = None
-        logging.warning(f'Unable to infer a consistent intended edit for {"+".join(pegRNA_names)}')
+        logger.warning(f'Unable to infer a consistent intended edit for {"+".join(pegRNA_names)}')
         for side in [5, 3]:
             new_features.pop((pegRNA_names_by_side[side], 'overlap'), None)
     else:

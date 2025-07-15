@@ -14,7 +14,6 @@ import pysam
 import yaml
 
 import Bio.SeqIO
-import Bio.SeqUtils
 from Bio import BiopythonWarning
 from Bio.SeqFeature import SeqFeature, FeatureLocation
 from Bio.Seq import Seq
@@ -25,6 +24,8 @@ import knock_knock.effector
 from knock_knock import target_info, pegRNAs 
 
 import knock_knock.utilities
+
+logger = logging.getLogger(__name__)
 
 def identify_homology_arms(donor_seq, donor_type, target_seq, cut_after, required_match_length=15):
     header = pysam.AlignmentHeader.from_references(['donor', 'target'], [len(donor_seq), len(target_seq)])
@@ -284,7 +285,7 @@ class TargetInfoBuilder:
             except ValueError:
                 if amplicon_description is not None:
                     sgRNA_description = f'{sgRNA_name} {components["effector"]} protospacer: {components["protospacer"]}'
-                    logging.warning(f'A protospacer sequence adjacent to an appropriate PAM could not be located for {sgRNA_description} in target {amplicon_description}')
+                    logger.warning(f'A protospacer sequence adjacent to an appropriate PAM could not be located for {sgRNA_description} in target {amplicon_description}')
 
                 if components['extension'] != '':
                     # pegRNAs must have a protospacer in target.
@@ -705,7 +706,7 @@ class TargetInfoBuilder:
             raise ValueError
         
         if len(valids) > 1:
-            logging.warning(f'Found {len(valids)} possible valid primer alignments.')
+            logger.warning(f'Found {len(valids)} possible valid primer alignments.')
 
         return valids[0]
 
@@ -721,7 +722,7 @@ class TargetInfoBuilder:
                 concordant_primer_alignments = alignment_tester(primer_alignments)
 
             except ValueError:
-                logging.warning('Failed to find concordant primer alignments with STAR, falling back to manual search.')
+                logger.warning('Failed to find concordant primer alignments with STAR, falling back to manual search.')
                 primer_alignments = self.align_primers_to_reference_genome_manually()
                 concordant_primer_alignments = alignment_tester(primer_alignments)
 
@@ -836,7 +837,7 @@ class TargetInfoBuilder:
         if len(correct_orientation_pairs) == 0:
             if len(not_correct_orientation_pairs) > 0:
                 for first_al, second_al in not_correct_orientation_pairs:
-                    logging.warning(f'Found nearby primer alignments that don\'t point towards each other: {first_al.reference_name} {sam.get_strand(first_al)} {first_al.reference_start:,}-{first_al.reference_end:,}, {sam.get_strand(second_al)} {second_al.reference_start:,}-{second_al.reference_end:,}')
+                    logger.warning(f'Found nearby primer alignments that don\'t point towards each other: {first_al.reference_name} {sam.get_strand(first_al)} {first_al.reference_start:,}-{first_al.reference_end:,}, {sam.get_strand(second_al)} {second_al.reference_start:,}-{second_al.reference_end:,}')
 
             raise ValueError(f'Could not identify primer binding sites in {self.genome} that point towards each other.')
 
@@ -845,21 +846,21 @@ class TargetInfoBuilder:
         correct_orientation_pairs = sorted(correct_orientation_pairs, key=lambda pair: reference_extent(*pair))
 
         if len(correct_orientation_pairs) > 1:
-            logging.warning(f'{len(correct_orientation_pairs)} concordant primer alignments found.')
+            logger.warning(f'{len(correct_orientation_pairs)} concordant primer alignments found.')
             for left_al, right_al in correct_orientation_pairs[:10]:
-                logging.warning(f'Found {reference_extent(left_al, right_al):,} nt amplicon on {left_al.reference_name} from {left_al.reference_start:,} to {right_al.reference_end - 1:,}')
+                logger.warning(f'Found {reference_extent(left_al, right_al):,} nt amplicon on {left_al.reference_name} from {left_al.reference_start:,} to {right_al.reference_end - 1:,}')
 
             if len(correct_orientation_pairs) > 10:
-                logging.warning(f'... and {len(correct_orientation_pairs) - 10} more')
+                logger.warning(f'... and {len(correct_orientation_pairs) - 10} more')
 
         short_amplicons = [pair for pair in correct_orientation_pairs if reference_extent(*pair) <= 1000]
         if len(short_amplicons) > 1:
-            logging.warning(f'{len(short_amplicons)} potential amplicons <= 1kb found. There is a risk the shortest amplicon may not be the intended target.')
+            logger.warning(f'{len(short_amplicons)} potential amplicons <= 1kb found. There is a risk the shortest amplicon may not be the intended target.')
             
         left_al, right_al = correct_orientation_pairs[0]
 
         if reference_extent(left_al, right_al) > max_length:
-            logging.warning(f'Found {reference_extent(left_al, right_al):,} nt amplicon on {left_al.reference_name} from {left_al.reference_start:,} to {right_al.reference_end - 1:,}')
+            logger.warning(f'Found {reference_extent(left_al, right_al):,} nt amplicon on {left_al.reference_name} from {left_al.reference_start:,} to {right_al.reference_end - 1:,}')
             raise ValueError(f'Could not identify an amplicon shorter than {max_length} in {self.genome}')
 
         return left_al, right_al
@@ -1016,7 +1017,7 @@ def build_target_infos_from_csv(base_dir, defer_HA_identification=False):
                     # name that wasn't found.
                     raise ValueError(f'{sgRNA_components} not found')
 
-        logging.info(f'Building {target_name}...')
+        logger.info(f'Building {target_name}...')
 
         builder = TargetInfoBuilder(base_dir,
                                     info,
@@ -1027,7 +1028,7 @@ def build_target_infos_from_csv(base_dir, defer_HA_identification=False):
 def build_indices(base_dir, name, num_threads=1, **STAR_index_kwargs):
     base_dir = Path(base_dir)
 
-    logging.info(f'Building indices for {name}')
+    logger.info(f'Building indices for {name}')
     fasta_dir = base_dir / 'indices' / name / 'fasta'
 
     fasta_fns = genomes.get_all_fasta_file_names(fasta_dir)
@@ -1036,12 +1037,12 @@ def build_indices(base_dir, name, num_threads=1, **STAR_index_kwargs):
     elif len(fasta_fns) > 1:
         raise ValueError(f'Can only build minimap2 index from a single fasta file')
 
-    logging.info('Indexing fastas...')
+    logger.info('Indexing fastas...')
     genomes.make_fais(fasta_dir)
 
     fasta_fn = fasta_fns[0]
 
-    logging.info('Building STAR index...')
+    logger.info('Building STAR index...')
     STAR_dir = base_dir / 'indices' / name / 'STAR'
     STAR_dir.mkdir(exist_ok=True)
     mapping_tools.build_STAR_index([fasta_fn], STAR_dir,
@@ -1050,7 +1051,7 @@ def build_indices(base_dir, name, num_threads=1, **STAR_index_kwargs):
                                    **STAR_index_kwargs,
                                   )
 
-    logging.info('Building minimap2 index...')
+    logger.info('Building minimap2 index...')
     minimap2_dir = base_dir / 'indices' / name / 'minimap2'
     minimap2_dir.mkdir(exist_ok=True)
     minimap2_index_fn = minimap2_dir / f'{name}.mmi'
@@ -1078,7 +1079,7 @@ def download_genome_and_build_indices(base_dir, genome_name, num_threads=8):
     genome_dir = base_dir / 'indices' / genome_name
     fasta_dir = genome_dir / 'fasta'
 
-    logging.info(f'Downloading {genome_name}...')
+    logger.info(f'Downloading {genome_name}...')
 
     wget_command = [
         'wget',
@@ -1088,7 +1089,7 @@ def download_genome_and_build_indices(base_dir, genome_name, num_threads=8):
     ]
     subprocess.run(wget_command, check=True)
 
-    logging.info('Uncompressing...')
+    logger.info('Uncompressing...')
 
     file_name = Path(urlparse(urls[genome_name]).path).name
 

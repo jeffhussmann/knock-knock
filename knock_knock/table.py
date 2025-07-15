@@ -16,6 +16,8 @@ import tqdm
 
 import knock_knock.svg
 
+logger = logging.getLogger(__name__)
+
 totals_all_row_label = (' ', 'Total reads')
 totals_relevant_row_label = (' ', 'Total relevant reads')
 
@@ -50,7 +52,7 @@ def load_counts(base_dir,
 
     if no_outcomes:
         no_outcomes_string = '\n'.join(f'\t{": ".join(name_tuple)}' for name_tuple in no_outcomes)
-        logging.warning(f'Warning: can\'t find outcome counts for\n{no_outcomes_string}') 
+        logger.warning(f'Warning: can\'t find outcome counts for\n{no_outcomes_string}') 
 
     df = pd.DataFrame(counts).fillna(0)
 
@@ -607,7 +609,7 @@ def make_self_contained_zip(base_dir,
 
     def add_fn(fn):
         if not fn.exists():
-            logging.warning(f'{fn} is missing')
+            logger.warning(f'{fn} is missing')
         else:
             if fn.is_dir():
                 for child_fn in fn.iterdir():
@@ -615,13 +617,13 @@ def make_self_contained_zip(base_dir,
             else:
                 fns_to_zip.add(fn)
 
-    logging.info('Generating csv table...')
+    logger.info('Generating csv table...')
     csv_fn = fn_prefix.with_suffix('.csv')
     df = load_counts(base_dir, conditions, exclude_empty=False, arrayed=arrayed).T
     df.to_csv(csv_fn)
     add_fn(csv_fn)
 
-    logging.info('Generating high-level html table...')
+    logger.info('Generating high-level html table...')
     html_fn = fn_prefix.with_suffix('.html')
     generate_html(base_dir,
                   html_fn,
@@ -635,7 +637,7 @@ def make_self_contained_zip(base_dir,
     add_fn(html_fn)
 
     if include_details:
-        logging.info('Generating detailed html table...')
+        logger.info('Generating detailed html table...')
         html_fn = fn_prefix.parent / f'{fn_prefix.name}_with_details.html'
         generate_html(base_dir,
                       html_fn,
@@ -737,14 +739,14 @@ def make_self_contained_zip(base_dir,
         if len(missing_files_for_kind) > 0:
             list_sources = (len(missing_files_for_kind) <= 10)
 
-            logging.warning(f'{len(missing_files_for_kind)} {kind}{"s are" if len(missing_files_for_kind) > 1 else " is"} missing output files{":" if list_sources else "."}')
+            logger.warning(f'{len(missing_files_for_kind)} {kind}{"s are" if len(missing_files_for_kind) > 1 else " is"} missing output files{":" if list_sources else "."}')
 
             if list_sources:
                 for key in sorted(missing_files_for_kind):
-                    logging.warning(f'\t{key}')
+                    logger.warning(f'\t{key}')
                     if len(missing_files_for_kind[key]) <= 10:
                         for fn in missing_files_for_kind[key]:
-                            logging.warning(f'\t\t{fn}')
+                            logger.warning(f'\t\t{fn}')
 
     zip_fn = fn_prefix.with_suffix('.zip')
 

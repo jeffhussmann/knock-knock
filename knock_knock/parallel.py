@@ -3,6 +3,8 @@ import logging.handlers
 import multiprocessing
 import os
 
+import knock_knock.utilities
+
 def setup_logging_then_call(queue, func, args):
     ''' Register a QueueHandler connected queue, then call func
     with args. Intended as a pickleable function to be given
@@ -11,13 +13,9 @@ def setup_logging_then_call(queue, func, args):
     queue_handler = logging.handlers.QueueHandler(queue)
     queue_handler.setLevel(logging.DEBUG)
 
-    logger = logging.getLogger()
+    logger = logging.getLogger('knock_knock')
 
     logger.setLevel(logging.DEBUG)
-
-    # Suppress excessive logging by plotting modules.
-    logging.getLogger('matplotlib').setLevel(logging.WARNING)
-    logging.getLogger('PIL').setLevel(logging.WARNING)
 
     existing_handlers = list(logger.handlers)
 
@@ -38,13 +36,14 @@ class PoolWithLoggerThread:
     and a threaded handler for logging from the Pool's processes.
     '''
     
-    def __init__(self, processes, logger):
+    def __init__(self, processes, log_dir):
+        self.logger, self.file_handler = knock_knock.utilities.configure_logging_to_file(log_dir, verbose=True)
         # I don't really understand multiprocessing.Queue() vs.
         # multiprocessing.Manager().Queue(), but only the latter works here.
         manager = multiprocessing.Manager()
         self.queue = manager.Queue()
 
-        self.queue_listener = logging.handlers.QueueListener(self.queue, *logger.handlers)
+        self.queue_listener = logging.handlers.QueueListener(self.queue, *self.logger.handlers)
 
         NICENESS = 3
         self.pool = multiprocessing.Pool(processes=processes, maxtasksperchild=1, initializer=os.nice, initargs=(NICENESS,))
@@ -71,6 +70,9 @@ class PoolWithLoggerThread:
         self.pool.__exit__(exception_type, exception_value, exception_traceback)
         self.queue_listener.stop()
 
+        self.logger.removeHandler(self.file_handler)
+        self.file_handler.close()
+
     def close(self):
         self.pool.close()
 
@@ -86,3 +88,16 @@ class MockPool:
 
     def starmap(self, func, iterable):
         return [func(*args) for args in iterable]
+
+def get_pool(num_processes, use_logger_thread, log_dir):
+    if num_processes == 1:
+        pool = knock_knock.parallel.MockPool()
+
+    else:
+        if use_logger_thread:
+            pool = knock_knock.parallel.PoolWithLoggerThread(num_processes, log_dir)
+        else:
+            NICENESS = 3
+            pool = multiprocessing.Pool(num_processes, maxtasksperchild=1, initializer=os.nice, initargs=(NICENESS,))
+
+    return pool

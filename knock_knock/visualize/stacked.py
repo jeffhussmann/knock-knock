@@ -21,6 +21,8 @@ from knock_knock.outcome import *
 
 import knock_knock.outcome
 
+logger = logging.getLogger(__name__)
+
 @dataclass
 class StackedDiagrams:
     outcome_order: list
@@ -749,7 +751,7 @@ class StackedDiagrams:
             self.draw_rect(source_name, window_left - 0.5, window_right + 0.5, bottom, top, self.block_alpha)
         else:
             if len(details['deletions']) > 1:
-                logging.warning(f'Multiple deletions in {details}')
+                logger.warning(f'Multiple deletions in {details}')
 
             self.draw_deletions(y, details['deletions'], source_name, color='black', draw_MH=False)
 

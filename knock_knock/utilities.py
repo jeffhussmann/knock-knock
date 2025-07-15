@@ -42,17 +42,17 @@ def read_and_sanitize_csv(csv_fn, index_col=None):
 
     return possibly_series
 
-def configure_standard_logger(results_dir, verbose=True):
-    results_dir = Path(results_dir)
-    results_dir.mkdir(parents=True, exist_ok=True)
+def configure_logging_to_file(log_dir, verbose=True):
+    log_dir = Path(log_dir)
+    log_dir.mkdir(parents=True, exist_ok=True)
 
-    log_fn = results_dir / f'log_{datetime.datetime.now():%y%m%d-%H%M%S}.out'
+    log_fn = log_dir / f'log_{datetime.datetime.now():%y%m%d-%H%M%S}.out'
 
-    logger = logging.getLogger(__name__)
+    logger = logging.getLogger('knock_knock')
     logger.propagate = False
     logger.setLevel(logging.DEBUG)
     file_handler = logging.FileHandler(log_fn)
-    formatter = logging.Formatter(fmt='%(asctime)s: %(message)s',
+    formatter = logging.Formatter(fmt='%(asctime)s: %(name)s: %(message)s',
                                   datefmt='%y-%m-%d %H:%M:%S',
                                  )
     file_handler.setFormatter(formatter)

@@ -1,8 +1,6 @@
-import gzip
 import itertools
 import logging
 import re
-import shutil
 import warnings
 
 from pathlib import Path
@@ -16,20 +14,18 @@ import knock_knock.build_targets
 import knock_knock.experiment_group
 import knock_knock.outcome
 import knock_knock.illumina_experiment
-import knock_knock.prime_editing_layout
-import knock_knock.twin_prime_layout
-import knock_knock.integrase_layout
+import knock_knock.parallel
 import knock_knock.target_info
 import knock_knock.utilities
 
 from hits import adapters, fastq, sw, utilities
 
 import knock_knock.utilities
-import knock_knock.TECseq_layout
-import knock_knock.seeseq_layout
 
 memoized_property = utilities.memoized_property
 memoized_with_kwargs = utilities.memoized_with_kwargs
+
+logger = logging.getLogger(__name__)
 
 class Batch:
     def __init__(self,
@@ -150,82 +146,6 @@ class Batch:
         else:
             return exps[0]
 
-    def copy_snapshot(self, new_base_dir,
-                      new_batch_name=None,
-                      groups_to_include=None,
-                      include_target_infos=True,
-                     ):
-        if new_batch_name is None:
-            new_batch_name = self.batch_name
-
-        if groups_to_include is None:
-            groups_to_include = {group_name: group_name for group_name in self.groups}
-
-        new_base_dir = Path(new_base_dir)
-
-        # Out of paranoia, make sure that new_base_dir is different
-        # than this pool's base_dir since existing dirs will be deleted.
-        if str(new_base_dir) == str(self.base_dir):
-            raise ValueError('Attempted to copy to same base dir.')
-
-        new_results_dir = new_base_dir / 'results' / new_batch_name
-        new_data_dir = new_base_dir / 'data' / new_batch_name
-
-        for new_dir in [new_results_dir, new_data_dir]:
-            if new_dir.exists():
-                shutil.rmtree(new_dir)
-            new_dir.mkdir()
-
-        for new_group_name in groups_to_include.values():
-            (new_results_dir / new_group_name).mkdir()
-
-        # Copy relevant results files.
-        fns_to_copy = [
-            'outcome_counts',
-            'total_outcome_counts',
-        ]
-
-        for old_group_name, new_group_name in groups_to_include.items():
-            old_group = self.groups[old_group_name]
-            for fn_key in fns_to_copy:
-                old_fn = old_group.fns[fn_key]
-                new_fn = new_results_dir / new_group_name / old_fn.name
-                shutil.copy(old_fn, new_fn)
-
-        # Copy group descriptions.
-        new_group_descriptions = self.group_descriptions.loc[sorted(groups_to_include)].copy()
-        new_group_descriptions.index = [groups_to_include[name] for name in new_group_descriptions.index]
-        new_group_descriptions.index.name = 'group'
-
-        # Convoluted way of blanking supplmental_indices - '' will be parsed as nan, then coverted to None,
-        # then converted to [].
-        new_group_descriptions['supplemental_indices'] = ''
-
-        new_group_descriptions.to_csv(new_data_dir / 'group_descriptions.csv')
-
-        # Copy sample sheet.
-        new_sample_sheet_fn = new_data_dir / 'sample_sheet.csv'
-        new_sample_sheet = self.sample_sheet.query('group in @groups_to_include').copy()
-        new_sample_sheet['group'] = new_sample_sheet['group'].replace(groups_to_include)
-        new_sample_sheet.to_csv(new_sample_sheet_fn)
-
-        ## Copy the pool sample sheet, wiping any value of supplemental_indices.
-        #sample_sheet = copy.deepcopy(self.sample_sheet)
-        #sample_sheet['supplemental_indices'] = []
-        #new_sample_sheet_fn = new_snapshot_dir / self.sample_sheet_fn.name
-        #new_sample_sheet_fn.write_text(yaml.safe_dump(sample_sheet, default_flow_style=False))
-
-        if include_target_infos:
-            for old_group_name in groups_to_include:
-                old_group = self.groups[old_group_name]
-
-                new_target_info_dir = new_base_dir / 'targets' / old_group.target_info.name
-
-                if new_target_info_dir.exists():
-                    shutil.rmtree(new_target_info_dir)
-
-                shutil.copytree(old_group.target_info.dir, new_target_info_dir)
-
     @memoized_with_kwargs
     def outcome_counts(self, *, level='details', only_relevant=True):
         counts = {}
@@ -234,7 +154,7 @@ class Batch:
             try:
                 counts[gn] = group.outcome_counts(level=level, only_relevant=only_relevant)
             except:
-                logging.warning(f'No read counts for {gn}')
+                logger.warning(f'No read counts for {gn}')
 
         counts = pd.concat(counts, axis='columns').fillna(0).astype(int).sort_index()
         counts.columns.names = ['group'] + counts.columns.names[1:]
@@ -249,7 +169,7 @@ class Batch:
             try:
                 fs[gn] = group.outcome_fractions(level=level, only_relevant=only_relevant)
             except:
-                logging.warning(f'No read counts for {gn}')
+                logger.warning(f'No read counts for {gn}')
 
         fs = pd.concat(fs, axis='columns').fillna(0).sort_index()
         fs.columns.names = ['group'] + fs.columns.names[1:]
@@ -263,7 +183,7 @@ class Batch:
             try:
                 counts[gn] = group.total_reads(only_relevant=only_relevant)
             except:
-                logging.warning(f'No read counts for {gn}')
+                logger.warning(f'No read counts for {gn}')
 
         counts = pd.concat(counts).fillna(0).sort_index()
         counts.index.names = ['group'] + counts.index.names[1:]
@@ -333,6 +253,43 @@ class Batch:
 
         return pegRNA_conversion_fractions
 
+    def preprocess(self):
+        self.write_sanitized_group_name_lookup_table()
+
+    def process(self, generate_example_diagrams=False, num_processes=18, use_logger_thread=False):
+        pool = knock_knock.parallel.get_pool(num_processes=num_processes,
+                                             use_logger_thread=use_logger_thread,
+                                             log_dir=self.results_dir,
+                                            )
+
+        with pool:
+
+            stages = [
+                'preprocess',
+                'align',
+                'categorize',
+            ]
+
+            if generate_example_diagrams:
+                stages.append('generate_example_diagrams')
+
+            stages.append('generate_summary_figures')
+
+            args = []
+
+            for group_name, group in self.groups.items():
+                args.extend([(type(group), self.base_dir, self.batch_name, group_name, sample_name, stages) for sample_name in group.sample_names])
+
+            pool.starmap(knock_knock.experiment_group.process_sample, args)
+
+            args = [(type(group), self.base_dir, self.batch_name, group_name) for group_name, group in self.groups.items()]
+
+            pool.starmap(knock_knock.experiment_group.postprocess_group, args)
+
+    def postprocess(self):
+        self.write_performance_metrics()
+        self.write_pegRNA_conversion_fractions()
+
 def get_batch(base_dir, batch_name, progress=None, **kwargs):
     group_dir = Path(base_dir) / 'data' / batch_name
     group_descriptions_fn = group_dir / 'group_descriptions.csv'
@@ -396,8 +353,6 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         self.base_dir = Path(base_dir)
         self.batch_name = batch_name
         self.group_name = group_name
-
-        self.group_args = (base_dir, batch_name, group_name)
 
         if progress is None or getattr(progress, '_silent', False):
             def ignore_kwargs(x, **kwargs):
@@ -530,10 +485,6 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
     @property
     def target_info(self):
         return self.first_experiment.target_info
-
-    def common_sequence_chunk_exp_from_name(self, chunk_name):
-        chunk_exp = ArrayedCommonSequencesExperiment(self, chunk_name)
-        return chunk_exp
 
     @memoized_property
     def num_experiments(self):
@@ -946,7 +897,6 @@ class ArrayedExperiment(knock_knock.illumina_experiment.IlluminaExperiment):
             experiment_group = ArrayedExperimentGroup(base_dir, batch_name, group_name)
 
         self.experiment_group = experiment_group
-        self.experiment_type = experiment_group.experiment_type
 
         super().__init__(base_dir, (batch_name, group_name), sample_name, **kwargs)
 
@@ -956,49 +906,6 @@ class ArrayedExperiment(knock_knock.illumina_experiment.IlluminaExperiment):
 
     def __repr__(self):
         return f'{self.__class__.__name__}: batch_name={self.batch_name}, group_name={self.group_name}, sample_name={self.sample_name}, base_dir={self.base_dir}'
-
-    @property
-    def uncommon_read_type(self):
-        return f'{self.preprocessed_read_type}_uncommon'
-
-    @property
-    def read_types(self):
-        read_types = super().read_types 
-        read_types.add(self.uncommon_read_type)
-        return read_types
-
-    @memoized_property
-    def categorizer(self):
-        experiment_type_to_categorizer = {
-            'prime_editing': knock_knock.prime_editing_layout.Layout,
-            'twin_prime': knock_knock.twin_prime_layout.Layout,
-            'Bxb1_twin_prime': knock_knock.integrase_layout.Layout,
-            'TECseq': knock_knock.TECseq_layout.Layout,
-            'TECseq_dual_flap': knock_knock.TECseq_layout.TwinPrimeLayout,
-            'seeseq': knock_knock.seeseq_layout.Layout,
-            'seeseq_dual_flap': knock_knock.seeseq_layout.DualFlapLayout,
-        }
-
-        aliases = {
-            'single_flap': 'prime_editing',
-            'dual_flap': 'twin_prime',
-            'Bxb1_dual_flap': 'Bxb1_twin_prime',
-        }
-
-        for alias, original_name in aliases.items():
-            experiment_type_to_categorizer[alias] = experiment_type_to_categorizer[original_name]
-
-        return experiment_type_to_categorizer[self.experiment_type]
-
-    @memoized_property
-    def no_overlap_pair_categorizer(self):
-        experiment_type_to_categorizer = {
-            'TECseq': knock_knock.TECseq_layout.NoOverlapPairLayout,
-            'TECseq_dual_flap': knock_knock.TECseq_layout.NoOverlapPairTwinPrimeLayout,
-            'seeseq': knock_knock.seeseq_layout.NoOverlapPairLayout,
-        }
-
-        return experiment_type_to_categorizer[self.experiment_type]
 
     def load_description(self):
         description = {
@@ -1015,39 +922,6 @@ class ArrayedExperiment(knock_knock.illumina_experiment.IlluminaExperiment):
     def results_dir(self):
         sanitized_sample_name = self.description.get('sanitized_sample_name', self.sample_name)
         return self.experiment_group.results_dir / sanitized_sample_name
-
-    def extract_reads_with_uncommon_sequences(self):
-        # Extract reads with sequences that weren't seen more than once across the group.
-        fn = self.fns_by_read_type['fastq'][self.uncommon_read_type]
-        with gzip.open(fn, 'wt', compresslevel=1) as fh:
-            for read in self.reads_by_type(self.preprocessed_read_type):
-                if read.seq not in self.experiment_group.common_sequence_to_outcome:
-                    fh.write(str(read))
-
-    @memoized_property
-    def common_sequence_to_outcome(self):
-        return self.experiment_group.common_sequence_to_outcome
-
-    @memoized_property
-    def common_sequence_to_alignments(self):
-        return self.experiment_group.common_sequence_to_alignments
-
-class ArrayedCommonSequencesExperiment(knock_knock.common_sequences.CommonSequencesExperiment, ArrayedExperiment):
-    def __init__(self, experiment_group, chunk_name):
-        ArrayedExperiment.__init__(self,
-                                   experiment_group.base_dir,
-                                   experiment_group.batch_name,
-                                   experiment_group.group_name,
-                                   chunk_name,
-                                   experiment_group=experiment_group,
-                                  )
-
-    @memoized_property
-    def results_dir(self):
-        return self.experiment_group.fns['common_sequences_dir'] / self.sample_name
-
-    def load_description(self):
-        return self.experiment_group.description
 
 def sanitize_and_validate_sample_sheet(sample_sheet_fn):
     sample_sheet_df = knock_knock.utilities.read_and_sanitize_csv(sample_sheet_fn)
@@ -1281,7 +1155,7 @@ def detect_sequencing_start_feature_names(base_dir, batch_name, sample_sheet_df)
                 break
 
         if len(prefix_counts) == 0:
-            logging.warning(f"Unable to detect sequencing orientation for {row['sample_name']}")
+            logger.warning(f"Unable to detect sequencing orientation for {row['sample_name']}")
         else:
             feature_name, _ = prefix_counts.most_common()[0]
         
@@ -1348,7 +1222,7 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
 
             feature_name = sorted(ti.primers)[0]
 
-            logging.warning(f'No sequencing orientations detected for {keys}, arbitrarily choosing {feature_name}')
+            logger.warning(f'No sequencing orientations detected for {keys}, arbitrarily choosing {feature_name}')
 
         else:
             feature_name = orientations.index[0]

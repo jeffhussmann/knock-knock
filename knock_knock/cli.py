@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import argparse
 import logging
 import multiprocessing
@@ -14,6 +12,8 @@ import yaml
 import tqdm
 
 import knock_knock
+
+logger = logging.getLogger(__name__)
 
 def check_blastn(require_precise_version=False):
     try:
@@ -56,7 +56,7 @@ def parallel(args):
     for stage in stages:
         process_stage(stage)
 
-def process(args):
+def process_experiment(args):
     import knock_knock.experiment
 
     check_blastn()
@@ -72,42 +72,29 @@ def process(args):
                                                         print_timestamps=True,
                                                        )
 
-def process_arrayed(args):
+def process_group(args):
     import knock_knock.arrayed_experiment_group
 
     batch = knock_knock.arrayed_experiment_group.get_batch(args.project_directory, args.batch_name)
     group = batch.groups[args.group_name]
     group.process(num_processes=args.max_procs,
-                  verbose=not args.silent,
                   generate_example_diagrams=args.generate_example_diagrams,
+                  use_logger_thread=args.use_logger_thread,
                  )
 
-def parallel_arrayed(args):
+def process_batch(args):
     import knock_knock.arrayed_experiment_group
 
     batch = knock_knock.arrayed_experiment_group.get_batch(args.project_directory, args.batch_name)
 
-    batch.write_sanitized_group_name_lookup_table()
+    batch.preprocess()
 
-    parallel_command = [
-        'parallel',
-        '--max-procs', str(args.max_procs),
-        'knock-knock', 'arrayed', 'process',
-        args.project_directory,
-        args.batch_name,
-        '--max_procs', str(args.max_procs_per_group),
-        '--generate_example_diagrams' if args.generate_example_diagrams else '',
-        '--silent',
-        ':::',
-    ] + sorted(batch.groups)
+    batch.process(num_processes=args.max_procs,
+                  generate_example_diagrams=args.generate_example_diagrams,
+                  use_logger_thread=args.use_logger_thread,
+                 )
 
-    if args.progress_bar:
-        parallel_command.insert(1, '--bar')
-
-    subprocess.run(parallel_command)
-
-    batch.write_performance_metrics()
-    batch.write_pegRNA_conversion_fractions()
+    batch.postprocess()
 
 def make_tables(args):
     import knock_knock.arrayed_experiment_group
@@ -128,7 +115,7 @@ def make_tables(args):
         for batch_name, batch in batches.items():
             experiment_types = {group.experiment_type for group in batch.groups.values()}
             for experiment_type in experiment_types:
-                logging.info(f'Making {batch_name} {experiment_type}')
+                logger.info(f'Making {batch_name} {experiment_type}')
 
                 conditions = {
                     'batch': [batch_name],
@@ -164,7 +151,7 @@ def make_tables(args):
             batches = knock_knock.experiment.get_all_batches(args.project_directory)
 
             for batch_name in batches:
-                logging.info(f'Making {batch_name}')
+                logger.info(f'Making {batch_name}')
 
                 conditions = {'batch': batch_name}
 
@@ -209,7 +196,7 @@ def install_example_data(args):
 
         shutil.copytree(str(src), str(dest))
 
-    logging.info(f'Example data installed in {args.project_directory}')
+    logger.info(f'Example data installed in {args.project_directory}')
 
 def print_citation(args):
     citation = '''
@@ -233,22 +220,39 @@ def main():
     def add_project_directory_arg(parser):
         parser.add_argument('project_directory', type=Path, help='the base directory to store input data, reference annotations, and analysis output for a project')
 
-    parser_process = subparsers.add_parser('process', help='process a single sample')
-    add_project_directory_arg(parser_process)
-    parser_process.add_argument('group', help='group name')
-    parser_process.add_argument('sample', help='sample name')
-    parser_process.add_argument('--progress', const=tqdm.tqdm, action='store_const', help='show progress bars')
-    parser_process.add_argument('--stages', default='preprocess,align,categorize,generate_figures')
-    parser_process.set_defaults(func=process)
+    parser_process_sample = subparsers.add_parser('process_sample', help='process a single sample')
+    add_project_directory_arg(parser_process_sample)
+    parser_process_sample.add_argument('batch_name', help='batch name')
+    parser_process_sample.add_argument('sample_name', help='sample name')
+    parser_process_sample.add_argument('--progress', const=tqdm.tqdm, action='store_const', help='show progress bars')
+    parser_process_sample.add_argument('--stages', default='preprocess,align,categorize,generate_figures')
+    parser_process_sample.set_defaults(func=process_experiment)
 
     parser_parallel = subparsers.add_parser('parallel', help='process multiple samples in parallel')
     add_project_directory_arg(parser_parallel)
     parser_parallel.add_argument('max_procs', type=int, help='maximum number of samples to process at once')
-    parser_parallel.add_argument('--group', help='if specified, the single group name to process; if not specified, all groups will be processed')
+    parser_parallel.add_argument('--batch', help='if specified, the single batch name to process; if not specified, all batches will be processed')
     parser_parallel.add_argument('--conditions', type=yaml.safe_load, default={}, help='if specified, conditions that samples must satisfy to be processed, given as yaml; if not specified, all samples will be processed')
     parser_parallel.add_argument('--stages', default='preprocess,align,categorize,generate_figures')
     parser_parallel.add_argument('--progress', const=tqdm.tqdm, action='store_const', help='show progress bars')
     parser_parallel.set_defaults(func=parallel)
+
+    parser_process_group = subparsers.add_parser('process_group', help='process a group in parallel')
+    add_project_directory_arg(parser_process_group)
+    parser_process_group.add_argument('batch_name')
+    parser_process_group.add_argument('group_name')
+    parser_process_group.add_argument('--max_procs', type=int, default=6)
+    parser_process_group.add_argument('--generate_example_diagrams', action='store_true')
+    parser_process_group.add_argument('--use_logger_thread', action='store_true')
+    parser_process_group.set_defaults(func=process_group)
+
+    parser_process_batch = subparsers.add_parser('process_batch', help='process a batch in parallel')
+    add_project_directory_arg(parser_process_batch)
+    parser_process_batch.add_argument('batch_name')
+    parser_process_batch.add_argument('--max_procs', type=int, default=6)
+    parser_process_batch.add_argument('--generate_example_diagrams', action='store_true')
+    parser_process_batch.add_argument('--use_logger_thread', action='store_true')
+    parser_process_batch.set_defaults(func=process_batch)
 
     parser_table = subparsers.add_parser('table', help='generate tables of outcome frequencies')
     add_project_directory_arg(parser_table)
@@ -281,28 +285,6 @@ def main():
 
     parser_citation = subparsers.add_parser('whos-there', help='print citation information')
     parser_citation.set_defaults(func=print_citation)
-
-    parser_arrayed = subparsers.add_parser('arrayed', help='process using ArrayedExperimentGroups')
-    parser_arrayed_subparsers = parser_arrayed.add_subparsers(dest='subcommand', title='subcommands')
-    parser_arrayed_subparsers.required = True
-
-    parser_arrayed_process = parser_arrayed_subparsers.add_parser('process', help='process a group')
-    add_project_directory_arg(parser_arrayed_process)
-    parser_arrayed_process.add_argument('batch_name')
-    parser_arrayed_process.add_argument('group_name')
-    parser_arrayed_process.add_argument('--max_procs', type=int, default=6)
-    parser_arrayed_process.add_argument('--silent', action='store_true')
-    parser_arrayed_process.add_argument('--generate_example_diagrams', action='store_true')
-    parser_arrayed_process.set_defaults(func=process_arrayed)
-
-    parser_arrayed_parallel = parser_arrayed_subparsers.add_parser('parallel', help='process groups in parallel')
-    add_project_directory_arg(parser_arrayed_parallel)
-    parser_arrayed_parallel.add_argument('batch_name')
-    parser_arrayed_parallel.add_argument('--max_procs', type=int, default=10)
-    parser_arrayed_parallel.add_argument('--max_procs_per_group', type=int, default=3)
-    parser_arrayed_parallel.add_argument('--generate_example_diagrams', action='store_true')
-    parser_arrayed_parallel.add_argument('--progress_bar', action='store_true')
-    parser_arrayed_parallel.set_defaults(func=parallel_arrayed)
 
     args = parser.parse_args()
 

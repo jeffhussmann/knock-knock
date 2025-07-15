@@ -21,6 +21,8 @@ import knock_knock.integrase_layout
 
 memoized_property = utilities.memoized_property
 
+logger = logging.getLogger(__name__)
+
 class Experiment(knock_knock.experiment.Experiment):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -366,14 +368,14 @@ def process_chunk_experiment(base_dir,
         'categorize',
     ]:
         stage_string = f'{chunk_number} {stage}'
-        logging.info(f'{progress_string} Started {stage_string}')
+        logger.info(f'{progress_string} Started {stage_string}')
 
         previously_processed = chunk_exp.fns['outcome_counts'].exists()
 
         if not(only_if_new and previously_processed):
             chunk_exp.process(stage)
 
-        logging.info(f'{progress_string} Finished {stage_string}')
+        logger.info(f'{progress_string} Finished {stage_string}')
 
 def convert_sample_sheet(base_dir, sample_sheet_df, batch_name):
     base_dir = Path(base_dir)
@@ -424,6 +426,13 @@ def convert_sample_sheet(base_dir, sample_sheet_df, batch_name):
 
     samples_df = pd.DataFrame.from_dict(samples, orient='index')
     samples_df.index.name = 'sample_name'
+
+    condition_columns = [c for c in sample_sheet_df.columns if c.startswith('condition:')]
+
+    sample_sheet_df = sample_sheet_df.set_index('sample_name')
+
+    for column in condition_columns:
+        samples_df[column] = sample_sheet_df[column]
 
     samples_csv_fn = batch_dir / 'sample_sheet.csv'
     samples_df.to_csv(samples_csv_fn)

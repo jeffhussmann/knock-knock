@@ -1,4 +1,3 @@
-import bisect
 import logging
 import multiprocessing
 import os
@@ -14,35 +13,29 @@ import knock_knock.visualize.stacked
 import knock_knock.visualize.rejoining_boundaries
 import knock_knock.parallel
 
-import knock_knock.common_sequences
+logger = logging.getLogger(__name__)
 
-def run_stage(GroupClass, group_args, sample_name, stage):
-    group = GroupClass(*group_args)
+def process_sample(GroupClass, base_dir, batch_name, group_name, sample_name, stages):
+    group = GroupClass(base_dir, batch_name, group_name)
 
-    if sample_name in group.sample_names:
-        # Important to do this branch first, since preprocessing happens before common sequence collection.
-        exp = group.sample_name_to_experiment(sample_name, no_progress=True)
-    elif sample_name in group.common_sequence_chunk_exp_names:
-        exp = group.common_sequence_chunk_exp_from_name(sample_name)
-    else:
-        raise ValueError(sample_name)
+    exp = group.sample_name_to_experiment(sample_name, no_progress=True)
 
-    logging.info(f'Starting {sample_name} {stage}')
-    exp.process(stage=stage)
-    logging.info(f'Finished {sample_name} {stage}')
+    for stage in stages:
+        logger.info(f'Starting {sample_name} {stage}')
+        exp.process(stage=stage)
+        logger.info(f'Finished {sample_name} {stage}')
+
+def postprocess_group(GroupClass, base_dir, batch_name, group_name):
+    group = GroupClass(base_dir, batch_name, group_name)
+    group.postprocess()
 
 class ExperimentGroup:
     def __init__(self):
         self.fns = {
-            'common_sequences_dir': self.results_dir / 'common_sequences',
-            'common_sequence_outcomes': self.results_dir / 'common_sequences' / 'common_sequence_outcomes.txt',
-
             'total_outcome_counts': self.results_dir / 'total_outcome_counts.txt',
             'outcome_counts': self.results_dir  / 'outcome_counts.npz',
             'pegRNA_conversion_fractions': self.results_dir / 'pegRNA_conversion_fractions.csv',
 
-            'genomic_insertion_length_distributions': self.results_dir / 'genomic_insertion_length_distribution.txt',
-             
             'partial_incorporation_figure_high_threshold': self.results_dir / 'partial_incorporation.png',
             'partial_incorporation_figure_low_threshold': self.results_dir / 'partial_incorporation_low_threshold.png',
             'deletion_boundaries_figure': self.results_dir / 'deletion_boundaries.png',
@@ -53,41 +46,15 @@ class ExperimentGroup:
             'single_flap_rejoining_boundaries_figure_individual_samples_normalized': self.results_dir / 'single_flap_rejoining_boundaries_individual_samples_normalized.png',
         }
 
-    def process(self, generate_example_diagrams=False, num_processes=18, verbose=True, use_logger_thread=False):
+    def process(self, generate_example_diagrams=False, num_processes=18, use_logger_thread=False):
         self.results_dir.mkdir(exist_ok=True, parents=True)
 
-        logger, file_handler = knock_knock.utilities.configure_standard_logger(self.results_dir, verbose=verbose)
-
-        if num_processes == 1:
-            pool = knock_knock.parallel.MockPool()
-
-        else:
-            if use_logger_thread:
-                pool = knock_knock.parallel.PoolWithLoggerThread(num_processes, logger)
-            else:
-                NICENESS = 3
-                pool = multiprocessing.Pool(num_processes, maxtasksperchild=1, initializer=os.nice, initargs=(NICENESS,))
+        pool = knock_knock.parallel.get_pool(num_processes=num_processes, use_logger_thread=use_logger_thread, log_dir=self.results_dir)
 
         with pool:
-            logger.info('Preprocessing')
-
-            args = [(type(self), self.group_args, sample_name, 'preprocess') for sample_name in self.sample_names]
-            pool.starmap(run_stage, args)
-
-            self.make_common_sequences()
-
-            for stage in [
-                'align',
-                'categorize',
-            ]:
-
-                logger.info(f'Processing common sequences, stage {stage}')
-                args = [(type(self), self.group_args, chunk_exp_name, stage) for chunk_exp_name in self.common_sequence_chunk_exp_names]
-                pool.starmap(run_stage, args)
-
-            self.merge_common_sequence_outcomes()
 
             stages = [
+                'preprocess',
                 'align',
                 'categorize',
             ]
@@ -97,140 +64,15 @@ class ExperimentGroup:
 
             stages.append('generate_summary_figures')
 
-            for stage in stages:
-                logger.info(f'Processing unique sequences, stage {stage}')
-                args = [(type(self), self.group_args, sample_name, stage) for sample_name in self.sample_names]
-                pool.starmap(run_stage, args)
+            args = [(type(self), self.base_dir, self.batch_name, self.group_name, sample_name, stages) for sample_name in self.sample_names]
+            pool.starmap(process_sample, args)
 
-        logger.info('Collecting outcome counts')
+        self.postprocess()
+
+    def postprocess(self):
         self.make_outcome_counts()
         self.write_pegRNA_conversion_fractions()
-
-        logger.info('Generating group-level figures')
         self.make_group_figures()
-
-        logger.info('Done!')
-
-        logger.removeHandler(file_handler)
-        file_handler.close()
-
-    def make_common_sequences(self):
-        ''' Identify all sequences that occur more than once across preprocessed
-        reads for all experiments in the group and write them into common sequences
-        experiments to be categorized.
-        '''
-        splitter = knock_knock.common_sequences.CommonSequenceSplitter(self, max_sequences=20000)
-
-        description = 'Collecting common sequences'
-        exps = self.experiments(no_progress=True)
-        for exp in self.progress(exps, desc=description, total=self.num_experiments):
-            reads = exp.reads_by_type(self.preprocessed_read_type)
-            splitter.update_counts((read.seq for read in reads))
-
-        splitter.write_files()
-
-    @memoized_property
-    def common_sequence_chunk_exp_names(self):
-        ''' Names of all common sequence chunk experiments. '''
-        return sorted([d.name for d in self.fns['common_sequences_dir'].iterdir() if d.is_dir()])
-
-    def common_sequence_chunk_exps(self):
-        ''' Iterator over common sequence chunk experiments. ''' 
-        for chunk_name in self.common_sequence_chunk_exp_names:
-            yield self.common_sequence_chunk_exp_from_name(chunk_name)
-
-    @memoized_property
-    def common_names(self):
-        ''' List of all names assigned to common sequence artificial reads. '''
-        return [outcome.query_name for outcome in self.common_sequence_outcomes]
-
-    @memoized_property
-    def common_sequence_outcomes(self):
-        outcomes = []
-
-        for exp in self.common_sequence_chunk_exps():
-            for outcome in exp.outcome_iter():
-                outcomes.append(outcome)
-
-        return outcomes
-
-    @memoized_property
-    def common_name_to_common_sequence(self):
-        name_to_seq = {}
-
-        for exp in self.common_sequence_chunk_exps():
-            for read in exp.reads_by_type(exp.preprocessed_read_type):
-                name_to_seq[read.name] = read.seq
-
-        return name_to_seq
-
-    @memoized_property
-    def common_sequence_to_common_name(self):
-        return utilities.reverse_dictionary(self.common_name_to_common_sequence)
-
-    @memoized_property
-    def common_sequence_to_outcome(self):
-        common_sequence_to_outcome = {}
-
-        for outcome in self.common_sequence_outcomes:
-            seq = self.common_name_to_common_sequence[outcome.query_name]
-            common_sequence_to_outcome[seq] = outcome
-
-        return common_sequence_to_outcome
-
-    @memoized_property
-    def common_sequence_to_alignments(self):
-        common_sequence_to_alignments = {}
-
-        for chunk_exp in self.common_sequence_chunk_exps():
-            for common_name, als in chunk_exp.alignment_groups():
-                seq = self.common_name_to_common_sequence[common_name]
-                common_sequence_to_alignments[seq] = als
-
-        return common_sequence_to_alignments
-
-    def merge_common_sequence_outcomes(self):
-        with self.fns['common_sequence_outcomes'].open('w') as fh:
-            for outcome in self.common_sequence_outcomes:
-                fh.write(f'{outcome}\n')
-
-    @memoized_property
-    def name_to_chunk(self):
-        chunks = list(self.common_sequence_chunk_exps())
-        starts = [int(chunk.sample_name.split('-')[0]) for chunk in chunks]
-
-        def name_to_chunk(name):
-            number = int(name.split('_')[0])
-            start_index = bisect.bisect(starts, number) - 1 
-            chunk = chunks[start_index]
-            return chunk
-
-        return name_to_chunk
-
-    def get_read_alignments(self, name):
-        if isinstance(name, int):
-            name = self.common_names[name]
-
-        chunk = self.name_to_chunk(name)
-
-        als = chunk.get_read_alignments(name)
-
-        return als
-
-    def get_read_layout(self, name, **kwargs):
-        als = self.get_read_alignments(name)
-        layout = self.categorizer(als, self.target_info, mode=self.layout_mode, error_corrected=False, **kwargs)
-        return layout
-
-    def get_read_diagram(self, read_id, relevant=True, **diagram_kwargs):
-        layout = self.get_read_layout(read_id)
-
-        if relevant:
-            layout.categorize()
-            
-        diagram = layout.plot(relevant=relevant, **diagram_kwargs)
-
-        return diagram
 
     def make_group_figures(self):
         try:
@@ -255,8 +97,8 @@ class ExperimentGroup:
                     grid.fig.savefig(self.fns[fn_key], dpi=200, bbox_inches='tight')
 
         except Exception as e:
-            logging.warning(f'Failed to make partial incorporation figure for {self}')
-            logging.warning(e)
+            logger.warning(f'Failed to make partial incorporation figure for {self}')
+            logger.warning(e)
 
         try:
             grid = self.make_deletion_boundaries_figure()
@@ -265,8 +107,8 @@ class ExperimentGroup:
                 grid.fig.savefig(self.fns['deletion_boundaries_figure'], dpi=200, bbox_inches='tight')
 
         except Exception as e:
-            logging.warning(f'Failed to make deletion boundaries figure for {self}')
-            logging.warning(e)
+            logger.warning(f'Failed to make deletion boundaries figure for {self}')
+            logger.warning(e)
 
         if len(self.target_info.pegRNAs) == 1:
             try:
@@ -305,8 +147,8 @@ class ExperimentGroup:
                     fig.savefig(self.fns[fn_key], dpi=200, bbox_inches='tight')
 
             except Exception as e:
-                logging.warning(f'Failed to make flap rejoining boundaries figures for {self}')
-                logging.warning(e)
+                logger.warning(f'Failed to make flap rejoining boundaries figures for {self}')
+                logger.warning(e)
 
     def make_partial_incorporation_figure(self,
                                           unique_colors=False,

@@ -35,6 +35,8 @@ import knock_knock.visualize.lengths
 
 from . import svg, table, explore
 
+logger = logging.getLogger(__name__)
+
 class ColorGroupCycler:
     def __init__(self):
         starts_20c = np.arange(4) * 4
@@ -55,6 +57,7 @@ color_groups = ColorGroupCycler()
 
 def extract_color(description):
     color = description.get('color')
+
     if color is None or color == 0:
         color = 'grey'
     else:
@@ -136,8 +139,6 @@ class Experiment:
 
             'length_ranges_dir': self.results_dir / 'length_ranges',
             'outcome_browser': self.results_dir / 'outcome_browser.html',
-
-            'snapshots_dir': self.results_dir / 'snapshots',
         }
 
         def make_length_range_fig_fn(start, end):
@@ -181,24 +182,72 @@ class Experiment:
         return sample_sheet[self.sample_name]
 
     @property
+    def experiment_type(self):
+        return self.description.get('experiment_type', 'HDR')
+
+    @memoized_property
     def categorizer(self):
-        # This needs to be a property because subclasses use it as one.
-        return layout_module.Layout
+        import knock_knock.prime_editing_layout
+        import knock_knock.twin_prime_layout
+        import knock_knock.integrase_layout
+        import knock_knock.TECseq_layout
+        import knock_knock.seeseq_layout
+        import knock_knock.HDR_layout
+
+        experiment_type_to_categorizer = {
+            'prime_editing': knock_knock.prime_editing_layout.Layout,
+            'twin_prime': knock_knock.twin_prime_layout.Layout,
+            'Bxb1_twin_prime': knock_knock.integrase_layout.Layout,
+            'TECseq': knock_knock.TECseq_layout.Layout,
+            'TECseq_dual_flap': knock_knock.TECseq_layout.TwinPrimeLayout,
+            'seeseq': knock_knock.seeseq_layout.Layout,
+            'seeseq_dual_flap': knock_knock.seeseq_layout.DualFlapLayout,
+            'HDR': knock_knock.HDR_layout.Layout,
+        }
+
+        aliases = {
+            'single_flap': 'prime_editing',
+            'dual_flap': 'twin_prime',
+            'Bxb1_dual_flap': 'Bxb1_twin_prime',
+        }
+
+        for alias, original_name in aliases.items():
+            experiment_type_to_categorizer[alias] = experiment_type_to_categorizer[original_name]
+
+        return experiment_type_to_categorizer[self.experiment_type]
+
+    @memoized_property
+    def no_overlap_pair_categorizer(self):
+        import knock_knock.TECseq_layout
+        import knock_knock.seeseq_layout
+
+        experiment_type_to_categorizer = {
+            'TECseq': knock_knock.TECseq_layout.NoOverlapPairLayout,
+            'TECseq_dual_flap': knock_knock.TECseq_layout.NoOverlapPairTwinPrimeLayout,
+            'seeseq': knock_knock.seeseq_layout.NoOverlapPairLayout,
+        }
+
+        return experiment_type_to_categorizer[self.experiment_type]
 
     @property
     def uncommon_read_type(self):
         # Will be overloaded by any subclass that separates out common sequences.
         return self.preprocessed_read_type
 
-    @memoized_property
-    def results_dir(self):
-        d = self.base_dir / 'results' 
-
+    def add_batch_name_directories(self, d):
         if isinstance(self.batch_name, tuple):
             for level in self.batch_name:
                 d /= level
         else:
             d /= self.batch_name
+
+        return d
+
+    @memoized_property
+    def results_dir(self):
+        d = self.base_dir / 'results' 
+
+        d = self.add_batch_name_directories(d)
 
         d /= self.sample_name
 
@@ -208,11 +257,7 @@ class Experiment:
     def data_dir(self):
         d = self.base_dir / 'data'
 
-        if isinstance(self.batch_name, tuple):
-            for level in self.batch_name:
-                d /= level
-        else:
-            d /= self.batch_name
+        d = self.add_batch_name_directories(d)
 
         return d
 
@@ -320,7 +365,7 @@ class Experiment:
                 missing_file = True
 
         if missing_file:
-            logging.warning(f'{self.batch_name}, {self.sample_name} {read_type} {fn_source} not found')
+            logger.warning(f'{self.batch_name}, {self.sample_name} {read_type} {fn_source} not found')
             reads = []
         else:
             reads = fastq.reads(fn_source, up_to_space=True)
@@ -331,9 +376,6 @@ class Experiment:
     def read_lengths(self):
         return self.outcome_stratified_lengths.lengths_for_all_reads
 
-    def extract_reads_with_uncommon_sequences(self):
-        pass
-    
     def generate_outcome_counts(self):
         ''' Note that metadata lines start with '#' so category names can't. '''
         counts_fn = self.fns['outcome_counts']
@@ -358,21 +400,6 @@ class Experiment:
                                                                self.categorizer.non_relevant_categories,
                                                               )
         lengths.to_file(self.fns['outcome_stratified_lengths'])
-
-    def record_snapshot(self):
-        ''' Make copies of per-read outcome categorizations and
-        outcome counts to allow comparison when categorization code
-        changes.
-        '''
-
-        snapshot_name = f'{datetime.datetime.now():%Y-%m-%d_%H%M%S}'
-        snapshot_dir = self.fns['snapshots_dir'] / snapshot_name
-        snapshot_dir.mkdir(parents=True)
-
-        fn_keys_to_snapshot = self.outcome_fn_keys + ['outcome_counts']
-
-        for key in fn_keys_to_snapshot:
-            shutil.copy(self.fns[key], snapshot_dir)
 
     def length_ranges(self, outcome=None):
         if outcome is None:
@@ -727,7 +754,7 @@ class Experiment:
 
     def categorize_outcomes(self, fn_key='bam_by_name', read_type=None):
         if self.fns['outcomes_dir'].is_dir():
-            shutil.rmtree(str(self.fns['outcomes_dir']))
+            shutil.rmtree(self.fns['outcomes_dir'])
            
         self.fns['outcomes_dir'].mkdir()
 
@@ -1325,12 +1352,14 @@ def load_sample_sheet_from_csv(csv_fn):
 
     return sample_sheet
 
-def load_sample_sheet(base_dir, batch):
+def load_sample_sheet(base_dir, batch_name):
     data_dir = Path(base_dir) / 'data'
-    data_yaml_fn = data_dir / batch / 'sample_sheet.yaml'
+    data_yaml_fn = data_dir / batch_name / 'sample_sheet.yaml'
 
     results_dir = Path(base_dir) / 'results'
-    results_yaml_fn = results_dir / batch / 'sample_sheet.yaml'
+    results_yaml_fn = results_dir / batch_name / 'sample_sheet.yaml'
+
+    csv_fn = data_yaml_fn.with_suffix('.csv')
 
     if data_yaml_fn.exists():
         sample_sheet = yaml.safe_load(data_yaml_fn.read_text())
@@ -1338,33 +1367,31 @@ def load_sample_sheet(base_dir, batch):
     elif results_yaml_fn.exists():
         sample_sheet = yaml.safe_load(results_yaml_fn.read_text())
 
+    elif csv_fn.exists():
+        sample_sheet = load_sample_sheet_from_csv(csv_fn)
     else:
-        csv_fn = data_yaml_fn.with_suffix('.csv')
-        if not csv_fn.exists():
-            sample_sheet = None
-        else:
-            sample_sheet = load_sample_sheet_from_csv(csv_fn)
+        sample_sheet = None
 
     return sample_sheet
 
-def get_all_batches(base_dir):
+def get_all_batch_names(base_dir):
     data_dir = Path(base_dir) / 'data'
     batches = sorted(p.name for p in data_dir.iterdir() if p.is_dir())
     return batches
 
 def get_combined_sample_sheet(base_dir):
-    batches = get_all_batches(base_dir)
+    batches = get_all_batch_names(base_dir)
 
     sample_sheets = {}
 
-    for batch in batches:
-        sample_sheet = load_sample_sheet(base_dir, batch)
+    for batch_name in batches:
+        sample_sheet = load_sample_sheet(base_dir, batch_name)
 
         if sample_sheet is None:
-            print(f'Error: {batch} has no sample sheet')
+            print(f'Error: {batch_name} has no sample sheet')
             continue
 
-        sample_sheets[batch] = sample_sheet
+        sample_sheets[batch_name] = sample_sheet
 
     dfs = {k: pd.DataFrame.from_dict(v, orient='index') for k, v in sample_sheets.items()}
 
@@ -1416,7 +1443,13 @@ def get_exp_class(platform):
 
     return exp_class
 
-def get_all_experiments(base_dir, conditions=None, as_dictionary=True, progress=None, groups_to_exclude=None):
+def get_all_experiments(base_dir,
+                        conditions=None,
+                        as_dictionary=True,
+                        progress=None,
+                        batch_names_to_exclude=None,
+                       ):
+
     if conditions is None:
         conditions = {}
 
@@ -1445,7 +1478,7 @@ def get_all_experiments(base_dir, conditions=None, as_dictionary=True, progress=
         return True
 
     exps = []
-    batches = get_all_batches(base_dir)
+    batch_names = get_all_batch_names(base_dir)
 
     if 'batch' in conditions:
         v = conditions['batch']
@@ -1453,32 +1486,32 @@ def get_all_experiments(base_dir, conditions=None, as_dictionary=True, progress=
             vs = [v]
         else:
             vs = v
-        batches = (n for n in batches if n in vs)
+        batch_names = (n for n in batch_names if n in vs)
     
-    for batch in batches:
-        sample_sheet = load_sample_sheet(base_dir, batch)
+    for batch_name in batch_names:
+        sample_sheet = load_sample_sheet(base_dir, batch_name)
 
         if sample_sheet is None:
-            print(f'Error: {batch} has no sample sheet')
+            print(f'Error: {batch_name} has no sample sheet')
             continue
 
-        for name, description in sample_sheet.items():
+        for sample_name, description in sample_sheet.items():
             if isinstance(description, str):
                 continue
 
             exp_class = get_exp_class(description.get('platform'))
             
-            exp = exp_class(base_dir, batch, name, description=description, progress=progress)
+            exp = exp_class(base_dir, batch_name, sample_name, description=description, progress=progress)
             exps.append(exp)
 
-    filtered = [exp for exp in exps if check_conditions(exp) and exp.batch not in groups_to_exclude]
+    filtered = [exp for exp in exps if check_conditions(exp) and exp.batch_name not in batch_names_to_exclude]
     if len(filtered) == 0:
         raise ValueError('No experiments met conditions')
 
     if as_dictionary:
         d = {}
         for exp in filtered:
-            d[exp.batch, exp.sample_name] = exp
+            d[exp.batch_name, exp.sample_name] = exp
         
         filtered = d
 

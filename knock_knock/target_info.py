@@ -22,6 +22,8 @@ from knock_knock.effector import effectors
 memoized_property = utilities.memoized_property
 memoized_with_args = utilities.memoized_with_args
 
+logger = logging.getLogger(__name__)
+
 other_side = {
     'left': 'right',
     'right': 'left',
@@ -253,7 +255,7 @@ class TargetInfo:
 
             for fn in gb_fns:
                 if not fn.exists() and not fn.with_suffix('.fasta').exists():
-                    logging.warning(f'{self.name}: {fn} does not exist')
+                    logger.warning(f'{self.name}: {fn} does not exist')
 
             gb_fns = [fn for fn in gb_fns if fn.exists()]
 
@@ -618,7 +620,7 @@ class TargetInfo:
                     feature.attribute['ID'] = ps_name
                     features[ps_name] = feature
                 except ValueError:
-                    logging.warning(f'No valid location for {name} {components["effector"]} protospacer: {components["protospacer"]}')
+                    logger.warning(f'No valid location for {name} {components["effector"]} protospacer: {components["protospacer"]}')
                                                                         
         return features
     
@@ -1006,7 +1008,7 @@ class TargetInfo:
                 seqs[source] = HA_seq
                 
             if seqs['target'] != seqs['donor']:
-                logging.warning(f'{name} not identical sequence on target and donor')
+                logger.warning(f'{name} not identical sequence on target and donor')
 
             paired_HAs[name] = HAs[name]
 
@@ -1988,14 +1990,14 @@ class TargetInfo:
 
             if self.pegRNA_programmed_insertion is not None:
                 if len(self.pegRNA.edit_properties['insertions']) != 1:
-                    logging.warning('multiple insertions')
+                    logger.warning('multiple insertions')
                 else:
                     insertion = self.pegRNA.edit_properties['insertions'][0]
                     name_to_description[str(self.pegRNA_programmed_insertion)] = insertion['description']
 
             if self.pegRNA_programmed_deletion is not None:
                 if len(self.pegRNA.edit_properties['deletions']) != 1:
-                    logging.warning('multiple deletions')
+                    logger.warning('multiple deletions')
                 else:
                     deletion = self.pegRNA.edit_properties['deletions'][0]
                     name_to_description[str(self.pegRNA_programmed_deletion)] = deletion['description']

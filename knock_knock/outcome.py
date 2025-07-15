@@ -170,7 +170,7 @@ class Details(Detail):
         return getattr(self, tag, tag_to_Detail[tag]())
 
     def __eq__(self, other):
-        return str(self) == str(other)
+        return isinstance(other, Details) and str(self) == str(other)
 
     __repr__ = __str__
 

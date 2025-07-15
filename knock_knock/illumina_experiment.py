@@ -10,13 +10,14 @@ import pysam
 
 import knock_knock.experiment
 import knock_knock.outcome
+import knock_knock.utilities
 from knock_knock import layout as layout_module
 
 import hits.visualize.fastq
 from hits import adapters, fastq, sam, sw, utilities
 from hits.utilities import memoized_property, memoized_with_args
 
-import knock_knock.utilities
+logger = logging.getLogger(__name__)
 
 class IlluminaExperiment(knock_knock.experiment.Experiment):
     def __init__(self, *args, **kwargs):
@@ -81,8 +82,15 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
         return preprocessed_read_type
 
     @property
+    def uncommon_read_type(self):
+        return f'{self.preprocessed_read_type}_uncommon'
+
+    @property
     def read_types(self):
-        read_types = {self.preprocessed_read_type}
+        read_types = {
+            self.preprocessed_read_type,
+            self.uncommon_read_type,
+        }
 
         if self.paired_end:
             read_types.update([
@@ -169,7 +177,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
         if self.paired_end and not knock_knock.utilities.is_one_sided(self.description.get('experiment_type')):
             combined_read_length = self.R1_read_length + self.R2_read_length
             if combined_read_length < self.target_info.amplicon_length:
-                logging.warning(f'Warning: {self.batch_name} {self.sample_name} combined read length ({combined_read_length}) less than expected amplicon length ({self.target_info.amplicon_length:,}).')
+                logger.warning(f'Warning: {self.batch_name} {self.sample_name} combined read length ({combined_read_length}) less than expected amplicon length ({self.target_info.amplicon_length:,}).')
 
     @memoized_property
     def max_relevant_length(self):
@@ -521,9 +529,10 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
         else:
             self.trim_reads()
 
-    def align(self):
+        self.extract_and_process_common_sequences()
         self.extract_reads_with_uncommon_sequences()
 
+    def align(self):
         for read_type in self.read_types_to_align:
             self.generate_alignments_with_blast(read_type=read_type)
 
@@ -549,3 +558,104 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
         self.generate_outcome_stratified_lengths()
 
         self.record_sanitized_category_names()
+
+    @memoized_property
+    def common_sequences_experiment(self):
+        return CommonSequencesExperiment(self)
+
+    def extract_and_process_common_sequences(self):
+        seq_counts = Counter(read.seq for read in self.reads_by_type(self.preprocessed_read_type))
+
+        qual = hits.fastq.unambiguous_sanger_Q40(1000)
+   
+        cs_exp = self.common_sequences_experiment
+        cs_exp.results_dir.mkdir(exist_ok=True)
+        fn = cs_exp.fns_by_read_type['fastq'][self.preprocessed_read_type]
+
+        with gzip.open(fn, 'wt', compresslevel=1) as fh:
+            for rank, (seq, count) in enumerate(seq_counts.most_common(1000)):
+                if count > 1:
+                    name = f'{rank:010}_{count:010}'
+                    read = hits.fastq.Read(name, seq, qual[:len(seq)])
+                    fh.write(str(read))
+
+        cs_exp.process(stage='align')
+        cs_exp.process(stage='categorize')
+
+    @memoized_property
+    def common_sequence_outcomes(self):
+        return list(self.common_sequences_experiment.outcome_iter())
+
+    @memoized_property
+    def common_name_to_common_sequence(self):
+        cs_exp = self.common_sequences_experiment
+
+        name_to_seq = {}
+
+        for read in cs_exp.reads_by_type(cs_exp.preprocessed_read_type):
+            name_to_seq[read.name] = read.seq
+
+        return name_to_seq
+
+    @memoized_property
+    def common_sequence_to_common_name(self):
+        return utilities.reverse_dictionary(self.common_name_to_common_sequence)
+
+    @memoized_property
+    def common_sequence_to_outcome(self):
+        common_sequence_to_outcome = {}
+
+        for outcome in self.common_sequence_outcomes:
+            seq = self.common_name_to_common_sequence[outcome.query_name]
+            common_sequence_to_outcome[seq] = outcome
+
+        return common_sequence_to_outcome
+
+    @memoized_property
+    def common_sequence_to_alignments(self):
+        common_sequence_to_alignments = {}
+
+        for common_name, als in self.common_sequences_experiment.alignment_groups():
+            seq = self.common_name_to_common_sequence[common_name]
+            common_sequence_to_alignments[seq] = als
+
+        return common_sequence_to_alignments
+
+    def extract_reads_with_uncommon_sequences(self):
+        uncommon_fn = self.fns_by_read_type['fastq'][self.uncommon_read_type]
+        with gzip.open(uncommon_fn, 'wt', compresslevel=1) as uncommon_fh:
+            for read in self.reads_by_type(self.preprocessed_read_type):
+                if read.seq not in self.common_sequence_to_outcome:
+                    uncommon_fh.write(str(read))
+
+class CommonSequencesExperiment(IlluminaExperiment):
+    def __init__(self, experiment):
+        self.experiment = experiment
+
+        super().__init__(experiment.base_dir, experiment.batch_name, experiment.sample_name)
+
+        self.description = self.experiment.description
+
+    @memoized_property
+    def results_dir(self):
+        return self.experiment.results_dir / 'common_sequences'
+
+    @memoized_property
+    def target_info(self):
+        return self.experiment.target_info
+
+    @property
+    def uncommon_read_type(self):
+        return self.preprocessed_read_type
+
+    @memoized_property
+    def common_sequence_to_outcome(self):
+        return {}
+
+    @memoized_property
+    def common_sequence_to_alignments(self):
+        return {}
+
+    def extract_reads_with_uncommon_sequences(self):
+        ''' Overload to prevent from overwriting its own sequences. '''
+        pass
