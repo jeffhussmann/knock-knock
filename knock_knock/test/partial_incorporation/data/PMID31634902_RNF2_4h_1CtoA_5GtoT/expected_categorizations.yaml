@@ -1,0 +1,16 @@
+simulated:000000:
+  category: wild type
+  details: ''
+  subcategory: clean
+simulated:000001:
+  category: partial edit
+  details: programmed_substitution_read_bases=_T
+  subcategory: partial incorporation
+simulated:000002:
+  category: partial edit
+  details: programmed_substitution_read_bases=A_
+  subcategory: partial incorporation
+simulated:000003:
+  category: intended edit
+  details: programmed_substitution_read_bases=AT
+  subcategory: substitution

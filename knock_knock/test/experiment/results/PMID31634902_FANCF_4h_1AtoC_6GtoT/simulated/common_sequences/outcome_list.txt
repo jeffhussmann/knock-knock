@@ -1,0 +1,5 @@
+## Generated at 2025-07-14 12:50:39
+0000000000_0000000100	195	0.995	39.923	wild type	clean			
+0000000001_0000000100	195	0.995	39.923	partial edit	partial incorporation	programmed_substitution_read_bases=_G		
+0000000002_0000000100	195	0.995	39.923	partial edit	partial incorporation	programmed_substitution_read_bases=A_		
+0000000003_0000000100	195	0.995	39.923	intended edit	substitution	programmed_substitution_read_bases=AG		

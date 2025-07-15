@@ -1,0 +1,76 @@
+category000	wild type
+category000_subcategory000	wild type, clean
+category000_subcategory001	wild type, short indel far from cut
+category000_subcategory002	wild type, mismatches
+category001	intended edit
+category001_subcategory000	intended edit, substitution
+category001_subcategory001	intended edit, deletion
+category001_subcategory002	intended edit, deletion + substitution
+category001_subcategory003	intended edit, insertion
+category001_subcategory004	intended edit, insertion + substitution
+category001_subcategory005	intended edit, combination
+category002	partial edit
+category002_subcategory000	partial edit, partial incorporation
+category002_subcategory001	partial edit, other
+category003	unintended rejoining of RT'ed sequence
+category003_subcategory000	unintended rejoining of RT'ed sequence, includes scaffold
+category003_subcategory001	unintended rejoining of RT'ed sequence, includes scaffold, no substitution
+category003_subcategory002	unintended rejoining of RT'ed sequence, includes scaffold, with deletion
+category003_subcategory003	unintended rejoining of RT'ed sequence, includes scaffold, no substitution, with deletion
+category003_subcategory004	unintended rejoining of RT'ed sequence, no scaffold
+category003_subcategory005	unintended rejoining of RT'ed sequence, no scaffold, no substitution
+category003_subcategory006	unintended rejoining of RT'ed sequence, no scaffold, with deletion
+category003_subcategory007	unintended rejoining of RT'ed sequence, no scaffold, no substitution, with deletion
+category003_subcategory008	unintended rejoining of RT'ed sequence, doesn't include insertion
+category004	deletion
+category004_subcategory000	deletion, clean
+category004_subcategory001	deletion, mismatches
+category005	duplication
+category005_subcategory000	duplication, simple
+category005_subcategory001	duplication, iterated
+category005_subcategory002	duplication, complex
+category006	insertion
+category006_subcategory000	insertion, clean
+category006_subcategory001	insertion, mismatches
+category007	edit + indel
+category007_subcategory000	edit + indel, deletion
+category007_subcategory001	edit + indel, insertion
+category007_subcategory002	edit + indel, duplication
+category008	multiple indels
+category008_subcategory000	multiple indels, multiple indels
+category008_subcategory001	multiple indels, duplication + deletion
+category008_subcategory002	multiple indels, duplication + insertion
+category009	genomic insertion
+category009_subcategory000	genomic insertion, hg19
+category009_subcategory001	genomic insertion, hg38
+category009_subcategory002	genomic insertion, macFas5
+category009_subcategory003	genomic insertion, mm10
+category009_subcategory004	genomic insertion, bosTau7
+category009_subcategory005	genomic insertion, e_coli
+category009_subcategory006	genomic insertion, phiX
+category010	inversion
+category010_subcategory000	inversion, inversion
+category011	incorporation of extra sequence
+category011_subcategory000	incorporation of extra sequence, has RT'ed extension
+category011_subcategory001	incorporation of extra sequence, no RT'ed extension
+category012	complex incorporation of RT'ed sequence
+category012_subcategory000	complex incorporation of RT'ed sequence, n/a
+category013	minimal alignment to intended target
+category013_subcategory000	minimal alignment to intended target, n/a
+category014	uncategorized
+category014_subcategory000	uncategorized, uncategorized
+category014_subcategory001	uncategorized, low quality
+category015	nonspecific amplification
+category015_subcategory000	nonspecific amplification, hg19
+category015_subcategory001	nonspecific amplification, hg38
+category015_subcategory002	nonspecific amplification, macFas5
+category015_subcategory003	nonspecific amplification, T2T-MFA8v1.0
+category015_subcategory004	nonspecific amplification, mm10
+category015_subcategory005	nonspecific amplification, bosTau7
+category015_subcategory006	nonspecific amplification, e_coli
+category015_subcategory007	nonspecific amplification, b_subtilis
+category015_subcategory008	nonspecific amplification, primer dimer
+category015_subcategory009	nonspecific amplification, short unknown
+category015_subcategory010	nonspecific amplification, extra sequence
+category016	phiX
+category016_subcategory000	phiX, phiX
