@@ -194,7 +194,7 @@ def install_example_data(args):
             print(f'Can\'t install to {args.project_directory}, {dest} already exists')
             sys.exit(1)
 
-        shutil.copytree(str(src), str(dest))
+        shutil.copytree(src, dest)
 
     logger.info(f'Example data installed in {args.project_directory}')
 

@@ -2,12 +2,10 @@ from itertools import islice
 from pathlib import Path
 
 import knock_knock.visualize.architecture
-import knock_knock.target_info
 import knock_knock.experiment
-import knock_knock.layout
 
 import ipywidgets
-from ipywidgets import Select, Layout, Text, Button, ToggleButton, ToggleButtons, Label, HBox, VBox
+from ipywidgets import Select, Layout, Text, Textarea, Button, ToggleButton, ToggleButtons, Label, HBox, VBox
 
 class Explorer:
     def __init__(self,
@@ -49,8 +47,8 @@ class Explorer:
         self.non_widgets = {
             'file_name': Text(value=str(default_filename)),
             'save': Button(description='Save snapshot'),
-            'read_details': ipywidgets.Textarea(description='Read details:', layout=Layout(height='200px', width='1000px')),
-            'alignments_to_show': ipywidgets.ToggleButtons(
+            'read_details': Textarea(description='Read details:', layout=Layout(height='200px', width='1000px')),
+            'alignments_to_show': ToggleButtons(
                 description='Alignments to show:',
                 options=['all', 'parsimonious', 'relevant'],
                 value='relevant',
@@ -97,7 +95,7 @@ class Explorer:
 
         self.non_widgets['save'].on_click(self.save)
 
-        self.layout = ipywidgets.VBox(
+        self.layout = VBox(
             [make_row(selection_widget_keys),
              HBox([self.non_widgets['alignments_to_show'],
                    make_col([
@@ -215,7 +213,7 @@ class Explorer:
                 ]
 
                 if self.by_outcome:
-                    layout = exp.no_overlap_pair_categorizer(als, exp.target_info)
+                    architecture = exp.no_overlap_pair_categorizer(als, exp.target_info)
             else:
                 read_details = [
                     f'exp name: {exp.sample_name}',
@@ -224,21 +222,21 @@ class Explorer:
                 ]
 
                 if self.by_outcome:
-                    layout = exp.categorizer(als,
+                    architecture = exp.categorizer(als,
                                              exp.target_info,
-                                             mode=exp.layout_mode,
+                                             mode=exp.architecture_mode,
                                              error_corrected=exp.has_UMIs,
                                             )
 
             if self.by_outcome:
-                layout.categorize()
+                architecture.categorize()
 
-                inferred_amplicon_length = layout.inferred_amplicon_length
+                inferred_amplicon_length = architecture.inferred_amplicon_length
 
                 read_details = read_details[:1] + [
-                    f'category: {layout.category}',
-                    f'subcategory: {layout.subcategory}',
-                    f'details: {layout.details}',
+                    f'category: {architecture.category}',
+                    f'subcategory: {architecture.subcategory}',
+                    f'details: {architecture.details}',
                     f'inferred amplicon length: {inferred_amplicon_length}', 
                 ] + read_details[1:]
 
@@ -257,7 +255,7 @@ class Explorer:
                 plot_kwargs[k] = self.draw_buttons[k].value
 
             if self.by_outcome:
-                diagram = layout.plot(**plot_kwargs)
+                diagram = architecture.plot(**plot_kwargs)
             else:
                 diagram = knock_knock.visualize.architecture.ReadDiagram(als,
                                                                          exp.target_info,

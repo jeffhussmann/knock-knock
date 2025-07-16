@@ -1,8 +1,8 @@
+import knock_knock.architecture
 import matplotlib
 if 'inline' not in matplotlib.get_backend():
     matplotlib.use('Agg')
 
-import datetime
 import heapq
 import logging
 import shutil
@@ -25,8 +25,8 @@ import hits.visualize
 from hits import annotation, fastq, genomes, mapping_tools, sam, utilities
 from hits.utilities import memoized_property, memoized_with_kwargs
 
+import knock_knock.architecture
 import knock_knock.blast
-import knock_knock.layout as layout_module
 import knock_knock.lengths
 import knock_knock.outcome
 import knock_knock.target_info
@@ -187,47 +187,11 @@ class Experiment:
 
     @memoized_property
     def categorizer(self):
-        import knock_knock.prime_editing_layout
-        import knock_knock.twin_prime_layout
-        import knock_knock.integrase_layout
-        import knock_knock.TECseq_layout
-        import knock_knock.seeseq_layout
-        import knock_knock.HDR_layout
-
-        experiment_type_to_categorizer = {
-            'prime_editing': knock_knock.prime_editing_layout.Layout,
-            'twin_prime': knock_knock.twin_prime_layout.Layout,
-            'Bxb1_twin_prime': knock_knock.integrase_layout.Layout,
-            'TECseq': knock_knock.TECseq_layout.Layout,
-            'TECseq_dual_flap': knock_knock.TECseq_layout.TwinPrimeLayout,
-            'seeseq': knock_knock.seeseq_layout.Layout,
-            'seeseq_dual_flap': knock_knock.seeseq_layout.DualFlapLayout,
-            'HDR': knock_knock.HDR_layout.Layout,
-        }
-
-        aliases = {
-            'single_flap': 'prime_editing',
-            'dual_flap': 'twin_prime',
-            'Bxb1_dual_flap': 'Bxb1_twin_prime',
-        }
-
-        for alias, original_name in aliases.items():
-            experiment_type_to_categorizer[alias] = experiment_type_to_categorizer[original_name]
-
-        return experiment_type_to_categorizer[self.experiment_type]
+        return knock_knock.architecture.experiment_type_to_categorizer(self.experiment_type)
 
     @memoized_property
     def no_overlap_pair_categorizer(self):
-        import knock_knock.TECseq_layout
-        import knock_knock.seeseq_layout
-
-        experiment_type_to_categorizer = {
-            'TECseq': knock_knock.TECseq_layout.NoOverlapPairLayout,
-            'TECseq_dual_flap': knock_knock.TECseq_layout.NoOverlapPairTwinPrimeLayout,
-            'seeseq': knock_knock.seeseq_layout.NoOverlapPairLayout,
-        }
-
-        return experiment_type_to_categorizer[self.experiment_type]
+        return knock_knock.architecture.experiment_type_to_no_overlap_categorizer(self.experiment_type)
 
     @property
     def uncommon_read_type(self):
@@ -791,25 +755,25 @@ class Experiment:
                     seq = ''
 
                 if seq in self.common_sequence_to_outcome:
-                    layout = self.common_sequence_to_outcome[seq]
+                    architecture = self.common_sequence_to_outcome[seq]
 
                 else:
-                    layout = self.categorizer(als,
+                    architecture = self.categorizer(als,
                                               self.target_info,
-                                              mode=self.layout_mode,
+                                              mode=self.architecture_mode,
                                               error_corrected=self.has_UMIs,
                                              )
 
                     try:
-                        layout.categorize()
+                        architecture.categorize()
                     except:
                         print()
                         print(self.sample_name, name)
                         raise
 
-                outcome_to_qnames[layout.category, layout.subcategory].append(name)
+                outcome_to_qnames[architecture.category, architecture.subcategory].append(name)
 
-                outcome = knock_knock.outcome.CategorizationRecord.from_layout(layout,
+                outcome = knock_knock.outcome.CategorizationRecord.from_architecture(architecture,
                     query_name=name,
                     Q30_fraction=read.Q30_fraction,
                     mean_Q=read.mean_Q,
@@ -920,10 +884,10 @@ class Experiment:
                 return None
 
     def get_read_diagram(self, read_id, outcome=None, relevant=True, read_type=None, **kwargs):
-        layout = self.get_read_layout(read_id, outcome=outcome, read_type=read_type)
-        layout.categorize()
+        architecture = self.get_read_architecture(read_id, outcome=outcome, read_type=read_type)
+        architecture.categorize()
 
-        diagram = layout.plot(relevant=relevant, **kwargs)
+        diagram = architecture.plot(relevant=relevant, **kwargs)
 
         return diagram
 
@@ -1165,12 +1129,12 @@ class Experiment:
 
             if isinstance(als, dict):
                 kwargs['read_label'] = 'sequencing read pair'
-                layout = layout_module.NonoverlappingPairLayout(als['R1'], als['R2'], self.target_info)
+                architecture = knock_knock.architecture.architecture.NonoverlappingPairArchitecture(als['R1'], als['R2'], self.target_info)
             else:
-                layout = self.categorizer(als, self.target_info, mode=self.layout_mode)
+                architecture = self.categorizer(als, self.target_info, mode=self.architecture_mode)
 
             try:
-                diagram = layout.plot(title='', **kwargs)
+                diagram = architecture.plot(title='', **kwargs)
             except:
                 print(self.sample_name, qname)
                 raise
@@ -1320,7 +1284,7 @@ class Experiment:
         explorer = explore.SingleExperimentExplorer(self, by_outcome, **kwargs)
         return explorer.layout
 
-    def get_read_layout(self, read_id, qname_to_als=None, fn_key='bam_by_name', outcome=None, read_type=None):
+    def get_read_architecture(self, read_id, qname_to_als=None, fn_key='bam_by_name', outcome=None, read_type=None):
         # qname_to_als is to allow caching of many sets of als (e.g. for all
         # of a particular outcome category) to prevent repeated lookup
         if qname_to_als is None:
@@ -1328,9 +1292,9 @@ class Experiment:
         else:
             als = qname_to_als[read_id]
 
-        layout = self.categorizer(als, self.target_info, mode=self.layout_mode)
+        architecture = self.categorizer(als, self.target_info, mode=self.architecture_mode)
 
-        return layout
+        return architecture
 
 def load_sample_sheet_from_csv(csv_fn):
     # Note: can't include comment='#' because of '#' in hex color specifications.

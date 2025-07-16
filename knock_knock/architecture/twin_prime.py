@@ -3,13 +3,12 @@ from collections import defaultdict
 from hits import interval, sam
 from hits.utilities import memoized_property
 
-import knock_knock.layout
-import knock_knock.prime_editing_layout
+from . import prime_editing
 import knock_knock.target_info
 import knock_knock.visualize.architecture
 from knock_knock.outcome import *
 
-class Layout(knock_knock.prime_editing_layout.Layout):
+class Architecture(prime_editing.Architecture):
     category_order = [
         (
             'wild type',
@@ -484,7 +483,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
             last_als[side] = last_al
 
-        return knock_knock.layout.junction_microhomology(self.target_info.reference_sequences, last_als['left'], last_als['right'])
+        return knock_knock.architecture.junction_microhomology(self.target_info.reference_sequences, last_als['left'], last_als['right'])
 
     def get_extension_chain_edge(self, side):
         ''' Get the position of the far edge of an extension chain
@@ -587,7 +586,7 @@ class Layout(knock_knock.prime_editing_layout.Layout):
         mismatches_seen = set()
 
         for al in self.pegRNA_extension_als_from_either_side_list:
-            mismatches = knock_knock.layout.get_mismatch_info(al, self.target_info.reference_sequences)
+            mismatches = knock_knock.architecture.get_mismatch_info(al, self.target_info.reference_sequences)
 
             programmed_ps = self.target_info.pegRNA_pair.programmed_substitution_ps[al.reference_name]
 

@@ -535,9 +535,9 @@ class NoOverlapPairCategorizer(Categorizer):
         self.target_info = target_info
         self._flipped = False
 
-        self.layouts = {
-            'R1': type(self).individual_layout_class(alignments['R1'], target_info),
-            'R2': type(self).individual_layout_class(alignments['R2'], target_info, flipped=True),
+        self.architecture = {
+            'R1': type(self).individual_architecture_class(alignments['R1'], target_info),
+            'R2': type(self).individual_architecture_class(alignments['R2'], target_info, flipped=True),
         }
 
         self._inferred_amplicon_length = -1
@@ -707,7 +707,7 @@ def crop_terminal_mismatches(al, reference_sequences):
     ''' Remove all consecutive mismatches from the start and end of an alignment. '''
     covered = interval.get_covered(al)
 
-    mismatch_ps = {p for p, *rest in knock_knock.layout.get_mismatch_info(al, reference_sequences)}
+    mismatch_ps = {p for p, *rest in get_mismatch_info(al, reference_sequences)}
 
     first = covered.start
     last = covered.end
@@ -923,3 +923,45 @@ def extend_alignment(initial_al, target_seq_bytes, programmed_subs):
         new_al = initial_al
     
     return new_al
+
+def experiment_type_to_categorizer(experiment_type):
+    from . import prime_editing
+    from . import twin_prime
+    from . import integrase
+    from . import TECseq
+    from . import seeseq
+    from . import HDR
+
+    experiment_type_to_categorizer = {
+        'prime_editing': prime_editing.Architecture,
+        'twin_prime': twin_prime.Architecture,
+        'Bxb1_twin_prime': integrase.Architecture,
+        'TECseq': TECseq.Architecture,
+        'TECseq_dual_flap': TECseq.TwinPrimeArchitecture,
+        'seeseq': seeseq.Architecture,
+        'seeseq_dual_flap': seeseq.DualFlapArchitecture,
+        'HDR': HDR.Architecture,
+    }
+
+    aliases = {
+        'single_flap': 'prime_editing',
+        'dual_flap': 'twin_prime',
+        'Bxb1_dual_flap': 'Bxb1_twin_prime',
+    }
+
+    for alias, original_name in aliases.items():
+        experiment_type_to_categorizer[alias] = experiment_type_to_categorizer[original_name]
+
+    return experiment_type_to_categorizer[experiment_type]
+
+def experiment_type_to_no_overlap_pair_categorizer(experiment_type):
+    from . import TECseq
+    from . import seeseq
+
+    experiment_type_to_categorizer = {
+        'TECseq': TECseq.NoOverlapPairArchitecture,
+        'TECseq_dual_flap': TECseq.NoOverlapPairTwinPrimeArchitecture,
+        'seeseq': seeseq.NoOverlapPairArchitecture,
+    }
+
+    return experiment_type_to_categorizer(experiment_type)

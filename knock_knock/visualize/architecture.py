@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from hits import utilities, interval, sam, sw
 import hits.visualize
 
-import knock_knock.layout
+import knock_knock.architecture
 import knock_knock.target_info
 
 memoized_property = utilities.memoized_property
@@ -71,7 +71,7 @@ class ReadDiagram:
     color_overrides: dict = field(default_factory=dict)
     title: Optional[str] = None
     title_y: float = 1.02
-    layout_mode: str = 'illumina'
+    architecture_mode: str = 'illumina'
     label_differences: bool = False
     label_dimples: bool = True
     label_overrides: dict = field(default_factory=dict)
@@ -142,7 +142,7 @@ class ReadDiagram:
 
                 for al in als:
                     if al.reference_name in refs_to_split:
-                        split_als = knock_knock.layout.comprehensively_split_alignment(al, self.target_info, self.layout_mode, programmed_substitutions=self.target_info.pegRNA_programmed_alternative_bases)
+                        split_als = knock_knock.architecture.comprehensively_split_alignment(al, self.target_info, self.architecture_mode, programmed_substitutions=self.target_info.pegRNA_programmed_alternative_bases)
 
                         seq_bytes = self.target_info.reference_sequence_bytes[al.reference_name]
                         extended = [sw.extend_alignment(al, seq_bytes) for al in split_als]
@@ -245,7 +245,7 @@ class ReadDiagram:
 
         self.height_per_unit = 40
 
-        if self.layout_mode == 'illumina':
+        if self.architecture_mode == 'illumina':
             self.dimple_height = 0.003
         else:
             self.dimple_height = 0.001
@@ -658,7 +658,7 @@ class ReadDiagram:
                                    )
 
                 if self.draw_mismatches:
-                    mismatches = knock_knock.layout.get_mismatch_info(alignment, self.all_reference_sequences)
+                    mismatches = knock_knock.architecture.get_mismatch_info(alignment, self.all_reference_sequences)
                     for mismatch_i, (read_p, read_b, ref_p, ref_b, q) in enumerate(mismatches):
                         if q < self.max_qual * 0.75:
                             alpha = 0.25
@@ -698,7 +698,7 @@ class ReadDiagram:
                 xs = [left_offset(start)]
                 ys = [y]
 
-                indels = sorted(knock_knock.layout.get_indel_info(alignment), key=lambda t: t[1][0])
+                indels = sorted(knock_knock.architecture.get_indel_info(alignment), key=lambda t: t[1][0])
 
                 for kind, info in indels:
                     if kind == 'deletion' or kind == 'splicing':
@@ -923,7 +923,7 @@ class ReadDiagram:
                     if not qs:
                         continue
 
-                    if self.layout_mode == 'illumina':
+                    if self.architecture_mode == 'illumina':
                         gap_allowed = 1
                     else:
                         gap_allowed = 4

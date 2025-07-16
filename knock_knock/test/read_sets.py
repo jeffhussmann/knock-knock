@@ -10,6 +10,8 @@ import yaml
 
 import hits.utilities
 import hits.sam
+
+import knock_knock.architecture
 import knock_knock.arrayed_experiment_group
 import knock_knock.target_info
 
@@ -52,18 +54,18 @@ class ReadSet:
     def qnames(self):
         return sorted(self.alignments)
 
-    def get_read_layout(self, read_id):
-        layout = None
+    def get_read_architecture(self, read_id):
+        architecture = None
 
         for qname, als in hits.sam.grouped_by_name(self.bam_fn):
             if qname == read_id:
-                layout = self.categorizer(als, self.target_info)
+                architecture = self.categorizer(als, self.target_info)
                 break
 
-        if layout is None:
+        if architecture is None:
             raise ValueError(read_id)
         
-        return layout
+        return architecture
 
     @memoized_property
     def target_info(self):
@@ -81,62 +83,51 @@ class ReadSet:
 
     @memoized_property
     def categorizer(self):
-        if self.details['experiment_type'] in ['twin_prime', 'dual_flap']:
-            from knock_knock.twin_prime_layout import Layout
-        elif self.details['experiment_type'] in ['prime_editing', 'prime_editing_layout', 'single_flap']:
-            from knock_knock.prime_editing_layout import Layout
-        elif self.details['experiment_type'] == 'TECseq':
-            from knock_knock.TECseq_layout import Layout
-        else:
-            raise NotImplementedError
-
-        categorizer = Layout
-
-        return categorizer
+        return knock_knock.architecture.experiment_type_to_categorizer(self.details['experiment_type'])
 
     def compare_to_expected(self, qname):
         try:
-            layout = self.categorizer(self.alignments[qname], self.target_info)
-            layout.categorize()
+            architecture = self.categorizer(self.alignments[qname], self.target_info)
+            architecture.categorize()
 
         except:
-            layout.category = 'error'
-            layout.subcategory = 'error'
-            layout.details = 'error'
+            architecture.category = 'error'
+            architecture.subcategory = 'error'
+            architecture.details = 'error'
 
         expected = self.expected_values[qname]
 
         expected_tuple = (
             expected['category'],
             expected['subcategory'],
-            expected.get('details', layout.details),
+            expected.get('details', architecture.details),
         )
 
         observed_tuple = (
-            layout.category,
-            layout.subcategory,
-            layout.details,
+            architecture.category,
+            architecture.subcategory,
+            architecture.details,
         )
 
-        return observed_tuple == expected_tuple, layout, expected
+        return observed_tuple == expected_tuple, architecture, expected
 
     def process(self):
-        tested_layouts = {
+        tested_architectures = {
             True: [],
             False: [],
         }
 
         for qname in self.qnames:
-            agrees_with_expected, layout, expected = self.compare_to_expected(qname)
+            agrees_with_expected, architecture, expected = self.compare_to_expected(qname)
 
-            tested_layouts[agrees_with_expected].append((layout, expected))
+            tested_architectures[agrees_with_expected].append((architecture, expected))
 
-        num_passed = len(tested_layouts[True]) 
-        num_failed = len(tested_layouts[False])
+        num_passed = len(tested_architectures[True]) 
+        num_failed = len(tested_architectures[False])
 
         print(f'Tested {num_passed + num_failed: >3d} sequences ({num_passed} passed, {num_failed} failed) for {self.name}.')
 
-        return tested_layouts
+        return tested_architectures
 
 def get_all_read_sets(source_dir=None):
     source_dir = populate_source_dir(source_dir)
@@ -203,7 +194,7 @@ def build_pooled_screen_read_set(set_name):
     alignment_sorter = hits.sam.AlignmentSorter(read_set.bam_fn, exp.combined_header, by_name=True)
 
     read_info = {
-        'experiment_type': pool.sample_sheet['layout_module'],
+        'experiment_type': pool.sample_sheet['experiment_type'],
         'target_info': pool.target_info.name,
         'target_info_kwargs': target_info_kwargs,
         'expected_values': {},

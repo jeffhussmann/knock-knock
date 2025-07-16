@@ -178,7 +178,7 @@ def blast(ref_fn,
 
                 al = possibly_standardize_header(al)
 
-                # TODO: can this be removed since layout will take care of it?
+                # TODO: can this be removed since architecture will take care of it?
                 if max_insertion_length is not None:
                     split_als = sam.split_at_large_insertions(al, max_insertion_length + 1)
                 else:

@@ -1,18 +1,19 @@
-import copy
-
 import hits.interval
 import hits.sam
 import hits.utilities
 
-import knock_knock.prime_editing_layout
-import knock_knock.twin_prime_layout
+import knock_knock.visualize.architecture
+
+import knock_knock.architecture
+from . import prime_editing
+from . import twin_prime
 
 from knock_knock.outcome import *
 
 memoized_property = hits.utilities.memoized_property
 memoized_with_args = hits.utilities.memoized_with_args
 
-class Layout(knock_knock.prime_editing_layout.Layout):
+class Architecture(prime_editing.Architecture):
     category_order = [
         ('RTed sequence',
             ('n/a',
@@ -201,8 +202,8 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
         return plot_parameters
 
-class NoOverlapPairLayout(Layout, knock_knock.layout.NoOverlapPairCategorizer):
-    individual_layout_class = Layout
+class NoOverlapPairArchitecture(Architecture, knock_knock.architecture.NoOverlapPairCategorizer):
+    individual_architecture_class = Architecture
 
     @property
     def inferred_amplicon_length(self):
@@ -210,7 +211,7 @@ class NoOverlapPairLayout(Layout, knock_knock.layout.NoOverlapPairCategorizer):
 
     @memoized_property
     def query_length_covered_by_on_target_alignments(self):
-        return sum(layout.query_length_covered_by_on_target_alignments for layout in self.layouts.values())
+        return sum(architecture.query_length_covered_by_on_target_alignments for architecture in self.architectures.values())
 
     @memoized_property
     def concordant_nonoverlapping(self):
@@ -231,8 +232,8 @@ class NoOverlapPairLayout(Layout, knock_knock.layout.NoOverlapPairCategorizer):
 
         '''
 
-        R1 = self.layouts['R1']
-        R2 = self.layouts['R2']
+        R1 = self.architectures['R1']
+        R2 = self.architectures['R2']
 
         R1_cover = R1.minimal_cover
         R2_cover = R2.minimal_cover
@@ -330,8 +331,8 @@ class NoOverlapPairLayout(Layout, knock_knock.layout.NoOverlapPairCategorizer):
         return results
 
     def register_targeted_genomic_sequence(self):
-        R1 = self.layouts['R1']
-        R2 = self.layouts['R2']
+        R1 = self.architectures['R1']
+        R2 = self.architectures['R2']
 
         R2_al = R2.extension_chains_by_side['left']['alignments']['first target']
         edge = hits.sam.reference_edges(R2_al)[5]
@@ -347,7 +348,7 @@ class NoOverlapPairLayout(Layout, knock_knock.layout.NoOverlapPairCategorizer):
         }
 
     def register_nonspecific_amplification(self):
-        R1 = self.layouts['R1']
+        R1 = self.architectures['R1']
 
         self.category = self.concordant_nonoverlapping['category']
         self.subcategory = self.concordant_nonoverlapping['subcategory']
@@ -469,9 +470,9 @@ class NoOverlapPairLayout(Layout, knock_knock.layout.NoOverlapPairCategorizer):
 
         return min_gap, amplicon_length, pairs
 
-class TwinPrimeLayout(Layout, knock_knock.twin_prime_layout.Layout):
-    # MRO puts twin_prime_layout.Layout before prime_editing_layout.Layout
+class TwinPrimeArchitecture(Architecture, twin_prime.Architecture):
+    # MRO puts twin_prime.Architecture before prime_editing.Architecture
     pass
 
-class NoOverlapPairTwinPrimeLayout(NoOverlapPairLayout, TwinPrimeLayout):
-    individual_layout_class = TwinPrimeLayout
+class NoOverlapPairTwinPrimeArchitecture(NoOverlapPairArchitecture, TwinPrimeArchitecture):
+    individual_architecture_class = TwinPrimeArchitecture

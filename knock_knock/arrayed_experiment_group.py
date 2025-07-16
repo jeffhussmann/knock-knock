@@ -479,8 +479,8 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         return self.first_experiment.categorizer
 
     @property
-    def layout_mode(self):
-        return self.first_experiment.layout_mode
+    def architecture_mode(self):
+        return self.first_experiment.architecture_mode
 
     @property
     def target_info(self):

@@ -11,7 +11,6 @@ import hits.utilities
 import knock_knock.outcome
 import knock_knock.pegRNAs
 import knock_knock.target_info
-import knock_knock.TECseq_layout
 
 memoized_property = hits.utilities.memoized_property
 

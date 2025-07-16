@@ -56,12 +56,12 @@ def load_counts(base_dir,
 
     df = pd.DataFrame(counts).fillna(0)
 
-    # Sort order for outcomes is defined in the relevant layout module.
+    # Sort order for outcomes is defined in the relevant architecture module.
     full_indexes = {tuple(exp.categorizer.full_index()) for exp in exps.values()}
     
     if len(full_indexes) > 1:
         print(full_indexes)
-        raise ValueError('Can\'t make table for experiments with inconsistent layout modules.')
+        raise ValueError('Can\'t make table for experiments with inconsistent architecture modules.')
 
     full_index = full_indexes.pop()
 
@@ -73,7 +73,7 @@ def load_counts(base_dir,
 
         if len(all_non_relevant_categories) > 1:
             print(all_non_relevant_categories)
-            raise ValueError('Can\'t make table for experiments with inconsistent layout modules.')
+            raise ValueError('Can\'t make table for experiments with inconsistent architecture modules.')
 
         non_relevant_categories = list(all_non_relevant_categories.pop())
 

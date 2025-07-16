@@ -17,7 +17,7 @@ import hits.utilities as utilities
 import knock_knock.experiment
 import knock_knock.arrayed_experiment_group
 
-import knock_knock.integrase_layout
+import knock_knock.architecture.integrase
 
 memoized_property = utilities.memoized_property
 
@@ -27,7 +27,7 @@ class Experiment(knock_knock.experiment.Experiment):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.layout_mode = 'nanopore'
+        self.architecture_mode = 'nanopore'
 
         self.read_types = [
             'nanopore_by_name',
@@ -51,7 +51,7 @@ class Experiment(knock_knock.experiment.Experiment):
 
     @memoized_property
     def categorizer(self):
-        return knock_knock.integrase_layout.Layout
+        return knock_knock.architecture.integrase.Architecture
 
     @memoized_property
     def expected_lengths(self):
@@ -187,12 +187,12 @@ class Experiment(knock_knock.experiment.Experiment):
         all_donor_als = []
     
         for qname, als in self.progress(self.alignment_groups()):
-            layout = self.categorizer(als, self.target_info, mode='nanopore')
+            architecture = self.categorizer(als, self.target_info, mode='nanopore')
 
-            if not layout.is_malformed:
-                donor_als = layout.nonredundant_donor_alignments
+            if not architecture.is_malformed:
+                donor_als = architecture.nonredundant_donor_alignments
 
-                if layout.sequencing_direction == '-':
+                if architecture.sequencing_direction == '-':
                     for al in donor_als:
                         al.is_reverse = not al.is_reverse
                         
@@ -363,8 +363,8 @@ def process_chunk_experiment(base_dir,
     progress_string = f'({chunk_number + 1: >7,} / {total_chunks: >7,})'
 
     for stage in [
-        'preprocess',
-        'align',
+        #'preprocess',
+        #'align',
         'categorize',
     ]:
         stage_string = f'{chunk_number} {stage}'

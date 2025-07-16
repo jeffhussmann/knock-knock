@@ -5,13 +5,13 @@ from itertools import chain, islice
 from collections import defaultdict, Counter
 
 import hits.utilities
+import knock_knock.architecture
 import numpy as np
 import pysam
 
 import knock_knock.experiment
 import knock_knock.outcome
 import knock_knock.utilities
-from knock_knock import layout as layout_module
 
 import hits.visualize.fastq
 from hits import adapters, fastq, sam, sw, utilities
@@ -47,7 +47,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
         self.x_tick_multiple = 100
 
-        self.layout_mode = 'illumina'
+        self.architecture_mode = 'illumina'
 
         self.outcome_fn_keys = [
             'outcome_list',
@@ -114,7 +114,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
     @property
     def no_overlap_pair_categorizer(self):
-        return layout_module.NonoverlappingPairLayout
+        return knock_knock.architecture.architecture.NonoverlappingPairArchitecture
 
     def original_reads_by_key(self, key, add_UMI=True):
         # Standardizing names is important for sorting.
@@ -202,15 +202,15 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
         return als
 
-    def get_read_layout(self, read_id, fn_key='bam_by_name', outcome=None, read_type=None):
+    def get_read_architecture(self, read_id, fn_key='bam_by_name', outcome=None, read_type=None):
         if self.paired_end and read_id in self.no_overlap_qnames:
             als = self.get_read_alignments(read_id, outcome=outcome)
-            layout = self.no_overlap_pair_categorizer(als, self.target_info)
-            return layout
+            architecture = self.no_overlap_pair_categorizer(als, self.target_info)
+            return architecture
         else:
-            layout = super().get_read_layout(read_id, fn_key=fn_key, outcome=outcome, read_type=read_type)
+            architecture = super().get_read_architecture(read_id, fn_key=fn_key, outcome=outcome, read_type=read_type)
 
-        return layout
+        return architecture
 
     def no_overlap_alignment_groups(self, outcome=None):
         R1_read_type = 'R1_no_overlap'
@@ -277,15 +277,15 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
                     UMI_qual = ''
 
                 try:
-                    pair_layout = self.no_overlap_pair_categorizer(als, self.target_info)
-                    pair_layout.categorize()
+                    pair_architecture = self.no_overlap_pair_categorizer(als, self.target_info)
+                    pair_architecture.categorize()
                 except:
                     print(self.sample_name, name)
                     raise
                 
-                outcomes[pair_layout.category, pair_layout.subcategory].append(name)
+                outcomes[pair_architecture.category, pair_architecture.subcategory].append(name)
 
-                outcome = knock_knock.outcome.CategorizationRecord.from_layout(pair_layout,
+                outcome = knock_knock.outcome.CategorizationRecord.from_architecture(pair_architecture,
                                                    query_name=name,
                                                    Q30_fraction=R1.Q30_fraction,
                                                    mean_Q=R1.mean_Q,

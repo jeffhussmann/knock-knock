@@ -1,17 +1,17 @@
 import hits.utilities
-import knock_knock.prime_editing_layout
-import knock_knock.twin_prime_layout
+from . import prime_editing
+from . import twin_prime
 
 memoized_property = hits.utilities.memoized_property
 memoized_with_args = hits.utilities.memoized_with_args
 
-class Layout(knock_knock.prime_editing_layout.Layout):
+class Architecture(prime_editing.Architecture):
     category_order = [
         ('unknown editing status',
             ('unknown editing status',
             ),
         ),
-    ] + knock_knock.prime_editing_layout.Layout.category_order
+    ] + prime_editing.Architecture.category_order
 
     @property
     def inferred_amplicon_length(self):
@@ -48,22 +48,22 @@ class Layout(knock_knock.prime_editing_layout.Layout):
 
         return self.category, self.subcategory, self.details, self.outcome
 
-class DualFlapLayout(knock_knock.twin_prime_layout.Layout):
+class DualFlapArchitecture(twin_prime.Architecture):
     @property
     def inferred_amplicon_length(self):
         return self.read_length
 
-class NoOverlapPairLayout(Layout):
-    individual_layout_class = Layout
+class NoOverlapPairArchitecture(Architecture):
+    individual_architecture_class = Architecture
 
     def __init__(self, alignments, target_info):
         self.alignments = alignments
         self.target_info = target_info
         self._flipped = False
 
-        self.layouts = {
-            'R1': type(self).individual_layout_class(alignments['R1'], target_info),
-            'R2': type(self).individual_layout_class(alignments['R2'], target_info, flipped=True),
+        self.architecture = {
+            'R1': type(self).individual_architecture_class(alignments['R1'], target_info),
+            'R2': type(self).individual_architecture_class(alignments['R2'], target_info, flipped=True),
         }
 
         self._inferred_amplicon_length = -1
@@ -74,8 +74,8 @@ class NoOverlapPairLayout(Layout):
 
     @memoized_property
     def concordant_nonoverlapping(self):
-        R1 = self.layouts['R1']
-        R2 = self.layouts['R2']
+        R1 = self.architecture['R1']
+        R2 = self.architecture['R2']
 
         R1.categorize()
 
@@ -112,8 +112,8 @@ class NoOverlapPairLayout(Layout):
         return results
 
     def categorize(self):
-        R1 = self.layouts['R1']
-        R2 = self.layouts['R2']
+        R1 = self.architectures['R1']
+        R2 = self.architectures['R2']
 
         R1.categorize()
 

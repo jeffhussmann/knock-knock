@@ -202,8 +202,8 @@ class CategorizationRecord:
         return cls(*args)
 
     @classmethod
-    def from_layout(cls, layout, **overrides):
-        args = [overrides[name] if name in overrides else getattr(layout, name) for name, _ in cls.parameters]
+    def from_architecture(cls, architecture, **overrides):
+        args = [overrides[name] if name in overrides else getattr(architecture, name) for name, _ in cls.parameters]
         return cls(*args)
 
     def __str__(self):

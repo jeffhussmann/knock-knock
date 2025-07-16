@@ -1,4 +1,4 @@
-experiment_type: prime_editing_layout
+experiment_type: prime_editing
 target_info: pPC1000
 target_info_kwargs:
   sgRNAs: pPC1044

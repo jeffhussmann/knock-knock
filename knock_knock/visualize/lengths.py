@@ -20,7 +20,7 @@ def plot_outcome_stratified_lengths(outcome_stratified_lengths,
                                    ):
     '''
     outcome_stratified_lengths: knock_knock.lengths.OutcomeStratifiedLengths
-    categorizer: knock_knock.layout.Categorizer
+    categorizer: knock_knock.architecture.Categorizer
     '''
     if expected_lengths is None:
         expected_lengths = {}

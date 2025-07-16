@@ -10,11 +10,11 @@ import hits.visualize
 import knock_knock.pegRNAs
 import knock_knock.target_info
 import knock_knock.visualize.architecture
-from knock_knock import layout
+import knock_knock.architecture
 
 from knock_knock.outcome import *
 
-class Layout(layout.Categorizer):
+class Architecture(knock_knock.architecture.Categorizer):
     category_order = [
         (
             'wild type',
@@ -396,7 +396,7 @@ class Layout(layout.Categorizer):
         all_split_als = []
 
         for al in als:
-            split_als = layout.comprehensively_split_alignment(al,
+            split_als = knock_knock.architecture.comprehensively_split_alignment(al,
                                                                self.target_info,
                                                                self.mode,
                                                                self.ins_size_to_split_at,
@@ -983,7 +983,7 @@ class Layout(layout.Categorizer):
             mh = None
         
         else:
-            mh = knock_knock.layout.junction_microhomology(ti.reference_sequences, last_als['left'], last_als['right'])
+            mh = knock_knock.architecture.junction_microhomology(ti.reference_sequences, last_als['left'], last_als['right'])
 
             mh = max(mh, 0)
 
@@ -1832,7 +1832,7 @@ class Layout(layout.Categorizer):
                         covered_by_al = interval.get_covered(al)
                         if (need_to_cover - covered_by_al).total_length == 0:
                             cropped_al = sam.crop_al_to_query_int(al, self.not_covered_by_primers.start, self.not_covered_by_primers.end)
-                            total_edits = sum(knock_knock.layout.edit_positions(cropped_al, ref_seqs, use_deletion_length=True))
+                            total_edits = sum(knock_knock.architecture.edit_positions(cropped_al, ref_seqs, use_deletion_length=True))
                             if total_edits <= 5:
                                 results['covering_als'].append(al)
 

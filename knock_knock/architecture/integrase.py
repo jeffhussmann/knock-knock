@@ -7,7 +7,7 @@ import hits.utilities
 
 from hits import sam, interval
 
-import knock_knock.twin_prime_layout
+from . import twin_prime
 from knock_knock.outcome import *
 
 memoized_property = hits.utilities.memoized_property
@@ -37,9 +37,9 @@ additional_categories = [
     ),
 ]
 
-original_order =  knock_knock.twin_prime_layout.Layout.category_order
+original_order =  twin_prime.Architecture.category_order
 
-class Layout(knock_knock.twin_prime_layout.Layout):
+class Architecture(twin_prime.Architecture):
     category_order = original_order[:3] + additional_categories + original_order[3:]
 
     non_relevant_categories = [
@@ -707,7 +707,7 @@ class Layout(knock_knock.twin_prime_layout.Layout):
                                label_pegRNAs=True,
                                draw_pegRNAs=False,
                                label_features_on_alignments=False,
-                               layout_mode='nanopore',
+                               architecture_mode='nanopore',
                                flip_donor=(self.sequencing_direction == '-'),
                                refs_to_draw={
                                    self.target_info.target,

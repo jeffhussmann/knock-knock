@@ -2,13 +2,13 @@ import itertools
 
 import numpy as np
 
-import knock_knock.layout
+import knock_knock.architecture
 import knock_knock.visualize.architecture
 
 from hits import fastq, interval, sam, sw
 from hits.utilities import memoized_property, memoized_with_args
 
-class Layout(knock_knock.layout.Categorizer):
+class Architecture(knock_knock.architecture.Categorizer):
     category_order = [
         (
             'WT',
@@ -1934,7 +1934,7 @@ class Layout(knock_knock.layout.Categorizer):
             inferred_amplicon_length=self.inferred_amplicon_length,
             highlight_programmed_substitutions=True,
             feature_heights=feature_heights,
-            layout_mode=self.mode,
+            architecture_mode=self.mode,
         )
 
         for k, v in diagram_kwargs.items():
