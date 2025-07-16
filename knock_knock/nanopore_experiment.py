@@ -187,7 +187,7 @@ class Experiment(knock_knock.experiment.Experiment):
         all_donor_als = []
     
         for qname, als in self.progress(self.alignment_groups()):
-            architecture = self.categorizer(als, self.target_info, mode='nanopore')
+            architecture = self.categorizer(als, self.editing_strategy, mode='nanopore')
 
             if not architecture.is_malformed:
                 donor_als = architecture.nonredundant_donor_alignments
@@ -198,7 +198,7 @@ class Experiment(knock_knock.experiment.Experiment):
                         
                 all_donor_als.extend(donor_als)
 
-        with hits.sam.AlignmentSorter(self.fns['parsimonious_oriented_donor_als'], header=self.target_info.header) as fh:
+        with hits.sam.AlignmentSorter(self.fns['parsimonious_oriented_donor_als'], header=self.editing_strategy.header) as fh:
             for al in all_donor_als:
                 fh.write(al)
                 
@@ -384,11 +384,11 @@ def convert_sample_sheet(base_dir, sample_sheet_df, batch_name):
     batch_dir = base_dir / 'data' / batch_name
     batch_dir.mkdir(parents=True, exist_ok=True)
 
-    valid_supplemental_indices = set(knock_knock.target_info.locate_supplemental_indices(base_dir))
+    valid_supplemental_indices = set(knock_knock.editing_strategy.locate_supplemental_indices(base_dir))
 
     samples = {}
 
-    target_info_keys = [
+    strategy_keys = [
         'amplicon_primers',
         'genome',
         'genome_source',
@@ -396,12 +396,12 @@ def convert_sample_sheet(base_dir, sample_sheet_df, batch_name):
         'donor',
     ]
 
-    grouped = sample_sheet_df.groupby(target_info_keys)
+    grouped = sample_sheet_df.groupby(strategy_keys)
 
     samples = {}
 
     for (amplicon_primers, genome, genome_source, extra_sequences, donor), rows in grouped:
-        target_info_name = knock_knock.arrayed_experiment_group.make_default_target_info_name(amplicon_primers, genome, genome_source, extra_sequences, donor)
+        strategy_name = knock_knock.arrayed_experiment_group.make_default_editing_strategy_name(amplicon_primers, genome, genome_source, extra_sequences, donor)
 
         supplemental_indices = set()
 
@@ -419,7 +419,7 @@ def convert_sample_sheet(base_dir, sample_sheet_df, batch_name):
 
             samples[sample_name] = {
                 'supplemental_indices': ';'.join(supplemental_indices),
-                'target_info': target_info_name,
+                'editing_strategy': strategy_name,
                 'experiment_type': 'nanopore',
                 'sgRNAs': row['sgRNAs'],
             }

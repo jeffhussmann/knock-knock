@@ -29,7 +29,7 @@ import knock_knock.architecture
 import knock_knock.blast
 import knock_knock.lengths
 import knock_knock.outcome
-import knock_knock.target_info
+import knock_knock.editing_strategy
 import knock_knock.utilities
 import knock_knock.visualize.lengths
 
@@ -227,7 +227,7 @@ class Experiment:
 
     @memoized_property
     def supplemental_indices(self):
-        locations = knock_knock.target_info.locate_supplemental_indices(self.base_dir)
+        locations = knock_knock.editing_strategy.locate_supplemental_indices(self.base_dir)
         return {name: locations[name] for name in self.supplemental_index_names}
 
     @property
@@ -240,25 +240,25 @@ class Experiment:
         return min_relevant_length
 
     @memoized_property
-    def target_info(self):
-        ti = knock_knock.target_info.TargetInfo(self.base_dir,
-                                                self.target_name,
-                                                donor=self.donor,
-                                                nonhomologous_donor=self.nonhomologous_donor,
-                                                sgRNAs=self.sgRNAs,
-                                                primer_names=self.primer_names,
-                                                sequencing_start_feature_name=self.sequencing_start_feature_name,
-                                                supplemental_indices=self.supplemental_indices,
-                                                infer_homology_arms=self.infer_homology_arms,
-                                                min_relevant_length=self.min_relevant_length,
-                                               )
+    def editing_strategy(self):
+        strat = knock_knock.editing_strategy.EditingStrategy(self.base_dir,
+                                                             self.editing_strategy_name,
+                                                             donor=self.donor,
+                                                             nonhomologous_donor=self.nonhomologous_donor,
+                                                             sgRNAs=self.sgRNAs,
+                                                             primer_names=self.primer_names,
+                                                             sequencing_start_feature_name=self.sequencing_start_feature_name,
+                                                             supplemental_indices=self.supplemental_indices,
+                                                             infer_homology_arms=self.infer_homology_arms,
+                                                             min_relevant_length=self.min_relevant_length,
+                                                            )
 
-        return ti
+        return strat
 
     @memoized_property
-    def target_name(self):
+    def editing_strategy_name(self):
         # Cast to str because yaml parsing produce a non-string.
-        return str(self.description['target_info'])
+        return str(self.description['editing_strategy'])
 
     def check_combined_read_length(self):
         pass
@@ -465,7 +465,7 @@ class Experiment:
 
         if supplemental_index_name is None:
             base_bam_by_name_fn = self.fns_by_read_type['primary_bam_by_name'][read_type]
-            ref_seqs = self.target_info.reference_sequences
+            ref_seqs = self.editing_strategy.reference_sequences
         else:
             base_bam_by_name_fn = self.fns_by_read_type['supplemental_bam_by_name'][read_type, supplemental_index_name]
             fasta_dir = self.supplemental_indices[supplemental_index_name]['fasta']
@@ -487,7 +487,7 @@ class Experiment:
 
         if len(bam_by_name_fns) == 0:
             # There weren't any reads. Make an empty bam file.
-            with pysam.AlignmentFile(base_bam_by_name_fn, 'wb', header=self.target_info.header) as fh:
+            with pysam.AlignmentFile(base_bam_by_name_fn, 'wb', header=self.editing_strategy.header) as fh:
                 pass
 
         else:
@@ -658,7 +658,7 @@ class Experiment:
 
     @memoized_with_kwargs
     def deletion_boundaries(self, *, include_simple_deletions=True, include_edit_plus_deletions=False):
-        return knock_knock.outcome.extract_deletion_boundaries(self.target_info,
+        return knock_knock.outcome.extract_deletion_boundaries(self.editing_strategy,
                                                                self.outcome_fractions,
                                                                include_simple_deletions=include_simple_deletions,
                                                                include_edit_plus_deletions=include_edit_plus_deletions,
@@ -759,10 +759,10 @@ class Experiment:
 
                 else:
                     architecture = self.categorizer(als,
-                                              self.target_info,
-                                              mode=self.architecture_mode,
-                                              error_corrected=self.has_UMIs,
-                                             )
+                                                    self.editing_strategy,
+                                                    mode=self.architecture_mode,
+                                                    error_corrected=self.has_UMIs,
+                                                   )
 
                     try:
                         architecture.categorize()
@@ -1092,15 +1092,15 @@ class Experiment:
 
     @memoized_property
     def expected_lengths(self):
-        ti = self.target_info
+        strat = self.editing_strategy
 
         expected_lengths = {}
 
         if not knock_knock.utilities.is_one_sided(self.description.get('experiment_type')):
-            expected_lengths['WT'] = ti.amplicon_length
+            expected_lengths['WT'] = strat.amplicon_length
 
-        if ti.clean_HDR_length is not None:
-            expected_lengths['intended\nedit'] = ti.clean_HDR_length
+        if strat.clean_HDR_length is not None:
+            expected_lengths['intended\nedit'] = strat.clean_HDR_length
 
         return expected_lengths
 
@@ -1129,9 +1129,9 @@ class Experiment:
 
             if isinstance(als, dict):
                 kwargs['read_label'] = 'sequencing read pair'
-                architecture = knock_knock.architecture.architecture.NonoverlappingPairArchitecture(als['R1'], als['R2'], self.target_info)
+                architecture = knock_knock.architecture.architecture.NonoverlappingPairArchitecture(als['R1'], als['R2'], self.editing_strategy)
             else:
-                architecture = self.categorizer(als, self.target_info, mode=self.architecture_mode)
+                architecture = self.categorizer(als, self.editing_strategy, mode=self.architecture_mode)
 
             try:
                 diagram = architecture.plot(title='', **kwargs)
@@ -1292,7 +1292,7 @@ class Experiment:
         else:
             als = qname_to_als[read_id]
 
-        architecture = self.categorizer(als, self.target_info, mode=self.architecture_mode)
+        architecture = self.categorizer(als, self.editing_strategy, mode=self.architecture_mode)
 
         return architecture
 
@@ -1399,9 +1399,6 @@ def get_exp_class(platform):
     elif platform == 'pacbio':
         from knock_knock.pacbio_experiment import PacbioExperiment
         exp_class = PacbioExperiment
-    elif platform == 'length_bias':
-        from knock_knock.length_bias_experiment import LengthBiasExperiment
-        exp_class = LengthBiasExperiment
     else:
         exp_class = Experiment
 

@@ -1,6 +1,6 @@
 experiment_type: prime_editing
-target_info: PMID31634902_FANCF
-target_info_kwargs:
+editing_strategy: PMID31634902_FANCF
+strategy_kwargs:
   sgRNAs: FANCF_4h_1AtoC_6GtoT;FANCF_4d_+48_nicking
 expected_values:
   010288015:0000000009:

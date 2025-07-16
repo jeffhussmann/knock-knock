@@ -10,7 +10,7 @@ import hits.utilities
 
 import knock_knock.outcome
 import knock_knock.pegRNAs
-import knock_knock.target_info
+import knock_knock.editing_strategy
 
 memoized_property = hits.utilities.memoized_property
 
@@ -35,17 +35,17 @@ class BoundaryProperties:
         self.joint_array = hits.utilities.counts_to_array(counts, dim=2) / self.total_outcomes
 
     def count_single_flap_boundaries(self, exp, include_intended_edit=False, max_reads=None):
-        ti = exp.target_info
+        strat = exp.editing_strategy
 
         if include_intended_edit:
-            pegRNA_name = ti.pegRNA.name
-            pegRNA_HA_RT = ti.features[pegRNA_name, f'HA_RT_{pegRNA_name}']
-            pegRNA_PBS = ti.features[pegRNA_name, 'PBS']
+            pegRNA_name = strat.pegRNA.name
+            pegRNA_HA_RT = strat.features[pegRNA_name, f'HA_RT_{pegRNA_name}']
+            pegRNA_PBS = strat.features[pegRNA_name, 'PBS']
             last_HA_RT_nt_in_pegRNA = pegRNA_PBS.end - pegRNA_HA_RT.start
 
-            target_PBS_name = ti.PBS_names_by_side_of_read[ti.pegRNA_side]
-            target_PBS = ti.features[ti.target, target_PBS_name]
-            target_HA_RT = ti.features[ti.target, f'HA_RT_{pegRNA_name}']
+            target_PBS_name = strat.PBS_names_by_side_of_read[strat.pegRNA_side]
+            target_PBS = strat.features[strat.target, target_PBS_name]
+            target_HA_RT = strat.features[strat.target, f'HA_RT_{pegRNA_name}']
 
             # By definition, the nt on the PAM-distal side of the nick
             # is zero in the coordinate system, and postive values go towards
@@ -74,9 +74,9 @@ class BoundaryProperties:
 
                 self.MH_nts_distribution[ur_outcome.MH_nts] += 1
 
-                self.edge_distributions['pegRNA', 'RT\'ed'][ur_outcome.edges[ti.pegRNA_side]] += 1
-                if ur_outcome.edges[ti.non_pegRNA_side] is not None:
-                    self.edge_distributions['target', 'not RT\'ed'][ur_outcome.edges[ti.non_pegRNA_side] + ur_outcome.MH_nts] += 1
+                self.edge_distributions['pegRNA', 'RT\'ed'][ur_outcome.edges[strat.pegRNA_side]] += 1
+                if ur_outcome.edges[strat.non_pegRNA_side] is not None:
+                    self.edge_distributions['target', 'not RT\'ed'][ur_outcome.edges[strat.non_pegRNA_side] + ur_outcome.MH_nts] += 1
 
                     joint_key = (outcome.subcategory, ur_outcome.edges['left'], ur_outcome.edges['right'])
                     self.joint_distribution[joint_key] += 1
@@ -88,7 +88,7 @@ class BoundaryProperties:
         return self
 
     def count_dual_flap_boundaries(self, exp):
-        ti = exp.target_info
+        strat = exp.editing_strategy
 
         for outcome in exp.outcome_iter():
             if outcome.category != 'nonspecific amplification':
@@ -136,11 +136,11 @@ class BoundaryProperties:
         return xs, ys
 
 class EfficientBoundaryProperties:
-    def __init__(self, target_info, counts, aggregate_conditions=None, include_intended_edit=False):
+    def __init__(self, editing_strategy, counts, aggregate_conditions=None, include_intended_edit=False):
         if 'nonspecific amplification' in counts.index:
             counts = counts.drop('nonspecific amplification')
         
-        self.target_info = target_info
+        self.editing_strategy = editing_strategy
 
         if isinstance(counts, pd.Series):
             counts = counts.to_frame()
@@ -165,9 +165,9 @@ class EfficientBoundaryProperties:
     @memoized_property
     def pegRNA_coords(self):
         if self.include_intended_edit:
-            pegRNA_name = self.target_info.pegRNA.name
-            pegRNA_HA_RT = self.target_info.features[pegRNA_name, f'HA_RT_{pegRNA_name}']
-            pegRNA_PBS = self.target_info.features[pegRNA_name, 'PBS']
+            pegRNA_name = self.editing_strategy.pegRNA.name
+            pegRNA_HA_RT = self.editing_strategy.features[pegRNA_name, f'HA_RT_{pegRNA_name}']
+            pegRNA_PBS = self.editing_strategy.features[pegRNA_name, 'PBS']
             last_HA_RT_nt_in_pegRNA = pegRNA_PBS.end - pegRNA_HA_RT.start
 
         def csd_to_pegRNA_coords(csd):
@@ -180,7 +180,7 @@ class EfficientBoundaryProperties:
             elif c == 'RTed sequence':
                 pegRNA_coord = details.pegRNA_edge
             else:
-                pegRNA_coord = details[f'{self.target_info.pegRNA_side}_rejoining_edge']
+                pegRNA_coord = details[f'{self.editing_strategy.pegRNA_side}_rejoining_edge']
 
             return pegRNA_coord
 
@@ -189,9 +189,9 @@ class EfficientBoundaryProperties:
     @memoized_property
     def target_coords(self):
         if self.include_intended_edit:
-            target_PBS_name = self.target_info.PBS_names_by_side_of_read[self.target_info.pegRNA_side]
-            target_PBS = self.target_info.features[self.target_info.target, target_PBS_name]
-            target_HA_RT = self.target_info.features[self.target_info.target, f'HA_RT_{self.target_info.pegRNA.name}']
+            target_PBS_name = self.editing_strategy.PBS_names_by_side_of_read[self.editing_strategy.pegRNA_side]
+            target_PBS = self.editing_strategy.features[self.editing_strategy.target, target_PBS_name]
+            target_HA_RT = self.editing_strategy.features[self.editing_strategy.target, f'HA_RT_{self.editing_strategy.pegRNA.name}']
 
             # By definition, the nt on the PAM-distal side of the nick
             # is zero in the coordinate system, and postive values go towards
@@ -213,7 +213,7 @@ class EfficientBoundaryProperties:
             elif c == 'RTed sequence':
                 target_coord = 0
             else:
-                target_coord = details[f'{self.target_info.non_pegRNA_side}_rejoining_edge']
+                target_coord = details[f'{self.editing_strategy.non_pegRNA_side}_rejoining_edge']
 
             return target_coord
 
@@ -242,11 +242,11 @@ class EfficientBoundaryProperties:
         return exp_sets
 
 class EfficientDualFlapBoundaryProperties:
-    def __init__(self, target_info, counts, aggregate_conditions=None):
+    def __init__(self, editing_strategy, counts, aggregate_conditions=None):
         if 'nonspecific amplification' in counts.index:
             counts = counts.drop('nonspecific amplification')
         
-        self.target_info = target_info
+        self.editing_strategy = editing_strategy
         self.counts = counts
 
         if aggregate_conditions is not None:
@@ -309,7 +309,7 @@ class EfficientDualFlapBoundaryProperties:
 
         return exp_sets
 
-def plot_single_flap_extension_chain_edges(target_info,
+def plot_single_flap_extension_chain_edges(editing_strategy,
                                            exp_sets,
                                            normalize=False,
                                            pegRNA_x_lims=None,
@@ -325,7 +325,7 @@ def plot_single_flap_extension_chain_edges(target_info,
                                            manual_title=None,
                                            manual_title_color=None,
                                           ):
-    ti = target_info
+    strat = editing_strategy
 
     if side_and_subcategories is None:
         side_and_subcategories = [
@@ -343,7 +343,7 @@ def plot_single_flap_extension_chain_edges(target_info,
 
     fig, axs = plt.subplots(2, 2, figsize=figsize)
 
-    if len(ti.pegRNAs) != 1:
+    if len(strat.pegRNAs) != 1:
         return fig, axs
 
     for ax_col, (side, subcategory_key) in zip(axs.T, side_and_subcategories):
@@ -374,16 +374,16 @@ def plot_single_flap_extension_chain_edges(target_info,
 
         if subcategory_key == 'RT\'ed':
 
-            if len(ti.pegRNAs) > 1:
-                pegRNA_name = ti.pegRNA_names_by_side_of_read[side]
+            if len(strat.pegRNAs) > 1:
+                pegRNA_name = strat.pegRNA_names_by_side_of_read[side]
             else:
-                pegRNA_name = ti.pegRNA.name
+                pegRNA_name = strat.pegRNA.name
 
             # By definition, the end of the PBS on this side's pegRNA 
             # is zero in the coordinate system.
-            PBS_end = ti.features[pegRNA_name, 'PBS'].end
+            PBS_end = strat.features[pegRNA_name, 'PBS'].end
 
-            pegRNA_length = len(ti.reference_sequences[pegRNA_name])
+            pegRNA_length = len(strat.reference_sequences[pegRNA_name])
 
             start = PBS_end - pegRNA_length - 0.5
             end = PBS_end + 0.5
@@ -397,12 +397,12 @@ def plot_single_flap_extension_chain_edges(target_info,
             end = min(end, pegRNA_x_max)
 
             ax.axvspan(start, end, y_start, y_start + ref_bar_height,
-                       facecolor=ti.pegRNA_name_to_color[pegRNA_name],
+                       facecolor=strat.pegRNA_name_to_color[pegRNA_name],
                        clip_on=False,
                       )
 
             if draw_sequence:
-                pegRNA_sequence = ti.reference_sequences[pegRNA_name]
+                pegRNA_sequence = strat.reference_sequences[pegRNA_name]
                 for x in range(int(np.ceil(start)), int(np.ceil(end))):
                     p = PBS_end - x
                     if 0 <= p < len(pegRNA_sequence):
@@ -433,23 +433,23 @@ def plot_single_flap_extension_chain_edges(target_info,
 
             feature_aliases = {}
 
-            if ti.pegRNA_programmed_insertion_features:
-                for insertion_feature in ti.pegRNA_programmed_insertion_features:
+            if strat.pegRNA_programmed_insertion_features:
+                for insertion_feature in strat.pegRNA_programmed_insertion_features:
                     features_to_annotate.append(insertion_feature.ID)
                     feature_aliases[insertion_feature.ID] = 'insertion'
 
-                features_to_annotate.append(f'HA_RT_{ti.pegRNA.name}')
-                feature_aliases[f'HA_RT_{ti.pegRNA.name}'] = 'homology\narm'
+                features_to_annotate.append(f'HA_RT_{strat.pegRNA.name}')
+                feature_aliases[f'HA_RT_{strat.pegRNA.name}'] = 'homology\narm'
 
             else:
                 features_to_annotate.append('RTT')
 
             for feature_name in features_to_annotate:
-                feature = ti.features[pegRNA_name, feature_name]
+                feature = strat.features[pegRNA_name, feature_name]
                 color = feature.attribute['color']
 
                 if feature_name == 'protospacer':
-                    color = ti.pegRNA_name_to_color[pegRNA_name]
+                    color = strat.pegRNA_name_to_color[pegRNA_name]
 
                 # Moving back from the PBS end is moving
                 # forward in the coordinate system.
@@ -497,7 +497,7 @@ def plot_single_flap_extension_chain_edges(target_info,
                             weight='bold',
                            )
 
-            new_zero = len(ti.sgRNA_components[pegRNA_name]['PBS']) - 1
+            new_zero = len(strat.sgRNA_components[pegRNA_name]['PBS']) - 1
             new_ticks = [t for t in np.arange(-100, 300, 10) + new_zero if pegRNA_x_min <= t <= pegRNA_x_max]
             new_labels = [str(t - new_zero) for t in new_ticks]
 
@@ -513,7 +513,7 @@ def plot_single_flap_extension_chain_edges(target_info,
                 title = manual_title
 
             if manual_title_color is None:
-                title_color = ti.pegRNA_name_to_color[pegRNA_name]
+                title_color = strat.pegRNA_name_to_color[pegRNA_name]
             else:
                 title_color = manual_title_color
 
@@ -523,9 +523,9 @@ def plot_single_flap_extension_chain_edges(target_info,
             ax_col[1].set_xlabel('End of reverse transcribed sequence')
 
             if annotate_structure:
-                flipped_total_bpps, flipped_propensity = ti.pegRNA.RTT_structure
+                flipped_total_bpps, flipped_propensity = strat.pegRNA.RTT_structure
 
-                components = ti.sgRNA_components[pegRNA_name]
+                components = strat.sgRNA_components[pegRNA_name]
                 xs = np.arange(len(components['PBS']), len(components['PBS'] + components['RTT']))
 
                 bpps_ax = ax.twinx()
@@ -567,8 +567,8 @@ def plot_single_flap_extension_chain_edges(target_info,
 
             colors = {}
 
-            for pegRNA_name in ti.pegRNA_names:
-                color = ti.pegRNA_name_to_color[pegRNA_name]
+            for pegRNA_name in strat.pegRNA_names:
+                color = strat.pegRNA_name_to_color[pegRNA_name]
                 light_color = hits.visualize.apply_alpha(color, 0.5)
                 ps_name = knock_knock.pegRNAs.protospacer_name(pegRNA_name)
                 colors[ps_name] = light_color
@@ -576,15 +576,15 @@ def plot_single_flap_extension_chain_edges(target_info,
                 PAM_name = f'{ps_name}_PAM'
                 colors[PAM_name] = color
 
-            for primer_name in ti.primer_names:
+            for primer_name in strat.primer_names:
                 colors[primer_name] = 'grey'
 
-            if len(ti.pegRNA_names) == 1:
-                pegRNA_name = ti.pegRNA_names[0]
+            if len(strat.pegRNA_names) == 1:
+                pegRNA_name = strat.pegRNA_names[0]
             else:
-                pegRNA_name = ti.pegRNA_names_by_side_of_read[side]
+                pegRNA_name = strat.pegRNA_names_by_side_of_read[side]
 
-            PBS = ti.features[ti.target, knock_knock.pegRNAs.PBS_name(pegRNA_name)]
+            PBS = strat.features[strat.target, knock_knock.pegRNAs.PBS_name(pegRNA_name)]
 
             # By definition, the nt on the PAM-distal side of the nick
             # is zero in the coordinate system, and postive values go towards
@@ -593,7 +593,7 @@ def plot_single_flap_extension_chain_edges(target_info,
             # 24.12.05: having trouble reconciling comment above with code. 
             # Should it be "PAM-proximal side of the nick"?
 
-            feature_names = ti.protospacer_names + list(ti.PAM_features) + ti.primer_names
+            feature_names = strat.protospacer_names + list(strat.PAM_features) + strat.primer_names
 
             if draw_genomic_homology:
                 feature_names.append(f'HA_RT_{pegRNA_name}')
@@ -612,14 +612,14 @@ def plot_single_flap_extension_chain_edges(target_info,
             if target_x_lims is not None:
                 target_x_min, target_x_max = target_x_lims
             else:
-                target_x_min, target_x_max = target_bounds_to_xs(ti.amplicon_interval.start, ti.amplicon_interval.end)
+                target_x_min, target_x_max = target_bounds_to_xs(strat.amplicon_interval.start, strat.amplicon_interval.end)
 
             for feature_name in feature_names:
-                if (ti.target, feature_name) not in ti.features:
+                if (strat.target, feature_name) not in strat.features:
                     # 3b spacer
                     continue
 
-                feature = ti.features[ti.target, feature_name]
+                feature = strat.features[strat.target, feature_name]
                 
                 start, end = target_bounds_to_xs(feature.start, feature.end)
 
@@ -662,7 +662,7 @@ def plot_single_flap_extension_chain_edges(target_info,
 
             ax.axvspan(target_x_min, target_x_max, y_start, y_start + ref_bar_height, facecolor='C0', clip_on=False)
 
-            for cut_after_name, cut_after in ti.cut_afters.items():
+            for cut_after_name, cut_after in strat.cut_afters.items():
                 # Potentially confusing - if PBS is on the plus strand, cut_after is -1 in nick coords,
                 # but if PBS is on the minus strand, cut_after is 0 in nick coords. In either case,
                 # just take actual cut position (cut_after + 0.5) in target coords and convert it.
@@ -678,9 +678,9 @@ def plot_single_flap_extension_chain_edges(target_info,
                     cut_y_middle = ref_y
                     cut_y_top = ref_y + feature_height
 
-                    if (strand == '+' and ti.sequencing_direction == '+') or (strand == '-' and ti.sequencing_direction == '-'):
+                    if (strand == '+' and strat.sequencing_direction == '+') or (strand == '-' and strat.sequencing_direction == '-'):
                         ys = [cut_y_middle, cut_y_top]
-                    elif (strand == '-' and ti.sequencing_direction == '+') or (strand == '+' and ti.sequencing_direction == '-'):
+                    elif (strand == '-' and strat.sequencing_direction == '+') or (strand == '+' and strat.sequencing_direction == '-'):
                         ys = [cut_y_bottom, cut_y_middle]
                     else:
                         ys = [cut_y_bottom, cut_y_top]
@@ -746,12 +746,15 @@ def plot_single_flap_extension_chain_edges(target_info,
 
     return fig, axs
 
-def plot_dual_flap_extension_chain_edges(ti,
+def plot_dual_flap_extension_chain_edges(editing_strategy,
                                          exp_sets,
                                          cumulative=False,
                                          normalize=False,
                                          x_lims=(-100, 150),
                                         ):
+
+    strat = editing_strategy
+
     # Common parameters.
     ref_bar_height = 0.02
     feature_height = 0.03
@@ -784,26 +787,26 @@ def plot_dual_flap_extension_chain_edges(ti,
 
                 ax.plot(xs, ys, 'o-', label=set_name, markersize=marker_size, color=color, alpha=0.5)
 
-            pegRNA_name = ti.pegRNA_names_by_side_of_read[side]
+            pegRNA_name = strat.pegRNA_names_by_side_of_read[side]
             protospacer_name = knock_knock.pegRNAs.protospacer_name(pegRNA_name)
 
-            PBS_name = ti.PBS_names_by_side_of_read[side]
-            PBS = ti.features[ti.target, PBS_name]
+            PBS_name = strat.PBS_names_by_side_of_read[side]
+            PBS = strat.features[strat.target, PBS_name]
 
-            other_pegRNA_name = ti.pegRNA_names_by_side_of_read[knock_knock.target_info.other_side[side]]
-            other_PBS_name = ti.PBS_names_by_side_of_read[knock_knock.target_info.other_side[side]]
+            other_pegRNA_name = strat.pegRNA_names_by_side_of_read[knock_knock.editing_strategy.other_side[side]]
+            other_PBS_name = strat.PBS_names_by_side_of_read[knock_knock.editing_strategy.other_side[side]]
             other_protospacer_name = knock_knock.pegRNAs.protospacer_name(other_pegRNA_name)
             PAM_name = f'{protospacer_name}_PAM'
             other_PAM_name = f'{other_protospacer_name}_PAM'
 
             colors = {
-                protospacer_name: hits.visualize.apply_alpha(ti.pegRNA_name_to_color[pegRNA_name], 0.5),
-                other_protospacer_name: hits.visualize.apply_alpha(ti.pegRNA_name_to_color[other_pegRNA_name], 0.5),
-                PAM_name: ti.pegRNA_name_to_color[pegRNA_name],
-                other_PAM_name: ti.pegRNA_name_to_color[other_pegRNA_name],
+                protospacer_name: hits.visualize.apply_alpha(strat.pegRNA_name_to_color[pegRNA_name], 0.5),
+                other_protospacer_name: hits.visualize.apply_alpha(strat.pegRNA_name_to_color[other_pegRNA_name], 0.5),
+                PAM_name: strat.pegRNA_name_to_color[pegRNA_name],
+                other_PAM_name: strat.pegRNA_name_to_color[other_pegRNA_name],
             }
 
-            for primer_name in ti.primer_names:
+            for primer_name in strat.primer_names:
                 colors[primer_name] = 'lightgrey'
 
             # By definition, the nt on the PAM-distal side of the nick
@@ -818,10 +821,10 @@ def plot_dual_flap_extension_chain_edges(ti,
                 PBS_name, other_PBS_name,
                 PAM_name,
                 other_PAM_name
-            ] + ti.primer_names
+            ] + strat.primer_names
 
             for feature_name in feature_names:
-                feature = ti.features[ti.target, feature_name]
+                feature = strat.features[strat.target, feature_name]
                 
                 # Moving towards the other nick is moving
                 # forward in the coordinate system.
@@ -846,7 +849,7 @@ def plot_dual_flap_extension_chain_edges(ti,
 
             ax.axvspan(x_lims[0], x_lims[1], y_start, y_start + ref_bar_height, facecolor='C0', clip_on=False)
 
-            for cut_after_name, cut_after in ti.cut_afters.items():
+            for cut_after_name, cut_after in strat.cut_afters.items():
                 if PBS.strand == '+':
                     x = cut_after - PBS.end
                 else:
@@ -859,9 +862,9 @@ def plot_dual_flap_extension_chain_edges(ti,
                 cut_y_middle = ref_y
                 cut_y_top = ref_y + feature_height
 
-                if (strand == '+' and ti.sequencing_direction == '+') or (strand == '-' and ti.sequencing_direction == '-'):
+                if (strand == '+' and strat.sequencing_direction == '+') or (strand == '-' and strat.sequencing_direction == '-'):
                     ys = [cut_y_middle, cut_y_top]
-                elif (strand == '-' and ti.sequencing_direction == '+') or (strand == '+' and ti.sequencing_direction == '-'):
+                elif (strand == '-' and strat.sequencing_direction == '+') or (strand == '+' and strat.sequencing_direction == '-'):
                     ys = [cut_y_bottom, cut_y_middle]
                 else:
                     raise ValueError
@@ -912,23 +915,23 @@ def plot_dual_flap_extension_chain_edges(ti,
 
             ax.plot(xs, ys, 'o-', label=set_name, markersize=marker_size, color=color, alpha=0.5)
 
-        pegRNA_name = ti.pegRNA_names_by_side_of_read[side]
+        pegRNA_name = strat.pegRNA_names_by_side_of_read[side]
 
         # By definition, the end of the PBS on this side's pegRNA 
         # is zero in the coordinate system.
-        PBS_end = ti.features[pegRNA_name, 'PBS'].end
+        PBS_end = strat.features[pegRNA_name, 'PBS'].end
 
         y_start = -0.1
 
         for feature_name in ['PBS', 'RTT', 'overlap', 'scaffold', 'protospacer']:
-            feature = ti.features[pegRNA_name, feature_name]
+            feature = strat.features[pegRNA_name, feature_name]
 
             # On this side's pegRNA, moving back from the PBS end is moving
             # forward in the coordinate system.
             start, end = PBS_end - feature.end - 0.5, PBS_end - feature.start + 0.5
             
             ax.axvspan(start, end, y_start, y_start + ref_bar_height,
-                       facecolor=ti.pegRNA_name_to_color[pegRNA_name],
+                       facecolor=strat.pegRNA_name_to_color[pegRNA_name],
                        clip_on=False,
                       )
             ax.axvspan(start, end, y_start + ref_bar_height, y_start + ref_bar_height + feature_height,
@@ -976,56 +979,56 @@ def plot_dual_flap_extension_chain_edges(ti,
 
             ax.plot(xs, ys, '.-', label=set_name, color=color, alpha=0.5)
 
-        pegRNA_name = ti.pegRNA_names_by_side_of_read[side]
-        other_pegRNA_name = ti.pegRNA_names_by_side_of_read[knock_knock.target_info.other_side[side]]
+        pegRNA_name = strat.pegRNA_names_by_side_of_read[side]
+        other_pegRNA_name = strat.pegRNA_names_by_side_of_read[knock_knock.editing_strategy.other_side[side]]
 
         # By definition, the end of the PBS on this side's pegRNA 
         # is zero in the coordinate system.
-        PBS_end = ti.features[pegRNA_name, 'PBS'].end
+        PBS_end = strat.features[pegRNA_name, 'PBS'].end
 
         y_start = -0.2
 
         for feature_name in ['PBS', 'RTT', 'overlap']:
-            feature = ti.features[pegRNA_name, feature_name]
+            feature = strat.features[pegRNA_name, feature_name]
             
             # On this side's pegRNA, moving back from the PBS end is moving
             # forward in the coordinate system.
             start, end = PBS_end - feature.end - 0.5, PBS_end - feature.start + 0.5
             
-            ax.axvspan(start, end, y_start, y_start + ref_bar_height, facecolor=ti.pegRNA_name_to_color[pegRNA_name], clip_on=False)
+            ax.axvspan(start, end, y_start, y_start + ref_bar_height, facecolor=strat.pegRNA_name_to_color[pegRNA_name], clip_on=False)
             ax.axvspan(start, end, y_start + ref_bar_height, y_start + ref_bar_height + feature_height, facecolor=feature.attribute['color'], alpha=0.75, clip_on=False)
             
         # The left side of the pegRNA overlap in the coordinate system is the 
         # end of the overlap feature on this side's pegRNA.
-        overlap_start = PBS_end - ti.features[pegRNA_name, 'overlap'].end
+        overlap_start = PBS_end - strat.features[pegRNA_name, 'overlap'].end
 
-        other_overlap = ti.features[other_pegRNA_name, 'overlap']
+        other_overlap = strat.features[other_pegRNA_name, 'overlap']
 
         overlap_start_offset = overlap_start - other_overlap.start
 
         y_start = y_start + ref_bar_height + feature_height + gap_between_refs
 
         for feature_name in ['PBS', 'RTT', 'overlap']:
-            feature = ti.features[other_pegRNA_name, feature_name]
+            feature = strat.features[other_pegRNA_name, feature_name]
             
             start, end = overlap_start_offset + feature.start - 0.5, overlap_start_offset + feature.end + 0.5
             
-            ax.axvspan(start, end, y_start, y_start + ref_bar_height, facecolor=ti.pegRNA_name_to_color[other_pegRNA_name], clip_on=False)
+            ax.axvspan(start, end, y_start, y_start + ref_bar_height, facecolor=strat.pegRNA_name_to_color[other_pegRNA_name], clip_on=False)
             ax.axvspan(start, end, y_start + ref_bar_height, y_start + ref_bar_height + feature_height, facecolor=feature.attribute['color'], alpha=0.75, clip_on=False)
             
-        other_PBS_name = ti.PBS_names_by_side_of_read[knock_knock.target_info.other_side[side]]
+        other_PBS_name = strat.PBS_names_by_side_of_read[knock_knock.editing_strategy.other_side[side]]
         other_protospacer_name = knock_knock.pegRNAs.protospacer_name(other_pegRNA_name)
-        other_PBS_target = ti.features[ti.target, other_PBS_name]
+        other_PBS_target = strat.features[strat.target, other_PBS_name]
             
-        other_PBS_start_offset = overlap_start_offset + ti.features[other_pegRNA_name, 'PBS'].start
+        other_PBS_start_offset = overlap_start_offset + strat.features[other_pegRNA_name, 'PBS'].start
 
         y_start = y_start + ref_bar_height + feature_height + gap_between_refs
 
         for feature_name in [other_protospacer_name,
-                                other_PBS_name,
-                                ti.primers_by_side_of_read[knock_knock.target_info.other_side[side]].ID,
+                             other_PBS_name,
+                             strat.primers_by_side_of_read[knock_knock.editing_strategy.other_side[side]].ID,
                             ]:
-            feature = ti.features[ti.target, feature_name]
+            feature = strat.features[strat.target, feature_name]
             
             if other_PBS_target.strand == '+':
                 start, end = other_PBS_start_offset + (other_PBS_target.end - feature.end) - 0.5, other_PBS_start_offset + (other_PBS_target.end - feature.start) + 0.5
@@ -1068,8 +1071,8 @@ def plot_dual_flap_extension_chain_edges(ti,
 
     return figs
 
-def plot_joint_RT_edges(target_info, exp_sets, v_max=0.4):
-    ti = target_info
+def plot_joint_RT_edges(editing_strategy, exp_sets, v_max=0.4):
+    strat = editing_strategy
 
     for set_name in exp_sets:
         results = exp_sets[set_name]['results']
@@ -1114,23 +1117,23 @@ def plot_joint_RT_edges(target_info, exp_sets, v_max=0.4):
         ref_bar_height = 0.025
         feature_height = 0.025
         
-        pegRNA_name = target_info.pegRNA_names_by_side_of_read['right']
+        pegRNA_name = strat.pegRNA_names_by_side_of_read['right']
 
         # By definition, the end of the PBS on this side's pegRNA 
         # is zero in the coordinate system.
-        PBS_end = ti.features[pegRNA_name, 'PBS'].end
+        PBS_end = strat.features[pegRNA_name, 'PBS'].end
 
         y_start = -3 * (ref_bar_height + feature_height)
 
         for feature_name in ['PBS', 'RTT', 'overlap', 'scaffold', 'protospacer']:
-            feature = ti.features[pegRNA_name, feature_name]
+            feature = strat.features[pegRNA_name, feature_name]
 
             # On this side's pegRNA, moving back from the PBS end is moving
             # forward in the coordinate system.
             start, end = PBS_end - feature.end - 0.5, PBS_end - feature.start + 0.5
 
             ax.axvspan(start, end, y_start, y_start + ref_bar_height,
-                    facecolor=target_info.pegRNA_name_to_color[pegRNA_name],
+                    facecolor=strat.pegRNA_name_to_color[pegRNA_name],
                     clip_on=False,
                     )
             
@@ -1144,24 +1147,24 @@ def plot_joint_RT_edges(target_info, exp_sets, v_max=0.4):
                 ax.axvline(start, color=feature.attribute['color'])
                 ax.axvline(end, color=feature.attribute['color'])
             
-        pegRNA_name = target_info.pegRNA_names_by_side_of_read['left']
+        pegRNA_name = strat.pegRNA_names_by_side_of_read['left']
 
         # By definition, the end of the PBS on this side's pegRNA 
         # is zero in the coordinate system.
         
-        PBS_end = ti.features[pegRNA_name, 'PBS'].end
+        PBS_end = strat.features[pegRNA_name, 'PBS'].end
 
         x_start = -2 * (ref_bar_height + feature_height)
 
         for feature_name in ['PBS', 'RTT', 'overlap', 'scaffold', 'protospacer']:
-            feature = ti.features[pegRNA_name, feature_name]
+            feature = strat.features[pegRNA_name, feature_name]
 
             # On this side's pegRNA, moving back from the PBS end is moving
             # forward in the coordinate system.
             start, end = PBS_end - feature.end - 0.5, PBS_end - feature.start + 0.5
 
             ax.axhspan(start, end, x_start, x_start - ref_bar_height, 
-                       facecolor=target_info.pegRNA_name_to_color[pegRNA_name],
+                       facecolor=strat.pegRNA_name_to_color[pegRNA_name],
                        clip_on=False,
                       )
             

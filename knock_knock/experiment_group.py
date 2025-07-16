@@ -1,6 +1,4 @@
 import logging
-import multiprocessing
-import os
 
 import pandas as pd
 import scipy.sparse
@@ -110,7 +108,7 @@ class ExperimentGroup:
             logger.warning(f'Failed to make deletion boundaries figure for {self}')
             logger.warning(e)
 
-        if len(self.target_info.pegRNAs) == 1:
+        if len(self.editing_strategy.pegRNAs) == 1:
             try:
                 for fn_key, kwargs in [
                     (
@@ -172,7 +170,7 @@ class ExperimentGroup:
         elif condition_labels is None:
             condition_labels = self.condition_labels
 
-        grid = knock_knock.visualize.stacked.make_partial_incorporation_figure(self.target_info,
+        grid = knock_knock.visualize.stacked.make_partial_incorporation_figure(self.editing_strategy,
                                                                                self.outcome_fractions(),
                                                                                self.pegRNA_conversion_fractions,
                                                                                conditions=conditions,
@@ -205,7 +203,7 @@ class ExperimentGroup:
         elif condition_labels is None:
             condition_labels = self.condition_labels
 
-        grid = knock_knock.visualize.stacked.make_deletion_boundaries_figure(self.target_info,
+        grid = knock_knock.visualize.stacked.make_deletion_boundaries_figure(self.editing_strategy,
                                                                              self.outcome_fractions(),
                                                                              self.deletion_boundaries,
                                                                              conditions=conditions,
@@ -243,7 +241,7 @@ class ExperimentGroup:
         else:
             aggregate_conditions = None
 
-        bps = knock_knock.visualize.rejoining_boundaries.EfficientBoundaryProperties(self.target_info,
+        bps = knock_knock.visualize.rejoining_boundaries.EfficientBoundaryProperties(self.editing_strategy,
                                                                                      self.outcome_counts(),
                                                                                      aggregate_conditions=aggregate_conditions,
                                                                                      include_intended_edit=include_intended_edit,
@@ -290,7 +288,7 @@ class ExperimentGroup:
         else:
             aggregate_conditions = None
 
-        bps = knock_knock.visualize.rejoining_boundaries.EfficientDualFlapBoundaryProperties(self.target_info,
+        bps = knock_knock.visualize.rejoining_boundaries.EfficientDualFlapBoundaryProperties(self.editing_strategy,
                                                                                              self.outcome_counts(),
                                                                                              aggregate_conditions=aggregate_conditions,
                                                                                             )
@@ -333,18 +331,18 @@ class ExperimentGroup:
                                                              min_reads=min_reads,
                                                             )
 
-        fig, axs = knock_knock.visualize.rejoining_boundaries.plot_single_flap_extension_chain_edges(self.target_info,
+        fig, axs = knock_knock.visualize.rejoining_boundaries.plot_single_flap_extension_chain_edges(self.editing_strategy,
                                                                                                      exp_sets,
                                                                                                      **plot_kwargs,
                                                                                                     ) 
 
         if plot_kwargs.get('include_genome', True):
-            if self.target_info.sgRNAs is not None:
-                sgRNAs = ','.join(self.target_info.sgRNAs)
+            if self.editing_strategy.sgRNAs is not None:
+                sgRNAs = ','.join(self.editing_strategy.sgRNAs)
             else:
                 sgRNAs = 'no sgRNAs'
 
-            fig.suptitle(f'{self.target_info.target} - {sgRNAs}')
+            fig.suptitle(f'{self.editing_strategy.target} - {sgRNAs}')
 
         return fig, axs
 

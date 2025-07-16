@@ -1,6 +1,6 @@
 experiment_type: prime_editing
-target_info: pPC1000
-target_info_kwargs:
+editing_strategy: pPC1000
+strategy_kwargs:
   sgRNAs: pPC1044
   primer_names: gDNA_forward_primer;gDNA_reverse_primer
 expected_values:

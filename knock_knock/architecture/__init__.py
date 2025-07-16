@@ -14,9 +14,9 @@ memoized_with_args = utilities.memoized_with_args
 idx = pd.IndexSlice
 
 class Categorizer:
-    def __init__(self, alignments, target_info, **kwargs):
+    def __init__(self, alignments, editing_strategy, **kwargs):
         self.alignments = [al for al in alignments if not al.is_unmapped]
-        self.target_info = target_info
+        self.editing_strategy = editing_strategy
 
         alignment = alignments[0]
 
@@ -56,7 +56,7 @@ class Categorizer:
 
     @property
     def primary_ref_names(self):
-        return set(self.target_info.reference_sequences)
+        return set(self.editing_strategy.reference_sequences)
 
     @memoized_property
     def primary_alignments(self):
@@ -75,19 +75,19 @@ class Categorizer:
         return interval.Interval(edge_length, len(self.seq) - 1 - edge_length)
 
     @classmethod
-    def from_read(cls, read, target_info):
-        al = pysam.AlignedSegment(target_info.header)
+    def from_read(cls, read, editing_strategy):
+        al = pysam.AlignedSegment(editing_strategy.header)
         al.query_sequence = read.seq
         al.query_qualities = read.qual
         al.query_name = read.name
-        return cls([al], target_info)
+        return cls([al], editing_strategy)
     
     @classmethod
-    def from_seq(cls, seq, target_info):
-        al = pysam.AlignedSegment(target_info.header)
+    def from_seq(cls, seq, editing_strategy):
+        al = pysam.AlignedSegment(editing_strategy.header)
         al.query_sequence = seq
         al.query_qualities = [41]*len(seq)
-        return cls([al], target_info)
+        return cls([al], editing_strategy)
 
     @classmethod
     def full_index(cls):
@@ -152,7 +152,7 @@ class Categorizer:
             category, subcats = cls.category_order[c]
             return category
 
-    def q_to_feature_offset(self, al, feature_name, target_info=None):
+    def q_to_feature_offset(self, al, feature_name, editing_strategy=None):
         ''' Returns dictionary of 
                 {true query position: offset into feature relative to its strandedness
                  (i.e. from the start of + stranded and from the right of - stranded)
@@ -161,14 +161,14 @@ class Categorizer:
         if al is None:
             return {}
 
-        if target_info is None:
-            target_info = self.target_info
+        if editing_strategy is None:
+            editing_strategy = self.editing_strategy
 
-        if (al.reference_name, feature_name) not in target_info.features:
+        if (al.reference_name, feature_name) not in editing_strategy.features:
             return {}
 
-        ref_p_to_feature_offset = target_info.ref_p_to_feature_offset(al.reference_name, feature_name)
-        seq = target_info.reference_sequences[al.reference_name]
+        ref_p_to_feature_offset = editing_strategy.ref_p_to_feature_offset(al.reference_name, feature_name)
+        seq = editing_strategy.reference_sequences[al.reference_name]
         
         q_to_feature_offset = {}
         
@@ -178,12 +178,12 @@ class Categorizer:
                 
         return q_to_feature_offset
 
-    def feature_offset_to_q(self, al, feature_name, target_info=None):
-        return utilities.reverse_dictionary(self.q_to_feature_offset(al, feature_name, target_info=target_info))
+    def feature_offset_to_q(self, al, feature_name, editing_strategy=None):
+        return utilities.reverse_dictionary(self.q_to_feature_offset(al, feature_name, editing_strategy=editing_strategy))
 
-    def feature_query_interval(self, al, feature_name, target_info=None):
+    def feature_query_interval(self, al, feature_name, editing_strategy=None):
         ''' Returns the query interval aligned to feature_name by al. '''
-        qs = self.q_to_feature_offset(al, feature_name, target_info=target_info)
+        qs = self.q_to_feature_offset(al, feature_name, editing_strategy=editing_strategy)
         if len(qs) == 0:
             return interval.Interval.empty()
         else:
@@ -209,7 +209,7 @@ class Categorizer:
                                                    right_al, right_feature_name,
                                                    contribution_test=lambda al: False,
                                                   ):
-        ti = self.target_info
+        strat = self.editing_strategy
         
         results = None
 
@@ -229,8 +229,8 @@ class Categorizer:
         else: 
             switch_results = sam.find_best_query_switch_after(left_al,
                                                               right_al,
-                                                              ti.reference_sequences[left_al.reference_name],
-                                                              ti.reference_sequences[right_al.reference_name],
+                                                              strat.reference_sequences[left_al.reference_name],
+                                                              strat.reference_sequences[right_al.reference_name],
                                                               min,
                                                              )
                                                         
@@ -325,9 +325,9 @@ class Categorizer:
         generation may fail to identify a potentially relevant alignment.
         ''' 
 
-        ti = self.target_info
+        strat = self.editing_strategy
 
-        feature_in_alignment = ti.features[alignment_to_extend.reference_name, feature_name_in_alignment]
+        feature_in_alignment = strat.features[alignment_to_extend.reference_name, feature_name_in_alignment]
         feature_al = sam.crop_al_to_feature(alignment_to_extend, feature_in_alignment)
 
         # Only extend if the alignment cleanly covers the whole feature.
@@ -351,14 +351,14 @@ class Categorizer:
             # Get the ref interval covered.
 
             feature_offsets = self.q_to_feature_offset(feature_al, feature_name_in_alignment).values()
-            ref_ps = [self.target_info.feature_offset_to_ref_p(ref_to_search, feature_name_in_ref)[fo] for fo in feature_offsets]
+            ref_ps = [strat.feature_offset_to_ref_p(ref_to_search, feature_name_in_ref)[fo] for fo in feature_offsets]
 
             if len(ref_ps) == 0:
                 raise ValueError
             else:
                 ref_interval = interval.Interval(min(ref_ps), max(ref_ps))
 
-            feature_in_ref = ti.features[ref_to_search, feature_name_in_ref]
+            feature_in_ref = strat.features[ref_to_search, feature_name_in_ref]
 
             # Figure out the strand.
             if feature_in_ref.strand == feature_in_alignment.strand:
@@ -366,7 +366,7 @@ class Categorizer:
             else:
                 is_reverse = not feature_al.is_reverse
 
-            al = pysam.AlignedSegment(ti.header)
+            al = pysam.AlignedSegment(strat.header)
 
             al.query_sequence = self.seq
             al.query_qualities = self.qual
@@ -394,14 +394,14 @@ class Categorizer:
 
             al.reference_start = ref_interval.start
 
-            extended_al = sw.extend_alignment(al, ti.reference_sequence_bytes[ref_to_search])
+            extended_al = sw.extend_alignment(al, strat.reference_sequence_bytes[ref_to_search])
         else:
             extended_al = None
 
         return extended_al
 
     def edits(self, al):
-        return edit_positions(al, self.target_info.reference_sequences).sum()
+        return edit_positions(al, self.editing_strategy.reference_sequences).sum()
 
     def als_with_min_edits(self, als):
         decorated_als = sorted([(self.edits(al), al) for al in als], key=lambda t: t[0])
@@ -439,12 +439,12 @@ class Categorizer:
 
         buffer_length = 5
 
-        target_seq = self.target_info.target_sequence
+        target_seq = self.editing_strategy.target_sequence
 
         edge_als = []
 
         for amplicon_side in [5, 3]:
-            primer = self.target_info.primers_by_side_of_target[amplicon_side]
+            primer = self.editing_strategy.primers_by_side_of_target[amplicon_side]
 
             if amplicon_side == 5:
                 amplicon_slice = idx[primer.start:primer.end + 1 + buffer_length]
@@ -516,8 +516,8 @@ class Categorizer:
                     al.query_sequence = seq
                     al.query_qualities = qual
                     al_dict = al.to_dict()
-                    al_dict['ref_name'] = self.target_info.target
-                    edge_al = pysam.AlignedSegment.from_dict(al_dict, self.target_info.header)
+                    al_dict['ref_name'] = self.editing_strategy.target
+                    edge_al = pysam.AlignedSegment.from_dict(al_dict, self.editing_strategy.header)
                     edge_als.append((edits_in_primer, edge_al))
 
         edge_als = sorted(edge_als, key=lambda t: t[0])
@@ -530,14 +530,14 @@ class Categorizer:
         return edge_al
 
 class NoOverlapPairCategorizer(Categorizer):
-    def __init__(self, alignments, target_info):
+    def __init__(self, alignments, editing_strategy):
         self.alignments = alignments
-        self.target_info = target_info
+        self.editing_strategy = editing_strategy
         self._flipped = False
 
         self.architecture = {
-            'R1': type(self).individual_architecture_class(alignments['R1'], target_info),
-            'R2': type(self).individual_architecture_class(alignments['R2'], target_info, flipped=True),
+            'R1': type(self).individual_architecture_class(alignments['R1'], editing_strategy),
+            'R2': type(self).individual_architecture_class(alignments['R2'], editing_strategy, flipped=True),
         }
 
         self._inferred_amplicon_length = -1
@@ -722,7 +722,7 @@ def crop_terminal_mismatches(al, reference_sequences):
 
     return cropped_al
 
-def comprehensively_split_alignment(al, target_info, mode,
+def comprehensively_split_alignment(al, editing_strategy, mode,
                                     ins_size_to_split_at=None,
                                     del_size_to_split_at=None,
                                     programmed_substitutions=None,
@@ -740,10 +740,10 @@ def comprehensively_split_alignment(al, target_info, mode,
         if del_size_to_split_at is None:
             del_size_to_split_at = 1
 
-        for split_1 in split_at_edit_clusters(al, target_info.reference_sequences, programmed_substitutions=programmed_substitutions):
+        for split_1 in split_at_edit_clusters(al, editing_strategy.reference_sequences, programmed_substitutions=programmed_substitutions):
             for split_2 in sam.split_at_deletions(split_1, del_size_to_split_at):
                 for split_3 in sam.split_at_large_insertions(split_2, ins_size_to_split_at):
-                    cropped_al = crop_terminal_mismatches(split_3, target_info.reference_sequences)
+                    cropped_al = crop_terminal_mismatches(split_3, editing_strategy.reference_sequences)
                     if cropped_al is not None and cropped_al.query_alignment_length >= 5:
                         split_als.append(cropped_al)
 
@@ -751,9 +751,9 @@ def comprehensively_split_alignment(al, target_info, mode,
         # Empirically, for Pacbio data, it is hard to find a threshold for number of edits within a window that
         # doesn't produce a lot of false positive splits, so don't try to split at edit clusters.
 
-        if al.reference_name == target_info.target:
+        if al.reference_name == editing_strategy.target:
             # First split at short indels close to expected cuts.
-            exempt = target_info.not_around_cuts(20)
+            exempt = editing_strategy.not_around_cuts(20)
             for split_1 in sam.split_at_deletions(al, 3, exempt_if_overlaps=exempt):
                 for split_2 in sam.split_at_large_insertions(split_1, 3, exempt_if_overlaps=exempt):
                     # Then at longer indels anywhere.

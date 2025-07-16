@@ -15,7 +15,7 @@ from hits import utilities, interval, sam, sw
 import hits.visualize
 
 import knock_knock.architecture
-import knock_knock.target_info
+import knock_knock.editing_strategy
 
 memoized_property = utilities.memoized_property
 
@@ -36,7 +36,7 @@ def adjust_edges(xs):
 @dataclass
 class ReadDiagram:
     alignments: Union[list, dict]
-    target_info: knock_knock.target_info.TargetInfo
+    editing_strategy: knock_knock.editing_strategy.EditingStrategy
 
     ref_centric: bool = True
     parsimonious: bool = False
@@ -107,15 +107,15 @@ class ReadDiagram:
 
     def __post_init__(self):
         self.all_reference_sequences = {
-            **self.target_info.reference_sequences,
+            **self.editing_strategy.reference_sequences,
             **self.supplementary_reference_sequences,
         }
 
         if len(self.refs_to_draw) == 0 and self.ref_centric:
-            self.refs_to_draw.add(self.target_info.target)
+            self.refs_to_draw.add(self.editing_strategy.target)
 
-            if self.target_info.donor is not None:
-                self.refs_to_draw.add(self.target_info.donor)
+            if self.editing_strategy.donor is not None:
+                self.refs_to_draw.add(self.editing_strategy.donor)
 
         if self.query_interval is not None:
             if isinstance(self.query_interval, int):
@@ -136,15 +136,15 @@ class ReadDiagram:
             if self.split_at_indels:
                 all_split_als = []
 
-                refs_to_split = [self.target_info.target, self.target_info.donor]
-                if self.target_info.pegRNA_names is not None:
-                    refs_to_split.extend(self.target_info.pegRNA_names)
+                refs_to_split = [self.editing_strategy.target, self.editing_strategy.donor]
+                if self.editing_strategy.pegRNA_names is not None:
+                    refs_to_split.extend(self.editing_strategy.pegRNA_names)
 
                 for al in als:
                     if al.reference_name in refs_to_split:
-                        split_als = knock_knock.architecture.comprehensively_split_alignment(al, self.target_info, self.architecture_mode, programmed_substitutions=self.target_info.pegRNA_programmed_alternative_bases)
+                        split_als = knock_knock.architecture.comprehensively_split_alignment(al, self.editing_strategy, self.architecture_mode, programmed_substitutions=self.editing_strategy.pegRNA_programmed_alternative_bases)
 
-                        seq_bytes = self.target_info.reference_sequence_bytes[al.reference_name]
+                        seq_bytes = self.editing_strategy.reference_sequence_bytes[al.reference_name]
                         extended = [sw.extend_alignment(al, seq_bytes) for al in split_als]
                         all_split_als.extend(extended)
 
@@ -168,7 +168,7 @@ class ReadDiagram:
                 als = [al for al in als if al is not None]
 
             if self.only_target_and_donor:
-                als = [al for al in als if al.reference_name in [self.target_info.target, self.target_info.donor]]
+                als = [al for al in als if al.reference_name in [self.editing_strategy.target, self.editing_strategy.donor]]
 
             all_als = als
 
@@ -292,17 +292,17 @@ class ReadDiagram:
 
             self.ref_name_to_color[ref_name] = color
 
-        assign_ref_color(self.target_info.target)
+        assign_ref_color(self.editing_strategy.target)
 
-        if self.target_info.donor is not None:
-            assign_ref_color(self.target_info.donor)
+        if self.editing_strategy.donor is not None:
+            assign_ref_color(self.editing_strategy.donor)
 
-        other_names = [n for n in self.target_info.reference_sequences if n not in [self.target_info.target, self.target_info.donor]]
+        other_names = [n for n in self.editing_strategy.reference_sequences if n not in [self.editing_strategy.target, self.editing_strategy.donor]]
         for name in other_names:
             assign_ref_color(name)
         
-        if self.target_info.reference_name_in_genome_source is not None:
-            self.ref_name_to_color[self.target_info.reference_name_in_genome_source] = self.ref_name_to_color[self.target_info.target]
+        if self.editing_strategy.reference_name_in_genome_source is not None:
+            self.ref_name_to_color[self.editing_strategy.reference_name_in_genome_source] = self.ref_name_to_color[self.editing_strategy.target]
 
         self.max_y = self.gap_between_als
         self.min_y = -self.gap_between_als 
@@ -339,7 +339,7 @@ class ReadDiagram:
 
     @memoized_property
     def features(self):
-        all_features = self.target_info.features
+        all_features = self.editing_strategy.features
 
         if self.features_to_show is not None:
             features_to_show = self.features_to_show
@@ -349,7 +349,7 @@ class ReadDiagram:
                 if 'edge' not in f_name and 'SNP' not in f_name and all_features[r_name, f_name].feature != 'sgRNA'
             ]
 
-            features_to_show.extend([(self.target_info.target, f_name) for f_name in self.target_info.protospacer_names])
+            features_to_show.extend([(self.editing_strategy.target, f_name) for f_name in self.editing_strategy.protospacer_names])
 
         features = {
             k: v for k, v in all_features.items()
@@ -443,13 +443,13 @@ class ReadDiagram:
 
     @memoized_property
     def reference_order(self):
-        ti = self.target_info
+        strat = self.editing_strategy
 
         # Ensure that target and donor are closest to the read, followed by other references.
-        reference_order = [ti.target, ti.donor]
+        reference_order = [strat.target, strat.donor]
 
-        reference_order.extend([ref_name for ref_name in ti.reference_sequences if ref_name not in reference_order])
-        reference_order.extend(ti.all_supplemental_reference_names)
+        reference_order.extend([ref_name for ref_name in strat.reference_sequences if ref_name not in reference_order])
+        reference_order.extend(strat.all_supplemental_reference_names)
 
         all_alignments = self.alignments
         if self.R2_alignments is not None:
@@ -462,16 +462,16 @@ class ReadDiagram:
 
     @memoized_property
     def references_below(self):
-        ti = self.target_info
+        strat = self.editing_strategy
 
         references_below = []
 
         if self.ref_centric:
-            if (not self.target_above) and ti.target in self.refs_to_draw:
-                references_below.append(ti.target)
+            if (not self.target_above) and strat.target in self.refs_to_draw:
+                references_below.append(strat.target)
 
-            if self.donor_below and ti.donor in self.refs_to_draw:
-                references_below.append(ti.donor)
+            if self.donor_below and strat.donor in self.refs_to_draw:
+                references_below.append(strat.donor)
 
             references_below += self.manual_refs_below
 
@@ -524,13 +524,13 @@ class ReadDiagram:
 
             hide_multiplier = 1
 
-            if self.hide_non_target_alignments and ref_name != self.target_info.target:
+            if self.hide_non_target_alignments and ref_name != self.editing_strategy.target:
                 hide_multiplier = 0
 
-            if self.hide_target_alignments and ref_name == self.target_info.target:
+            if self.hide_target_alignments and ref_name == self.editing_strategy.target:
                 hide_multiplier = 0
 
-            if self.hide_donor_alignments and ref_name == self.target_info.donor:
+            if self.hide_donor_alignments and ref_name == self.editing_strategy.donor:
                 hide_multiplier = 0
 
             offset = self.reference_offsets[ref_name]
@@ -555,7 +555,7 @@ class ReadDiagram:
     
     def draw_alignments(self, alignments, is_R2=False):
         ax = self.ax
-        ti = self.target_info
+        strat = self.editing_strategy
 
         # Copy before possibly fiddling with is_reverse below.
         alignments = copy.deepcopy([al for al in alignments if not al.is_unmapped])
@@ -576,11 +576,11 @@ class ReadDiagram:
         for ref_name, ref_alignments in by_reference_name.items():
 
             hide_multiplier = 1
-            if self.hide_non_target_alignments and ref_name != ti.target:
+            if self.hide_non_target_alignments and ref_name != strat.target:
                 hide_multiplier = 0
-            if self.hide_target_alignments and ref_name == ti.target:
+            if self.hide_target_alignments and ref_name == strat.target:
                 hide_multiplier = 0
-            if self.hide_donor_alignments and ref_name == ti.donor:
+            if self.hide_donor_alignments and ref_name == strat.donor:
                 hide_multiplier = 0
 
             offset = self.reference_offsets[ref_name]
@@ -623,8 +623,8 @@ class ReadDiagram:
                 
                 # Annotate the ends of alignments with reference position numbers and vertical lines.
                 r_start, r_end = alignment.reference_start, alignment.reference_end - 1
-                if ref_name == ti.reference_name_in_genome_source:
-                    converted_coords = ti.convert_genomic_alignment_to_target_coordinates(alignment)
+                if ref_name == strat.reference_name_in_genome_source:
+                    converted_coords = strat.convert_genomic_alignment_to_target_coordinates(alignment)
                     if converted_coords:
                         r_start = converted_coords['start']
                         r_end = converted_coords['end'] - 1
@@ -861,17 +861,17 @@ class ReadDiagram:
                 if self.highlight_programmed_substitutions:
                     substitutions = {}
 
-                    if ti.pegRNA_substitutions is not None:
-                        if ref_name in ti.pegRNA_substitutions:
-                            substitutions = ti.pegRNA_substitutions[ref_name]
+                    if strat.pegRNA_substitutions is not None:
+                        if ref_name in strat.pegRNA_substitutions:
+                            substitutions = strat.pegRNA_substitutions[ref_name]
                     
-                    elif ti.donor is not None:
-                        donor_name = ti.donor
+                    elif strat.donor is not None:
+                        donor_name = strat.donor
 
                         if ref_name == donor_name:
-                            substitutions = ti.donor_SNVs['donor']
-                        elif ref_name == ti.target:
-                            substitutions = ti.donor_SNVs['target']
+                            substitutions = strat.donor_SNVs['donor']
+                        elif ref_name == strat.target:
+                            substitutions = strat.donor_SNVs['target']
 
                     if len(substitutions) == 1:
                         box_half_width = self.cross_x * 1.5
@@ -899,7 +899,7 @@ class ReadDiagram:
                         ax.add_patch(patch)
 
                         if self.label_differences:
-                            if ref_name == ti.donor:
+                            if ref_name == strat.donor:
                                 ax.annotate('edit\nposition',
                                             xy=(q, y + box_half_height),
                                             xycoords='data',
@@ -967,7 +967,7 @@ class ReadDiagram:
                                                 va=va,
                                             )
                             
-                            if query_extent[1] - query_extent[0] > 18 or feature.attribute['ID'] == ti.primary_protospacer:
+                            if query_extent[1] - query_extent[0] > 18 or feature.attribute['ID'] == strat.primary_protospacer:
                                 label = self.get_feature_label(feature_reference, feature_name)
 
                                 label_offset = self.label_offsets.get(label, 0)
@@ -1117,7 +1117,7 @@ class ReadDiagram:
         if ref_name in self.invisible_references:
             visible = False
 
-        ti = self.target_info
+        strat = self.editing_strategy
 
         color = self.ref_name_to_color[ref_name]
 
@@ -1136,7 +1136,7 @@ class ReadDiagram:
         # and R2.
         elif ((self.alignment_registration == 'left' and len(alignment_coordinates) != 0) or 
               (len(alignment_coordinates) == 1) or 
-              (len(alignment_coordinates) == 2 and ref_name == ti.donor and self.R2_alignments is not None) 
+              (len(alignment_coordinates) == 2 and ref_name == strat.donor and self.R2_alignments is not None) 
              ):
 
             xs, ps, y, strand, parsimony_multiplier = alignment_coordinates[0]
@@ -1164,11 +1164,11 @@ class ReadDiagram:
             else:
                 relevant_length = self.query_length
 
-            if ref_name == ti.target and self.alignment_registration == 'centered on primers':
+            if ref_name == strat.target and self.alignment_registration == 'centered on primers':
                 if self.flip_target:
-                    anchor_ref = ti.amplicon_interval.end - (len(ti.amplicon_interval) - relevant_length) / 2
+                    anchor_ref = strat.amplicon_interval.end - (len(strat.amplicon_interval) - relevant_length) / 2
                 else:
-                    anchor_ref = ti.amplicon_interval.start + (len(ti.amplicon_interval) - relevant_length) / 2
+                    anchor_ref = strat.amplicon_interval.start + (len(strat.amplicon_interval) - relevant_length) / 2
 
                 leftmost_coordinates = alignment_coordinates[0]
                 xs, ps, y, strand, parsimony_multiplier = leftmost_coordinates
@@ -1190,7 +1190,7 @@ class ReadDiagram:
 
             else:
                 anchor_read = relevant_length // 2
-                anchor_ref = len(ti.reference_sequences[ref_name]) // 2
+                anchor_ref = len(strat.reference_sequences[ref_name]) // 2
 
         # With these anchors picked, define the mapping and its inverse.
         if flip:
@@ -1200,7 +1200,7 @@ class ReadDiagram:
             ref_p_to_x = lambda p: (p - anchor_ref) + anchor_read
             x_to_ref_p = lambda x: (x - anchor_read) + anchor_ref
 
-        ref_edge = len(ti.reference_sequences[ref_name]) - 1
+        ref_edge = len(strat.reference_sequences[ref_name]) - 1
 
         # ref_start and ref_end are the smallest and largest ref positions
         # that get plotted. Initially, set these to the inverse image of
@@ -1247,7 +1247,7 @@ class ReadDiagram:
 
             features = {
                 feature
-                for (feature_ref_name, feature_name), feature in ti.features.items()
+                for (feature_ref_name, feature_name), feature in strat.features.items()
                 if (feature_ref_name, feature_name) in self.features_to_show
                 and feature_ref_name == ref_name
              }
@@ -1268,7 +1268,7 @@ class ReadDiagram:
         if ref_al_max >= ref_end:
             ref_end = min(ref_edge, ref_al_max + 10)
 
-        if ref_name == ti.target:
+        if ref_name == strat.target:
             fade_left = True
             fade_right = True
         else:
@@ -1306,7 +1306,7 @@ class ReadDiagram:
         # Draw the actual reference.
         ref_xs = adjust_edges([ref_p_to_x(ref_start), ref_p_to_x(ref_end)])
 
-        if ref_name == ti.target:
+        if ref_name == strat.target:
             # Always extend the target all the way to the edges.
             ref_xs[0] = min(ref_xs[0], self.min_x)
             ref_xs[1] = max(ref_xs[1], self.max_x)
@@ -1430,10 +1430,10 @@ class ReadDiagram:
                         )
 
         if self.draw_cut_afters:
-            if ref_name == ti.target:
+            if ref_name == strat.target:
                 cut_after_x_and_strands = set()
 
-                for cut_after_name, cut_after in ti.cut_afters.items():
+                for cut_after_name, cut_after in strat.cut_afters.items():
                     cut_after_x = ref_p_to_x(cut_after + 0.5)
 
                     name, strand = cut_after_name.rsplit('_', 1)
@@ -1464,7 +1464,7 @@ class ReadDiagram:
                                  visible=visible,
                                 )
 
-                    color = ti.PAM_features[f'{name}_PAM'].attribute['color']
+                    color = strat.PAM_features[f'{name}_PAM'].attribute['color']
 
                     if self.label_cut:
                         label = self.label_overrides.get(f'{name}_cut', f'{name}_cut')
@@ -1480,7 +1480,7 @@ class ReadDiagram:
                                         )
 
         if self.draw_ref_sequences:
-            ref_sequence = ti.reference_sequences[ref_name]
+            ref_sequence = strat.reference_sequences[ref_name]
             
             seq_kwargs = dict(family='monospace',
                               size=self.font_sizes['sequence'],
@@ -1508,7 +1508,7 @@ class ReadDiagram:
         if len(self.alignments) == 0:
             return
 
-        ti = self.target_info
+        strat = self.editing_strategy
         
         if self.target_above:
             target_y = self.max_y + self.target_and_donor_y_gap
@@ -1522,11 +1522,11 @@ class ReadDiagram:
 
         params = []
 
-        if ti.target in self.refs_to_draw and len(self.alignment_coordinates[ti.target]) > 0:
-            params.append((ti.target, target_y, self.flip_target))
+        if strat.target in self.refs_to_draw and len(self.alignment_coordinates[strat.target]) > 0:
+            params.append((strat.target, target_y, self.flip_target))
 
-        if ti.donor in self.refs_to_draw and len(self.alignment_coordinates[ti.donor]) > 0:
-            params.append((ti.donor, donor_y, self.flip_donor))
+        if strat.donor in self.refs_to_draw and len(self.alignment_coordinates[strat.donor]) > 0:
+            params.append((strat.donor, donor_y, self.flip_donor))
 
         for ref_name, ref_y, flip in params:
             self.draw_reference(ref_name, ref_y, flip)

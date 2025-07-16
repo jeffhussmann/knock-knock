@@ -20,8 +20,9 @@ from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
 from hits import fasta, fastq, genomes, interval, mapping_tools, sam, sw, utilities
+import knock_knock.editing_strategy
 import knock_knock.effector
-from knock_knock import target_info, pegRNAs 
+import knock_knock.pegRNAs
 
 import knock_knock.utilities
 
@@ -205,7 +206,7 @@ feature_colors = {
     'scaffold': '#b7e6d7',
 }
 
-class TargetInfoBuilder:
+class EditingStrategyBuilder:
     ''' 
     Attempts to identify the genomic location where an sgRNA sequence
     is flanked by amplicon primers.
@@ -229,7 +230,7 @@ class TargetInfoBuilder:
 
         self.base_dir = Path(base_dir)
         self.info = info
-        self.index_locations = target_info.locate_supplemental_indices(self.base_dir)
+        self.index_locations = knock_knock.editing_strategy.locate_supplemental_indices(self.base_dir)
 
         self.extra_sequences = load_extra_sequences(self.base_dir)
 
@@ -416,7 +417,7 @@ class TargetInfoBuilder:
                 sgRNA_name, components = self.sgRNAs[0]
 
                 protospacer_feature = protospacer_features[0]
-                effector = target_info.effectors[components['effector']]
+                effector = knock_knock.effector.effectors[components['effector']]
 
                 # TODO: untested code branch here
                 cut_after_offset = [offset for offset in effector.cut_after_offset if offset is not None][0]
@@ -459,7 +460,7 @@ class TargetInfoBuilder:
 
             for name, components in sgRNAs_with_extensions:
                 try:
-                    pegRNA = pegRNAs.pegRNA(name, components, self.target_name, target_sequence)
+                    pegRNA = knock_knock.pegRNAs.pegRNA(name, components, self.target_name, target_sequence)
                 except Exception as err:
                     bad_pegRNAs.append((name, str(err)))
                     continue
@@ -528,9 +529,9 @@ class TargetInfoBuilder:
                 gb_records[donor_name] = record
 
         # Note: for debugging convenience, genbank files can be written for pegRNAs,
-        # but these are NOT supplied as genbank records to make the final TargetInfo,
+        # but these are NOT supplied as genbank records to make the final EditingStrategy,
         # since relevant features are either represented by the intial decomposition into
-        # components or inferred on instantiation of the TargetInfo.
+        # components or inferred on instantiation of the EditingStrategy.
         pegRNA_names = [name for name, components in sgRNAs_with_extensions]
         non_pegRNA_records = {name: record for name, record in gb_records.items() if name not in pegRNA_names}
         gb_records_for_manifest = non_pegRNA_records
@@ -603,15 +604,15 @@ class TargetInfoBuilder:
 
         gb_records = list(gb_records_for_manifest.values())
 
-        ti = target_info.TargetInfo(self.base_dir, self.name, gb_records=gb_records)
+        strat = knock_knock.editing_strategy.EditingStrategy(self.base_dir, self.name, gb_records=gb_records)
 
         sgRNAs_df = load_sgRNAs(self.base_dir, process=False)
         sgRNA_names = sorted([name for name, _ in self.sgRNAs])
-        sgRNAs_df.loc[sgRNA_names].to_csv(ti.fns['sgRNAs'])
+        sgRNAs_df.loc[sgRNA_names].to_csv(strat.fns['sgRNAs'])
 
-        ti.make_protospacer_fastas()
-        if ti.genome_source in self.index_locations:
-            ti.map_protospacers(ti.genome_source)
+        strat.make_protospacer_fastas()
+        if strat.genome_source in self.index_locations:
+            strat.map_protospacers(strat.genome_source)
 
     @utilities.memoized_property
     def region_fetcher(self):
@@ -875,7 +876,7 @@ def load_sgRNAs(base_dir, process=True):
     if not csv_fn.exists():
         return None
     else:
-        return pegRNAs.read_csv(csv_fn, process=process)
+        return knock_knock.pegRNAs.read_csv(csv_fn, process=process)
 
 def load_extra_sequences(base_dir):
     extra_sequences = {}
@@ -948,7 +949,7 @@ def build_component_registry(base_dir):
 
     return registry
 
-def build_target_infos_from_csv(base_dir, defer_HA_identification=False):
+def build_editing_strategies_from_csv(base_dir, defer_HA_identification=False):
     base_dir = Path(base_dir)
     csv_fn = base_dir / 'targets' / 'targets.csv'
 
@@ -1019,10 +1020,10 @@ def build_target_infos_from_csv(base_dir, defer_HA_identification=False):
 
         logger.info(f'Building {target_name}...')
 
-        builder = TargetInfoBuilder(base_dir,
-                                    info,
-                                    defer_HA_identification=defer_HA_identification,
-                                   )
+        builder = EditingStrategyBuilder(base_dir,
+                                         info,
+                                         defer_HA_identification=defer_HA_identification,
+                                        )
         builder.build(generate_pegRNA_genbanks=False)
 
 def build_indices(base_dir, name, num_threads=1, **STAR_index_kwargs):

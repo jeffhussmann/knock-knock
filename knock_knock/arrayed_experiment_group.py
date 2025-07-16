@@ -15,7 +15,7 @@ import knock_knock.experiment_group
 import knock_knock.outcome
 import knock_knock.illumina_experiment
 import knock_knock.parallel
-import knock_knock.target_info
+import knock_knock.editing_strategy
 import knock_knock.utilities
 
 from hits import adapters, fastq, sw, utilities
@@ -222,10 +222,10 @@ class Batch:
         grouped = defaultdict(dict)
 
         for gn, group in self.groups.items():
-            if group.target_info.pegRNA is not None:
-                sgRNAs = ' + '.join(group.target_info.sgRNAs)
+            if group.editing_strategy.pegRNA is not None:
+                sgRNAs = ' + '.join(group.editing_strategy.sgRNAs)
                 genome = group.description['genome']
-                protospacer = group.target_info.pegRNA.components['protospacer']
+                protospacer = group.editing_strategy.pegRNA.components['protospacer']
 
                 fn = group.fns['pegRNA_conversion_fractions']
 
@@ -483,8 +483,8 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         return self.first_experiment.architecture_mode
 
     @property
-    def target_info(self):
-        return self.first_experiment.target_info
+    def editing_strategy(self):
+        return self.first_experiment.editing_strategy
 
     @memoized_property
     def num_experiments(self):
@@ -766,9 +766,9 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
     # Duplication of code in pooled_screen
     def donor_outcomes_containing_SNV(self, SNV_name):
-        ti = self.target_info
-        SNV_index = sorted(ti.donor_SNVs['target']).index(SNV_name)
-        donor_base = ti.donor_SNVs['donor'][SNV_name]['base']
+        strat = self.editing_strategy
+        SNV_index = sorted(strat.donor_SNVs['target']).index(SNV_name)
+        donor_base = strat.donor_SNVs['donor'][SNV_name]['base']
         nt_fracs = self.outcome_fraction_baseline_means
         outcomes = [(c, s, d) for c, s, d in nt_fracs.index.values if c == 'donor' and d[SNV_index] == donor_base]
         return outcomes
@@ -777,7 +777,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
     def conversion_fractions(self):
         conversion_fractions = {}
 
-        SNVs = self.target_info.donor_SNVs['target']
+        SNVs = self.editing_strategy.donor_SNVs['target']
 
         for SNV_name in SNVs:
             outcomes = self.donor_outcomes_containing_SNV(SNV_name)
@@ -790,14 +790,16 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
     @memoized_property
     def outcomes_containing_pegRNA_programmed_edits(self):
+        strat = self.editing_strategy
+
         outcomes_containing_pegRNA_programmed_edits = {}
 
         outcome_fractions = self.outcome_fractions()
 
         if outcome_fractions is not None:
 
-            if self.target_info.pegRNA_substitutions is not None:
-                SNVs = self.target_info.pegRNA_substitutions[self.target_info.target]
+            if strat.pegRNA_substitutions is not None:
+                SNVs = strat.pegRNA_substitutions[strat.target]
                 # Note: sorting SNVs is critical here to match the order in outcome.SNV_read_bases.
                 SNV_order = sorted(SNVs)
 
@@ -807,16 +809,16 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
             else:
                 SNVs = None
             
-            if self.target_info.pegRNA_programmed_insertion is not None:
-                insertion = self.target_info.pegRNA_programmed_insertion
+            if strat.pegRNA_programmed_insertion is not None:
+                insertion = strat.pegRNA_programmed_insertion
 
                 outcomes_containing_pegRNA_programmed_edits[str(insertion)] = []
 
             else:
                 insertion = None
 
-            if self.target_info.pegRNA_programmed_deletion is not None:
-                deletion = self.target_info.pegRNA_programmed_deletion
+            if strat.pegRNA_programmed_deletion is not None:
+                deletion = strat.pegRNA_programmed_deletion
 
                 outcomes_containing_pegRNA_programmed_edits[str(deletion)] = []
 
@@ -861,11 +863,11 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
     @memoized_property
     def pegRNA_conversion_fractions_by_edit_description(self):
-        if self.target_info.pegRNA is None or self.pegRNA_conversion_fractions is None:
+        if self.editing_strategy.pegRNA is None or self.pegRNA_conversion_fractions is None:
             return None
         else:
             def name_to_description(name):
-                return self.target_info.pegRNA_programmed_edit_name_to_description.get(name, name)
+                return self.editing_strategy.pegRNA_programmed_edit_name_to_description.get(name, name)
 
             df = self.pegRNA_conversion_fractions.copy()
 
@@ -875,12 +877,12 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
     def write_pegRNA_conversion_fractions(self):
         ''' Note that this writes transposed. '''
-        if self.target_info.pegRNA is not None and self.pegRNA_conversion_fractions is not None:
+        if self.editing_strategy.pegRNA is not None and self.pegRNA_conversion_fractions is not None:
             self.pegRNA_conversion_fractions_by_edit_description.T.to_csv(self.fns['pegRNA_conversion_fractions'])
 
     @memoized_with_kwargs
     def deletion_boundaries(self, *, include_simple_deletions=True, include_edit_plus_deletions=False):
-        return knock_knock.outcome.extract_deletion_boundaries(self.target_info,
+        return knock_knock.outcome.extract_deletion_boundaries(self.editing_strategy,
                                                                self.outcome_fractions(),
                                                                include_simple_deletions=include_simple_deletions,
                                                                include_edit_plus_deletions=include_edit_plus_deletions,
@@ -973,27 +975,27 @@ def sanitize_and_validate_sample_sheet(sample_sheet_fn):
     
     return sample_sheet_df
 
-def make_default_target_info_name(amplicon_primers, genome, genome_source, extra_sequences='', donor=''):
-    target_info_name = f'{amplicon_primers}_{genome}'
+def make_default_strategy_name(amplicon_primers, genome, genome_source, extra_sequences='', donor=''):
+    strategy_name = f'{amplicon_primers}_{genome}'
 
     if genome_source != genome:
-        target_info_name = f'{target_info_name}_{genome_source}'
+        strategy_name = f'{strategy_name}_{genome_source}'
 
     if extra_sequences != '':
-        target_info_name = f'{target_info_name}_{extra_sequences}'
+        strategy_name = f'{strategy_name}_{extra_sequences}'
 
     if donor != '':
-        target_info_name = f'{target_info_name}_{donor}'
+        strategy_name = f'{strategy_name}_{donor}'
 
     # Names can't contain a forward slash since they are a path component.
-    target_info_name = target_info_name.replace('/', '_SLASH_')
+    strategy_name = strategy_name.replace('/', '_SLASH_')
 
-    return target_info_name
+    return strategy_name
 
 def make_targets(base_dir, sample_sheet_df):
-    valid_supplemental_indices = set(knock_knock.target_info.locate_supplemental_indices(base_dir))
+    valid_supplemental_indices = set(knock_knock.editing_strategy.locate_supplemental_indices(base_dir))
 
-    targets = {}
+    strategies = {}
 
     grouped = sample_sheet_df.groupby(['amplicon_primers', 'genome', 'genome_source', 'donor', 'extra_sequences'])
 
@@ -1003,11 +1005,11 @@ def make_targets(base_dir, sample_sheet_df):
             if sgRNAs != '':
                 all_sgRNAs.update(sgRNAs.split(';'))
 
-        target_info_name = make_default_target_info_name(amplicon_primers, genome, genome_source, extra_sequences, donor)
+        strategy_name = make_default_strategy_name(amplicon_primers, genome, genome_source, extra_sequences, donor)
 
         extra_sequences = ';'.join(set(extra_sequences.split(';')) - valid_supplemental_indices)
 
-        targets[target_info_name] = {
+        strategies[strategy_name] = {
             'genome': genome,
             'genome_source': genome_source,
             'amplicon_primers': amplicon_primers,
@@ -1016,16 +1018,16 @@ def make_targets(base_dir, sample_sheet_df):
             'donor': donor,
         }
 
-    targets_df = pd.DataFrame.from_dict(targets, orient='index')
+    targets_df = pd.DataFrame.from_dict(strategies, orient='index')
     targets_df.index.name = 'name'
 
-    targets_dir = Path(base_dir) / 'targets'
+    targets_dir = Path(base_dir) / 'strategies'
     targets_dir.mkdir(parents=True, exist_ok=True)
 
-    targets_csv_fn = targets_dir / 'targets.csv'
+    targets_csv_fn = targets_dir / 'strategies.csv'
     targets_df.to_csv(targets_csv_fn)
 
-    knock_knock.build_targets.build_target_infos_from_csv(base_dir)
+    knock_knock.build_targets.build_editing_strategies_from_csv(base_dir)
 
 def detect_sequencing_primers(base_dir, batch_name, sample_sheet_df):
 
@@ -1126,15 +1128,15 @@ def detect_sequencing_start_feature_names(base_dir, batch_name, sample_sheet_df)
         else:
             reads = fastq.reads(R1_fn)
 
-        target_info_name = make_default_target_info_name(row['amplicon_primers'],
+        strategy_name = make_default_strategy_name(row['amplicon_primers'],
                                                          row['genome'],
                                                          row['genome_source'],
                                                          row['extra_sequences'],
                                                          row['donor'],
                                                         )
-        ti = knock_knock.target_info.TargetInfo(base_dir, target_info_name) 
+        strat = knock_knock.editing_strategy.EditingStrategy(base_dir, strategy_name) 
 
-        primer_sequences = {name: ti.feature_sequence(ti.target, name).upper() for name in ti.primers}
+        primer_sequences = {name: strat.feature_sequence(strat.target, name).upper() for name in strat.primers}
 
         primer_prefix_length = 6
         read_length_to_examine = 30
@@ -1212,15 +1214,15 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
         
         if len(orientations) == 0:
             row = rows.iloc[0]
-            target_info_name = make_default_target_info_name(row['amplicon_primers'],
+            strategy_name = make_default_strategy_name(row['amplicon_primers'],
                                                              row['genome'],
                                                              row['genome_source'],
                                                              row['extra_sequences'],
                                                              row['donor'],
                                                             )
-            ti = knock_knock.target_info.TargetInfo(base_dir, target_info_name) 
+            strat = knock_knock.editing_strategy.EditingStrategy(base_dir, strategy_name) 
 
-            feature_name = sorted(ti.primers)[0]
+            feature_name = sorted(strat.primers)[0]
 
             logger.warning(f'No sequencing orientations detected for {keys}, arbitrarily choosing {feature_name}')
 
@@ -1282,7 +1284,7 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
         existing_unedited_idxs = sample_sheet_df.query('`condition:is_unedited_control`').index
         sample_sheet_df = pd.concat([sample_sheet_df.drop(existing_unedited_idxs), new_rows])
 
-    valid_supplemental_indices = set(knock_knock.target_info.locate_supplemental_indices(base_dir))
+    valid_supplemental_indices = set(knock_knock.editing_strategy.locate_supplemental_indices(base_dir))
 
     groups = {}
     samples = {}
@@ -1316,9 +1318,9 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
     grouped = sample_sheet_df.groupby(group_keys)
 
     for group_i, ((amplicon_primers, genome, genome_source, sgRNAs, donor, extra_sequences, sequencing_start_feature_name), group_rows) in enumerate(grouped):
-        target_info_name = make_default_target_info_name(amplicon_primers, genome, genome_source, extra_sequences, donor)
+        strategy_name = make_default_strategy_name(amplicon_primers, genome, genome_source, extra_sequences, donor)
 
-        group_name = f'{target_info_name}_{sgRNAs}_{donor}'
+        group_name = f'{strategy_name}_{sgRNAs}_{donor}'
         group_name = group_name.replace(';', '+')
 
         sanitized_group_name = get_sanitized_group_name(group_i)
@@ -1330,7 +1332,7 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
 
             sanitized_sample_names[sample_name] = sanitized_sample_name
 
-        ti = knock_knock.target_info.TargetInfo(base_dir, target_info_name, sgRNAs=sgRNAs)
+        strat = knock_knock.editing_strategy.EditingStrategy(base_dir, strategy_name, sgRNAs=sgRNAs)
 
         if 'experiment_type' in group_rows.columns:
             experiment_types = set(group_rows['experiment_type'])
@@ -1340,13 +1342,13 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
             else:
                 experiment_type = list(experiment_types)[0]
 
-            if knock_knock.utilities.is_one_sided(experiment_type) and ti.pegRNA_names is not None and len(ti.pegRNA_names) == 2:
+            if knock_knock.utilities.is_one_sided(experiment_type) and strat.pegRNA_names is not None and len(strat.pegRNA_names) == 2:
                 experiment_type = f'{experiment_type}_dual_flap'
 
-        elif ti.pegRNA_names is None or len(ti.pegRNA_names) <= 1:
+        elif strat.pegRNA_names is None or len(strat.pegRNA_names) <= 1:
             experiment_type = 'single_flap'
 
-        elif len(ti.pegRNA_names) == 2:
+        elif len(strat.pegRNA_names) == 2:
             if donor == '':
                 experiment_type = 'dual_flap'
             else:
@@ -1383,7 +1385,7 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
             'sanitized_group_name': sanitized_group_name,
             'supplemental_indices': ';'.join(supplemental_indices),
             'experiment_type': experiment_type,
-            'target_info': target_info_name,
+            'editing_strategy': strategy_name,
             'sequencing_start_feature_name': sequencing_start_feature_name,
             'genome': genome,
             'sgRNAs': sgRNAs,

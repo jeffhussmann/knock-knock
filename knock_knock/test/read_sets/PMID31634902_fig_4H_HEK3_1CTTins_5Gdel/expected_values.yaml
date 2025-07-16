@@ -1,6 +1,6 @@
 experiment_type: prime_editing
-target_info: PMID31634902_HEK3
-target_info_kwargs:
+editing_strategy: PMID31634902_HEK3
+strategy_kwargs:
   sgRNAs: HEK3_4h_1CTTins_5Gdel;HEK3_4a_+90_nicking
 expected_values:
   010287999:0000000009:

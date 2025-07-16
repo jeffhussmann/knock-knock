@@ -16,8 +16,7 @@ import hits.utilities
 import hits.visualize
 
 import knock_knock.pegRNAs
-import knock_knock.target_info
-from knock_knock.outcome import *
+import knock_knock.editing_strategy
 
 import knock_knock.outcome
 
@@ -26,7 +25,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class StackedDiagrams:
     outcome_order: list
-    target_infos: Union[knock_knock.target_info.TargetInfo, dict]
+    editing_strategies: Union[knock_knock.editing_strategy.EditingStrategy, dict]
 
     ax: Optional[plt.Axes] = None
     block_alpha: float = 0.1
@@ -65,13 +64,13 @@ class StackedDiagrams:
     wt_height = 0.6
 
     def __post_init__(self):
-        # Can either supply outcomes as (c, s, d) tuples along with a single target_info,
-        # or outcomes as (source_name, c, s, d) tuples along with a {source_name: target_info} dict.
+        # Can either supply outcomes as (c, s, d) tuples along with a single editing_strategy,
+        # or outcomes as (source_name, c, s, d) tuples along with a {source_name: editing_strategy} dict.
 
-        if isinstance(self.target_infos, knock_knock.target_info.TargetInfo):
-            self.target_infos = {self.target_infos.name: self.target_infos}
+        if isinstance(self.editing_strategies, knock_knock.editing_strategy.EditingStrategy):
+            self.editing_strategies = {self.editing_strategies.name: self.editing_strategies}
 
-        self.single_source_name = sorted(self.target_infos)[0]
+        self.single_source_name = sorted(self.editing_strategies)[0]
 
         if all(len(outcome) == 3 for outcome in self.outcome_order):
             self.outcome_order = [(self.single_source_name, c, s, d) for c, s, d in self.outcome_order]
@@ -102,8 +101,8 @@ class StackedDiagrams:
         self.flip = {}
         self.guide = {}
 
-        for source_name, ti in self.target_infos.items():
-            self.guide[source_name] = ti.features.get((ti.target, ti.primary_protospacer))
+        for source_name, strat in self.editing_strategies.items():
+            self.guide[source_name] = strat.features.get((strat.target, strat.primary_protospacer))
 
             # TODO: flip behavior for multiple sources
             if self.force_flip or (self.flip_if_reverse and self.guide[source_name] is not None and self.guide[source_name].strand == '-'):
@@ -113,17 +112,17 @@ class StackedDiagrams:
                 self.flip[source_name] = False
                 transform_seq = hits.utilities.identity
 
-            if len(ti.cut_afters) == 0:
-                offset = ti.center_of_amplicon
+            if len(strat.cut_afters) == 0:
+                offset = strat.center_of_amplicon
 
             elif self.center_at_PAM:
                 if self.guide[source_name].strand == '+':
-                    offset = ti.PAM_slice.start
+                    offset = strat.PAM_slice.start
                 else:
-                    offset = ti.PAM_slice.stop - 1
+                    offset = strat.PAM_slice.stop - 1
 
             else:
-                offset = max(v for n, v in ti.cut_afters.items() if n.startswith(ti.primary_protospacer))
+                offset = max(v for n, v in strat.cut_afters.items() if n.startswith(strat.primary_protospacer))
 
             self.offsets[source_name] = offset
 
@@ -136,13 +135,13 @@ class StackedDiagrams:
             if offset + this_window_left < 0:
                 this_window_left = -offset
 
-            if offset + this_window_right + 1 > len(ti.target_sequence):
-                this_window_right = len(ti.target_sequence) - offset - 1
+            if offset + this_window_right + 1 > len(strat.target_sequence):
+                this_window_right = len(strat.target_sequence) - offset - 1
 
             self.windows[source_name] = (this_window_left, this_window_right)
             self.window_size = max(self.window_size, this_window_right - this_window_left + 1)
 
-            seq = ti.target_sequence[offset + this_window_left:offset + this_window_right + 1]
+            seq = strat.target_sequence[offset + this_window_left:offset + this_window_right + 1]
             self.seqs[source_name] = seq
             self.transform_seqs[source_name] = transform_seq
 
@@ -155,11 +154,11 @@ class StackedDiagrams:
 
         cuts_drawn_at = set()
         if self.draw_cuts:
-            for source_name, ti in self.target_infos.items():
+            for source_name, strat in self.editing_strategies.items():
                 offset = self.offsets[source_name]
                 window_left, window_right = self.windows[source_name]
 
-                for cut_after in ti.cut_afters.values():
+                for cut_after in strat.cut_afters.values():
                     # temp fix for empirically-determined offset of Cpf1 cut.
                     x = (cut_after + 0.5) - offset + self.shift_x
 
@@ -354,12 +353,12 @@ class StackedDiagrams:
         return xs_to_skip
 
     def draw_insertion(self, y, insertion, source_name, draw_sequence=True, draw_degeneracy=None):
-        ti = self.target_infos[source_name]
+        strat = self.editing_strategies[source_name]
         offset = self.offsets[source_name]
         transform_seq = self.transform_seqs[source_name]
         starts = np.array(insertion.starts_afters) - offset
 
-        cut = ti.cut_after - offset
+        cut = strat.cut_after - offset
         if cut in starts:
             start_to_label = cut
         else:
@@ -424,7 +423,7 @@ class StackedDiagrams:
             self.draw_sequence(y, source_name, alpha=self.sequence_alpha)
 
     def draw_wild_type(self, y, source_name, on_top=False, guides_to_draw=None):
-        ti = self.target_infos[source_name]
+        strat = self.editing_strategies[source_name]
         offset = self.offsets[source_name]
         window_left, window_right = self.windows[source_name]
 
@@ -434,22 +433,22 @@ class StackedDiagrams:
             self.draw_sequence(y, source_name, alpha=1)
 
             if guides_to_draw is None:
-                guides_to_draw = [ti.primary_protospacer]
+                guides_to_draw = [strat.primary_protospacer]
 
             for guide_name in guides_to_draw:
-                if guide_name in ti.PAM_slices:
+                if guide_name in strat.PAM_slices:
                     # PE3b protospacers might not exist
-                    PAM_start = ti.PAM_slices[guide_name].start - 0.5 - offset
-                    PAM_end = ti.PAM_slices[guide_name].stop + 0.5 - 1 - offset
+                    PAM_start = strat.PAM_slices[guide_name].start - 0.5 - offset
+                    PAM_end = strat.PAM_slices[guide_name].stop + 0.5 - 1 - offset
 
-                    guide = ti.features[ti.target, guide_name]
+                    guide = strat.features[strat.target, guide_name]
                     guide_start = guide.start - 0.5 - offset
                     guide_end = guide.end + 0.5 - offset
 
-                    protospacer_color = self.color_overrides.get(guide_name, ti.protospacer_color)
+                    protospacer_color = self.color_overrides.get(guide_name, strat.protospacer_color)
 
                     PAM_name = f'{guide_name[:-len("_protospacer")]}_PAM'
-                    PAM_color = self.color_overrides.get(PAM_name, ti.PAM_color)
+                    PAM_color = self.color_overrides.get(PAM_name, strat.PAM_color)
 
                     self.draw_rect(source_name, guide_start, guide_end, bottom, top, None, color=protospacer_color)
                     self.draw_rect(source_name, PAM_start, PAM_end, bottom, top, None, color=PAM_color)
@@ -469,7 +468,7 @@ class StackedDiagrams:
 
         if on_top:
             for feature_name in self.features_to_draw:
-                feature = ti.features[ti.target, feature_name]
+                feature = strat.features[strat.target, feature_name]
 
                 start = feature.start - 0.5 - offset
                 end = feature.end + 0.5 - offset
@@ -492,10 +491,10 @@ class StackedDiagrams:
                                     )
 
     def draw_donor(self, y, HDR_outcome, deletion_outcome, insertion_outcome, source_name, on_top=False):
-        ti = self.target_infos[source_name]
+        strat = self.editing_strategies[source_name]
         transform_seq = self.transform_seqs[source_name]
         window_left, window_right = self.windows[source_name]
-        SNP_ps = sorted(p for (s, p), b in ti.fingerprints[ti.target])
+        SNP_ps = sorted(p for (s, p), b in strat.fingerprints[strat.target])
 
         bottom, top = self.get_bottom_and_top(y)
 
@@ -505,7 +504,7 @@ class StackedDiagrams:
         SNP_xs = set()
         observed_SNP_idxs = set()
 
-        for ((strand, position), ref_base), read_base in zip(ti.fingerprints[ti.target], HDR_outcome.donor_SNV_read_bases):
+        for ((strand, position), ref_base), read_base in zip(strat.fingerprints[strat.target], HDR_outcome.donor_SNV_read_bases):
             x = position - self.offset
             if window_left <= x <= window_right:
                 # Note: read base of '-' means it was deleted
@@ -569,8 +568,8 @@ class StackedDiagrams:
         elif len(all_deletions) == 1:
             deletion, color, draw_MH = all_deletions[0]
 
-            if len(self.target_infos) > 1:
-                background_color = ti.protospacer_color
+            if len(self.editing_strategies) > 1:
+                background_color = strat.protospacer_color
             else:
                 background_color = 'black'
 
@@ -586,7 +585,7 @@ class StackedDiagrams:
             self.draw_sequence(y, source_name, xs_to_skip=SNP_xs, alpha=self.sequence_alpha)
 
         if on_top:
-            strands = set(SNV['strand'] for SNV in ti.donor_SNVs['donor'].values())
+            strands = set(SNV['strand'] for SNV in strat.donor_SNVs['donor'].values())
             if len(strands) > 1:
                 raise ValueError('donor strand is weird')
             else:
@@ -610,7 +609,6 @@ class StackedDiagrams:
                             )
 
     def draw_non_programmed_mismatches(self, y, mismatches, source_name):
-        ti = self.target_infos[source_name]
         offset = self.offsets[source_name]
         transform_seq = self.transform_seqs[source_name]
         window_left, window_right = self.windows[source_name]
@@ -636,12 +634,12 @@ class StackedDiagrams:
         return mismatch_xs
 
     def highlight_programmed_edit_positions(self, y, source_name):
-        ti = self.target_infos[source_name]
+        strat = self.editing_strategies[source_name]
         offset = self.offsets[source_name]
 
         bottom, top = self.get_bottom_and_top(y)
 
-        for (strand, position), ref_base in ti.fingerprints[ti.target]:
+        for (strand, position), ref_base in strat.fingerprints[strat.target]:
             color = 'grey'
             alpha = 0.3
             left = position - offset - 0.5
@@ -649,7 +647,7 @@ class StackedDiagrams:
             self.draw_rect(source_name, left, right, bottom, top, alpha, color=color)
 
     def draw_programmed_edit(self, y, details, source_name):
-        ti = self.target_infos[source_name]
+        strat = self.editing_strategies[source_name]
         transform_seq = self.transform_seqs[source_name]
         window_left, window_right = self.windows[source_name]
         offset = self.offsets[source_name]
@@ -658,23 +656,23 @@ class StackedDiagrams:
 
         SNP_xs = set()
 
-        if ti.pegRNA_substitutions is not None:
-            SNP_ps = sorted(substitution['position'] for substitution_name, substitution in ti.pegRNA_substitutions[ti.target].items())
+        if strat.pegRNA_substitutions is not None:
+            SNP_ps = sorted(substitution['position'] for substitution_name, substitution in strat.pegRNA_substitutions[strat.target].items())
 
             p_to_i = SNP_ps.index
             i_to_p = dict(enumerate(SNP_ps))
 
             observed_SNP_idxs = set()
 
-            substitution_names = sorted(ti.pegRNA_substitutions[ti.target])
+            substitution_names = sorted(strat.pegRNA_substitutions[strat.target])
             for substitution_name, read_base in zip(substitution_names, details['programmed_substitution_read_bases']):
-                position = ti.pegRNA_substitutions[ti.target][substitution_name]['position']
+                position = strat.pegRNA_substitutions[strat.target][substitution_name]['position']
 
                 pegRNA_bases = set()
-                for pegRNA_name in ti.pegRNA_names:
-                    if substitution_name in ti.pegRNA_substitutions[pegRNA_name]:
-                        pegRNA_base = ti.pegRNA_substitutions[pegRNA_name][substitution_name]['base']
-                        if ti.pegRNA_substitutions[pegRNA_name][substitution_name]['strand'] == '-':
+                for pegRNA_name in strat.pegRNA_names:
+                    if substitution_name in strat.pegRNA_substitutions[pegRNA_name]:
+                        pegRNA_base = strat.pegRNA_substitutions[pegRNA_name][substitution_name]['base']
+                        if strat.pegRNA_substitutions[pegRNA_name][substitution_name]['strand'] == '-':
                             pegRNA_base = hits.utilities.reverse_complement(pegRNA_base)
                         pegRNA_bases.add(pegRNA_base)
                     
@@ -762,7 +760,7 @@ class StackedDiagrams:
                 print(f'Warning: multiple insertions in {details}')
 
             for insertion in details['insertions']:
-                insertion = ti.expand_degenerate_indel(insertion)
+                insertion = strat.expand_degenerate_indel(insertion)
                 self.draw_insertion(y, insertion, source_name, draw_sequence=True)
 
         mismatch_xs = self.draw_non_programmed_mismatches(y, details['mismatches'], source_name)
@@ -771,20 +769,20 @@ class StackedDiagrams:
             self.draw_sequence(y, source_name, xs_to_skip=SNP_xs | mismatch_xs, alpha=self.sequence_alpha)
 
     def edit_name_to_x(self, source_name, edit_name):
-        ti = self.target_infos[source_name]
-        substitutions = ti.pegRNA_substitutions
+        strat = self.editing_strategies[source_name]
+        substitutions = strat.pegRNA_substitutions
         
-        if substitutions is not None and edit_name in substitutions[ti.target]:
-            p = substitutions[ti.target][edit_name]['position']
+        if substitutions is not None and edit_name in substitutions[strat.target]:
+            p = substitutions[strat.target][edit_name]['position']
         else:
-            indel = knock_knock.target_info.degenerate_indel_from_string(edit_name)
+            indel = knock_knock.outcome.degenerate_indel_from_string(edit_name)
             # Note: indels are not anchor shifted, so don't need to be un-shifted.
             if indel.kind == 'D':
                 p = np.mean([indel.possibly_involved_interval.start, indel.possibly_involved_interval.end])
             else:
                 p = indel.starts_afters[0] + 0.5
 
-        x = p - ti.cut_after
+        x = p - strat.cut_after
 
         return x
 
@@ -796,28 +794,28 @@ class StackedDiagrams:
                     label_features=True,
                    ):
 
-        ti = self.target_infos[source_name]
+        strat = self.editing_strategies[source_name]
         offset = self.offsets[source_name]
 
-        if len(ti.pegRNA_names) > 1:
+        if len(strat.pegRNA_names) > 1:
             if pegRNA_name is None:
                 raise ValueError
-            components = ti.sgRNA_components[pegRNA_name]
+            components = strat.sgRNA_components[pegRNA_name]
             flap_subsequences = [(0, len(components['RTT']))]
             target_subsequences = [(0, len(components['RTT']))]
         else:
-            pegRNA_name = ti.pegRNA_names[0]
-            flap_subsequences = ti.pegRNA.edit_properties['flap_subsequences']
-            target_subsequences = ti.pegRNA.edit_properties['target_subsequences']
+            pegRNA_name = strat.pegRNA_names[0]
+            flap_subsequences = strat.pegRNA.edit_properties['flap_subsequences']
+            target_subsequences = strat.pegRNA.edit_properties['target_subsequences']
 
-            components = ti.sgRNA_components[pegRNA_name]
+            components = strat.sgRNA_components[pegRNA_name]
 
             if len(target_subsequences) == 0:
                 # If the flap has no homology anywhere, just draw it right after the PBS.
                 flap_subsequences = [(0, len(components['RTT']))]
                 target_subsequences = [(0, len(components['RTT']))]
 
-        PBS = ti.features[ti.target, f'{pegRNA_name}_PBS']
+        PBS = strat.features[strat.target, f'{pegRNA_name}_PBS']
 
         start = PBS.start - offset
         end = PBS.end - offset
@@ -869,9 +867,9 @@ class StackedDiagrams:
         RTT_aligned_seq = ''
 
         try:
-            RTT_offset = ti.cut_afters[f'{pegRNA_name}_protospacer_{PBS.strand}'] - offset
+            RTT_offset = strat.cut_afters[f'{pegRNA_name}_protospacer_{PBS.strand}'] - offset
         except KeyError:
-            RTT_offset = ti.cut_afters[f'{pegRNA_name}_protospacer_both'] - offset
+            RTT_offset = strat.cut_afters[f'{pegRNA_name}_protospacer_both'] - offset
 
         for (target_start, target_end), (flap_start, flap_end) in zip(target_subsequences, flap_subsequences):
             # target_subsequences are in downstream_of_nick coords and end is exclusive.
@@ -947,8 +945,8 @@ class StackedDiagrams:
                                  weight=weight,
                                 )
 
-        if ti.pegRNA_programmed_insertion is not None:
-            self.draw_insertion(y, ti.pegRNA_programmed_insertion, source_name, draw_degeneracy=False)
+        if strat.pegRNA_programmed_insertion is not None:
+            self.draw_insertion(y, strat.pegRNA_programmed_insertion, source_name, draw_degeneracy=False)
 
         if label_features:
             self.ax.annotate('RTT',
@@ -998,13 +996,13 @@ class StackedDiagrams:
                          y_offset=1,
                         ):
 
-        ti = self.target_infos[source_name]
+        strat = self.editing_strategies[source_name]
         offset = self.offsets[source_name]
 
-        components = ti.sgRNA_components[ngRNA_name]
+        components = strat.sgRNA_components[ngRNA_name]
         PE3b_spacer = knock_knock.pegRNAs.PE3b_spacer(ngRNA_name,
                                                       components,
-                                                      ti.target_sequence,
+                                                      strat.target_sequence,
                                                      )
 
         alignment, strand = PE3b_spacer.alignment_to_target
@@ -1133,12 +1131,12 @@ class StackedDiagrams:
                                  weight=weight,
                                 )
 
-        #if ti.pegRNA_programmed_insertion is not None:
-        #    self.draw_insertion(y, ti.pegRNA_programmed_insertion, source_name, draw_degeneracy=False)
+        #if strat.pegRNA_programmed_insertion is not None:
+        #    self.draw_insertion(y, strat.pegRNA_programmed_insertion, source_name, draw_degeneracy=False)
 
     def draw_outcomes(self):
         for i, (source_name, category, subcategory, details) in enumerate(self.outcome_order):
-            ti = self.target_infos[source_name]
+            strat = self.editing_strategies[source_name]
 
             details = knock_knock.outcome.Details.from_string(details)
 
@@ -1148,8 +1146,8 @@ class StackedDiagrams:
 
             bottom, top = self.get_bottom_and_top(y)
 
-            if len(self.target_infos) > 1:
-                background_color = ti.protospacer_color
+            if len(self.editing_strategies) > 1:
+                background_color = strat.protospacer_color
             else:
                 background_color = 'black'
                 
@@ -1158,7 +1156,7 @@ class StackedDiagrams:
                (category == 'wild type' and subcategory == 'short indel far from cut' and len(details['deletions']) == 1):
 
                 deletion = details['deletions'][0]
-                deletions = [ti.expand_degenerate_indel(deletion) for deletion in details['deletions']]
+                deletions = [strat.expand_degenerate_indel(deletion) for deletion in details['deletions']]
 
                 xs_to_skip = self.draw_deletions(y, deletions, source_name, background_color=background_color)
 
@@ -1171,7 +1169,7 @@ class StackedDiagrams:
             
             elif category == 'insertion' or (category == 'simple indel' and subcategory.startswith('insertion')):
                 insertion = details['insertions'][0]
-                insertion = ti.expand_degenerate_indel(insertion)
+                insertion = strat.expand_degenerate_indel(insertion)
 
                 self.draw_rect(source_name, window_left - 0.5, window_right + 0.5, bottom, top, self.block_alpha, color=background_color)
                 self.draw_insertion(y, insertion, source_name)
@@ -1182,7 +1180,7 @@ class StackedDiagrams:
                     self.draw_sequence(y, source_name, mismatch_xs, alpha=self.sequence_alpha)
 
             elif category == 'insertion with deletion':
-                outcome = InsertionWithDeletionOutcome.from_string(details).undo_anchor_shift(ti.anchor)
+                outcome = InsertionWithDeletionOutcome.from_string(details).undo_anchor_shift(strat.anchor)
                 insertion = outcome.insertion_outcome.insertion
                 deletion = outcome.deletion_outcome.deletion
                 self.draw_insertion(y, insertion, source_name)
@@ -1202,7 +1200,7 @@ class StackedDiagrams:
                 self.draw_wild_type(y, source_name)
 
             elif category == 'deletion + adjacent mismatch' or category == 'deletion + mismatches':
-                outcome = DeletionPlusMismatchOutcome.from_string(details).undo_anchor_shift(ti.anchor)
+                outcome = DeletionPlusMismatchOutcome.from_string(details).undo_anchor_shift(strat.anchor)
                 xs_to_skip = self.draw_deletions(y, [outcome.deletion_outcome.deletion], draw_MH=True)
                 
                 for snv in outcome.mismatch_outcome.snvs:
@@ -1241,24 +1239,24 @@ class StackedDiagrams:
                     insertion_outcome = None
 
                 elif category == 'donor + deletion':
-                    HDR_plus_deletion_outcome = HDRPlusDeletionOutcome.from_string(details).undo_anchor_shift(ti.anchor)
+                    HDR_plus_deletion_outcome = HDRPlusDeletionOutcome.from_string(details).undo_anchor_shift(strat.anchor)
                     HDR_outcome = HDR_plus_deletion_outcome.HDR_outcome
                     deletion_outcome = HDR_plus_deletion_outcome.deletion_outcome
                     insertion_outcome = None
 
                 elif category == 'intended edit' and subcategory == 'deletion':
-                    HDR_outcome = HDROutcome.from_string(details).undo_anchor_shift(ti.anchor)
+                    HDR_outcome = HDROutcome.from_string(details).undo_anchor_shift(strat.anchor)
                     deletion_outcome = None
                     insertion_outcome = None
 
                 elif category == 'donor + insertion':
-                    HDR_plus_insertion_outcome = HDRPlusInsertionOutcome.from_string(details).undo_anchor_shift(ti.anchor)
+                    HDR_plus_insertion_outcome = HDRPlusInsertionOutcome.from_string(details).undo_anchor_shift(strat.anchor)
                     HDR_outcome = HDR_plus_insertion_outcome.HDR_outcome
                     deletion_outcome = None
                     insertion_outcome = HDR_plus_insertion_outcome.insertion_outcome
 
                 elif category == 'edit + deletion':
-                    HDR_plus_deletion_outcome = HDRPlusDeletionOutcome.from_string(details).undo_anchor_shift(ti.anchor)
+                    HDR_plus_deletion_outcome = HDRPlusDeletionOutcome.from_string(details).undo_anchor_shift(strat.anchor)
                     HDR_outcome = HDR_plus_deletion_outcome.HDR_outcome
                     deletion_outcome = HDR_plus_deletion_outcome.deletion_outcome
                     insertion_outcome = None
@@ -1291,12 +1289,12 @@ class StackedDiagrams:
                                  va='center',
                                  size=self.text_size,
                                 )
-                if len(self.target_infos) > 1:
+                if len(self.editing_strategies) > 1:
                     self.draw_rect(source_name, window_left - 0.5, window_right + 0.5, bottom, top, self.block_alpha, color=background_color)
 
-        if self.draw_donor_on_top and len(ti.donor_SNVs['target']) > 0:
-            donor_SNV_read_bases = ''.join(d['base'] for name, d in sorted(ti.donor_SNVs['donor'].items()))
-            strands = set(SNV['strand'] for SNV in ti.donor_SNVs['donor'].values())
+        if self.draw_donor_on_top and len(strat.donor_SNVs['target']) > 0:
+            donor_SNV_read_bases = ''.join(d['base'] for name, d in sorted(strat.donor_SNVs['donor'].items()))
+            strands = set(SNV['strand'] for SNV in strat.donor_SNVs['donor'].values())
             if len(strands) > 1:
                 raise ValueError('donor strand is weird')
             else:
@@ -1319,7 +1317,7 @@ class StackedDiagrams:
             
             self.draw_wild_type(y, self.single_source_name,
                                 on_top=True,
-                                guides_to_draw=self.target_infos[self.single_source_name].protospacer_names,
+                                guides_to_draw=self.editing_strategies[self.single_source_name].protospacer_names,
                                )
             self.ax.set_xticks([])
                     
@@ -1355,7 +1353,7 @@ class StackedDiagrams:
 class DiagramGrid:
     def __init__(self,
                  outcomes,
-                 target_info,
+                 editing_strategy,
                  inches_per_nt=0.12,
                  inches_per_outcome=0.25,
                  outcome_ax_width=3,
@@ -1368,7 +1366,7 @@ class DiagramGrid:
                 ):
 
         self.outcomes = outcomes
-        self.target_info = target_info
+        self.editing_strategy = editing_strategy
         
         self.ax_on_bottom = ax_on_bottom
 
@@ -1401,7 +1399,7 @@ class DiagramGrid:
 
     def plot_diagrams(self):
         self.diagrams = StackedDiagrams(self.outcomes,
-                                        self.target_info,
+                                        self.editing_strategy,
                                         ax=self.axs_by_name['diagram'],
                                         title=self.title,
                                         inches_per_outcome=self.inches_per_outcome,
@@ -1831,8 +1829,8 @@ class DiagramGrid:
 
         for c, s, d in self.outcomes:
             if c == 'deletion':
-                deletion = DeletionOutcome.from_string(d).undo_anchor_shift(self.target_info.anchor)
-                directionality = deletion.classify_directionality(self.target_info)
+                deletion = DeletionOutcome.from_string(d).undo_anchor_shift(self.editing_strategy.anchor)
+                directionality = deletion.classify_directionality(self.editing_strategy)
                 full_category = f'{c}, {directionality}'
             else:
                 full_category = c
@@ -1904,7 +1902,7 @@ class DiagramGrid:
 
         pegRNA_conversion_fractions = pegRNA_conversion_fractions.copy()
 
-        xs = [self.diagrams.edit_name_to_x(self.target_info.name, edit_name) for edit_name in pegRNA_conversion_fractions.index]
+        xs = [self.diagrams.edit_name_to_x(self.editing_strategy.name, edit_name) for edit_name in pegRNA_conversion_fractions.index]
         pegRNA_conversion_fractions.index = xs
         pegRNA_conversion_fractions = pegRNA_conversion_fractions.sort_index()
 
@@ -1951,7 +1949,7 @@ class DiagramGrid:
                                  height_multiple=5,
                                 ):
 
-        pegRNA = [p for p in self.target_info.pegRNAs if p.name == pegRNA_name][0]
+        pegRNA = [p for p in self.editing_strategy.pegRNAs if p.name == pegRNA_name][0]
         flipped_total_bpps, flipped_propensity = pegRNA.RTT_structure
 
         if use_pegRNA_conversion_fractions_ax:
@@ -2062,7 +2060,7 @@ class DiagramGrid:
             ax.spines.left.set_position(('data', x_bounds[0]))
             ax.spines.bottom.set_visible(False)
 
-def make_deletion_boundaries_figure(target_info,
+def make_deletion_boundaries_figure(editing_strategy,
                                     outcome_fractions,
                                     deletion_boundaries_retriever,
                                     plot_boundaries=True,
@@ -2080,7 +2078,7 @@ def make_deletion_boundaries_figure(target_info,
                                     perform_marginalization_over_mismatches_outside_window=True,
                                     **kwargs,
                                    ):
-    ti = target_info
+    strat = editing_strategy
 
     if isinstance(outcome_fractions, pd.Series):
         outcome_fractions = outcome_fractions.to_frame()
@@ -2094,37 +2092,37 @@ def make_deletion_boundaries_figure(target_info,
     if condition_labels is None:
         condition_labels = {}
 
-    color_overrides = {primer_name: 'grey' for primer_name in ti.primers}
+    color_overrides = {primer_name: 'grey' for primer_name in strat.primers}
 
-    for pegRNA_name in ti.pegRNA_names:
+    for pegRNA_name in strat.pegRNA_names:
         ps_name = knock_knock.pegRNAs.protospacer_name(pegRNA_name)
         PAM_name = f'{pegRNA_name}_PAM'
-        color = ti.pegRNA_name_to_color[pegRNA_name]
+        color = strat.pegRNA_name_to_color[pegRNA_name]
         light_color = hits.visualize.apply_alpha(color, 0.5)
         color_overrides[ps_name] = light_color
         color_overrides[PAM_name] = color
 
-    if ti.protospacer_features:
-        flip = (ti.features[ti.target, ti.primary_protospacer].strand == '-')
-        center = ti.cut_after
+    if strat.protospacer_features:
+        flip = (strat.features[strat.target, strat.primary_protospacer].strand == '-')
+        center = strat.cut_after
     else:
         flip = False
-        center = ti.center_of_amplicon
+        center = strat.center_of_amplicon
 
     if window is None:
         if flip:
-            window = (center - ti.amplicon_interval.end, center - ti.amplicon_interval.start)
+            window = (center - strat.amplicon_interval.end, center - strat.amplicon_interval.start)
         else:
-            window = (ti.amplicon_interval.start - center, ti.amplicon_interval.end - center)
+            window = (strat.amplicon_interval.start - center, strat.amplicon_interval.end - center)
             
         window = (window[0] - 5, window[1] + 5)
 
-    if ti.protospacer_feature is None:
-        window_interval = hits.interval.Interval(ti.center_of_amplicon + window[0], ti.center_of_amplicon + window[1])
-    elif ti.protospacer_feature.strand == '+':
-        window_interval = hits.interval.Interval(ti.cut_after + window[0], ti.cut_after + window[1])
+    if strat.protospacer_feature is None:
+        window_interval = hits.interval.Interval(strat.center_of_amplicon + window[0], strat.center_of_amplicon + window[1])
+    elif strat.protospacer_feature.strand == '+':
+        window_interval = hits.interval.Interval(strat.cut_after + window[0], strat.cut_after + window[1])
     else:
-        window_interval = hits.interval.Interval(ti.cut_after - window[1], ti.cut_after - window[0])
+        window_interval = hits.interval.Interval(strat.cut_after - window[1], strat.cut_after - window[0])
 
     outcome_fractions = outcome_fractions[conditions]
 
@@ -2189,13 +2187,13 @@ def make_deletion_boundaries_figure(target_info,
     else:
         outcomes = outcome_fractions.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
 
-    features_to_draw = set(ti.primers)
+    features_to_draw = set(strat.primers)
     features_to_draw.update(kwargs.pop('features_to_draw', []))
 
     color_overrides.update(kwargs.pop('color_overrides', {}))
 
     grid = DiagramGrid(outcomes, 
-                       ti,
+                       strat,
                        draw_wild_type_on_top=True,
                        window=window,
                        block_alpha=0.1,
@@ -2260,7 +2258,7 @@ def make_deletion_boundaries_figure(target_info,
 
             for condition in conditions:
                 series = deletion_boundaries[quantity][condition].copy()
-                series.index = series.index.values - grid.diagrams.offsets[ti.name]
+                series.index = series.index.values - grid.diagrams.offsets[strat.name]
                 grid.plot_on_ax_above(quantity,
                                       series.index,
                                       series * 100,
@@ -2269,11 +2267,11 @@ def make_deletion_boundaries_figure(target_info,
                                       color=condition_colors.get(condition, 'black'),
                                      )
 
-            for cut_after in ti.cut_afters.values():
-                grid.axs_by_name[quantity].axvline(cut_after + 0.5 - grid.diagrams.offsets[ti.name], linestyle='--', color=grid.diagrams.cut_color, linewidth=grid.diagrams.line_widths)
+            for cut_after in strat.cut_afters.values():
+                grid.axs_by_name[quantity].axvline(cut_after + 0.5 - grid.diagrams.offsets[strat.name], linestyle='--', color=grid.diagrams.cut_color, linewidth=grid.diagrams.line_widths)
 
-        for pegRNA_i, pegRNA_name in enumerate(ti.pegRNA_names):
-            grid.diagrams.draw_pegRNA(ti.name, pegRNA_name, y_offset=pegRNA_i + 1, label_features=False)
+        for pegRNA_i, pegRNA_name in enumerate(strat.pegRNA_names):
+            grid.diagrams.draw_pegRNA(strat.name, pegRNA_name, y_offset=pegRNA_i + 1, label_features=False)
 
         grid.axs_by_name['fraction_removed'].set_ylabel('% of reads with\nposition deleted', size=14)
         
@@ -2316,7 +2314,7 @@ def restrict_mismatches_to_window(csd, window_interval):
     else:
         return c, s, d
     
-    mismatches_in_window = knock_knock.target_info.Mismatches([m for m in mismatches if m.position in window_interval])
+    mismatches_in_window = knock_knock.outcome.Mismatches([m for m in mismatches if m.position in window_interval])
 
     details.mismatches = mismatches_in_window
     
@@ -2336,7 +2334,7 @@ def marginalize_over_mismatches_outside_window(outcome_fractions, window_interva
     outcome_fractions.index = pd.MultiIndex.from_tuples(outcome_fractions.index, names=('category', 'subcategory', 'details'))
     return outcome_fractions
 
-def make_partial_incorporation_figure(target_info,
+def make_partial_incorporation_figure(editing_strategy,
                                       outcome_fractions,
                                       pegRNA_conversion_fractions=None,
                                       conditions=None,
@@ -2364,7 +2362,7 @@ def make_partial_incorporation_figure(target_info,
                                       **diagram_kwargs,
                                      ):
 
-    ti = target_info
+    strat = editing_strategy
 
     if isinstance(outcome_fractions, pd.Series):
         outcome_fractions = outcome_fractions.to_frame()
@@ -2406,33 +2404,33 @@ def make_partial_incorporation_figure(target_info,
 
     outcome_fractions = outcome_fractions[[c for c in conditions if not isinstance(c, dict)]]
 
-    color_overrides = {primer_name: 'grey' for primer_name in ti.primers}
+    color_overrides = {primer_name: 'grey' for primer_name in strat.primers}
 
-    for pegRNA_name in ti.pegRNA_names:
+    for pegRNA_name in strat.pegRNA_names:
         ps_name = knock_knock.pegRNAs.protospacer_name(pegRNA_name)
         PAM_name = f'{pegRNA_name}_PAM'
-        color = ti.pegRNA_name_to_color[pegRNA_name]
+        color = strat.pegRNA_name_to_color[pegRNA_name]
         light_color = hits.visualize.apply_alpha(color, 0.5)
         color_overrides[ps_name] = light_color
         color_overrides[PAM_name] = color
 
-    half_length = int(np.floor(ti.amplicon_length / 2))
+    half_length = int(np.floor(strat.amplicon_length / 2))
 
     if manual_window is not None:
         window = manual_window
-    elif len(ti.pegRNA_names) == 2:
-        window = (-20, ti.nick_offset + 20 - 1)
-    elif len(ti.pegRNA_names) == 1:
-        window = (-20, len(ti.sgRNA_components[ti.pegRNA_names[0]]['RTT']) + 4)
+    elif len(strat.pegRNA_names) == 2:
+        window = (-20, strat.nick_offset + 20 - 1)
+    elif len(strat.pegRNA_names) == 1:
+        window = (-20, len(strat.sgRNA_components[strat.pegRNA_names[0]]['RTT']) + 4)
     else:
         window = (-half_length, half_length)
 
-    if ti.protospacer_feature is None:
-        window_interval = hits.interval.Interval(ti.center_of_amplicon + window[0], ti.center_of_amplicon + window[1])
-    elif ti.protospacer_feature.strand == '+':
-        window_interval = hits.interval.Interval(ti.cut_after + window[0], ti.cut_after + window[1])
+    if strat.protospacer_feature is None:
+        window_interval = hits.interval.Interval(strat.center_of_amplicon + window[0], strat.center_of_amplicon + window[1])
+    elif strat.protospacer_feature.strand == '+':
+        window_interval = hits.interval.Interval(strat.cut_after + window[0], strat.cut_after + window[1])
     else:
-        window_interval = hits.interval.Interval(ti.cut_after - window[1], ti.cut_after - window[0])
+        window_interval = hits.interval.Interval(strat.cut_after - window[1], strat.cut_after - window[0])
 
     if perform_marginalization_over_mismatches_outside_window:
         outcome_fractions = marginalize_over_mismatches_outside_window(outcome_fractions, window_interval)
@@ -2480,7 +2478,7 @@ def make_partial_incorporation_figure(target_info,
 
     if len(outcomes) > 0:
         grid = DiagramGrid(outcomes, 
-                           ti,
+                           strat,
                            draw_wild_type_on_top=True,
                            window=window,
                            block_alpha=0.1,
@@ -2575,8 +2573,8 @@ def make_partial_incorporation_figure(target_info,
         grid.set_xlim('log10_fractions', (np.log10(0.49 * frequency_cutoff), np.log10(x_max)))
         grid.style_log10_frequency_ax('log10_fractions')
 
-        for pegRNA_i, pegRNA_name in enumerate(ti.pegRNA_names):
-            grid.diagrams.draw_pegRNA(ti.name, pegRNA_name, y_offset=pegRNA_i + 1, label_features=False)
+        for pegRNA_i, pegRNA_name in enumerate(strat.pegRNA_names):
+            grid.diagrams.draw_pegRNA(strat.name, pegRNA_name, y_offset=pegRNA_i + 1, label_features=False)
 
         if pegRNA_conversion_fractions is not None:
             grid.plot_pegRNA_conversion_fractions_above(pegRNA_conversion_fractions,

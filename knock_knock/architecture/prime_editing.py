@@ -7,12 +7,11 @@ from hits import interval, sam, sw, utilities
 from hits.utilities import memoized_property
 import hits.visualize
 
-import knock_knock.pegRNAs
-import knock_knock.target_info
-import knock_knock.visualize.architecture
 import knock_knock.architecture
+import knock_knock.pegRNAs
+import knock_knock.visualize.architecture
 
-from knock_knock.outcome import *
+from knock_knock.outcome import Details, DuplicationJunction
 
 class Architecture(knock_knock.architecture.Categorizer):
     category_order = [
@@ -168,8 +167,8 @@ class Architecture(knock_knock.architecture.Categorizer):
         'minimal alignment to intended target',
     ]
 
-    def __init__(self, alignments, target_info, error_corrected=False, mode='illumina', flipped=False):
-        super().__init__(alignments, target_info)
+    def __init__(self, alignments, editing_strategy, error_corrected=False, mode='illumina', flipped=False):
+        super().__init__(alignments, editing_strategy)
 
         self.ins_size_to_split_at = 1
         self.del_size_to_split_at = 1
@@ -184,16 +183,16 @@ class Architecture(knock_knock.architecture.Categorizer):
 
     @memoized_property
     def intended_edit_type(self):
-        if len(self.target_info.pegRNA_names) != 1:
+        if len(self.editing_strategy.pegRNA_names) != 1:
             edit_type = None
         else:
-            edit_type = self.target_info.pegRNAs[0].edit_type
+            edit_type = self.editing_strategy.pegRNAs[0].edit_type
 
         return edit_type
 
     @property
     def sequencing_direction(self):
-        sequencing_direction = self.target_info.sequencing_direction
+        sequencing_direction = self.editing_strategy.sequencing_direction
         if self.flipped:
             sequencing_direction = sam.opposite_strand[sequencing_direction]
 
@@ -201,7 +200,7 @@ class Architecture(knock_knock.architecture.Categorizer):
 
     @memoized_property
     def pegRNA_side(self):
-        pegRNA_side = self.target_info.pegRNA_side
+        pegRNA_side = self.editing_strategy.pegRNA_side
 
         if self.flipped:
             pegRNA_side = {'left': 'right', 'right': 'left'}[pegRNA_side]
@@ -210,7 +209,7 @@ class Architecture(knock_knock.architecture.Categorizer):
 
     @memoized_property
     def non_pegRNA_side(self):
-        non_pegRNA_side = self.target_info.non_pegRNA_side
+        non_pegRNA_side = self.editing_strategy.non_pegRNA_side
 
         if self.flipped:
             non_pegRNA_side = {'left': 'right', 'right': 'left'}[non_pegRNA_side]
@@ -222,10 +221,10 @@ class Architecture(knock_knock.architecture.Categorizer):
         if self.flipped:
             pegRNA_name_to_side_of_read = {
                 name:  {'left': 'right', 'right': 'left'}[side]
-                for name, side in self.target_info.pegRNA_name_to_side_of_read.items()
+                for name, side in self.editing_strategy.pegRNA_name_to_side_of_read.items()
             }
         else:
-            pegRNA_name_to_side_of_read = self.target_info.pegRNA_name_to_side_of_read
+            pegRNA_name_to_side_of_read = self.editing_strategy.pegRNA_name_to_side_of_read
 
         return pegRNA_name_to_side_of_read
 
@@ -247,7 +246,7 @@ class Architecture(knock_knock.architecture.Categorizer):
             }
 
         primers = {
-            side: self.target_info.primers_by_side_of_read[side_to_side[side]]
+            side: self.editing_strategy.primers_by_side_of_read[side_to_side[side]]
             for side in ['left', 'right']
         }
 
@@ -261,19 +260,19 @@ class Architecture(knock_knock.architecture.Categorizer):
     def initial_target_alignments(self):
         t_als = [
             al for al in self.alignments
-            if al.reference_name == self.target_info.target
+            if al.reference_name == self.editing_strategy.target
         ]
         
         return t_als
 
     @memoized_property
     def initial_pegRNA_alignments(self):
-        if self.target_info.pegRNA_names is None:
+        if self.editing_strategy.pegRNA_names is None:
             als = []
         else:
             als = [
                 al for al in self.alignments
-                if al.reference_name in self.target_info.pegRNA_names
+                if al.reference_name in self.editing_strategy.pegRNA_names
             ]
         
         return als
@@ -281,8 +280,8 @@ class Architecture(knock_knock.architecture.Categorizer):
     @memoized_property
     def donor_alignments(self):
         ''' Donor meaning integrase donor '''
-        if self.target_info.donor is not None:
-            valid_names = [self.target_info.donor]
+        if self.editing_strategy.donor is not None:
+            valid_names = [self.editing_strategy.donor]
         else:
             valid_names = []
 
@@ -299,17 +298,17 @@ class Architecture(knock_knock.architecture.Categorizer):
     def extra_alignments(self):
         # Any alignments not to the target, pegRNAs, or donor.
 
-        ti = self.target_info
+        strat = self.editing_strategy
 
-        non_extra_ref_names = {ti.target}
+        non_extra_ref_names = {strat.target}
 
-        if ti.pegRNA_names is not None:
-            non_extra_ref_names.update(ti.pegRNA_names)
+        if strat.pegRNA_names is not None:
+            non_extra_ref_names.update(strat.pegRNA_names)
 
-        if ti.donor is not None:
-            non_extra_ref_names.add(ti.donor)
+        if strat.donor is not None:
+            non_extra_ref_names.add(strat.donor)
 
-        extra_ref_names = {n for n in ti.reference_sequences if n not in non_extra_ref_names}
+        extra_ref_names = {n for n in strat.reference_sequences if n not in non_extra_ref_names}
 
         als = [al for al in self.alignments if al.reference_name in extra_ref_names]
 
@@ -347,21 +346,21 @@ class Architecture(knock_knock.architecture.Categorizer):
         # Any that overlap the amplicon interval should not be considered supplemental_als
         # to prevent the intended amplicon from being considered nonspecific amplification.
 
-        ti = self.target_info
+        strat = self.editing_strategy
 
-        if ti.reference_name_in_genome_source:
+        if strat.reference_name_in_genome_source:
             target_als_outside_amplicon = []
             other_reference_als = []
 
-            target_interval = interval.Interval(0, len(ti.target_sequence) - 1)
+            target_interval = interval.Interval(0, len(strat.target_sequence) - 1)
 
             for al in few_mismatches:
 
-                if al.reference_name != ti.reference_name_in_genome_source:
+                if al.reference_name != strat.reference_name_in_genome_source:
                     other_reference_als.append(al)
 
                 else:
-                    conversion_results = ti.convert_genomic_alignment_to_target_coordinates(al)
+                    conversion_results = strat.convert_genomic_alignment_to_target_coordinates(al)
 
                     if conversion_results:
                         converted_interval = interval.Interval(conversion_results['start'], conversion_results['end'])
@@ -372,15 +371,15 @@ class Architecture(knock_knock.architecture.Categorizer):
                         else:
                             al_dict = al.to_dict()
 
-                            al_dict['ref_name'] = ti.target
+                            al_dict['ref_name'] = strat.target
                             
-                            converted_al = pysam.AlignedSegment.from_dict(al_dict, ti.header)
+                            converted_al = pysam.AlignedSegment.from_dict(al_dict, strat.header)
 
                             converted_al.reference_start = conversion_results['start']
 
                             converted_al.is_reverse = (conversion_results['strand'] == '-')
 
-                            overlaps_amplicon = interval.get_covered_on_ref(converted_al) & ti.amplicon_interval
+                            overlaps_amplicon = interval.get_covered_on_ref(converted_al) & strat.amplicon_interval
 
                             if not overlaps_amplicon:
                                 target_als_outside_amplicon.append(converted_al)
@@ -397,14 +396,14 @@ class Architecture(knock_knock.architecture.Categorizer):
 
         for al in als:
             split_als = knock_knock.architecture.comprehensively_split_alignment(al,
-                                                               self.target_info,
+                                                               self.editing_strategy,
                                                                self.mode,
                                                                self.ins_size_to_split_at,
                                                                self.del_size_to_split_at,
-                                                               programmed_substitutions=self.target_info.pegRNA_programmed_alternative_bases,
+                                                               programmed_substitutions=self.editing_strategy.pegRNA_programmed_alternative_bases,
                                                               )
 
-            seq_bytes = self.target_info.reference_sequence_bytes[al.reference_name]
+            seq_bytes = self.editing_strategy.reference_sequence_bytes[al.reference_name]
 
             extended = [sw.extend_alignment(split_al, seq_bytes) for split_al in split_als]
 
@@ -438,14 +437,14 @@ class Architecture(knock_knock.architecture.Categorizer):
     @memoized_property
     def partial_gap_perfect_alignments(self):
         def is_relevant(al):
-            if al.reference_name == self.target_info.target:
-                return (interval.get_covered_on_ref(al) & self.target_info.amplicon_interval).total_length > 0
+            if al.reference_name == self.editing_strategy.target:
+                return (interval.get_covered_on_ref(al) & self.editing_strategy.amplicon_interval).total_length > 0
             else:
                 return True
 
         als = []
 
-        targets = ['target'] + self.target_info.pegRNA_names
+        targets = ['target'] + self.editing_strategy.pegRNA_names
 
         for target_name in targets:
             for gap in self.initial_gap:
@@ -481,11 +480,11 @@ class Architecture(knock_knock.architecture.Categorizer):
 
     @memoized_property
     def gap_covering_alignments(self):
-        ti = self.target_info
+        strat = self.editing_strategy
 
         gap_covers = []
         
-        target_interval = ti.amplicon_interval
+        target_interval = strat.amplicon_interval
         
         for gap in self.initial_gap:
             start = max(0, gap.start - 5)
@@ -493,35 +492,35 @@ class Architecture(knock_knock.architecture.Categorizer):
             extended_gap = interval.Interval(start, end)
 
             als = sw.align_read(self.read,
-                                [(ti.target, ti.target_sequence),
+                                [(strat.target, strat.target_sequence),
                                 ],
                                 4,
-                                ti.header,
+                                strat.header,
                                 N_matches=False,
                                 max_alignments_per_target=5,
                                 read_interval=extended_gap,
-                                ref_intervals={ti.target: target_interval},
+                                ref_intervals={strat.target: target_interval},
                                 mismatch_penalty=-2,
                                )
 
-            als = [sw.extend_alignment(al, ti.reference_sequence_bytes[ti.target]) for al in als]
+            als = [sw.extend_alignment(al, strat.reference_sequence_bytes[strat.target]) for al in als]
             
             gap_covers.extend(als)
 
-            if ti.pegRNA_names is not None:
-                for pegRNA_name in ti.pegRNA_names:
+            if strat.pegRNA_names is not None:
+                for pegRNA_name in strat.pegRNA_names:
                     als = sw.align_read(self.read,
-                                        [(pegRNA_name, ti.reference_sequences[pegRNA_name]),
+                                        [(pegRNA_name, strat.reference_sequences[pegRNA_name]),
                                         ],
                                         4,
-                                        ti.header,
+                                        strat.header,
                                         N_matches=False,
                                         max_alignments_per_target=5,
                                         read_interval=extended_gap,
                                         mismatch_penalty=-2,
                                        )
 
-                    als = [sw.extend_alignment(al, ti.reference_sequence_bytes[pegRNA_name]) for al in als]
+                    als = [sw.extend_alignment(al, strat.reference_sequence_bytes[pegRNA_name]) for al in als]
                     
                     gap_covers.extend(als)
 
@@ -529,9 +528,9 @@ class Architecture(knock_knock.architecture.Categorizer):
 
     @memoized_property
     def target_alignments(self):
-        ti = self.target_info
+        strat = self.editing_strategy
 
-        gap_als = [al for al in self.gap_covering_alignments + self.partial_gap_perfect_alignments if al.reference_name == ti.target]
+        gap_als = [al for al in self.gap_covering_alignments + self.partial_gap_perfect_alignments if al.reference_name == strat.target]
         all_als = self.split_target_alignments + gap_als
 
         for side in [5, 3]:
@@ -545,17 +544,17 @@ class Architecture(knock_knock.architecture.Categorizer):
 
         all_als = sam.make_nonredundant(all_als)
         all_als = interval.make_parsimonious(all_als)
-        merged_als = sam.merge_any_adjacent_pairs(all_als, ti.reference_sequences)
+        merged_als = sam.merge_any_adjacent_pairs(all_als, strat.reference_sequences)
         split_als = self.split_and_extend_alignments(merged_als)
 
         return split_als
 
     @memoized_property
     def pegRNA_alignments(self):
-        ti = self.target_info
+        strat = self.editing_strategy
 
-        if ti.pegRNA_names is not None:
-            gap_als = [al for al in self.gap_covering_alignments + self.partial_gap_perfect_alignments if al.reference_name in ti.pegRNA_names]
+        if strat.pegRNA_names is not None:
+            gap_als = [al for al in self.gap_covering_alignments + self.partial_gap_perfect_alignments if al.reference_name in strat.pegRNA_names]
             all_als = self.split_pegRNA_alignments + gap_als
 
             all_als = sam.make_nonredundant(all_als)
@@ -568,7 +567,7 @@ class Architecture(knock_knock.architecture.Categorizer):
                     if al is not None:
                         all_als.append(al)
 
-            merged_als = sam.merge_any_adjacent_pairs(all_als, ti.reference_sequences)
+            merged_als = sam.merge_any_adjacent_pairs(all_als, strat.reference_sequences)
             split_als = self.split_and_extend_alignments(merged_als)
         else:
             split_als = []
@@ -577,7 +576,7 @@ class Architecture(knock_knock.architecture.Categorizer):
 
     @memoized_property
     def pegRNA_alignments_by_pegRNA_name(self):
-        if self.target_info.pegRNA_names is None:
+        if self.editing_strategy.pegRNA_names is None:
             pegRNA_alignments = None
         else:
             pegRNA_alignments = {
@@ -585,7 +584,7 @@ class Architecture(knock_knock.architecture.Categorizer):
                     al for al in self.pegRNA_alignments
                     if al.reference_name == pegRNA_name
                 ]
-                for pegRNA_name in self.target_info.pegRNA_names
+                for pegRNA_name in self.editing_strategy.pegRNA_names
             }
         
         return pegRNA_alignments
@@ -599,7 +598,7 @@ class Architecture(knock_knock.architecture.Categorizer):
 
         # Re-merge any deletions.
         merged_als = sam.merge_any_adjacent_pairs(self.target_alignments,
-                                                  self.target_info.reference_sequences,
+                                                  self.editing_strategy.reference_sequences,
                                                   max_deletion_length=2,
                                                  )
 
@@ -640,7 +639,7 @@ class Architecture(knock_knock.architecture.Categorizer):
         if pegRNA_al is None or target_al is None:
             return None, None, None
 
-        ti = self.target_info
+        strat = self.editing_strategy
 
         pegRNA_name = pegRNA_al.reference_name
         target_PBS_name = knock_knock.pegRNAs.PBS_name(pegRNA_name)
@@ -691,7 +690,7 @@ class Architecture(knock_knock.architecture.Categorizer):
             raise ValueError(shared_feature)
 
         def contribution_test(al):
-            return al.reference_name in ti.pegRNA_names and self.specific_to_pegRNA(al)
+            return al.reference_name in strat.pegRNA_names and self.specific_to_pegRNA(al)
 
         extension_results = self.are_mutually_extending_from_shared_feature(left_al, left_feature_name, right_al, right_feature_name, contribution_test=contribution_test)
 
@@ -700,7 +699,7 @@ class Architecture(knock_knock.architecture.Categorizer):
 
         # For non-definite PBS-extending als, insist that the pegRNA alignment is not entirely
         # contained in the PBS - i.e. overlaps the RTT.
-        if shared_feature == 'PBS' and not sam.overlaps_feature(cropped_pegRNA_extension_al, ti.features[pegRNA_name, 'RTT'], require_same_strand=False):
+        if shared_feature == 'PBS' and not sam.overlaps_feature(cropped_pegRNA_extension_al, strat.features[pegRNA_name, 'RTT'], require_same_strand=False):
             extension_results['status'] = 'spurious'
 
         return extension_results['status'], cropped_pegRNA_extension_al, cropped_target_al
@@ -736,16 +735,16 @@ class Architecture(knock_knock.architecture.Categorizer):
         if target_edge_al is None:
             return None, None, None
 
-        ti = self.target_info
+        strat = self.editing_strategy
 
-        if len(ti.pegRNA_names) == 0:
+        if len(strat.pegRNA_names) == 0:
             return None, None, None
-        elif len(ti.pegRNA_names) == 1:
-            pegRNA_name = ti.pegRNA_names[0]
-        elif len(ti.pegRNA_names) == 2:
+        elif len(strat.pegRNA_names) == 1:
+            pegRNA_name = strat.pegRNA_names[0]
+        elif len(strat.pegRNA_names) == 2:
             pegRNA_name = self.pegRNA_names_by_side_of_read[side]
         else:
-            raise ValueError(ti.pegRNA_names)
+            raise ValueError(strat.pegRNA_names)
 
         candidate_als = self.pegRNA_alignments_by_pegRNA_name[pegRNA_name]
 
@@ -952,8 +951,6 @@ class Architecture(knock_knock.architecture.Categorizer):
         return self.possible_extension_chains_by_side[self.pegRNA_side]
 
     def get_extension_chain_junction_microhomology(self, require_definite=True):
-        ti = self.target_info
-
         last_als = {}
 
         for side in ['left', 'right']:
@@ -983,7 +980,7 @@ class Architecture(knock_knock.architecture.Categorizer):
             mh = None
         
         else:
-            mh = knock_knock.architecture.junction_microhomology(ti.reference_sequences, last_als['left'], last_als['right'])
+            mh = knock_knock.architecture.junction_microhomology(self.editing_strategy.reference_sequences, last_als['left'], last_als['right'])
 
             mh = max(mh, 0)
 
@@ -1001,14 +998,14 @@ class Architecture(knock_knock.architecture.Categorizer):
         ''' Get the position of the far edge of an extension chain
         in the relevant coordinate system.
         '''
-        ti = self.target_info
+        strat = self.editing_strategy
 
-        pegRNA_name = ti.pegRNA_names[0]
+        pegRNA_name = strat.pegRNA_names[0]
 
-        PBS_end = ti.features[pegRNA_name, 'PBS'].end
+        PBS_end = strat.features[pegRNA_name, 'PBS'].end
 
-        target_PBS_name = ti.PBS_names_by_side_of_read[self.pegRNA_side]
-        target_PBS = ti.features[ti.target, target_PBS_name]
+        target_PBS_name = strat.PBS_names_by_side_of_read[self.pegRNA_side]
+        target_PBS = strat.features[strat.target, target_PBS_name]
 
         if require_definite:
             chain = self.extension_chains_by_side[side]
@@ -1055,8 +1052,8 @@ class Architecture(knock_knock.architecture.Categorizer):
         return relevant_edge
 
     def convert_target_alignment_edge_to_nick_coordinate(self, al, start_or_end):
-        ti = self.target_info
-        target_PBS = ti.features[ti.target, ti.pegRNA.PBS_name]
+        strat = self.editing_strategy
+        target_PBS = strat.features[strat.target, strat.pegRNA.PBS_name]
 
         if start_or_end == 'start':
             reference_edge = al.reference_start
@@ -1082,11 +1079,11 @@ class Architecture(knock_knock.architecture.Categorizer):
     def pegRNA_extension_als_list(self):
         extension_als = []
 
-        if len(self.target_info.pegRNA_names) == 1:
+        if len(self.editing_strategy.pegRNA_names) == 1:
             if 'pegRNA' in self.extension_chain['alignments']:
                 extension_als.append(self.extension_chain['alignments']['pegRNA'])
 
-        elif len(self.target_info.pegRNA_names) == 2:
+        elif len(self.editing_strategy.pegRNA_names) == 2:
             for side, extension_chain in self.extension_chains_by_side.items():
                 if 'first pegRNA' in extension_chain['alignments']:
                     extension_als.append(extension_chain['alignments']['first pegRNA'])
@@ -1116,7 +1113,7 @@ class Architecture(knock_knock.architecture.Categorizer):
         is_intended_deletion = False
 
         def is_intended(indel):
-            return indel.kind == 'D' and indel == self.target_info.pegRNA_programmed_deletion
+            return indel.kind == 'D' and indel == self.editing_strategy.pegRNA_programmed_deletion
 
         if self.single_read_covering_target_alignment:
             target_alignment = self.single_read_covering_target_alignment
@@ -1162,7 +1159,7 @@ class Architecture(knock_knock.architecture.Categorizer):
     def flipped_pegRNA_als(self):
         ''' Identify flipped pegRNA alignments that pair the pegRNA protospacer with target protospacer. '''
 
-        ti = self.target_info
+        strat = self.editing_strategy
 
         flipped_als = {}
 
@@ -1175,7 +1172,7 @@ class Architecture(knock_knock.architecture.Categorizer):
 
             ps_name = knock_knock.pegRNAs.protospacer_name(pegRNA_name)
 
-            scaffold_feature = ti.features[pegRNA_name, 'scaffold']
+            scaffold_feature = strat.features[pegRNA_name, 'scaffold']
 
             for pegRNA_al in pegRNA_als:
                 if self.share_feature(target_al, ps_name, pegRNA_al, 'protospacer'):
@@ -1188,7 +1185,7 @@ class Architecture(knock_knock.architecture.Categorizer):
     def single_read_covering_target_alignment(self):
         need_to_cover = self.whole_read_minus_edges(2) & self.not_covered_by_primers
 
-        merged_als = sam.merge_any_adjacent_pairs(self.target_alignments, self.target_info.reference_sequences)
+        merged_als = sam.merge_any_adjacent_pairs(self.target_alignments, self.editing_strategy.reference_sequences)
 
         covering_als = []
 
@@ -1212,10 +1209,10 @@ class Architecture(knock_knock.architecture.Categorizer):
         '''
         need_to_cover = self.not_covered_by_primers
 
-        merged_original_als = sam.merge_any_adjacent_pairs(self.primary_alignments, self.target_info.reference_sequences)
+        merged_original_als = sam.merge_any_adjacent_pairs(self.primary_alignments, self.editing_strategy.reference_sequences)
         
         original_covering_als = [al for al in merged_original_als
-                                 if al.reference_name == self.target_info.target and 
+                                 if al.reference_name == self.editing_strategy.target and 
                                  (need_to_cover - interval.get_covered(al)).total_length == 0
                                 ]
 
@@ -1270,9 +1267,9 @@ class Architecture(knock_knock.architecture.Categorizer):
 
     def summarize_mismatches_in_alignments(self, relevant_alignments):
         ''' Record bases seen at programmed substitution positions relative to target +. '''
-        substitutions = self.target_info.pegRNA_substitutions
+        substitutions = self.editing_strategy.pegRNA_substitutions
 
-        target = self.target_info.target
+        target = self.editing_strategy.target
         position_to_substitution_name = {}
 
         if substitutions is not None:
@@ -1285,9 +1282,9 @@ class Architecture(knock_knock.architecture.Categorizer):
         non_pegRNA_mismatches = []
 
         for al in relevant_alignments:
-            is_pegRNA_al = al.reference_name in self.target_info.pegRNA_names
+            is_pegRNA_al = al.reference_name in self.editing_strategy.pegRNA_names
 
-            ref_seq = self.target_info.reference_sequences[al.reference_name]
+            ref_seq = self.editing_strategy.reference_sequences[al.reference_name]
 
             for true_read_i, read_b, ref_i, ref_b, qual in sam.aligned_tuples(al, ref_seq):
                 if true_read_i is None or ref_i is None:
@@ -1320,10 +1317,10 @@ class Architecture(knock_knock.architecture.Categorizer):
                         matches_pegRNA = (pegRNA_base == read_b)
 
                     if not matches_pegRNA:
-                        mismatch = knock_knock.target_info.Mismatch(ref_i, read_b)
+                        mismatch = knock_knock.outcome.Mismatch(ref_i, read_b)
                         non_pegRNA_mismatches.append(mismatch)
 
-        non_pegRNA_mismatches = knock_knock.target_info.Mismatches(non_pegRNA_mismatches)
+        non_pegRNA_mismatches = knock_knock.outcome.Mismatches(non_pegRNA_mismatches)
 
         return read_bases_at_substitution_locii, non_pegRNA_mismatches
 
@@ -1346,16 +1343,16 @@ class Architecture(knock_knock.architecture.Categorizer):
         if al is None or al.is_unmapped:
             return False
 
-        ti = self.target_info
+        strat = self.editing_strategy
 
         ref_name = al.reference_name
-        ref_seq = ti.reference_sequences[al.reference_name]
+        ref_seq = strat.reference_sequences[al.reference_name]
 
         contains_substitution = False
 
         for true_read_i, read_b, ref_i, ref_b, qual in sam.aligned_tuples(al, ref_seq):
             # Note: read_b and ref_b are as if the read is the forward strand
-            pegRNA_base = ti.simple_pegRNA_substitutions.get((ref_name, ref_i))
+            pegRNA_base = strat.simple_pegRNA_substitutions.get((ref_name, ref_i))
 
             if pegRNA_base is not None and pegRNA_base == read_b:
                 contains_substitution = True
@@ -1364,7 +1361,7 @@ class Architecture(knock_knock.architecture.Categorizer):
 
     @memoized_property
     def pegRNA_substitution_locii_summary(self):
-        substitutions = self.target_info.pegRNA_substitutions
+        substitutions = self.editing_strategy.pegRNA_substitutions
 
         substitution_names_seen = set()
 
@@ -1373,7 +1370,7 @@ class Architecture(knock_knock.architecture.Categorizer):
         else:
             pegRNA_substitution_locii, _ = self.mismatches_summary
 
-            target = self.target_info.target
+            target = self.editing_strategy.target
             
             genotype = {}
 
@@ -1408,7 +1405,7 @@ class Architecture(knock_knock.architecture.Categorizer):
         has_pegRNA_substitution = len(substitution_names_seen) > 0
 
         pegRNAs_that_explain_all_substitutions = set()
-        for pegRNA_name in self.target_info.pegRNA_names:
+        for pegRNA_name in self.editing_strategy.pegRNA_names:
             if all(substitution_name in substitutions[pegRNA_name] for substitution_name in substitution_names_seen):
                 pegRNAs_that_explain_all_substitutions.add(pegRNA_name)
 
@@ -1432,14 +1429,14 @@ class Architecture(knock_knock.architecture.Categorizer):
     @memoized_property
     def full_incorporation_pegRNA_substitution_string(self):
         ''' value of self.pegRNA_substitution_string expected if all substitutions are incorporated '''
-        ti = self.target_info
-        substitutions = ti.pegRNA_substitutions
+        strat = self.editing_strategy
+        substitutions = strat.pegRNA_substitutions
 
         full_incorporation = []
 
         if substitutions is not None:
-            for substitution_name in sorted(substitutions[ti.target]):
-                pegRNA_base = substitutions[ti.target][substitution_name]['alternative_base']
+            for substitution_name in sorted(substitutions[strat.target]):
+                pegRNA_base = substitutions[strat.target][substitution_name]['alternative_base']
                 full_incorporation.append(pegRNA_base)
 
         full_incorporation = ''.join(full_incorporation)
@@ -1449,13 +1446,13 @@ class Architecture(knock_knock.architecture.Categorizer):
     @memoized_property
     def no_incorporation_pegRNA_substitution_string(self):
         ''' value of self.pegRNA_substitution_string expected if no substitutions are incorporated '''
-        ti = self.target_info
-        substitutions = ti.pegRNA_substitutions
+        strat = self.editing_strategy
+        substitutions = strat.pegRNA_substitutions
 
         no_incorporation = []
 
         if substitutions is not None:
-            for substitution_name in sorted(substitutions[ti.target]):
+            for substitution_name in sorted(substitutions[strat.target]):
                 no_incorporation.append('_')
 
         no_incorporation = ''.join(no_incorporation)
@@ -1466,8 +1463,8 @@ class Architecture(knock_knock.architecture.Categorizer):
     def pegRNA_insertion_feature_summaries(self):
         summaries = {}
         
-        for feature in self.target_info.pegRNA_programmed_insertion_features:
-            programmed_insertion_sequence = feature.sequence(self.target_info.reference_sequences)
+        for feature in self.editing_strategy.pegRNA_programmed_insertion_features:
+            programmed_insertion_sequence = feature.sequence(self.editing_strategy.reference_sequences)
             observed_sequences = []
             for al in self.pegRNA_extension_als_list:
                 cropped_al = sam.crop_al_to_feature(al, feature)
@@ -1497,21 +1494,21 @@ class Architecture(knock_knock.architecture.Categorizer):
 
     @memoized_property
     def indels(self):
-        merged_target_als = sam.merge_any_adjacent_pairs(self.target_alignments, self.target_info.reference_sequences)
+        merged_target_als = sam.merge_any_adjacent_pairs(self.target_alignments, self.editing_strategy.reference_sequences)
         return self.extract_indels_from_alignments(merged_target_als)
 
     def alignment_scaffold_overlap(self, al):
-        ti = self.target_info
+        strat = self.editing_strategy
 
-        if al.reference_name not in ti.pegRNA_names:
+        if al.reference_name not in strat.pegRNA_names:
             scaffold_overlap = 0
 
         else:
 
             pegRNA_name = al.reference_name
-            pegRNA_seq = ti.reference_sequences[pegRNA_name]
+            pegRNA_seq = strat.reference_sequences[pegRNA_name]
 
-            scaffold_feature = ti.features[pegRNA_name, 'scaffold']
+            scaffold_feature = strat.features[pegRNA_name, 'scaffold']
             cropped = sam.crop_al_to_ref_int(al, scaffold_feature.start, scaffold_feature.end)
             if cropped is None:
                 scaffold_overlap = 0
@@ -1535,8 +1532,8 @@ class Architecture(knock_knock.architecture.Categorizer):
 
     @memoized_property
     def HA_RT(self):
-        pegRNA_name = self.target_info.pegRNA_names[0]
-        return self.target_info.features.get((pegRNA_name, f'HA_RT_{pegRNA_name}'))
+        pegRNA_name = self.editing_strategy.pegRNA_names[0]
+        return self.editing_strategy.features.get((pegRNA_name, f'HA_RT_{pegRNA_name}'))
 
     def interesting_and_uninteresting_indels(self, als):
         indels = self.extract_indels_from_alignments(als)
@@ -1558,11 +1555,11 @@ class Architecture(knock_knock.architecture.Categorizer):
         return interesting, uninteresting
 
     def extract_indels_from_alignments(self, als):
-        ti = self.target_info
+        strat = self.editing_strategy
 
-        around_cut_interval = ti.around_cuts(5)
+        around_cut_interval = strat.around_cuts(5)
 
-        primer_intervals = interval.make_disjoint([interval.Interval.from_feature(p) for p in ti.primers.values()])
+        primer_intervals = interval.make_disjoint([interval.Interval.from_feature(p) for p in strat.primers.values()])
 
         indels = []
         for al in als:
@@ -1574,7 +1571,7 @@ class Architecture(knock_knock.architecture.Categorizer):
 
                     indel_interval = interval.Interval(starts_at, ends_at)
 
-                    indel = knock_knock.target_info.DegenerateDeletion([starts_at], length)
+                    indel = knock_knock.outcome.DegenerateDeletion([starts_at], length)
 
                 elif cigar_op == sam.BAM_CINS:
                     ref_nucs_before = sam.total_reference_nucs(al.cigar[:i])
@@ -1585,7 +1582,7 @@ class Architecture(knock_knock.architecture.Categorizer):
                     read_nucs_before = sam.total_read_nucs(al.cigar[:i])
                     insertion = al.query_sequence[read_nucs_before:read_nucs_before + length]
 
-                    indel = knock_knock.target_info.DegenerateInsertion([starts_after], [insertion])
+                    indel = knock_knock.outcome.DegenerateInsertion([starts_after], [insertion])
                     
                 else:
                     continue
@@ -1593,7 +1590,7 @@ class Architecture(knock_knock.architecture.Categorizer):
                 near_cut = len(indel_interval & around_cut_interval) > 0
                 entirely_in_primer = indel_interval in primer_intervals
 
-                indel = self.target_info.expand_degenerate_indel(indel)
+                indel = self.editing_strategy.expand_degenerate_indel(indel)
                 indels.append((indel, near_cut, entirely_in_primer))
 
         # Ignore any indels entirely contained in primers.
@@ -1668,7 +1665,7 @@ class Architecture(knock_knock.architecture.Categorizer):
         return nonredundant
 
     def seed_and_extend(self, on, query_start, query_end):
-        extender = self.target_info.seed_and_extender[on]
+        extender = self.editing_strategy.seed_and_extender[on]
         return extender(self.seq_bytes, query_start, query_end, self.query_name)
     
     @memoized_property
@@ -1679,7 +1676,7 @@ class Architecture(knock_knock.architecture.Categorizer):
 
         def is_valid(al):
             long_enough = al.query_alignment_length >= min_length
-            overlaps_amplicon_interval = interval.are_overlapping(interval.get_covered_on_ref(al), self.target_info.amplicon_interval)
+            overlaps_amplicon_interval = interval.are_overlapping(interval.get_covered_on_ref(al), self.editing_strategy.amplicon_interval)
             return long_enough and overlaps_amplicon_interval
 
         for length in range(20, 3, -1):
@@ -1786,9 +1783,9 @@ class Architecture(knock_knock.architecture.Categorizer):
 
         valid = False
 
-        min_relevant_length = self.target_info.min_relevant_length
+        min_relevant_length = self.editing_strategy.min_relevant_length
         if min_relevant_length is None:
-            min_relevant_length = self.target_info.combined_primer_length + 10
+            min_relevant_length = self.editing_strategy.combined_primer_length + 10
 
         need_to_cover = self.whole_read_minus_edges(2) & self.not_covered_by_primers
 
@@ -1811,17 +1808,17 @@ class Architecture(knock_knock.architecture.Categorizer):
                         results['covering_als'].append(al)
 
             else:
-                target_als = [al for al in self.primary_alignments if al.reference_name == self.target_info.target]
+                target_als = [al for al in self.primary_alignments if al.reference_name == self.editing_strategy.target]
                 not_covered_by_any_target_als = self.not_covered_by_primers - interval.get_disjoint_covered(target_als)
 
                 has_substantial_uncovered = not_covered_by_any_target_als.total_length >= 100
                 has_substantial_length_discrepancy = (
-                    abs(self.inferred_amplicon_length - self.target_info.amplicon_length) >= 20 and
+                    abs(self.inferred_amplicon_length - self.editing_strategy.amplicon_length) >= 20 and
                     self.primer_alignments['right'] is not None
                 )
 
                 if has_substantial_uncovered or has_substantial_length_discrepancy:
-                    ref_seqs = {**self.target_info.reference_sequences}
+                    ref_seqs = {**self.editing_strategy.reference_sequences}
 
                     # Exclude phiX reads, which can rarely have spurious alignments to the forward primer
                     # close to the start of the read that overlap the forward primer.
@@ -1850,21 +1847,21 @@ class Architecture(knock_knock.architecture.Categorizer):
 
     @memoized_property
     def extension_chain_covers_both_HAs(self):
-        ti = self.target_info
+        strat = self.editing_strategy
 
-        if ti.pegRNA is None:
+        if strat.pegRNA is None:
             covers = True
 
         else:
             HA_names = [
-                f'HA_PBS_{ti.pegRNA.name}',
-                f'HA_RT_{ti.pegRNA.name}',
+                f'HA_PBS_{strat.pegRNA.name}',
+                f'HA_RT_{strat.pegRNA.name}',
             ]
 
             intervals = []
 
             for HA_name in HA_names:
-                HA_feature = ti.features.get((ti.target, HA_name))
+                HA_feature = strat.features.get((strat.target, HA_name))
                 if HA_feature is not None:
                     intervals.append(interval.Interval.from_feature(HA_feature))
 
@@ -1917,9 +1914,9 @@ class Architecture(knock_knock.architecture.Categorizer):
         self.relevant_alignments = self.parsimonious_extension_chain_alignments
 
         if single_target_alignment_without_indels:
-            target_als = [al for al in self.relevant_alignments if al.reference_name == self.target_info.target]
+            target_als = [al for al in self.relevant_alignments if al.reference_name == self.editing_strategy.target]
             target_als.append(self.single_read_covering_target_alignment)
-            other_als = [al for al in self.relevant_alignments if al.reference_name != self.target_info.target]
+            other_als = [al for al in self.relevant_alignments if al.reference_name != self.editing_strategy.target]
 
             self.relevant_alignments = sam.make_noncontained(target_als) + other_als
 
@@ -1934,19 +1931,19 @@ class Architecture(knock_knock.architecture.Categorizer):
                 self.subcategory = 'partial incorporation'
 
             if not single_target_alignment_without_indels:
-                if self.target_info.pegRNA_programmed_deletion is not None:
-                    deletions.append(self.target_info.pegRNA_programmed_deletion)
+                if self.editing_strategy.pegRNA_programmed_deletion is not None:
+                    deletions.append(self.editing_strategy.pegRNA_programmed_deletion)
 
-                if self.target_info.pegRNA_programmed_insertion is not None:
-                    insertions.append(self.target_info.pegRNA_programmed_insertion)
+                if self.editing_strategy.pegRNA_programmed_insertion is not None:
+                    insertions.append(self.editing_strategy.pegRNA_programmed_insertion)
 
         elif self.intended_edit_type == 'insertion':
             self.subcategory = 'insertion'
-            insertions.append(self.target_info.pegRNA_programmed_insertion)
+            insertions.append(self.editing_strategy.pegRNA_programmed_insertion)
 
         elif self.intended_edit_type == 'deletion':
             self.subcategory = 'deletion'
-            deletions.append(self.target_info.pegRNA_programmed_deletion)
+            deletions.append(self.editing_strategy.pegRNA_programmed_deletion)
 
         else:
             target_alignment = self.single_read_covering_target_alignment
@@ -1991,7 +1988,7 @@ class Architecture(knock_knock.architecture.Categorizer):
         if len(relevant_indels) == 1:
             indel = relevant_indels[0]
 
-            if indel == self.target_info.pegRNA_programmed_insertion:
+            if indel == self.editing_strategy.pegRNA_programmed_insertion:
                 # Splitting alignments at edit clusters may have prevented an intended
                 # insertion with a cluster of low-quality mismatches from 
                 # from being recognized as an intended insertion in split form.
@@ -2045,10 +2042,10 @@ class Architecture(knock_knock.architecture.Categorizer):
             self.relevant_alignments = sam.make_noncontained(self.uncategorized_relevant_alignments)
 
         else:
-            if self.target_info.pegRNA_names is None:
+            if self.editing_strategy.pegRNA_names is None:
                 pegRNA_names = []
             else:
-                pegRNA_names = self.target_info.pegRNA_names
+                pegRNA_names = self.editing_strategy.pegRNA_names
 
             if any(al.reference_name in pegRNA_names for al in results['covering_als']):
                 # amplification off of pegRNA-expressing plasmid
@@ -2058,13 +2055,13 @@ class Architecture(knock_knock.architecture.Categorizer):
                 self.subcategory = 'extra sequence'
             
             elif any(al.reference_name not in self.primary_ref_names for al in results['covering_als']):
-                organisms = {self.target_info.remove_organism_from_alignment(al)[0] for al in results['covering_als'] if al.reference_name not in self.primary_ref_names}
+                organisms = {self.editing_strategy.remove_organism_from_alignment(al)[0] for al in results['covering_als'] if al.reference_name not in self.primary_ref_names}
                 organism = sorted(organisms)[0]
                 self.subcategory = organism
 
-            elif any(al.reference_name == self.target_info.target for al in results['covering_als']) and self.target_info.genome_source is not None:
+            elif any(al.reference_name == self.editing_strategy.target for al in results['covering_als']) and self.editing_strategy.genome_source is not None:
                 # reference name of supplemental al has been replaced
-                self.subcategory = self.target_info.genome_source
+                self.subcategory = self.editing_strategy.genome_source
 
             else:
                 raise ValueError
@@ -2082,14 +2079,14 @@ class Architecture(knock_knock.architecture.Categorizer):
         # might cut off extension chain on one side.
 
         als = interval.make_parsimonious(self.split_target_alignments) + self.pegRNA_extension_als_from_either_side_list
-        als = sam.merge_any_adjacent_pairs(als, self.target_info.reference_sequences, max_insertion_length=2)
+        als = sam.merge_any_adjacent_pairs(als, self.editing_strategy.reference_sequences, max_insertion_length=2)
         self.relevant_alignments = als
 
         if self.intended_edit_type == 'insertion':
-            insertions.append(self.target_info.pegRNA_programmed_insertion)
+            insertions.append(self.editing_strategy.pegRNA_programmed_insertion)
 
         elif self.intended_edit_type == 'deletion':
-            deletions.append(self.target_info.pegRNA_programmed_deletion)
+            deletions.append(self.editing_strategy.pegRNA_programmed_deletion)
 
         self.Details = Details(programmed_substitution_read_bases=self.pegRNA_substitution_string,
                                mismatches=self.non_pegRNA_mismatches,
@@ -2234,7 +2231,7 @@ class Architecture(knock_knock.architecture.Categorizer):
         gap = self.not_covered_by_target_edge_alignments
 
         if gap.total_length > 0:
-            if self.target_info.pegRNA_side == 'left':
+            if self.editing_strategy.pegRNA_side == 'left':
                 relevant_pegRNA_strand = '-'
             else:
                 relevant_pegRNA_strand = '+'
@@ -2328,8 +2325,8 @@ class Architecture(knock_knock.architecture.Categorizer):
 
                 indels = [indel for indel, near_cut in self.indels]
 
-                if self.target_info.pegRNA_programmed_deletion in indels:
-                    indel = [indel for indel in indels if indel != self.target_info.pegRNA_programmed_deletion][0]
+                if self.editing_strategy.pegRNA_programmed_deletion in indels:
+                    indel = [indel for indel in indels if indel != self.editing_strategy.pegRNA_programmed_deletion][0]
 
                     if indel.kind  == 'D':
                         self.register_edit_plus_indel('deletion', [indel])
@@ -2378,13 +2375,13 @@ class Architecture(knock_knock.architecture.Categorizer):
         elif self.pegRNA_alignments_cover_target_gap:
             self.category = 'complex incorporation of RT\'ed sequence'
             self.subcategory = 'n/a'
-            ti = self.target_info
+            strat = self.editing_strategy
             PBS_al = self.generate_extended_pegRNA_PBS_alignment(self.target_edge_alignments[self.pegRNA_side], self.pegRNA_side)
             als = self.target_edge_alignments_list + interval.make_parsimonious(self.pegRNA_alignments_cover_target_gap)
             if PBS_al is not None:
                 als.append(PBS_al)
 
-            als = sam.merge_any_adjacent_pairs(als, ti.reference_sequences, max_deletion_length=2, max_insertion_length=2)
+            als = sam.merge_any_adjacent_pairs(als, strat.reference_sequences, max_deletion_length=2, max_insertion_length=2)
             self.relevant_alignments = als
 
         elif self.duplication_covers_whole_read:
@@ -2435,7 +2432,7 @@ class Architecture(knock_knock.architecture.Categorizer):
             elif len(indels) == 1 and indels[0].kind == 'D':
                 indel = indels[0]
 
-                if indel == self.target_info.pegRNA_programmed_deletion:
+                if indel == self.editing_strategy.pegRNA_programmed_deletion:
                     self.category = 'edit + indel'
                     self.subcategory = 'duplication'
                 else:
@@ -2492,7 +2489,7 @@ class Architecture(knock_knock.architecture.Categorizer):
         potentially_relevant_als = [
             al for al in self.extra_alignments
             if ((interval.get_covered(al) & need_to_cover).total_length > 0)
-            and (sam.total_edit_distance(al, self.target_info.reference_sequences[al.reference_name]) < 5)
+            and (sam.total_edit_distance(al, self.editing_strategy.reference_sequences[al.reference_name]) < 5)
         ]
 
         if len(potentially_relevant_als) > 0:
@@ -2507,7 +2504,7 @@ class Architecture(knock_knock.architecture.Categorizer):
 
     @memoized_property
     def duplications_from_each_read_edge(self):
-        ti = self.target_info
+        strat = self.editing_strategy
         target_als = interval.make_parsimonious(self.target_alignments)
         # Order target als by position on the query from left to right.
         target_als = sorted(target_als, key=interval.get_covered)
@@ -2515,7 +2512,7 @@ class Architecture(knock_knock.architecture.Categorizer):
         correct_strand_als = [al for al in target_als if sam.get_strand(al) == self.sequencing_direction]
 
         # Need deletions to be merged.
-        merged_als = sam.merge_any_adjacent_pairs(correct_strand_als, ti.reference_sequences)
+        merged_als = sam.merge_any_adjacent_pairs(correct_strand_als, strat.reference_sequences)
         
         intervals = [interval.get_covered(al) for al in merged_als]
         
@@ -2560,7 +2557,7 @@ class Architecture(knock_knock.architecture.Categorizer):
     def duplication_plus_edit(self):
         alignments = None
 
-        if self.target_info.pegRNA_names is not None and len(self.target_info.pegRNA_names) > 0:
+        if self.editing_strategy.pegRNA_names is not None and len(self.editing_strategy.pegRNA_names) > 0:
             duplication_als = self.duplications_from_each_read_edge[self.non_pegRNA_side]
             if len(duplication_als) > 1:
                 covered_by_duplication = interval.get_disjoint_covered(duplication_als)
@@ -2577,9 +2574,9 @@ class Architecture(knock_knock.architecture.Categorizer):
                             alignments = list(chain_als.values()) + duplication_als
 
         if alignments is not None:
-            target_als = [al for al in alignments if al.reference_name == self.target_info.target]
+            target_als = [al for al in alignments if al.reference_name == self.editing_strategy.target]
             target_als = sam.make_noncontained(target_als)
-            other_als = [al for al in alignments if al.reference_name != self.target_info.target]
+            other_als = [al for al in alignments if al.reference_name != self.editing_strategy.target]
 
             alignments = target_als + other_als
 
@@ -2589,7 +2586,7 @@ class Architecture(knock_knock.architecture.Categorizer):
     def is_deletion_plus_edit(self):
         deletion = None
 
-        if self.target_info.pegRNA_names is not None and len(self.target_info.pegRNA_names) > 0:
+        if self.editing_strategy.pegRNA_names is not None and len(self.editing_strategy.pegRNA_names) > 0:
             target_als = self.duplications_from_each_read_edge[self.non_pegRNA_side]
 
             if len(target_als) == 1:
@@ -2603,7 +2600,7 @@ class Architecture(knock_knock.architecture.Categorizer):
                     uncovered = self.whole_read_minus_edges(2) - combined_covered
                 
                     if uncovered.total_length == 0:
-                        not_programmed_indels = [indel for indel, _ in self.extract_indels_from_alignments(target_als) if indel != self.target_info.pegRNA_programmed_deletion]
+                        not_programmed_indels = [indel for indel, _ in self.extract_indels_from_alignments(target_als) if indel != self.editing_strategy.pegRNA_programmed_deletion]
                         
                         not_programmed_deletions = [indel for indel in not_programmed_indels if indel.kind == 'D']
                         
@@ -2618,14 +2615,14 @@ class Architecture(knock_knock.architecture.Categorizer):
             (duplication, iterated) - multiple uses of the same junction
             (duplication, complex)  - multiple junctions that are not exactly the same
         '''
-        ti = self.target_info
+        strat = self.editing_strategy
         target_als = interval.make_parsimonious(self.target_alignments)
         # Order target als by position on the query from left to right.
         target_als = sorted(target_als, key=interval.get_covered)
 
         correct_strand_als = [al for al in target_als if sam.get_strand(al) == self.sequencing_direction]
 
-        merged_als = sam.merge_any_adjacent_pairs(correct_strand_als, ti.reference_sequences)
+        merged_als = sam.merge_any_adjacent_pairs(correct_strand_als, strat.reference_sequences)
     
         # See docstring for not_covered_by_primers to make sense of this.
         relevant_interval = self.covered_by_primers | self.not_covered_by_primers
@@ -2658,7 +2655,7 @@ class Architecture(knock_knock.architecture.Categorizer):
         indels = [indel for indel, _ in self.extract_indels_from_alignments(relevant_als)]
 
         for left_al, right_al in zip(relevant_als, relevant_als[1:]):
-            switch_results = sam.find_best_query_switch_after(left_al, right_al, ti.target_sequence, ti.target_sequence, max)
+            switch_results = sam.find_best_query_switch_after(left_al, right_al, strat.target_sequence, strat.target_sequence, max)
 
             lefts = tuple(sam.closest_ref_position(q, left_al) for q in switch_results['best_switch_points'])
             rights = tuple(sam.closest_ref_position(q + 1, right_al) for q in switch_results['best_switch_points'])
@@ -2666,7 +2663,7 @@ class Architecture(knock_knock.architecture.Categorizer):
             # Don't consider duplications of 1 or 2 nts.
             if abs(lefts[0] - rights[0]) <= 2:
                 # placeholder, only needs to be of kind 'I'
-                indel = knock_knock.target_info.DegenerateInsertion([-1], ['N'])
+                indel = knock_knock.outcome.DegenerateInsertion([-1], ['N'])
                 indels.append(indel)
                 continue
 
@@ -2747,10 +2744,10 @@ class Architecture(knock_knock.architecture.Categorizer):
         _, non_pegRNA_mismatches = self.mismatches_summary
 
         # Remove mismatches at programmed posititions. 
-        if self.target_info.pegRNA is None:
+        if self.editing_strategy.pegRNA is None:
             programmed_ps = set()
         else:
-            programmed_ps = self.target_info.pegRNA.programmed_substitution_target_ps
+            programmed_ps = self.editing_strategy.pegRNA.programmed_substitution_target_ps
 
         non_pegRNA_mismatches = [mismatch for mismatch in non_pegRNA_mismatches if mismatch.position not in programmed_ps]
 
@@ -2758,7 +2755,7 @@ class Architecture(knock_knock.architecture.Categorizer):
 
     @memoized_property
     def non_programmed_edit_mismatches(self):
-        return knock_knock.target_info.Mismatches([])
+        return knock_knock.outcome.Mismatches([])
 
     @memoized_property
     def original_target_alignment_has_no_indels(self):
@@ -2781,7 +2778,7 @@ class Architecture(knock_knock.architecture.Categorizer):
     def generate_extended_target_PBS_alignment(self, pegRNA_al):
         pegRNA_name = pegRNA_al.reference_name
         target_PBS_name = knock_knock.pegRNAs.PBS_name(pegRNA_name)
-        return self.extend_alignment_from_shared_feature(pegRNA_al, 'PBS', self.target_info.target, target_PBS_name)
+        return self.extend_alignment_from_shared_feature(pegRNA_al, 'PBS', self.editing_strategy.target, target_PBS_name)
 
     def generate_extended_pegRNA_PBS_alignment(self, target_al, side):
         if target_al is None:
@@ -2797,15 +2794,15 @@ class Architecture(knock_knock.architecture.Categorizer):
         ''' Returns True if al aligns almost entirely to a protospacer region of a pegRNA,
         typically for the purpose of deciding whether to plot it.
         '''
-        ti = self.target_info
+        strat = self.editing_strategy
         
-        if ti.pegRNA_names is None:
+        if strat.pegRNA_names is None:
             return False
         
-        if al.reference_name not in ti.pegRNA_names:
+        if al.reference_name not in strat.pegRNA_names:
             return False
         
-        PS_feature = ti.features[al.reference_name, 'protospacer']
+        PS_feature = strat.features[al.reference_name, 'protospacer']
         outside_protospacer = sam.crop_al_to_ref_int(al, PS_feature.end + 1, np.inf)
 
         return (outside_protospacer is None or outside_protospacer.query_alignment_length <= 3)
@@ -2816,14 +2813,14 @@ class Architecture(knock_knock.architecture.Categorizer):
 
         als = [al for al in als if not self.is_pegRNA_protospacer_alignment(al)]
 
-        if self.target_info.pegRNA_names is None:
+        if self.editing_strategy.pegRNA_names is None:
             pegRNA_names = []
         else:
-            pegRNA_names = self.target_info.pegRNA_names
+            pegRNA_names = self.editing_strategy.pegRNA_names
 
         pegRNA_als = [al for al in als if al.reference_name in pegRNA_names]
-        target_als = [al for al in als if al.reference_name == self.target_info.target]
-        other_als = [al for al in als if al.reference_name not in pegRNA_names + [self.target_info.target]]
+        target_als = [al for al in als if al.reference_name == self.editing_strategy.target]
+        other_als = [al for al in als if al.reference_name not in pegRNA_names + [self.editing_strategy.target]]
 
         pegRNA_als = sam.make_noncontained(pegRNA_als)
 
@@ -2918,14 +2915,14 @@ class Architecture(knock_knock.architecture.Categorizer):
     def manual_anchors(self):
         ''' Anchors for drawing knock-knock ref-centric diagrams with overlap in pegRNA aligned.
         '''
-        ti = self.target_info
+        strat = self.editing_strategy
 
         manual_anchors = {}
 
         extension_als = self.pegRNA_extension_als_list
 
         if len(extension_als) > 0:
-            pegRNA_name = ti.pegRNA_names[0]
+            pegRNA_name = strat.pegRNA_names[0]
             extension_al = extension_als[0]
 
             PBS_offset_to_qs = self.feature_offset_to_q(extension_al, 'PBS')
@@ -2934,16 +2931,16 @@ class Architecture(knock_knock.architecture.Categorizer):
                 anchor_offset = sorted(PBS_offset_to_qs)[0]
                 q = PBS_offset_to_qs[anchor_offset]
 
-                ref_p = ti.feature_offset_to_ref_p(pegRNA_name, 'PBS')[anchor_offset]
+                ref_p = strat.feature_offset_to_ref_p(pegRNA_name, 'PBS')[anchor_offset]
 
                 manual_anchors[pegRNA_name] = (q, ref_p)
                 
         return manual_anchors
 
     def plot_parameters(self):
-        ti = self.target_info
+        strat = self.editing_strategy
 
-        features_to_show = {*ti.features_to_show}
+        features_to_show = {*strat.features_to_show}
         label_overrides = {}
         label_offsets = {}
         feature_heights = {}
@@ -2952,11 +2949,11 @@ class Architecture(knock_knock.architecture.Categorizer):
         flip_target = (self.sequencing_direction == '-')
         flip_pegRNA = False
 
-        if len(ti.pegRNA_names) == 1:
-            pegRNA_name = ti.pegRNA_names[0]
+        if len(strat.pegRNA_names) == 1:
+            pegRNA_name = strat.pegRNA_names[0]
 
             PBS_name = knock_knock.pegRNAs.PBS_name(pegRNA_name)
-            PBS_strand = ti.features[ti.target, PBS_name].strand
+            PBS_strand = strat.features[strat.target, PBS_name].strand
 
             flip_pegRNA = (flip_target and PBS_strand == '-') or (not flip_target and PBS_strand == '+')
 
@@ -2964,13 +2961,13 @@ class Architecture(knock_knock.architecture.Categorizer):
 
             for HA_side in ['PBS', 'RT']:
                 name = f'HA_{HA_side}_{pegRNA_name}'
-                label_overrides[ti.target, name] = None
-                feature_heights[ti.target, name] = 0.5
+                label_overrides[strat.target, name] = None
+                feature_heights[strat.target, name] = 0.5
 
-                features_to_show.add((ti.target, name))
+                features_to_show.add((strat.target, name))
 
-            for name in ti.protospacer_names:
-                if name == ti.primary_protospacer:
+            for name in strat.protospacer_names:
+                if name == strat.primary_protospacer:
                     new_name = 'pegRNA\nprotospacer'
                 else:
                     new_name = 'ngRNA\nprotospacer'
@@ -2978,8 +2975,8 @@ class Architecture(knock_knock.architecture.Categorizer):
                 label_overrides[name] = new_name
 
         else:
-            for pegRNA_name in ti.pegRNA_names:
-                color = ti.pegRNA_name_to_color[pegRNA_name]
+            for pegRNA_name in strat.pegRNA_names:
+                color = strat.pegRNA_name_to_color[pegRNA_name]
                 light_color = hits.visualize.apply_alpha(color, 0.5)
                 color_overrides[pegRNA_name] = color
                 color_overrides[pegRNA_name, 'protospacer'] = light_color
@@ -2989,52 +2986,52 @@ class Architecture(knock_knock.architecture.Categorizer):
                 PAM_name = f'{ps_name}_PAM'
                 color_overrides[PAM_name] = color
 
-            for name in ti.protospacer_names:
+            for name in strat.protospacer_names:
                 label_overrides[name] = 'protospacer'
 
-            for name in ti.PAM_features:
+            for name in strat.PAM_features:
                 label_overrides[name] = 'PAM'
-                features_to_show.add((ti.target, name))
+                features_to_show.add((strat.target, name))
 
-        for primer_name in ti.primer_names:
+        for primer_name in strat.primer_names:
             color_overrides[primer_name] = 'lightgrey'
 
-        for pegRNA_name in ti.pegRNA_names:
+        for pegRNA_name in strat.pegRNA_names:
             PBS_name = knock_knock.pegRNAs.PBS_name(pegRNA_name)
-            features_to_show.add((ti.target, PBS_name))
+            features_to_show.add((strat.target, PBS_name))
             label_overrides[PBS_name] = None
             feature_heights[PBS_name] = 0.5
 
             # Draw PBS feature on the same side as corresponding nick.
-            feature = ti.features[ti.target, PBS_name]
+            feature = strat.features[strat.target, PBS_name]
             if (feature.strand == '+' and not flip_target) or (feature.strand == '-' and flip_target):
                 feature_heights[PBS_name] *= -1
 
-        for deletion in ti.pegRNA_programmed_deletions:
+        for deletion in strat.pegRNA_programmed_deletions:
             label_overrides[deletion.ID] = f'programmed deletion ({len(deletion)} nts)'
             feature_heights[deletion.ID] = -0.5
 
-        for insertion in ti.pegRNA_programmed_insertion_features:
+        for insertion in strat.pegRNA_programmed_insertion_features:
             label_overrides[insertion.ID] = 'insertion'
             label_offsets[insertion.ID] = 1
 
-        for feature_name, feature in ti.PAM_features.items():
+        for feature_name, feature in strat.PAM_features.items():
             if (feature.strand == '+' and not flip_target) or (feature.strand == '-' and flip_target):
                 feature_heights[feature_name] = -1
 
-            if len(ti.pegRNA_names) == 1:
+            if len(strat.pegRNA_names) == 1:
                 offset = 2
             else:
                 offset = 1
 
             label_offsets[feature_name] = offset
 
-        for feature_name, feature in ti.protospacer_features.items():
+        for feature_name, feature in strat.protospacer_features.items():
             if (feature.strand == '+' and not flip_target) or (feature.strand == '-' and flip_target):
                 feature_heights[feature_name] = -1
 
-        features_to_show.update({(ti.target, name) for name in ti.protospacer_names})
-        features_to_show.update({(ti.target, name) for name in ti.PAM_features})
+        features_to_show.update({(strat.target, name) for name in strat.protospacer_names})
+        features_to_show.update({(strat.target, name) for name in strat.PAM_features})
 
         plot_parameters = {
             'features_to_show': features_to_show,
@@ -3071,7 +3068,7 @@ class Architecture(knock_knock.architecture.Categorizer):
         if relevant and not self.categorized:
             self.categorize()
 
-        ti = self.target_info
+        strat = self.editing_strategy
 
         if manual_diagram_kwargs.get('reverse_complement', False):
             flip_pegRNA = not flip_pegRNA
@@ -3081,14 +3078,14 @@ class Architecture(knock_knock.architecture.Categorizer):
         else:
             refs_to_draw = set()
 
-            if ti.amplicon_length < 10000:
-                refs_to_draw.add(ti.target)
+            if strat.amplicon_length < 10000:
+                refs_to_draw.add(strat.target)
 
-            if ti.pegRNA_names is not None:
-                refs_to_draw.update(ti.pegRNA_names)
+            if strat.pegRNA_names is not None:
+                refs_to_draw.update(strat.pegRNA_names)
 
-        if 'phiX' in ti.supplemental_indices:
-            supplementary_reference_sequences = ti.supplemental_reference_sequences('phiX')
+        if 'phiX' in strat.supplemental_indices:
+            supplementary_reference_sequences = strat.supplemental_reference_sequences('phiX')
         else:
             supplementary_reference_sequences = {}
 
@@ -3125,7 +3122,7 @@ class Architecture(knock_knock.architecture.Categorizer):
             als_to_plot = self.alignments
 
         diagram = knock_knock.visualize.architecture.ReadDiagram(als_to_plot,
-                                                                 ti,
+                                                                 strat,
                                                                  **manual_diagram_kwargs,
                                                                 )
 
@@ -3133,9 +3130,9 @@ class Architecture(knock_knock.architecture.Categorizer):
         # due to application of parsimony.
 
         # Draw the pegRNA.
-        if ti.pegRNA_names is not None and any(al.reference_name in ti.pegRNA_names for al in diagram.alignments):
+        if strat.pegRNA_names is not None and any(al.reference_name in strat.pegRNA_names for al in diagram.alignments):
 
-            pegRNA_name = ti.pegRNA_names[0]
+            pegRNA_name = strat.pegRNA_names[0]
 
             ref_y = diagram.max_y + diagram.target_and_donor_y_gap
 
@@ -3148,7 +3145,7 @@ class Architecture(knock_knock.architecture.Categorizer):
 
             ref_p_to_xs = diagram.draw_reference(pegRNA_name, ref_y, flip_pegRNA)
 
-            pegRNA_seq = ti.reference_sequences[pegRNA_name]
+            pegRNA_seq = strat.reference_sequences[pegRNA_name]
             pegRNA_min_x, pegRNA_max_x = sorted([ref_p_to_xs(0), ref_p_to_xs(len(pegRNA_seq) - 1)])
 
             diagram.max_x = max(old_max_x, pegRNA_max_x)

@@ -1,6 +1,6 @@
 experiment_type: prime_editing
-target_info: pPC1000
-target_info_kwargs:
+editing_strategy: pPC1000
+strategy_kwargs:
   sgRNAs: pegRNA_G6C_15;-50
 expected_values:
   01:01101:001325:033786_34:

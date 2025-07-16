@@ -17,7 +17,9 @@ from hits import fasta, genomes, gff, utilities, mapping_tools, interval, sam, s
 
 import knock_knock.pegRNAs
 import knock_knock.integrases
+
 from knock_knock.effector import effectors
+from knock_knock.outcome import DegenerateDeletion, DegenerateInsertion
 
 memoized_property = utilities.memoized_property
 memoized_with_args = utilities.memoized_with_args
@@ -29,7 +31,7 @@ other_side = {
     'right': 'left',
 }
 
-class TargetInfo:
+class EditingStrategy:
     def __init__(self,
                  base_dir,
                  name,
@@ -51,8 +53,8 @@ class TargetInfo:
         self.name = name
 
         self.base_dir = Path(base_dir)
-        self.targets_dir = self.base_dir / 'targets'
-        self.dir = self.targets_dir / name
+        self.strategies_dir = self.base_dir / 'strategies'
+        self.dir = self.strategies_dir / name
 
         # If not None, feature_to_replace is a tuple (ref_name, feature_name, sequence)
         # for which the region of ref_name covered by feature_name
@@ -2029,283 +2031,6 @@ class TargetInfo:
 
     #    return expected_seq
 
-def degenerate_indel_from_string(details_string):
-    if details_string is None:
-        return None
-    else:
-        kind, rest = details_string.split(':')
-
-        if kind == 'D':
-            DegenerateIndel = DegenerateDeletion
-        elif kind == 'I':
-            DegenerateIndel = DegenerateInsertion
-        else:
-            raise ValueError(kind)
-
-        return DegenerateIndel.from_string(details_string)
-
-class DegenerateDeletion:
-    def __init__(self, starts_ats, length):
-        self.kind = 'D'
-        self.starts_ats = tuple(sorted(starts_ats))
-        self.num_MH_nts = len(self.starts_ats) - 1
-        self.length = length
-        self.ends_ats = [s + self.length - 1 for s in self.starts_ats]
-
-    @classmethod
-    def from_string(cls, details_string):
-        kind, rest = details_string.split(':', 1)
-        starts_string, length_string = rest.split(',')
-
-        starts_ats = [int(s) for s in starts_string.strip('{}').split('|')]
-        length = int(length_string)
-
-        return cls(starts_ats, length)
-
-    @classmethod
-    def collapse(cls, degenerate_deletions):
-        lengths = {d.length for d in degenerate_deletions}
-        if len(lengths) > 1:
-            for d in degenerate_deletions:
-                print(d)
-            raise ValueError
-        length = lengths.pop()
-
-        starts_ats = set()
-        for d in degenerate_deletions:
-            starts_ats.update(d.starts_ats)
-
-        starts_ats = sorted(starts_ats)
-
-        return cls(starts_ats, length)
-
-    def __str__(self):
-        starts_string = '|'.join(map(str, self.starts_ats))
-        if len(self.starts_ats) > 1:
-            starts_string = '{' + starts_string + '}'
-
-        full_string = f'D:{starts_string},{self.length}'
-
-        return full_string
-
-    def __repr__(self):
-        return str(self)
-    
-    def __eq__(self, other):
-        if type(self) != type(other):
-            return False
-        else:
-            return self.starts_ats == other.starts_ats and self.length == other.length
-
-    def __lt__(self, other):
-        return (self.starts_ats[0] < other.starts_ats[0]) or (self.starts_ats[0] == other.starts_ats[0] and self.length < other.length)
-
-    def __hash__(self):
-        return hash((self.starts_ats, self.length))
-
-    def singletons(self):
-        return (type(self)([starts_at], self.length) for starts_at in self.starts_ats)
-
-    @property
-    def possibly_involved_interval(self):
-        return interval.Interval(min(self.starts_ats), max(self.ends_ats))
-
-    def perform_anchor_shift(self, anchor):
-        shifted_starts_ats = [starts_at - anchor for starts_at in self.starts_ats]
-        return type(self)(shifted_starts_ats, self.length)
-
-    def get_min_removed(self, ti):
-        min_removed = {
-            5: max(0, ti.cut_after - max(self.deletion.starts_ats) + 1),
-            3: max(0, min(self.deletion.ends_ats) - ti.cut_after),
-        }
-        for target_side, PAM_side in ti.target_side_to_PAM_side.items():
-            min_removed[PAM_side] = min_removed[target_side]
-
-        return min_removed
-
-    def classify_directionality(self, ti):
-        if ti.effector.name == 'SpCas9':
-            min_removed = self.get_min_removed(ti)
-
-            if min_removed['PAM-proximal'] > 0 and min_removed['PAM-distal'] > 0:
-                directionality = 'bidirectional'
-            elif min_removed['PAM-proximal'] > 0 and min_removed['PAM-distal'] <= 0:
-                directionality = 'PAM-proximal'
-            elif min_removed['PAM-proximal'] <= 0 and min_removed['PAM-distal'] > 0:
-                directionality = 'PAM-distal'
-            else:
-                directionality = 'ambiguous'
-        
-        elif ti.effector.name in ['Cpf1', 'AsCas12a']:
-            start = min(self.deletion.starts_ats)
-            end = max(self.deletion.ends_ats)
-            first_nick, second_nick = sorted(ti.cut_afters.values())
-            includes_first_nick = start - 0.5 <= first_nick + 0.5 <= end + 0.5
-            includes_second_nick = start - 0.5 <= second_nick + 0.5 <= end + 0.5
-
-            if not includes_first_nick and not includes_second_nick:
-                includes = 'spans neither'
-            elif includes_first_nick and not includes_second_nick:
-                includes = 'spans PAM-distal nick'
-            elif not includes_first_nick and includes_second_nick:
-                includes = 'spans PAM-proximal nick'
-            else:
-                includes = 'spans both nicks'
-
-            directionality = includes
-
-        else:
-            raise NotImplementedError(ti.effector.name)
-
-        return directionality
-
-class DegenerateInsertion:
-    def __init__(self, starts_afters, seqs):
-        self.kind = 'I'
-        order = np.argsort(starts_afters)
-        starts_afters = [starts_afters[i] for i in order]
-        seqs = [seqs[i] for i in order]
-        self.starts_afters = tuple(starts_afters)
-        self.seqs = tuple(seqs)
-        
-        lengths = set(len(seq) for seq in self.seqs)
-        if len(lengths) > 1:
-            raise ValueError
-        self.length = lengths.pop()
-    
-        self.pairs = list(zip(self.starts_afters, self.seqs))
-
-    @classmethod
-    def from_string(cls, details_string):
-        kind, rest = details_string.split(':', 1)
-        starts_string, seqs_string = rest.split(',')
-        starts_afters = [int(s) for s in starts_string.strip('{}').split('|')]
-        seqs = [seq for seq in seqs_string.strip('{}').split('|')]
-
-        return DegenerateInsertion(starts_afters, seqs)
-    
-    @classmethod
-    def from_pairs(cls, pairs):
-        starts_afters, seqs = zip(*pairs)
-        return DegenerateInsertion(starts_afters, seqs)
-
-    def __str__(self):
-        starts_string = '|'.join(map(str, self.starts_afters))
-        seqs_string = '|'.join(self.seqs)
-
-        if len(self.starts_afters) > 1:
-            starts_string = '{' + starts_string + '}'
-            seqs_string = '{' + seqs_string + '}'
-
-        full_string = f'I:{starts_string},{seqs_string}'
-
-        return full_string
-
-    def __repr__(self):
-        return str(self)
-
-    def __eq__(self, other):
-        if type(self) != type(other):
-            return False
-        else:
-            return self.starts_afters == other.starts_afters and self.seqs == other.seqs
-    
-    def __hash__(self):
-        return hash((self.starts_afters, self.seqs))
-
-    def singletons(self):
-        return (DegenerateInsertion([starts_after], [seq]) for starts_after, seq in self.pairs)
-    
-    @classmethod
-    def collapse(cls, degenerate_insertions):
-        all_pairs = []
-
-        for d in degenerate_insertions:
-            all_pairs.extend(d.pairs)
-
-        all_pairs = sorted(all_pairs)
-
-        return DegenerateInsertion.from_pairs(all_pairs)
-
-    @property
-    def possibly_involved_interval(self):
-        return interval.Interval(min(self.starts_afters), max(self.starts_afters) + 1)
-
-    def perform_anchor_shift(self, anchor):
-        shifted_starts_afters = [starts_after - anchor for starts_after in self.starts_afters]
-        return type(self)(shifted_starts_afters, self.seqs)
-
-class Mismatch:
-    def __init__(self, position, basecall):
-        self.position = position
-        self.basecall = basecall
-
-    @classmethod
-    def from_string(cls, details_string):
-        position = int(details_string[:-1])
-        basecall = details_string[-1]
-
-        return cls(position, basecall)
-
-    def perform_anchor_shift(self, anchor):
-        return type(self)(self.position - anchor, self.basecall)
-
-    def __str__(self):
-        return f'{self.position}{self.basecall}'
-
-class Mismatches:
-    def __init__(self, mismatches=None):
-        if mismatches is None:
-            mismatches = []
-        self.mismatches = sorted(mismatches, key=lambda mismatch: mismatch.position)
-    
-    def __str__(self):
-        return ','.join(str(mismatch) for mismatch in self.mismatches)
-
-    @classmethod
-    def from_string(cls, details_string):
-        if details_string == '' or details_string == 'collapsed':
-            mismatches = []
-        else:
-            mismatches = [Mismatch.from_string(s) for s in details_string.split(',')]
-
-        return cls(mismatches)
-
-    def __repr__(self):
-        return str(self)
-
-    def __len__(self):
-        return len(self.mismatches)
-
-    def __iter__(self):
-        return iter(self.mismatches)
-
-    @property
-    def positions(self):
-        return [mismatch.position for mismatch in self.mismatches]
-    
-    @property
-    def basecalls(self):
-        return [mismatch.basecall for mismatch in self.mismatches]
-
-    def __lt__(self, other):
-        if max(self.positions) != max(other.positions):
-            return max(self.positions) < max(other.positions)
-        else:
-            if len(self) < len(other):
-                return True
-            elif len(self) == len(other):
-                if self.positions != other.positions:
-                    return self.positions < other.positions
-                else: 
-                    return self.basecalls < other.basecalls
-            else:
-                return False
-
-    def perform_anchor_shift(self, anchor):
-        return type(self)([mismatch.perform_anchor_shift(anchor) for mismatch in self.mismatches])
-
 def parse_benchling_genbank(gb_record):
     convert_strand = {
         -1: '-',
@@ -2346,10 +2071,10 @@ def parse_benchling_genbank(gb_record):
 
     return fasta_record, gff_features
 
-def get_all_targets(base_dir):
-    targets_dir = Path(base_dir) / 'targets'
-    names = (p.name for p in targets_dir.glob('*') if p.is_dir())
-    targets = [TargetInfo(base_dir, n) for n in names]
+def get_all_strategies(base_dir):
+    strategies_dir = Path(base_dir) / 'strategies'
+    names = (p.name for p in strategies_dir.glob('*') if p.is_dir())
+    targets = [EditingStrategy(base_dir, n) for n in names]
     return targets
 
 def locate_supplemental_indices(base_dir):

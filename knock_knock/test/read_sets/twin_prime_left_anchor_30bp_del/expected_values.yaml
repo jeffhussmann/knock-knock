@@ -1,6 +1,6 @@
 experiment_type: twin_prime
-target_info: pPC1655
-target_info_kwargs:
+editing_strategy: pPC1655
+strategy_kwargs:
   sgRNAs: sample11_pegRNA1;sample11_pegRNA2
   sequencing_start_feature_name: forward_primer
   primer_names: forward_primer;gDNA_reverse_primer

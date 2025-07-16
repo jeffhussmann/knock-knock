@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 
 import hits.utilities
 import hits.visualize
-import knock_knock.target_info
 import knock_knock.outcome
 
 memoized_property = hits.utilities.memoized_property
@@ -213,7 +212,7 @@ class Ranges:
 
         without_edit_subcategories = [('deletion', 'clean'), ('deletion', 'mismatches')]
         def get_without_edit_deletion(outcome):
-            deletion = knock_knock.target_info.DegenerateDeletion.from_string(outcome.details)
+            deletion = knock_knock.outcome.DegenerateDeletion.from_string(outcome.details)
             return deletion
 
         for exp in exps:
@@ -266,7 +265,7 @@ class Ranges:
             for outcome in exp.outcome_iter():
                 total_reads += 1
                 if outcome.category == 'insertion':
-                    insertion = knock_knock.target_info.DegenerateInsertion.from_string(outcome.details)
+                    insertion = knock_knock.outcome.DegenerateInsertion.from_string(outcome.details)
 
                     start = insertion.starts_afters[0] + exp.target_info.anchor
                     end = start + 1

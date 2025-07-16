@@ -1,6 +1,6 @@
 experiment_type: twin_prime
-target_info: PMID34887556_PAH-1696+1697
-target_info_kwargs:
+editing_strategy: PMID34887556_PAH-1696+1697
+strategy_kwargs:
   sgRNAs: PAH_E7.2_34_EvoPreQ1;PAH_E7.5_34_EvoPreQ1
 expected_values:
   017171854:0000000394:

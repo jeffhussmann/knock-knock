@@ -78,7 +78,7 @@ def generate_test(existing_base_dir, existing_strategy_name, pegRNA, prefix, tes
 
     # Copy relevant editing strategy into test directory structure
 
-    existing_strat = knock_knock.target_info.TargetInfo(existing_base_dir, existing_strategy_name, sgRNAs=[pegRNA])
+    existing_strat = knock_knock.editing_strategy.EditingStrategy(existing_base_dir, existing_strategy_name, sgRNAs=[pegRNA])
 
     targets_dir = test_base_dir / 'targets'
 
@@ -109,7 +109,7 @@ def generate_test(existing_base_dir, existing_strategy_name, pegRNA, prefix, tes
         'sample_name': 'simulated',
         'R1': 'simulated.fastq',
         'experiment_type': 'prime_editing',
-        'target_info': prefixed_name,
+        'editing_strategy': prefixed_name,
         'sgRNAs': pegRNA,
     }
     
@@ -122,7 +122,7 @@ def generate_test(existing_base_dir, existing_strategy_name, pegRNA, prefix, tes
     fastq_fn = data_dir / 'simulated.fastq'
     expected_categorizations_fn = data_dir / 'expected_categorizations.yaml'
     
-    new_strat = knock_knock.target_info.TargetInfo(test_base_dir, prefixed_name, sgRNAs=[pegRNA])
+    new_strat = knock_knock.editing_strategy.EditingStrategy(test_base_dir, prefixed_name, sgRNAs=[pegRNA])
     
     reads, expected_categorizations = generate_simulated_reads(new_strat, reads_per_sequence=reads_per_sequence)
 

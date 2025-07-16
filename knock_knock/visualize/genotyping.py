@@ -8,7 +8,7 @@ def plot(group):
     conditions_with_enough_reads = group.total_reads()[group.total_reads() > 1000].index
 
     window_size = 200
-    window_interval = group.target_info.around_cuts(window_size)
+    window_interval = group.editing_strategy.around_cuts(window_size)
     marginalized_fs = knock_knock.visualize.stacked.marginalize_over_mismatches_outside_window(group.outcome_fractions(), window_interval)
 
     half_window = window_size // 2
@@ -21,7 +21,7 @@ def plot(group):
         
         condition_fs = marginalized_fs[condition][marginalized_fs[condition] > 1e-2].sort_values(ascending=False)
         grid = knock_knock.visualize.stacked.DiagramGrid(condition_fs.index[:10],
-                                                         group.target_info,
+                                                         group.editing_strategy,
                                                          draw_wild_type_on_top=True,
                                                          window=(-half_window, half_window),
                                                          title=condition[1],
@@ -40,14 +40,14 @@ def plot(group):
                                )
         
         exp = group.sample_name_to_experiment(sample_name)
-        expected_length = len(exp.target_info.wild_type_amplicon_sequence)
+        expected_length = len(exp.editing_strategy.wild_type_amplicon_sequence)
         
         ls = exp.outcome_stratified_lengths.lengths_for_relevant_reads
         fs = ls / ls.sum() * 100
         fs = pd.Series(fs)
         fs.index = fs.index - expected_length
         
-        expected_length = len(exp.target_info.wild_type_amplicon_sequence)
+        expected_length = len(exp.editing_strategy.wild_type_amplicon_sequence)
         
         ax = axs[0]
         

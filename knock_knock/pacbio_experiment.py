@@ -35,7 +35,7 @@ class PacbioExperiment(Experiment):
 
     @memoized_property
     def max_relevant_length(self):
-        auto_length = int((self.target_info.amplicon_length * 2.5 // 1000 + 1)) * 1000
+        auto_length = int((self.editing_strategy.amplicon_length * 2.5 // 1000 + 1)) * 1000
         return self.description.get('max_relevant_length', auto_length)
 
     def length_ranges(self, outcome=None):

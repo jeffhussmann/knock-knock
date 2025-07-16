@@ -1,4 +1,7 @@
 import hits.utilities
+
+import knock_knock.visualize.architecture
+
 from . import prime_editing
 from . import twin_prime
 
@@ -56,14 +59,14 @@ class DualFlapArchitecture(twin_prime.Architecture):
 class NoOverlapPairArchitecture(Architecture):
     individual_architecture_class = Architecture
 
-    def __init__(self, alignments, target_info):
+    def __init__(self, alignments, editing_strategy):
         self.alignments = alignments
-        self.target_info = target_info
+        self.editing_strategy = editing_strategy
         self._flipped = False
 
         self.architecture = {
-            'R1': type(self).individual_architecture_class(alignments['R1'], target_info),
-            'R2': type(self).individual_architecture_class(alignments['R2'], target_info, flipped=True),
+            'R1': type(self).individual_architecture_class(alignments['R1'], editing_strategy),
+            'R2': type(self).individual_architecture_class(alignments['R2'], editing_strategy, flipped=True),
         }
 
         self._inferred_amplicon_length = -1
@@ -153,7 +156,7 @@ class NoOverlapPairArchitecture(Architecture):
             als_to_plot = self.relevant_alignments
 
         diagram = knock_knock.visualize.architecture.ReadDiagram(als_to_plot,
-                                                                 self.target_info,
+                                                                 self.editing_strategy,
                                                                  flip_target=self.sequencing_direction == '-',
                                                                  inferred_amplicon_length=self.inferred_amplicon_length,
                                                                  features_to_show=self.plot_parameters['features_to_show'],
@@ -172,7 +175,7 @@ class NoOverlapPairArchitecture(Architecture):
             R1_strand = hits.sam.get_strand(R1_al)
             R2_strand = hits.sam.get_strand(R2_al)
 
-            if R1_al.reference_name == self.target_info.pegRNA_names_by_side_of_read.get('left') and R2_al.reference_name == self.target_info.target:
+            if R1_al.reference_name == self.editing_strategy.pegRNA_names_by_side_of_read.get('left') and R2_al.reference_name == self.editing_strategy.target:
                 gap = 'unknown'
                 amplicon_length = -1
 

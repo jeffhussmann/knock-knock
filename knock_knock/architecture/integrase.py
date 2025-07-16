@@ -57,7 +57,7 @@ class Architecture(twin_prime.Architecture):
         else:
             
             offset_to_q = {
-                strand: self.feature_offset_to_q(self.longest_primer_alignments[strand], self.target_info.primers_by_strand[strand].ID)
+                strand: self.feature_offset_to_q(self.longest_primer_alignments[strand], self.editing_strategy.primers_by_strand[strand].ID)
                 for strand in ['+', '-']
             }
 
@@ -67,7 +67,7 @@ class Architecture(twin_prime.Architecture):
             # inner_edge_qs are last positions in the primer. + 1 to get length of interval that includes them, then - 2 to exclude them 
             length_seen_between_primers = abs(inner_edge_qs['-'] - inner_edge_qs['+']) + 1 - 2
 
-            inferred_length = length_seen_between_primers + len(self.target_info.primers_by_strand['+']) + len(self.target_info.primers_by_strand['-'])
+            inferred_length = length_seen_between_primers + len(self.editing_strategy.primers_by_strand['+']) + len(self.editing_strategy.primers_by_strand['-'])
 
         return inferred_length
 
@@ -95,7 +95,7 @@ class Architecture(twin_prime.Architecture):
         return False
 
     def overlaps_primer(self, al, strand):
-        primer = self.target_info.primers_by_strand[strand]
+        primer = self.editing_strategy.primers_by_strand[strand]
         overlaps = sam.overlaps_feature(al, primer, require_same_strand=False)
 
         return overlaps
@@ -186,7 +186,7 @@ class Architecture(twin_prime.Architecture):
 
     @memoized_property
     def integrase_sites(self):
-        all_sites = self.target_info.integrase_sites
+        all_sites = self.editing_strategy.integrase_sites
 
         by_ref = defaultdict(lambda: defaultdict(list))
 
@@ -220,7 +220,7 @@ class Architecture(twin_prime.Architecture):
     def donor_DISC_CD_pairs(self):
         pairs = []
 
-        for first, second in itertools.combinations(self.integrase_sites[self.target_info.donor]['CD'], 2):
+        for first, second in itertools.combinations(self.integrase_sites[self.editing_strategy.donor]['CD'], 2):
             if first.attribute['CD'] == second.attribute['CD']:
                 if {f.parent.attribute['site'] for f in [first, second]} == {'attP', 'attB'}:
                     pairs.append((first, second))
@@ -231,8 +231,8 @@ class Architecture(twin_prime.Architecture):
     def target_donor_CD_pairs(self):
         pairs = []
 
-        for target_CD in self.integrase_sites[self.target_info.target]['CD']:
-            for donor_CD in self.integrase_sites[self.target_info.donor]['CD']:
+        for target_CD in self.integrase_sites[self.editing_strategy.target]['CD']:
+            for donor_CD in self.integrase_sites[self.editing_strategy.donor]['CD']:
                 if target_CD.attribute['CD'] == donor_CD.attribute['CD']:
                     if {f.parent.attribute['site'] for f in [target_CD, donor_CD]} == {'attP', 'attB'}:
                         pairs.append((target_CD, donor_CD))
@@ -241,9 +241,9 @@ class Architecture(twin_prime.Architecture):
 
     def find_alignment_extending_from_CD(self, first_al, second_al_source, from_side):
         if second_al_source == 'target':
-            possible_second_als = {self.target_info.target: self.target_alignments}
+            possible_second_als = {self.editing_strategy.target: self.target_alignments}
         elif second_al_source == 'donor':
-            possible_second_als = {self.target_info.donor: self.donor_alignments}
+            possible_second_als = {self.editing_strategy.donor: self.donor_alignments}
         elif second_al_source == 'pegRNAs':
             possible_second_als = self.pegRNA_alignments_by_pegRNA_name
 
@@ -314,7 +314,7 @@ class Architecture(twin_prime.Architecture):
 
     @memoized_property
     def donor_extension_chains_by_side(self):
-        if len(self.target_info.pegRNA_names) == 0:
+        if len(self.editing_strategy.pegRNA_names) == 0:
             return self.landing_pad_donor_extension_chains_by_side
         else:
             return self.non_landing_pad_donor_extension_chains_by_side
@@ -456,7 +456,7 @@ class Architecture(twin_prime.Architecture):
     @memoized_property
     def nonredundant_donor_alignments(self):
         parsimonious_alignments = interval.make_parsimonious(self.alignments)
-        return [al for al in parsimonious_alignments if al.reference_name == self.target_info.donor]
+        return [al for al in parsimonious_alignments if al.reference_name == self.editing_strategy.donor]
 
     @memoized_property
     def is_unintended_integration(self):
@@ -485,11 +485,11 @@ class Architecture(twin_prime.Architecture):
         side_to_key = {'left': 5, 'right': 3}
         
         for read_side, al in farthest.items():
-            if al is None or al.reference_name != self.target_info.donor:
-                if self.target_info.donor_sequence is None:
+            if al is None or al.reference_name != self.editing_strategy.donor:
+                if self.editing_strategy.donor_sequence is None:
                     edge = 0
                 else:
-                    edge = len(self.target_info.donor_sequence)
+                    edge = len(self.editing_strategy.donor_sequence)
 
                 sign = 1
                 
@@ -499,7 +499,7 @@ class Architecture(twin_prime.Architecture):
                 else:
                     left_al, right_al = al, self.target_edge_alignments['right']
 
-                cropped_als = hits.sam.crop_to_best_switch_point(left_al, right_al, self.target_info.reference_sequences)
+                cropped_als = hits.sam.crop_to_best_switch_point(left_al, right_al, self.editing_strategy.reference_sequences)
 
                 if read_side == 'left':
                     relevant_al = cropped_als['right']
@@ -524,7 +524,7 @@ class Architecture(twin_prime.Architecture):
         else:
             self.subcategory = 'multiple'
 
-        if len(self.target_info.pegRNA_names) > 0:
+        if len(self.editing_strategy.pegRNA_names) > 0:
             als = [al for side, chain in self.donor_extension_chains_by_side.items() for al in chain['alignments'].values()]
         else:
             als = interval.make_parsimonious(self.target_alignments + self.donor_alignments)
@@ -548,7 +548,7 @@ class Architecture(twin_prime.Architecture):
         else:
             self.subcategory = 'messy'
 
-        if len(self.target_info.pegRNA_names) > 0:
+        if len(self.editing_strategy.pegRNA_names) > 0:
             als = [al for side, chain in self.donor_extension_chains_by_side.items() for al in chain['alignments'].values()]
         else:
             als = interval.make_parsimonious(self.target_alignments + self.donor_alignments + self.supplemental_alignments)
@@ -566,7 +566,7 @@ class Architecture(twin_prime.Architecture):
         to_remove = {
             (ref_name, feature_name)
             for ref_name, feature_name in plot_parameters['features_to_show']
-            if ref_name in self.target_info.pegRNA_names
+            if ref_name in self.editing_strategy.pegRNA_names
         }
 
         for k in to_remove:
@@ -577,7 +577,7 @@ class Architecture(twin_prime.Architecture):
             'attP': 'tab:olive',
         }
 
-        for (ref_name, feature_name), feature in self.target_info.integrase_sites.items():
+        for (ref_name, feature_name), feature in self.editing_strategy.integrase_sites.items():
             if feature.attribute['component'] == 'complete_site':
                 plot_parameters['features_to_show'].add((ref_name, feature_name))
                 plot_parameters['color_overrides'][ref_name, feature_name] = hits.visualize.apply_alpha(feature.attribute['color'], 0.7)
@@ -588,7 +588,7 @@ class Architecture(twin_prime.Architecture):
                 plot_parameters['color_overrides'][ref_name, feature_name] = colors[feature.parent.attribute['site']]
                 plot_parameters['label_overrides'][feature_name] = None
 
-        for (ref_name, feature_name), feature in self.target_info.features.items():
+        for (ref_name, feature_name), feature in self.editing_strategy.features.items():
             if '5\'-ITR' in feature_name:
                 plot_parameters['features_to_show'].add((ref_name, feature_name))
                 plot_parameters['label_overrides'][feature_name] = '5\' ITR'
@@ -597,7 +597,7 @@ class Architecture(twin_prime.Architecture):
                 plot_parameters['features_to_show'].add((ref_name, feature_name))
                 plot_parameters['label_overrides'][feature_name] = '3\' ITR'
 
-        for feature_name, new_name in zip(sorted(self.target_info.primers), ['forward primer', 'reverse primer']):
+        for feature_name, new_name in zip(sorted(self.editing_strategy.primers), ['forward primer', 'reverse primer']):
             plot_parameters['label_overrides'][feature_name] = new_name
 
         return plot_parameters
@@ -710,8 +710,8 @@ class Architecture(twin_prime.Architecture):
                                architecture_mode='nanopore',
                                flip_donor=(self.sequencing_direction == '-'),
                                refs_to_draw={
-                                   self.target_info.target,
-                                   #self.target_info.donor,
+                                   self.editing_strategy.target,
+                                   #self.editing_strategy.donor,
                                 },
                                **kwargs,
                               )

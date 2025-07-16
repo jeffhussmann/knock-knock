@@ -166,9 +166,9 @@ def make_tables(args):
 def build_targets(args):
     import knock_knock.build_targets
 
-    knock_knock.build_targets.build_target_infos_from_csv(args.project_directory,
-                                                          defer_HA_identification=args.defer_HA_identification,
-                                                         )
+    knock_knock.build_targets.build_editing_strategies_from_csv(args.project_directory,
+                                                                defer_HA_identification=args.defer_HA_identification,
+                                                               )
 
 def build_manual_target(args):
     import knock_knock.build_targets

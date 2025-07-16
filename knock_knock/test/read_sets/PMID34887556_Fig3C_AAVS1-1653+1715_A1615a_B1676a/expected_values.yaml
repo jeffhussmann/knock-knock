@@ -1,6 +1,6 @@
 experiment_type: twin_prime
-target_info: PMID34887556_AAVS1-1653+1715
-target_info_kwargs:
+editing_strategy: PMID34887556_AAVS1-1653+1715
+strategy_kwargs:
   sgRNAs: AAVS1_A1615a;AAVS1_B1676a
 expected_values:
   017172212:0000000009:

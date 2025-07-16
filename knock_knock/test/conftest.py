@@ -1,11 +1,10 @@
 import multiprocessing
-from pathlib import Path
 
 import pytest
 
 import knock_knock.test.read_sets
 import knock_knock.test.test_pegRNAs
-from knock_knock.target_info import DegenerateDeletion
+from knock_knock.outcome import DegenerateDeletion
 
 @pytest.fixture(scope='session', autouse=True)
 def always_spawn():

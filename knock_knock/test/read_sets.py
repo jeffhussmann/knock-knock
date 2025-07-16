@@ -13,7 +13,7 @@ import hits.sam
 
 import knock_knock.architecture
 import knock_knock.arrayed_experiment_group
-import knock_knock.target_info
+import knock_knock.editing_strategy
 
 memoized_property = hits.utilities.memoized_property
 
@@ -59,7 +59,7 @@ class ReadSet:
 
         for qname, als in hits.sam.grouped_by_name(self.bam_fn):
             if qname == read_id:
-                architecture = self.categorizer(als, self.target_info)
+                architecture = self.categorizer(als, self.editing_strategy)
                 break
 
         if architecture is None:
@@ -68,26 +68,27 @@ class ReadSet:
         return architecture
 
     @memoized_property
-    def target_info(self):
-        target_info_name = self.details['target_info']
+    def editing_strategy(self):
+        strategy_name = self.details['editing_strategy']
         supplemental_index_names = ['hg38', 'hg19', 'bosTau7', 'e_coli']
-        supplemental_indices = knock_knock.target_info.locate_supplemental_indices(base_dir)
+        supplemental_indices = knock_knock.editing_strategy.locate_supplemental_indices(base_dir)
         supplemental_indices = {name: supplemental_indices[name] for name in supplemental_index_names}
-        target_info = knock_knock.target_info.TargetInfo(self.source_dir,
-                                                         target_info_name,
-                                                         supplemental_indices=supplemental_indices,
-                                                         **self.details.get('target_info_kwargs', {}),
-                                                        )
+        editing_strategy = knock_knock.editing_strategy.EditingStrategy(self.source_dir,
+                                                                        strategy_name,
+                                                                        supplemental_indices=supplemental_indices,
+                                                                        **self.details.get('strategy_kwargs', {}),
+                                                                       )
 
-        return target_info
+        return editing_strategy
 
     @memoized_property
     def categorizer(self):
         return knock_knock.architecture.experiment_type_to_categorizer(self.details['experiment_type'])
 
     def compare_to_expected(self, qname):
+        architecture = self.categorizer(self.alignments[qname], self.editing_strategy)
+
         try:
-            architecture = self.categorizer(self.alignments[qname], self.target_info)
             architecture.categorize()
 
         except:
@@ -164,30 +165,30 @@ def build_pooled_screen_read_set(set_name):
     pool = repair_seq.pooled_screen.get_pool(manual_details['base_dir'], manual_details['pool_name'])
     exp = pool.single_guide_experiment(manual_details['fixed_guide'], manual_details['variable_guide'])
 
-    new_target_info_dir = base_dir / 'targets' / pool.target_info.name
-    existing_target_info_dir = pool.target_info.dir
+    new_strategy_dir = base_dir / 'targets' / pool.editing_strategy.name
+    existing_strategy_dir = pool.editing_strategy.dir
 
-    if new_target_info_dir.is_dir():
-        approved_deletion = input(f'Deleting target directory {new_target_info_dir}, proceed? ') == 'y'
+    if new_strategy_dir.is_dir():
+        approved_deletion = input(f'Deleting target directory {new_strategy_dir}, proceed? ') == 'y'
 
         if approved_deletion:
-            shutil.rmtree(new_target_info_dir)
+            shutil.rmtree(new_strategy_dir)
         else:
             raise ValueError
 
-    shutil.copytree(existing_target_info_dir, new_target_info_dir)
+    shutil.copytree(existing_strategy_dir, new_strategy_dir)
 
-    # Pool experiments specify specialized values for some target_info
+    # Pool experiments specify specialized values for some editing_strategy
     # parameters that need to be passed along.
-    possible_target_info_kwargs_keys = [
+    possible_strategy_kwargs_keys = [
         'sgRNAs',
         'sequencing_start_feature_name',
         'primer_names',
     ]
 
-    target_info_kwargs = {
+    strategy_kwargs = {
         key: exp.description[key]
-        for key in possible_target_info_kwargs_keys
+        for key in possible_strategy_kwargs_keys
         if key in exp.description
     }
 
@@ -195,8 +196,8 @@ def build_pooled_screen_read_set(set_name):
 
     read_info = {
         'experiment_type': pool.sample_sheet['experiment_type'],
-        'target_info': pool.target_info.name,
-        'target_info_kwargs': target_info_kwargs,
+        'editing_strategy': pool.editing_strategy.name,
+        'strategy_kwargs': strategy_kwargs,
         'expected_values': {},
     }
 
@@ -240,47 +241,47 @@ def build_arrayed_group_read_set(set_name, source_dir=None, prompt=True):
     exp = exps[manual_details['batch_name'], manual_details['group_name'], manual_details['exp_name']]
     exp_type = exp.experiment_group.description['experiment_type']
 
-    # Experiments may specify specialized values for some target_info
+    # Experiments may specify specialized values for some editing_strategy
     # parameters that need to be passed along.
-    possible_target_info_kwargs_keys = [
+    possible_strategy_kwargs_keys = [
         'sgRNAs',
         'sequencing_start_feature_name',
         'primer_names',
     ]
 
-    target_info_kwargs = {
+    strategy_kwargs = {
         key: exp.description[key]
-        for key in possible_target_info_kwargs_keys
+        for key in possible_strategy_kwargs_keys
         if key in exp.description
     }
 
-    new_target_info_name = exp.target_info.name
-    if 'target_info_prefix_to_add' in manual_details:
-        prefix = manual_details['target_info_prefix_to_add']
-        new_target_info_name = f'{prefix}_{new_target_info_name}'
+    new_strategy_name = exp.editing_strategy.name
+    if 'strategy_prefix_to_add' in manual_details:
+        prefix = manual_details['strategy_prefix_to_add']
+        new_strategy_name = f'{prefix}_{new_strategy_name}'
 
-    new_target_info_dir = source_dir / 'targets' / new_target_info_name
-    existing_target_info_dir = exp.target_info.dir
+    new_strategy_dir = source_dir / 'targets' / new_strategy_name
+    existing_strategy_dir = exp.editing_strategy.dir
 
-    if new_target_info_dir.is_dir():
+    if new_strategy_dir.is_dir():
         if prompt:
-            approved_deletion = input(f'Deleting target directory {new_target_info_dir}, proceed? ') == 'y'
+            approved_deletion = input(f'Deleting target directory {new_strategy_dir}, proceed? ') == 'y'
         else:
             approved_deletion = True
 
         if approved_deletion:
-            shutil.rmtree(new_target_info_dir)
+            shutil.rmtree(new_strategy_dir)
         else:
             raise ValueError
 
-    shutil.copytree(existing_target_info_dir, new_target_info_dir)
+    shutil.copytree(existing_strategy_dir, new_strategy_dir)
 
     alignment_sorter = hits.sam.AlignmentSorter(read_set.bam_fn, exp.combined_header, by_name=True)
     
     read_info = {
         'experiment_type': exp_type,
-        'target_info': new_target_info_name,
-        'target_info_kwargs': target_info_kwargs,
+        'editing_strategy': new_strategy_name,
+        'strategy_kwargs': strategy_kwargs,
         'expected_values': {},
     }
 

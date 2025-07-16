@@ -4,9 +4,10 @@ from hits import interval, sam
 from hits.utilities import memoized_property
 
 from . import prime_editing
-import knock_knock.target_info
+import knock_knock.editing_strategy
 import knock_knock.visualize.architecture
-from knock_knock.outcome import *
+
+from knock_knock.outcome import Details
 
 class Architecture(prime_editing.Architecture):
     category_order = [
@@ -183,7 +184,7 @@ class Architecture(prime_editing.Architecture):
 
     def other_pegRNA_name(self, pegRNA_name):
         side = self.pegRNA_name_to_side_of_read[pegRNA_name]
-        other_name = self.pegRNA_names_by_side_of_read[knock_knock.target_info.other_side[side]]
+        other_name = self.pegRNA_names_by_side_of_read[knock_knock.editing_strategy.other_side[side]]
         return other_name
 
     def pegRNA_alignment_extends_pegRNA_alignment(self, first_pegRNA_al, second_pegRNA_al):
@@ -222,7 +223,7 @@ class Architecture(prime_editing.Architecture):
             return None
 
         # Prime-del strategies (or non-homologous flaps) don't have a natural overlap.
-        if (pegRNA_al_to_extend.reference_name, 'overlap') not in self.target_info.features:
+        if (pegRNA_al_to_extend.reference_name, 'overlap') not in self.editing_strategy.features:
             return None
 
         other_pegRNA_name = self.other_pegRNA_name(pegRNA_al_to_extend.reference_name)
@@ -236,7 +237,7 @@ class Architecture(prime_editing.Architecture):
         
         for candidate_al in sorted(candidate_als, key=lambda al: al.query_length, reverse=True):
             status = self.pegRNA_alignment_extends_pegRNA_alignment(pegRNA_al_to_extend, candidate_al)
-            if status == 'definite' or (status == 'possible' and self.target_info.pegRNA_pair.is_prime_del):
+            if status == 'definite' or (status == 'possible' and self.editing_strategy.pegRNA_pair.is_prime_del):
                 relevant_pegRNA_al = candidate_al
                 break
                 
@@ -268,7 +269,7 @@ class Architecture(prime_editing.Architecture):
                 else:
                     raise ValueError
 
-                cropped = sam.crop_to_best_switch_point(left_al, right_al, self.target_info.reference_sequences)
+                cropped = sam.crop_to_best_switch_point(left_al, right_al, self.editing_strategy.reference_sequences)
 
                 if side == 'left':
                     cropped_pegRNA_al, cropped_overlap_extended_pegRNA_al = cropped['left'], cropped['right']
@@ -279,7 +280,7 @@ class Architecture(prime_editing.Architecture):
 
                 contribution_from_overlap_extended = not (interval.get_covered(cropped_overlap_extended_pegRNA_al) - interval.get_covered(cropped_pegRNA_al)).is_empty
 
-                if contribution_from_overlap_extended or (overlap_extended_pegRNA_al is not None and self.target_info.pegRNA_pair.is_prime_del):
+                if contribution_from_overlap_extended or (overlap_extended_pegRNA_al is not None and self.editing_strategy.pegRNA_pair.is_prime_del):
                     als['second pegRNA'] = overlap_extended_pegRNA_al
                     
                     overlap_extended_target_al, _, _ = self.find_target_alignment_extending_pegRNA_alignment(overlap_extended_pegRNA_al, 'PBS')
@@ -387,7 +388,7 @@ class Architecture(prime_editing.Architecture):
             for side in ['left', 'right']
         }
 
-        cropped_als = sam.crop_to_best_switch_point(last_als['left'], last_als['right'], self.target_info.reference_sequences)
+        cropped_als = sam.crop_to_best_switch_point(last_als['left'], last_als['right'], self.editing_strategy.reference_sequences)
 
         for side in ['left', 'right']:
             chains[side]['cropped_last_al'] = cropped_als[side]
@@ -425,7 +426,7 @@ class Architecture(prime_editing.Architecture):
             right_al = chains['right']['alignments'].get('second target')
             
         if left_al is not None and right_al is not None:
-            merged_al = sam.merge_adjacent_alignments(left_al, right_al, self.target_info.reference_sequences, max_deletion_length=2, max_insertion_length=2)
+            merged_al = sam.merge_adjacent_alignments(left_al, right_al, self.editing_strategy.reference_sequences, max_deletion_length=2, max_insertion_length=2)
 
             if merged_al is not None:
                 if chains['right']['description'] == 'not RT\'ed':
@@ -483,18 +484,18 @@ class Architecture(prime_editing.Architecture):
 
             last_als[side] = last_al
 
-        return knock_knock.architecture.junction_microhomology(self.target_info.reference_sequences, last_als['left'], last_als['right'])
+        return knock_knock.architecture.junction_microhomology(self.editing_strategy.reference_sequences, last_als['left'], last_als['right'])
 
     def get_extension_chain_edge(self, side):
         ''' Get the position of the far edge of an extension chain
         in the relevant coordinate system.
         '''
-        ti = self.target_info
+        strat = self.editing_strategy
 
         this_side_pegRNA_name = self.pegRNA_names_by_side_of_read[side]
         other_side_pegRNA_name = self.other_pegRNA_name(this_side_pegRNA_name)
 
-        PBS_end = ti.features[this_side_pegRNA_name, 'PBS'].end
+        PBS_end = strat.features[this_side_pegRNA_name, 'PBS'].end
 
         chain = self.extension_chains_by_side[side]
 
@@ -508,8 +509,8 @@ class Architecture(prime_editing.Architecture):
                 else:
                     al = chain['alignments']['second pegRNA']
 
-                this_side_overlap = ti.features[this_side_pegRNA_name, 'overlap']
-                other_side_overlap = ti.features[other_side_pegRNA_name, 'overlap']
+                this_side_overlap = strat.features[this_side_pegRNA_name, 'overlap']
+                other_side_overlap = strat.features[other_side_pegRNA_name, 'overlap']
 
                 up_to_overlap_end = PBS_end - this_side_overlap.start + 1
 
@@ -518,12 +519,12 @@ class Architecture(prime_editing.Architecture):
 
                     relevant_edge = up_to_overlap_end + extra_other_pegRNA
 
-                elif al.reference_name == ti.target:
-                    opposite_PBS_end = ti.features[other_side_pegRNA_name, 'PBS'].end 
+                elif al.reference_name == strat.target:
+                    opposite_PBS_end = strat.features[other_side_pegRNA_name, 'PBS'].end 
                     up_to_opposite_PBS_end = opposite_PBS_end - (other_side_overlap.end + 1) + 1
 
-                    opposite_target_PBS_name = ti.PBS_names_by_side_of_read[knock_knock.target_info.other_side[side]]
-                    opposite_target_PBS = ti.features[ti.target, opposite_target_PBS_name]
+                    opposite_target_PBS_name = strat.PBS_names_by_side_of_read[knock_knock.editing_strategy.other_side[side]]
+                    opposite_target_PBS = strat.features[strat.target, opposite_target_PBS_name]
 
                     if opposite_target_PBS.strand == self.sequencing_direction:
                         extra_genomic = (opposite_target_PBS.start - 1) - al.reference_start + 1
@@ -536,8 +537,8 @@ class Architecture(prime_editing.Architecture):
                 if chain['description'] == 'not RT\'ed':
                     al = chain['alignments']['first target']
 
-                    target_PBS_name = ti.PBS_names_by_side_of_read[side]
-                    target_PBS = ti.features[ti.target, target_PBS_name]
+                    target_PBS_name = strat.PBS_names_by_side_of_read[side]
+                    target_PBS = strat.features[strat.target, target_PBS_name]
 
                     # Positive values are towards the opposite nick,
                     # negative values are away from the opposite nick.
@@ -566,13 +567,13 @@ class Architecture(prime_editing.Architecture):
 
     @memoized_property
     def is_intended_or_partial_replacement(self):
-        if self.target_info.pegRNA_programmed_deletion is not None:
+        if self.editing_strategy.pegRNA_programmed_deletion is not None:
             status = False
         else:
             if not self.has_intended_pegRNA_overlap:
                 status = False
             else:
-                if self.target_info.pegRNA_substitutions is None:
+                if self.editing_strategy.pegRNA_substitutions is None:
                     status = True
                 elif not self.has_pegRNA_substitution:
                     status = False
@@ -586,19 +587,19 @@ class Architecture(prime_editing.Architecture):
         mismatches_seen = set()
 
         for al in self.pegRNA_extension_als_from_either_side_list:
-            mismatches = knock_knock.architecture.get_mismatch_info(al, self.target_info.reference_sequences)
+            mismatches = knock_knock.architecture.get_mismatch_info(al, self.editing_strategy.reference_sequences)
 
-            programmed_ps = self.target_info.pegRNA_pair.programmed_substitution_ps[al.reference_name]
+            programmed_ps = self.editing_strategy.pegRNA_pair.programmed_substitution_ps[al.reference_name]
 
             for true_read_p, read_b, ref_p, ref_b, q in mismatches:
                 
                 # ref_p might be outside of edit portion or might be a programmed substitution.
-                edit_p = self.target_info.pegRNA_pair.pegRNA_coords_to_edit_coords[al.reference_name].get(ref_p)
+                edit_p = self.editing_strategy.pegRNA_pair.pegRNA_coords_to_edit_coords[al.reference_name].get(ref_p)
                 
                 if edit_p is not None and ref_p not in programmed_ps:
-                    mismatches_seen.add(knock_knock.target_info.Mismatch(edit_p, read_b))
+                    mismatches_seen.add(knock_knock.outcome.Mismatch(edit_p, read_b))
                     
-        mismatches = knock_knock.target_info.Mismatches(mismatches_seen)
+        mismatches = knock_knock.outcome.Mismatches(mismatches_seen)
 
         return mismatches
 
@@ -674,7 +675,7 @@ class Architecture(prime_editing.Architecture):
 
     @memoized_property
     def integrase_sites_in_chains(self):
-        pegRNA_pair = self.target_info.pegRNA_pair
+        pegRNA_pair = self.editing_strategy.pegRNA_pair
         chains = self.extension_chains_by_side
 
         edges = {side: self.get_extension_chain_edge(side) for side in ['left', 'right']}
@@ -786,8 +787,8 @@ class Architecture(prime_editing.Architecture):
         return {side for side, als in self.flipped_pegRNA_als.items() if len(als) > 0}
 
     def convert_target_alignment_edge_to_nick_coordinate(self, al, start_or_end):
-        ti = self.target_info
-        target_PBS = ti.features[ti.target, ti.PBS_names_by_side_of_read['left']]
+        strat = self.editing_strategy
+        target_PBS = strat.features[strat.target, strat.PBS_names_by_side_of_read['left']]
 
         if start_or_end == 'start':
             reference_edge = al.reference_start
@@ -823,7 +824,7 @@ class Architecture(prime_editing.Architecture):
             self.Details = Details(programmed_substitution_read_bases=self.pegRNA_substitution_string,
                                    mismatches=self.non_pegRNA_mismatches,
                                    non_programmed_edit_mismatches=self.non_programmed_edit_mismatches,
-                                   deletions=[self.target_info.pegRNA_programmed_deletion],
+                                   deletions=[self.editing_strategy.pegRNA_programmed_deletion],
                                    insertions=[],
                                   )
             self.relevant_alignments = self.intended_edit_relevant_alignments
@@ -870,7 +871,7 @@ class Architecture(prime_editing.Architecture):
                     self.subcategory = 'clean'
 
                 if indel.kind == 'D':
-                    if indel == self.target_info.pegRNA_programmed_deletion:
+                    if indel == self.editing_strategy.pegRNA_programmed_deletion:
                         self.category = 'intended edit'
                         self.subcategory = 'deletion'
                         self.relevant_alignments = [target_alignment] + self.pegRNA_extension_als_list
@@ -939,16 +940,16 @@ class Architecture(prime_editing.Architecture):
     def manual_anchors(self, alignments_to_plot):
         ''' Anchors for drawing knock-knock ref-centric diagrams with overlap in pegRNA aligned.
         '''
-        ti = self.target_info
+        strat = self.editing_strategy
 
         manual_anchors = {}
 
-        if ti.pegRNA_names is None:
+        if strat.pegRNA_names is None:
             return manual_anchors
 
-        overlap_feature = ti.features.get((ti.pegRNA_names[0], 'overlap'))
+        overlap_feature = strat.features.get((strat.pegRNA_names[0], 'overlap'))
         if overlap_feature is not None:
-            overlap_length = len(ti.features[ti.pegRNA_names[0], 'overlap'])
+            overlap_length = len(strat.features[strat.pegRNA_names[0], 'overlap'])
 
             overlap_offset_to_qs = defaultdict(dict)
 
@@ -964,7 +965,7 @@ class Architecture(prime_editing.Architecture):
                     is_extension_al = (al == self.extension_chains_by_side['left']['alignments'].get('first pegRNA')) or \
                                       (al == self.extension_chains_by_side['right']['alignments'].get('first pegRNA'))
 
-                    overlap_length = sam.feature_overlap_length(al, self.target_info.features[pegRNA_name, 'overlap'])
+                    overlap_length = sam.feature_overlap_length(al, self.editing_strategy.features[pegRNA_name, 'overlap'])
                     return is_extension_al, overlap_length
                 
                 pegRNA_als = sorted(pegRNA_als, key=priority_key)
@@ -994,7 +995,7 @@ class Architecture(prime_editing.Architecture):
 
                 for side in ['left', 'right']:
                     pegRNA_name = self.pegRNA_names_by_side_of_read[side]
-                    ref_p = ti.feature_offset_to_ref_p(pegRNA_name, 'overlap')[anchor_offset]
+                    ref_p = strat.feature_offset_to_ref_p(pegRNA_name, 'overlap')[anchor_offset]
                     manual_anchors[pegRNA_name] = (q, ref_p)
                 
         return manual_anchors
@@ -1030,10 +1031,10 @@ class Architecture(prime_editing.Architecture):
         if relevant and not self.categorized:
             self.categorize()
 
-        ti = self.target_info
+        strat = self.editing_strategy
 
         if label_integrase_features:
-            for ref_name, name in ti.integrase_sites:
+            for ref_name, name in strat.integrase_sites:
                 if 'right' in name:
                     label_offsets[name] = 1
                     features_to_show.add((ref_name, name))
@@ -1046,11 +1047,11 @@ class Architecture(prime_editing.Architecture):
         else:
             refs_to_draw = set()
 
-            if ti.amplicon_length < 10000:
-                refs_to_draw.add(ti.target)
+            if strat.amplicon_length < 10000:
+                refs_to_draw.add(strat.target)
 
             if draw_pegRNAs:
-                refs_to_draw.update(ti.pegRNA_names)
+                refs_to_draw.update(strat.pegRNA_names)
 
         invisible_references = manual_diagram_kwargs.get('invisible_references', set())
 
@@ -1068,8 +1069,8 @@ class Architecture(prime_editing.Architecture):
             manual_anchors = {}
             inferred_amplicon_length = None
 
-        if 'phiX' in ti.supplemental_indices:
-            supplementary_reference_sequences = ti.supplemental_reference_sequences('phiX')
+        if 'phiX' in strat.supplemental_indices:
+            supplementary_reference_sequences = strat.supplemental_reference_sequences('phiX')
         else:
             supplementary_reference_sequences = {}
 
@@ -1093,7 +1094,7 @@ class Architecture(prime_editing.Architecture):
         diagram_kwargs.update(**manual_diagram_kwargs)
 
         diagram = knock_knock.visualize.architecture.ReadDiagram(als_to_plot,
-                                                                 ti,
+                                                                 strat,
                                                                  **diagram_kwargs,
                                                                 )
 
@@ -1101,7 +1102,7 @@ class Architecture(prime_editing.Architecture):
         # due to application of parsimony.
 
         # Draw the pegRNAs.
-        if draw_pegRNAs and any(al.reference_name in ti.pegRNA_names for al in diagram.alignments):
+        if draw_pegRNAs and any(al.reference_name in strat.pegRNA_names for al in diagram.alignments):
             ref_ys = {}
             ref_ys['left'] = diagram.max_y + diagram.target_and_donor_y_gap * 0.75
             ref_ys['right'] = ref_ys['left'] + 7 * diagram.gap_between_als
@@ -1139,13 +1140,13 @@ class Architecture(prime_editing.Architecture):
 
             diagram.ax.set_xlim(diagram.min_x, diagram.max_x)
 
-            if annotate_overlap and self.manual_anchors and (left_name, 'overlap') in ti.features:
-                offset_to_ref_ps = ti.feature_offset_to_ref_p(left_name, 'overlap')
+            if annotate_overlap and self.manual_anchors and (left_name, 'overlap') in strat.features:
+                offset_to_ref_ps = strat.feature_offset_to_ref_p(left_name, 'overlap')
                 overlap_xs = sorted([ref_p_to_xs['left'](offset_to_ref_ps[0]), ref_p_to_xs['left'](offset_to_ref_ps[max(offset_to_ref_ps)])])
 
                 overlap_xs = knock_knock.visualize.architecture.adjust_edges(overlap_xs)
 
-                overlap_color = ti.features[left_name, 'overlap'].attribute['color']
+                overlap_color = strat.features[left_name, 'overlap'].attribute['color']
                     
                 diagram.ax.fill_betweenx([ref_ys['left'], ref_ys['right'] + diagram.ref_line_width + diagram.feature_line_width],
                                          [overlap_xs[0], overlap_xs[0]],

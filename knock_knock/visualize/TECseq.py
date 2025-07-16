@@ -1,14 +1,16 @@
 from collections import OrderedDict
 
+import bokeh.palettes
+
 import matplotlib.pyplot as plt
 import matplotlib.patches
 import numpy as np
 import pandas as pd
 
 import hits.utilities
-import knock_knock.pegRNAs
 
-import bokeh.palettes
+import knock_knock.editing_strategy
+import knock_knock.pegRNAs
 
 top_color = '#FF00FF'
 bottom_color = '#00FF00'
@@ -85,7 +87,7 @@ sgRNAs = [
     'ngRNA_+26',
 ]
 
-ti = knock_knock.target_info.TargetInfo(base_dir, target_name, sgRNAs=sgRNAs)
+strat = knock_knock.editing_strategy.EditingStrategy(base_dir, target_name, sgRNAs=sgRNAs)
 
 class StrandsGrid:
     def __init__(self,
@@ -111,15 +113,15 @@ class StrandsGrid:
 
         self.pegRNA_name = pegRNA_name
 
-        self.target_info = knock_knock.target_info.TargetInfo(base_dir, target_name, sgRNAs=sgRNAs)
+        self.editing_strategy = knock_knock.editing_strategy.EditingStrategy(base_dir, target_name, sgRNAs=sgRNAs)
 
-        self.anchor = self.target_info.cut_afters['sgRNA2483_protospacer_+']
+        self.anchor = self.editing_strategy.cut_afters['sgRNA2483_protospacer_+']
 
         left_primer_name = 'OLI19224'
         right_primer_name = 'OLI19254'
 
-        self.left_primer = self.target_info.features[self.target_info.target, left_primer_name]
-        self.right_primer = self.target_info.features[self.target_info.target, right_primer_name]
+        self.left_primer = self.editing_strategy.features[self.editing_strategy.target, left_primer_name]
+        self.right_primer = self.editing_strategy.features[self.editing_strategy.target, right_primer_name]
 
         self.x_min = self.left_primer.start - buffer - self.anchor
         self.x_max = self.right_primer.end + buffer - self.anchor
@@ -156,7 +158,7 @@ class StrandsGrid:
         self.format_axes()
 
     def draw_genomic_sequence(self):
-        sequence = self.target_info.reference_sequences[self.target_info.target]
+        sequence = self.editing_strategy.reference_sequences[self.editing_strategy.target]
 
         for x in range(self.x_min, self.x_max):
             b = sequence[x + self.anchor]
@@ -196,8 +198,8 @@ class StrandsGrid:
 
         for ps_feature_name, label, color in sgRNA_info:
             protospacer_name = knock_knock.pegRNAs.protospacer_name(ps_feature_name)
-            ps_feature = self.target_info.features[self.target_info.target, protospacer_name]
-            PAM_feature = self.target_info.features[self.target_info.target, f'{protospacer_name}_PAM']
+            ps_feature = self.editing_strategy.features[self.editing_strategy.target, protospacer_name]
+            PAM_feature = self.editing_strategy.features[self.editing_strategy.target, f'{protospacer_name}_PAM']
 
             for feature, alpha in [(ps_feature, 0.3), (PAM_feature, 0.8)]:
                 width = len(feature)
@@ -282,8 +284,8 @@ class StrandsGrid:
         ax = self.axs['pegRNA']
         transform = ax.get_xaxis_transform()
 
-        if self.target_info.pegRNA is not None:
-            flap_template = ''.join(self.target_info.pegRNA.components[name] for name in ['protospacer', 'scaffold', 'RTT'])
+        if self.editing_strategy.pegRNA is not None:
+            flap_template = ''.join(self.editing_strategy.pegRNA.components[name] for name in ['protospacer', 'scaffold', 'RTT'])
             flap = hits.utilities.reverse_complement(flap_template)
         else:
             flap = ' '*100
@@ -315,12 +317,12 @@ class StrandsGrid:
                     alpha=1,
                    )
 
-        if self.target_info.pegRNA is not None:
+        if self.editing_strategy.pegRNA is not None:
             names = ['RTT', 'scaffold', 'protospacer']
-            lengths = [len(self.target_info.pegRNA.components[name]) for name in names]
+            lengths = [len(self.editing_strategy.pegRNA.components[name]) for name in names]
             starts = [1] + list(np.cumsum(lengths) + 1)[:-1]
 
-            ax.axvspan(0.5, len(self.target_info.pegRNA.components['RTT']) + 0.5,
+            ax.axvspan(0.5, len(self.editing_strategy.pegRNA.components['RTT']) + 0.5,
                                 color=knock_knock.pegRNAs.default_feature_colors['RTT'],
                                 alpha=0.25,
                                 linewidth=0,
@@ -487,9 +489,9 @@ def load_group_counts(group, key=('targeted genomic sequence', 'unedited')):
     just_edges_counts = counts.groupby(level=0).sum()
     
     if key[0] == 'RTed sequence':
-        offset = -len(group.target_info.pegRNA.components['PBS']) + 1
+        offset = -len(group.editing_strategy.pegRNA.components['PBS']) + 1
     else:
-        offset = ti.features[('HEK3', group.target_info.sequencing_start_feature_name)].start - group.target_info.features[group.target_info.target, group.target_info.sequencing_start_feature_name].start - ti.cut_afters['sgRNA2483_protospacer_+']
+        offset = strat.features[('HEK3', group.editing_strategy.sequencing_start_feature_name)].start - group.editing_strategy.features[group.editing_strategy.target, group.editing_strategy.sequencing_start_feature_name].start - strat.cut_afters['sgRNA2483_protospacer_+']
     
     just_edges_counts.index = just_edges_counts.index + offset
     
@@ -539,11 +541,11 @@ def load_all_data(batch, genome='hg38', key=('targeted genomic sequence', 'unedi
             bottom_percentages = bottom_counts / bottom_denominator * 100
             group_data['bottom'] = bottom_percentages[bottom_denominator[bottom_denominator > min_reads].index]
 
-        if top_group.target_info.pegRNA is not None:
+        if top_group.editing_strategy.pegRNA is not None:
             pegRNA_counts = load_group_counts(top_group, key=('RTed sequence', 'n/a'))
-            group_data[top_group.target_info.pegRNA.name] = pegRNA_counts / top_denominator * 100
+            group_data[top_group.editing_strategy.pegRNA.name] = pegRNA_counts / top_denominator * 100
 
-            pegRNA_names.add(top_group.target_info.pegRNA.name)
+            pegRNA_names.add(top_group.editing_strategy.pegRNA.name)
             
         data[gn_suffix] = group_data
 

@@ -1,6 +1,6 @@
 experiment_type: prime_editing
-target_info: PMID31634902_RNF2
-target_info_kwargs:
+editing_strategy: PMID31634902_RNF2
+strategy_kwargs:
   sgRNAs: RNF2_4h_1CtoA_5GtoT;RNF2_4c_+41_nicking
 expected_values:
   010287981:0000000003:

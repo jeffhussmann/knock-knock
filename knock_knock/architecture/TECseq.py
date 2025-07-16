@@ -8,7 +8,7 @@ import knock_knock.architecture
 from . import prime_editing
 from . import twin_prime
 
-from knock_knock.outcome import *
+from knock_knock.outcome import Details
 
 memoized_property = hits.utilities.memoized_property
 memoized_with_args = hits.utilities.memoized_with_args
@@ -63,11 +63,11 @@ class Architecture(prime_editing.Architecture):
             edge_al = None
 
         else:
-            ti = self.target_info
+            strat = self.editing_strategy
 
             buffer = 0
 
-            primer_feature = ti.primers_by_side_of_read['left']
+            primer_feature = strat.primers_by_side_of_read['left']
 
             primer_interval = hits.interval.Interval.from_feature(primer_feature)
 
@@ -80,12 +80,12 @@ class Architecture(prime_editing.Architecture):
 
             als = hits.sw.align_read(
                 self.read,
-                [(ti.target, ti.target_sequence)],
+                [(strat.target, strat.target_sequence)],
                 0,
-                ti.header,
+                strat.header,
                 alignment_type=alignment_type,
                 read_interval=hits.interval.Interval(0, len(primer_feature) + buffer),
-                ref_intervals={ti.target: primer_interval},
+                ref_intervals={strat.target: primer_interval},
                 min_score_ratio=0.5,
             )
 
@@ -95,7 +95,7 @@ class Architecture(prime_editing.Architecture):
 
                 edge_al = als[0]
 
-                edge_al = hits.sw.extend_alignment(edge_al, ti.reference_sequence_bytes[ti.target])
+                edge_al = hits.sw.extend_alignment(edge_al, strat.reference_sequence_bytes[strat.target])
                 
             else:
                 edge_al = None
@@ -193,11 +193,11 @@ class Architecture(prime_editing.Architecture):
 
     @memoized_property
     def plot_parameters(self):
-        ti = self.target_info
+        strat = self.editing_strategy
 
         plot_parameters = super().plot_parameters
 
-        for virtual_primer in {(ti.target, name) for name in ti.primers if name != ti.sequencing_start_feature_name}:
+        for virtual_primer in {(strat.target, name) for name in strat.primers if name != strat.sequencing_start_feature_name}:
             plot_parameters['features_to_show'].remove(virtual_primer)
 
         return plot_parameters
@@ -409,7 +409,7 @@ class NoOverlapPairArchitecture(Architecture, knock_knock.architecture.NoOverlap
         label_overrides = plot_kwargs.pop('label_overrides', self.plot_parameters['label_overrides'].copy())
 
         diagram = knock_knock.visualize.architecture.ReadDiagram(als_to_plot,
-                                                                 self.target_info,
+                                                                 self.editing_strategy,
                                                                  highlight_programmed_substitutions=True,
                                                                  flip_target=self.sequencing_direction == '-',
                                                                  inferred_amplicon_length=self.inferred_amplicon_length,
@@ -425,7 +425,7 @@ class NoOverlapPairArchitecture(Architecture, knock_knock.architecture.NoOverlap
         R1_strand = hits.sam.get_strand(R1_al)
         R2_strand = hits.sam.get_strand(R2_al)
 
-        if R1_al.reference_name == self.target_info.pegRNA_names_by_side_of_read.get('left') and R2_al.reference_name == self.target_info.target:
+        if R1_al.reference_name == self.editing_strategy.pegRNA_names_by_side_of_read.get('left') and R2_al.reference_name == self.editing_strategy.target:
             gap = 'unknown'
             amplicon_length = -1
 

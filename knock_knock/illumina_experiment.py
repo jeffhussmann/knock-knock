@@ -176,8 +176,8 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
     def check_combined_read_length(self):
         if self.paired_end and not knock_knock.utilities.is_one_sided(self.description.get('experiment_type')):
             combined_read_length = self.R1_read_length + self.R2_read_length
-            if combined_read_length < self.target_info.amplicon_length:
-                logger.warning(f'Warning: {self.batch_name} {self.sample_name} combined read length ({combined_read_length}) less than expected amplicon length ({self.target_info.amplicon_length:,}).')
+            if combined_read_length < self.editing_strategy.amplicon_length:
+                logger.warning(f'Warning: {self.batch_name} {self.sample_name} combined read length ({combined_read_length}) less than expected amplicon length ({self.editing_strategy.amplicon_length:,}).')
 
     @memoized_property
     def max_relevant_length(self):
@@ -205,7 +205,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
     def get_read_architecture(self, read_id, fn_key='bam_by_name', outcome=None, read_type=None):
         if self.paired_end and read_id in self.no_overlap_qnames:
             als = self.get_read_alignments(read_id, outcome=outcome)
-            architecture = self.no_overlap_pair_categorizer(als, self.target_info)
+            architecture = self.no_overlap_pair_categorizer(als, self.editing_strategy)
             return architecture
         else:
             architecture = super().get_read_architecture(read_id, fn_key=fn_key, outcome=outcome, read_type=read_type)
@@ -277,7 +277,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
                     UMI_qual = ''
 
                 try:
-                    pair_architecture = self.no_overlap_pair_categorizer(als, self.target_info)
+                    pair_architecture = self.no_overlap_pair_categorizer(als, self.editing_strategy)
                     pair_architecture.categorize()
                 except:
                     print(self.sample_name, name)
@@ -333,16 +333,16 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
         Sort reads by name.
         '''
 
-        ti = self.target_info
+        strat = self.editing_strategy
 
         primer_prefix_length = 6
 
-        if ti.sequencing_direction == '+':
-            start = ti.sequencing_start.start
-            prefix = ti.target_sequence[start:start + primer_prefix_length]
+        if strat.sequencing_direction == '+':
+            start = strat.sequencing_start.start
+            prefix = strat.target_sequence[start:start + primer_prefix_length]
         else:
-            end = ti.sequencing_start.end
-            prefix = utilities.reverse_complement(ti.target_sequence[end + 1 - primer_prefix_length:end + 1])
+            end = strat.sequencing_start.end
+            prefix = utilities.reverse_complement(strat.target_sequence[end + 1 - primer_prefix_length:end + 1])
 
         prefix = prefix.upper()
 
@@ -408,15 +408,15 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
         match_length_required = 6
         window_size = 30
 
-        ti = self.target_info
+        strat = self.editing_strategy
 
-        start = ti.primers_by_side_of_target[5].start
-        prefix = ti.target_sequence[start:start + match_length_required]
+        start = strat.primers_by_side_of_target[5].start
+        prefix = strat.target_sequence[start:start + match_length_required]
 
-        end = ti.primers_by_side_of_target[3].end
-        suffix = ti.target_sequence[end + 1 - match_length_required:end + 1]
+        end = strat.primers_by_side_of_target[3].end
+        suffix = strat.target_sequence[end + 1 - match_length_required:end + 1]
 
-        if ti.sequencing_direction == '-':
+        if strat.sequencing_direction == '-':
             prefix, suffix = utilities.reverse_complement(suffix), utilities.reverse_complement(prefix)
 
         fns = self.fns_by_read_type['fastq']
@@ -641,8 +641,8 @@ class CommonSequencesExperiment(IlluminaExperiment):
         return self.experiment.results_dir / 'common_sequences'
 
     @memoized_property
-    def target_info(self):
-        return self.experiment.target_info
+    def editing_strategy(self):
+        return self.experiment.editing_strategy
 
     @property
     def uncommon_read_type(self):

@@ -10,10 +10,10 @@ import RNA
 
 from hits import gff, interval, sam, sw, utilities
 
-import knock_knock.utilities
-import knock_knock.integrases
 import knock_knock.effector
-from knock_knock import target_info
+import knock_knock.integrases
+import knock_knock.outcome
+import knock_knock.utilities
 
 memoized_property = utilities.memoized_property
 
@@ -630,7 +630,7 @@ class pegRNA:
             starts['target', 'deletion'], ends['target', 'deletion'] = sorted(convert_downstream_of_nick_to_target_coordinates(deletion[k]) for k in ['downstream_of_nick_start', 'downstream_of_nick_end'])
             deletion_length = ends['target', 'deletion'] - starts['target', 'deletion'] + 1
 
-            self.deletion = target_info.DegenerateDeletion([starts['target', 'deletion']], deletion_length)
+            self.deletion = knock_knock.outcome.DegenerateDeletion([starts['target', 'deletion']], deletion_length)
 
             deletion_name = f'deletion_{self.name}'
             deletion_feature = gff.Feature.from_fields(seqname=names['target'],
@@ -1690,7 +1690,7 @@ def infer_twin_pegRNA_features(pegRNAs,
 
                 deletion_start = num_matches_at_start
 
-                deletion = target_info.DegenerateDeletion([deletion_start], deletion_length)
+                deletion = knock_knock.outcome.DegenerateDeletion([deletion_start], deletion_length)
 
                 deletion_name = f'deletion_{pegRNA_names[0]}_{pegRNA_names[1]}'
                 deletion_feature = gff.Feature.from_fields(seqname=target_name,

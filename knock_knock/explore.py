@@ -213,7 +213,7 @@ class Explorer:
                 ]
 
                 if self.by_outcome:
-                    architecture = exp.no_overlap_pair_categorizer(als, exp.target_info)
+                    architecture = exp.no_overlap_pair_categorizer(als, exp.editing_strategy)
             else:
                 read_details = [
                     f'exp name: {exp.sample_name}',
@@ -223,7 +223,7 @@ class Explorer:
 
                 if self.by_outcome:
                     architecture = exp.categorizer(als,
-                                             exp.target_info,
+                                             exp.editing_strategy,
                                              mode=exp.architecture_mode,
                                              error_corrected=exp.has_UMIs,
                                             )
@@ -258,7 +258,7 @@ class Explorer:
                 diagram = architecture.plot(**plot_kwargs)
             else:
                 diagram = knock_knock.visualize.architecture.ReadDiagram(als,
-                                                                         exp.target_info,
+                                                                         exp.editing_strategy,
                                                                          inferred_amplicon_length=inferred_amplicon_length,
                                                                          title='',
                                                                          **plot_kwargs,
