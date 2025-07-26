@@ -1,5 +1,7 @@
 from collections import defaultdict
 
+import numpy as np
+
 from hits import interval, sam
 from hits.utilities import memoized_property
 
@@ -218,7 +220,7 @@ class Architecture(prime_editing.Architecture):
         other_pegRNA_name = self.other_pegRNA_name(pegRNA_al_to_extend.reference_name)
         return self.extend_alignment_from_shared_feature(pegRNA_al_to_extend, 'overlap', other_pegRNA_name, 'overlap')
 
-    def find_pegRNA_alignment_extending_from_overlap(self, pegRNA_al_to_extend):
+    def find_pegRNA_alignment_extending_from_overlap(self, pegRNA_al_to_extend, require_definite=True):
         if pegRNA_al_to_extend is None:
             return None
 
@@ -237,7 +239,7 @@ class Architecture(prime_editing.Architecture):
         
         for candidate_al in sorted(candidate_als, key=lambda al: al.query_length, reverse=True):
             status = self.pegRNA_alignment_extends_pegRNA_alignment(pegRNA_al_to_extend, candidate_al)
-            if status == 'definite' or (status == 'possible' and self.editing_strategy.pegRNA_pair.is_prime_del):
+            if status == 'definite' or (status == 'possible' and (not require_definite or self.editing_strategy.pegRNA_pair.is_prime_del)):
                 relevant_pegRNA_al = candidate_al
                 break
                 
@@ -251,7 +253,7 @@ class Architecture(prime_editing.Architecture):
         if target_edge_al is not None:
             als['first target'] = target_edge_al
         
-            pegRNA_al, cropped_pegRNA_al, cropped_target_al = self.find_pegRNA_alignment_extending_target_edge_al(side, 'PBS')
+            pegRNA_al, cropped_pegRNA_al, cropped_target_al = self.find_pegRNA_alignment_extending_target_edge_al(side, 'PBS', require_definite=require_definite)
             
             if pegRNA_al is not None:
                 als['first pegRNA'] = pegRNA_al
@@ -260,7 +262,7 @@ class Architecture(prime_editing.Architecture):
                 # whether the pegRNA alignment contributed any novel query cover.
                 als['first target'] = cropped_target_al
                 
-                overlap_extended_pegRNA_al = self.find_pegRNA_alignment_extending_from_overlap(pegRNA_al)
+                overlap_extended_pegRNA_al = self.find_pegRNA_alignment_extending_from_overlap(pegRNA_al, require_definite=require_definite)
 
                 if side == 'left':
                     left_al, right_al = pegRNA_al, overlap_extended_pegRNA_al
@@ -283,7 +285,7 @@ class Architecture(prime_editing.Architecture):
                 if contribution_from_overlap_extended or (overlap_extended_pegRNA_al is not None and self.editing_strategy.pegRNA_pair.is_prime_del):
                     als['second pegRNA'] = overlap_extended_pegRNA_al
                     
-                    overlap_extended_target_al, _, _ = self.find_target_alignment_extending_pegRNA_alignment(overlap_extended_pegRNA_al, 'PBS')
+                    overlap_extended_target_al, _, _ = self.find_target_alignment_extending_pegRNA_alignment(overlap_extended_pegRNA_al, 'PBS', require_definite=require_definite)
                     
                     if overlap_extended_target_al is not None:
                         als['second target'] = overlap_extended_target_al
@@ -314,7 +316,14 @@ class Architecture(prime_editing.Architecture):
 
     @memoized_property
     def extension_chains_by_side(self):
-        chains = {side: self.characterize_extension_chain_on_side(side) for side in ['left', 'right']}
+        return self.characterize_extension_chains_by_side(require_definite=True)
+
+    @memoized_property
+    def possible_extension_chains_by_side(self):
+        return self.characterize_extension_chains_by_side(require_definite=False)
+
+    def characterize_extension_chains_by_side(self, require_definite=True):
+        chains = {side: self.characterize_extension_chain_on_side(side, require_definite=require_definite) for side in ['left', 'right']}
 
         # Check whether any members of an extension chain on one side are not
         # necessary to make it to the other chain. (Warning: could imagine a
@@ -566,11 +575,21 @@ class Architecture(prime_editing.Architecture):
         )
 
     @memoized_property
+    def has_possible_intended_pegRNA_overlap(self):
+        chains = self.possible_extension_chains_by_side
+
+        return (
+            chains['left']['description'] == 'RT\'ed + overlap-extended' and
+            chains['right']['description'] == 'RT\'ed + overlap-extended' and 
+            chains['left']['query_covered'] == chains['right']['query_covered']
+        )
+
+    @memoized_property
     def is_intended_or_partial_replacement(self):
         if self.editing_strategy.pegRNA_programmed_deletion is not None:
             status = False
         else:
-            if not self.has_intended_pegRNA_overlap:
+            if not (self.has_intended_pegRNA_overlap or self.has_possible_intended_pegRNA_overlap):
                 status = False
             else:
                 if self.editing_strategy.pegRNA_substitutions is None:

@@ -753,6 +753,9 @@ class Architecture(knock_knock.architecture.Categorizer):
         for pegRNA_al in sorted(candidate_als, key=lambda al: al.query_alignment_length, reverse=True):
             status, cropped_pegRNA_al, cropped_target_al = self.pegRNA_alignment_extends_target_alignment(pegRNA_al, target_edge_al, shared_feature=shared_feature)
             by_status[status].append((pegRNA_al, cropped_pegRNA_al, cropped_target_al))
+
+            if status == 'definite':
+                by_status['possible'].append((pegRNA_al, cropped_pegRNA_al, cropped_target_al))
                 
         relevant_pegRNA_al, cropped_pegRNA_al, cropped_target_al = None, None, None
 

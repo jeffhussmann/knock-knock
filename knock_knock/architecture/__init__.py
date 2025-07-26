@@ -293,10 +293,8 @@ class Categorizer:
 
             if left_contributes and right_contributes:
                 status = 'definite'
-            elif switch_in_shared and left_possible_contribution_past_overlap and right_possible_contribution_past_overlap:
-                status = 'possible'
             else:
-                status = 'not consistent'
+                status = 'possible'
 
             results = {
                 'status': status,
