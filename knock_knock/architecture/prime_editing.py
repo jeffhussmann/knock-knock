@@ -1114,13 +1114,17 @@ class Architecture(knock_knock.architecture.Categorizer):
     @memoized_property
     def is_intended_deletion(self):
         is_intended_deletion = False
+        target_alignment = None
 
         def is_intended(indel):
             return indel.kind == 'D' and indel == self.editing_strategy.pegRNA_programmed_deletion
 
         if self.single_read_covering_target_alignment:
             target_alignment = self.single_read_covering_target_alignment
+        elif self.original_target_covering_alignment:
+            target_alignment = self.original_target_covering_alignment
 
+        if target_alignment is not None:
             interesting_indels, uninteresting_indels = self.interesting_and_uninteresting_indels([target_alignment])
 
             # "Uninteresting indels" are 1-nt deletions that don't overlap a window of 5 nts on either side of a cut site.
