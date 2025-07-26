@@ -233,12 +233,12 @@ class Explorer:
 
                 inferred_amplicon_length = architecture.inferred_amplicon_length
 
-                read_details = read_details[:1] + [
+                read_details = read_details[:2] + [
                     f'category: {architecture.category}',
                     f'subcategory: {architecture.subcategory}',
                     f'details: {architecture.details}',
                     f'inferred amplicon length: {inferred_amplicon_length}', 
-                ] + read_details[1:]
+                ] + read_details[2:]
 
                 if self.non_widgets['alignments_to_show'].value == 'relevant':
                     plot_kwargs['relevant'] = True
