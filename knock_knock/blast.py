@@ -168,6 +168,7 @@ def blast(ref_fn,
         with sorter, by_name_sorter, pysam.AlignmentFile(sam_fn) as sam_fh:
 
             aligned_names = set()
+
             for al in sam_fh:
                 if filter_to_discard(al):
                     continue

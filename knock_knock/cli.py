@@ -163,29 +163,29 @@ def make_tables(args):
                                                           vmax_multiple=args.vmax_multiple,
                                                          )
 
-def build_targets(args):
-    import knock_knock.build_targets
+def build_strategies(args):
+    import knock_knock.build_strategies
 
-    knock_knock.build_targets.build_editing_strategies_from_csv(args.project_directory,
+    knock_knock.build_strategies.build_editing_strategies_from_csv(args.project_directory,
                                                                 defer_HA_identification=args.defer_HA_identification,
                                                                )
 
 def build_manual_target(args):
-    import knock_knock.build_targets
+    import knock_knock.build_strategies
 
-    knock_knock.build_targets.build_manual_target(args.project_directory, args.target_name)
+    knock_knock.build_strategies.build_manual_target(args.project_directory, args.target_name)
 
 def build_indices(args):
-    import knock_knock.build_targets
+    import knock_knock.build_strategies
 
-    knock_knock.build_targets.download_genome_and_build_indices(args.project_directory,
+    knock_knock.build_strategies.download_genome_and_build_indices(args.project_directory,
                                                                 args.genome_name,
                                                                 args.num_threads
                                                                )
 
 def install_example_data(args):
-    package_dir = Path(os.path.realpath(knock_knock.__file__)).parent
-    subdirs_to_copy = ['data', 'targets']
+    package_dir = Path(knock_knock.__file__).resolve().parent
+    subdirs_to_copy = ['data', 'strategies']
     for subdir in subdirs_to_copy:
         src = package_dir / 'example_data' / subdir
         dest = args.project_directory / subdir
@@ -263,10 +263,10 @@ def main():
     parser_table.add_argument('--vmax_multiple', type=float, default=1, help='fractional value that corresponds to full horizontal bar')
     parser_table.set_defaults(func=make_tables)
 
-    parser_targets = subparsers.add_parser('build-targets', help='build annotations of target locii')
-    add_project_directory_arg(parser_targets)
-    parser_targets.add_argument('--defer_HA_identification', action='store_true', help='don\'t try to identiy homology arms')
-    parser_targets.set_defaults(func=build_targets)
+    parser_strategies = subparsers.add_parser('build-stratgies', help='build annotations of editing strategies')
+    add_project_directory_arg(parser_strategies)
+    parser_strategies.add_argument('--defer_HA_identification', action='store_true', help='don\'t try to identiy homology arms')
+    parser_strategies.set_defaults(func=build_strategies)
 
     parser_manual_target = subparsers.add_parser('build-manual-target', help='build a single target from a hand-annotated genbank file')
     add_project_directory_arg(parser_manual_target)

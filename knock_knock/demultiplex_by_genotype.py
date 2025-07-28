@@ -78,7 +78,7 @@ def add_genotypes_to_sample_sheet(base_dir, batch_name, genotypes_fasta_fn):
     for fn in [genotypes_fasta_fn, input_dir / 'sgRNAs.csv', input_dir / 'amplicon_primers.csv']:
         shutil.copy(fn, output_dir / fn.name)
 
-    knock_knock.arrayed_experiment_group.make_targets(base_dir, suffixed_df)
+    knock_knock.arrayed_experiment_group.make_strategies(base_dir, suffixed_df)
     knock_knock.arrayed_experiment_group.make_group_descriptions_and_sample_sheet(base_dir, suffixed_df, demultiplexed_batch_name)
 
 def demultiplex(base_dir, batch_name, genotypes_fasta_fn, relevant_slice=slice(None), progress=None):

@@ -240,7 +240,7 @@ class EditingStrategyBuilder:
 
         self.name = self.info['name']
 
-        self.target_dir = self.base_dir / 'targets' / self.name
+        self.target_dir = knock_knock.editing_strategy.get_strategies_dir(self.base_dir) / self.name
         self.target_dir.mkdir(parents=True, exist_ok=True)
 
         # Only align primer sequence downstream of any N's.
@@ -567,7 +567,7 @@ class EditingStrategyBuilder:
             'target': self.target_name,
         }
 
-        if self.info['donor'] is not None:
+        if self.info.get('donor') is not None:
             donor_name, donor_sequence = self.info['donor']
             manifest['donor'] = donor_name
 
@@ -870,8 +870,7 @@ def load_sgRNAs(base_dir, process=True):
     '''
     If process == False, just pass along the DataFrame for subsetting.
     '''
-    base_dir = Path(base_dir)
-    csv_fn = base_dir / 'targets' / 'sgRNAs.csv'
+    csv_fn = knock_knock.editing_strategy.get_strategies_dir(base_dir) / 'sgRNAs.csv'
 
     if not csv_fn.exists():
         return None
@@ -879,6 +878,8 @@ def load_sgRNAs(base_dir, process=True):
         return knock_knock.pegRNAs.read_csv(csv_fn, process=process)
 
 def load_extra_sequences(base_dir):
+    strategies_dir = knock_knock.editing_strategy.get_strategies_dir(base_dir)
+
     extra_sequences = {}
 
     fasta_extensions = {
@@ -886,7 +887,7 @@ def load_extra_sequences(base_dir):
         '.fa',
     }
 
-    fasta_fns = sorted(fn for fn in (base_dir / 'targets').iterdir() if fn.suffix in fasta_extensions)
+    fasta_fns = sorted(fn for fn in strategies_dir.iterdir() if fn.suffix in fasta_extensions)
 
     for fasta_fn in fasta_fns:
         records = fasta.to_dict(fasta_fn)
@@ -907,11 +908,14 @@ def load_extra_sequences(base_dir):
     return extra_sequences
 
 def load_extra_genbank_records(base_dir):
+    strategies_dir = knock_knock.editing_strategy.get_strategies_dir(base_dir)
+
     records = {}
+
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', category=BiopythonWarning)
 
-        genbank_fns = sorted((base_dir / 'targets').glob('*.gb'))
+        genbank_fns = sorted(strategies_dir.glob('*.gb'))
         for genbank_fn in genbank_fns:
             for record in Bio.SeqIO.parse(genbank_fn, 'gb'):
                 if record.name in records:
@@ -924,11 +928,13 @@ def load_extra_genbank_records(base_dir):
 def build_component_registry(base_dir):
     base_dir = Path(base_dir)
 
+    strategies_dir = knock_knock.editing_strategy.get_strategies_dir(base_dir)
+
     registry = {}
 
     registry['sgRNAs'] = load_sgRNAs(base_dir)
 
-    amplicon_primers_fn = base_dir / 'targets' / 'amplicon_primers.csv'
+    amplicon_primers_fn = strategies_dir / 'amplicon_primers.csv'
 
     if amplicon_primers_fn.exists():
         registry['amplicon_primers'] = knock_knock.utilities.read_and_sanitize_csv(amplicon_primers_fn, index_col='name')
@@ -937,7 +943,7 @@ def build_component_registry(base_dir):
 
     registry['extra_sequence'] = load_extra_sequences(base_dir)
 
-    donors_fn = base_dir / 'targets' / 'donors.csv'
+    donors_fn = strategies_dir / 'donors.csv'
 
     if donors_fn.exists():
         donors = pd.read_csv(donors_fn, index_col='name')
@@ -951,9 +957,12 @@ def build_component_registry(base_dir):
 
 def build_editing_strategies_from_csv(base_dir, defer_HA_identification=False):
     base_dir = Path(base_dir)
-    csv_fn = base_dir / 'targets' / 'targets.csv'
 
-    targets_df = pd.read_csv(csv_fn, comment='#', index_col='name').replace({np.nan: None})
+    strategies_dir = knock_knock.editing_strategy.get_strategies_dir(base_dir)
+
+    csv_fn = strategies_dir / 'strategies.csv'
+
+    strategies_df = pd.read_csv(csv_fn, comment='#', index_col='name').replace({np.nan: None})
 
     registry = build_component_registry(base_dir)
 
@@ -996,7 +1005,7 @@ def build_editing_strategies_from_csv(base_dir, defer_HA_identification=False):
             
         return looked_up
 
-    for target_name, row in targets_df.iterrows():
+    for target_name, row in strategies_df.iterrows():
         if '/' in target_name:
             raise ValueError(f'target names cannot contain a forward slash: {target_name}')
 
@@ -1026,7 +1035,7 @@ def build_editing_strategies_from_csv(base_dir, defer_HA_identification=False):
                                         )
         builder.build(generate_pegRNA_genbanks=False)
 
-def build_indices(base_dir, name, num_threads=1, **STAR_index_kwargs):
+def build_indices(base_dir, name, num_threads=1, RAM_limit=int(60e9), **STAR_index_kwargs):
     base_dir = Path(base_dir)
 
     logger.info(f'Building indices for {name}')
@@ -1048,7 +1057,7 @@ def build_indices(base_dir, name, num_threads=1, **STAR_index_kwargs):
     STAR_dir.mkdir(exist_ok=True)
     mapping_tools.build_STAR_index([fasta_fn], STAR_dir,
                                    num_threads=num_threads,
-                                   RAM_limit=int(60e9),
+                                   RAM_limit=RAM_limit,
                                    **STAR_index_kwargs,
                                   )
 

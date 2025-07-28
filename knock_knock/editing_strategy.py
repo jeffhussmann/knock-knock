@@ -31,6 +31,9 @@ other_side = {
     'right': 'left',
 }
 
+def get_strategies_dir(base_dir):
+    return Path(base_dir) / 'strategies'
+
 class EditingStrategy:
     def __init__(self,
                  base_dir,
@@ -53,7 +56,7 @@ class EditingStrategy:
         self.name = name
 
         self.base_dir = Path(base_dir)
-        self.strategies_dir = self.base_dir / 'strategies'
+        self.strategies_dir = get_strategies_dir(self.base_dir)
         self.dir = self.strategies_dir / name
 
         # If not None, feature_to_replace is a tuple (ref_name, feature_name, sequence)
@@ -2072,10 +2075,10 @@ def parse_benchling_genbank(gb_record):
     return fasta_record, gff_features
 
 def get_all_strategies(base_dir):
-    strategies_dir = Path(base_dir) / 'strategies'
+    strategies_dir = get_strategies_dir(base_dir)
     names = (p.name for p in strategies_dir.glob('*') if p.is_dir())
-    targets = [EditingStrategy(base_dir, n) for n in names]
-    return targets
+    strategies = [EditingStrategy(base_dir, n) for n in names]
+    return strategies
 
 def locate_supplemental_indices(base_dir):
     base_dir = Path(base_dir)

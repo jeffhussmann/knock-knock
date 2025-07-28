@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-import knock_knock.build_targets
+import knock_knock.build_strategies
 import knock_knock.experiment_group
 import knock_knock.outcome
 import knock_knock.illumina_experiment
@@ -26,6 +26,9 @@ memoized_property = utilities.memoized_property
 memoized_with_kwargs = utilities.memoized_with_kwargs
 
 logger = logging.getLogger(__name__)
+
+def get_metadata_dir(base_dir):
+    return Path(base_dir) / 'metadata'
 
 class Batch:
     def __init__(self,
@@ -992,7 +995,7 @@ def make_default_strategy_name(amplicon_primers, genome, genome_source, extra_se
 
     return strategy_name
 
-def make_targets(base_dir, sample_sheet_df):
+def make_strategies(base_dir, sample_sheet_df):
     valid_supplemental_indices = set(knock_knock.editing_strategy.locate_supplemental_indices(base_dir))
 
     strategies = {}
@@ -1018,16 +1021,16 @@ def make_targets(base_dir, sample_sheet_df):
             'donor': donor,
         }
 
-    targets_df = pd.DataFrame.from_dict(strategies, orient='index')
-    targets_df.index.name = 'name'
+    strategies_df = pd.DataFrame.from_dict(strategies, orient='index')
+    strategies_df.index.name = 'name'
 
-    targets_dir = Path(base_dir) / 'strategies'
-    targets_dir.mkdir(parents=True, exist_ok=True)
+    strategies_dir = knock_knock.editing_strategy.get_strategies_dir(base_dir)
+    strategies_dir.mkdir(parents=True, exist_ok=True)
 
-    targets_csv_fn = targets_dir / 'strategies.csv'
-    targets_df.to_csv(targets_csv_fn)
+    strategies_csv_fn = strategies_dir / 'strategies.csv'
+    strategies_df.to_csv(strategies_csv_fn)
 
-    knock_knock.build_targets.build_editing_strategies_from_csv(base_dir)
+    knock_knock.build_strategies.build_editing_strategies_from_csv(base_dir)
 
 def detect_sequencing_primers(base_dir, batch_name, sample_sheet_df):
 
@@ -1193,7 +1196,7 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
     sequencing_start_feature_names = detect_sequencing_start_feature_names(base_dir, batch_name, sample_sheet_df)
     sample_sheet_df['sequencing_start_feature_name'] = sample_sheet_df['sample_name'].map(sequencing_start_feature_names).fillna('')
 
-    # For each set of target info parameter values, assign the most common
+    # For each set of editing strategy parameter values, assign the most common
     # sequencing_start_feature_name to all samples.
 
     group_keys = [
@@ -1215,11 +1218,11 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
         if len(orientations) == 0:
             row = rows.iloc[0]
             strategy_name = make_default_strategy_name(row['amplicon_primers'],
-                                                             row['genome'],
-                                                             row['genome_source'],
-                                                             row['extra_sequences'],
-                                                             row['donor'],
-                                                            )
+                                                       row['genome'],
+                                                       row['genome_source'],
+                                                       row['extra_sequences'],
+                                                       row['donor'],
+                                                      )
             strat = knock_knock.editing_strategy.EditingStrategy(base_dir, strategy_name) 
 
             feature_name = sorted(strat.primers)[0]
