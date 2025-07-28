@@ -1,0 +1,82 @@
+category000	wild type
+category000_subcategory000	wild type, clean
+category000_subcategory001	wild type, mismatches
+category000_subcategory002	wild type, short indel far from cut
+category001	intended edit
+category001_subcategory000	intended edit, replacement
+category001_subcategory001	intended edit, deletion
+category002	partial replacement
+category002_subcategory000	partial replacement, left pegRNA
+category002_subcategory001	partial replacement, right pegRNA
+category002_subcategory002	partial replacement, both pegRNAs
+category002_subcategory003	partial replacement, single pegRNA (ambiguous)
+category003	unintended rejoining of RT'ed sequence
+category003_subcategory000	unintended rejoining of RT'ed sequence, left RT'ed, right RT'ed
+category003_subcategory001	unintended rejoining of RT'ed sequence, left RT'ed, right not RT'ed
+category003_subcategory002	unintended rejoining of RT'ed sequence, left not RT'ed, right RT'ed
+category003_subcategory003	unintended rejoining of RT'ed sequence, left RT'ed, right not seen
+category003_subcategory004	unintended rejoining of RT'ed sequence, left not seen, right RT'ed
+category004	unintended rejoining of overlap-extended sequence
+category004_subcategory000	unintended rejoining of overlap-extended sequence, left RT'ed + overlap-extended, right RT'ed + overlap-extended
+category004_subcategory001	unintended rejoining of overlap-extended sequence, left RT'ed + overlap-extended, right RT'ed
+category004_subcategory002	unintended rejoining of overlap-extended sequence, left RT'ed, right RT'ed + overlap-extended
+category004_subcategory003	unintended rejoining of overlap-extended sequence, left RT'ed + overlap-extended, right not RT'ed
+category004_subcategory004	unintended rejoining of overlap-extended sequence, left not RT'ed, right RT'ed + overlap-extended
+category004_subcategory005	unintended rejoining of overlap-extended sequence, left RT'ed + overlap-extended, right not seen
+category004_subcategory006	unintended rejoining of overlap-extended sequence, left not seen, right RT'ed + overlap-extended
+category005	multistep unintended rejoining of RT'ed sequence
+category005_subcategory000	multistep unintended rejoining of RT'ed sequence, left RT'ed, right RT'ed
+category005_subcategory001	multistep unintended rejoining of RT'ed sequence, left RT'ed, right indel
+category005_subcategory002	multistep unintended rejoining of RT'ed sequence, left indel, right RT'ed
+category006	flipped pegRNA incorporation
+category006_subcategory000	flipped pegRNA incorporation, left pegRNA
+category006_subcategory001	flipped pegRNA incorporation, right pegRNA
+category006_subcategory002	flipped pegRNA incorporation, both pegRNAs
+category007	deletion
+category007_subcategory000	deletion, clean
+category007_subcategory001	deletion, mismatches
+category007_subcategory002	deletion, multiple
+category008	duplication
+category008_subcategory000	duplication, simple
+category008_subcategory001	duplication, iterated
+category008_subcategory002	duplication, complex
+category009	insertion
+category009_subcategory000	insertion, clean
+category009_subcategory001	insertion, mismatches
+category010	edit + indel
+category010_subcategory000	edit + indel, deletion
+category010_subcategory001	edit + indel, insertion
+category010_subcategory002	edit + indel, duplication
+category011	multiple indels
+category011_subcategory000	multiple indels, multiple indels
+category012	genomic insertion
+category012_subcategory000	genomic insertion, hg19
+category012_subcategory001	genomic insertion, hg38
+category012_subcategory002	genomic insertion, macFas5
+category012_subcategory003	genomic insertion, mm10
+category012_subcategory004	genomic insertion, bosTau7
+category012_subcategory005	genomic insertion, e_coli
+category012_subcategory006	genomic insertion, phiX
+category013	inversion
+category013_subcategory000	inversion, inversion
+category014	incorporation of extra sequence
+category014_subcategory000	incorporation of extra sequence, has RT'ed extension
+category014_subcategory001	incorporation of extra sequence, no RT'ed extension
+category015	uncategorized
+category015_subcategory000	uncategorized, uncategorized
+category015_subcategory001	uncategorized, low quality
+category016	nonspecific amplification
+category016_subcategory000	nonspecific amplification, hg19
+category016_subcategory001	nonspecific amplification, hg38
+category016_subcategory002	nonspecific amplification, macFas5
+category016_subcategory003	nonspecific amplification, T2T-MFA8v1.0
+category016_subcategory004	nonspecific amplification, mm10
+category016_subcategory005	nonspecific amplification, bosTau7
+category016_subcategory006	nonspecific amplification, e_coli
+category016_subcategory007	nonspecific amplification, b_subtilis
+category016_subcategory008	nonspecific amplification, phiX
+category016_subcategory009	nonspecific amplification, primer dimer
+category016_subcategory010	nonspecific amplification, short unknown
+category016_subcategory011	nonspecific amplification, extra sequence
+category017	phiX
+category017_subcategory000	phiX, phiX

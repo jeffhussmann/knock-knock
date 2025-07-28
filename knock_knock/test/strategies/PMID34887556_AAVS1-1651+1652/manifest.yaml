@@ -1,9 +1,0 @@
-features_to_show:
-- - AAVS1-1651+1652
-  - forward_primer
-- - AAVS1-1651+1652
-  - reverse_primer
-genome_source: hg38
-sources:
-- AAVS1-1651+1652
-target: AAVS1-1651+1652

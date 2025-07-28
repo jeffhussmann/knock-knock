@@ -1,0 +1,24 @@
+010288018:0000000028:
+  category: wild type
+  subcategory: clean
+  note: n/a
+010288018:0000000007:
+  category: intended edit
+  subcategory: deletion
+  note: n/a
+010288018:0000000119:
+  category: unintended rejoining of RT'ed sequence
+  subcategory: no scaffold, no substitution
+  note: includes part of RTT, rejoins just upstream of nick
+010288018:0000000045:
+  category: unintended rejoining of RT'ed sequence
+  subcategory: includes scaffold, no substitution
+  note: formerly misclassified as edit + duplication
+010288018:0000000126:
+  category: unintended rejoining of RT'ed sequence
+  subcategory: includes scaffold, no substitution
+  note: formerly misclassified as edit + duplication
+010288018:0000000052:
+  category: deletion
+  subcategory: clean
+  note: slightly longer than intended deletion

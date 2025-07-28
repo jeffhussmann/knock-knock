@@ -1,0 +1,2 @@
+sample_name,R1,experiment_type,editing_strategy,sequencing_start_feature_name,sgRNAs
+extracted,extracted.fastq,dual_flap,PMID34887556_Fig2E_HEK3_HA_64_EvoPreQ1_1,HEK3_0,HEK3_DF_A_HA_del64nt_EvoPreQ1;HEK3_DF_B_HA_del64nt_EvoPreQ1

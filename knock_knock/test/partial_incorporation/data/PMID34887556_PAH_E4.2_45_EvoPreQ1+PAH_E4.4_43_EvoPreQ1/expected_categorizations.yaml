@@ -1,0 +1,4000 @@
+simulated:000000:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA____C__T__CA__
+  subcategory: both pegRNAs
+simulated:000001:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA__G_CAG_A_____
+  subcategory: both pegRNAs
+simulated:000002:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA___G____GTA_CA_T
+  subcategory: both pegRNAs
+simulated:000003:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GAGG___AGT____AT
+  subcategory: both pegRNAs
+simulated:000004:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA___GG__AGT_GCA_T
+  subcategory: both pegRNAs
+simulated:000005:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA__G__A_A__AG___T
+  subcategory: both pegRNAs
+simulated:000006:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA___ACAG__G___T
+  subcategory: both pegRNAs
+simulated:000007:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__GG__CA___GC__T
+  subcategory: both pegRNAs
+simulated:000008:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA___A_A__A_CA__
+  subcategory: both pegRNAs
+simulated:000009:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G__G__C____G___T
+  subcategory: both pegRNAs
+simulated:000010:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG__G_ACA____C___
+  subcategory: both pegRNAs
+simulated:000011:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_G__A_AG_A__AA_
+  subcategory: both pegRNAs
+simulated:000012:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GAGGG_CA___G_A_T
+  subcategory: both pegRNAs
+simulated:000013:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA_G_ACA___GC_A_
+  subcategory: both pegRNAs
+simulated:000014:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAGGG__A_T__CAA_
+  subcategory: both pegRNAs
+simulated:000015:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAG___CAG____A_T
+  subcategory: both pegRNAs
+simulated:000016:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G__GG__A__AGCAA_
+  subcategory: both pegRNAs
+simulated:000017:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A__G__AG___C_A_
+  subcategory: both pegRNAs
+simulated:000018:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AGG__CAGTA__AAT
+  subcategory: both pegRNAs
+simulated:000019:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_G_GAC_GTAG_AA_
+  subcategory: both pegRNAs
+simulated:000020:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___GGG_CA_TAG___T
+  subcategory: both pegRNAs
+simulated:000021:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAG_G___GT_____T
+  subcategory: both pegRNAs
+simulated:000022:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A__GAC_____CA_T
+  subcategory: both pegRNAs
+simulated:000023:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____GGG__AG_AGC_AT
+  subcategory: left pegRNA
+simulated:000024:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAG_G___G______T
+  subcategory: both pegRNAs
+simulated:000025:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA___GG____TA__A__
+  subcategory: both pegRNAs
+simulated:000026:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__GG_ACA_TAGCA__
+  subcategory: both pegRNAs
+simulated:000027:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA____GA_AG_A_C__T
+  subcategory: both pegRNAs
+simulated:000028:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_____G_CA__AG_A_T
+  subcategory: both pegRNAs
+simulated:000029:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAGGGACAG__G____
+  subcategory: both pegRNAs
+simulated:000030:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA___A___T_G__AT
+  subcategory: both pegRNAs
+simulated:000031:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA___A_____G____
+  subcategory: both pegRNAs
+simulated:000032:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____G_G__A____C_AT
+  subcategory: left pegRNA
+simulated:000033:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___GGGA_A_T_G_A_T
+  subcategory: both pegRNAs
+simulated:000034:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_____ACA___GC__T
+  subcategory: both pegRNAs
+simulated:000035:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A_G_AC__TAGCA__
+  subcategory: both pegRNAs
+simulated:000036:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__G_GA_A___G_AAT
+  subcategory: both pegRNAs
+simulated:000037:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_G______T____AT
+  subcategory: both pegRNAs
+simulated:000038:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAGG__CA_TA_CAA_
+  subcategory: both pegRNAs
+simulated:000039:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AGGG_CAGTA_CAA_
+  subcategory: both pegRNAs
+simulated:000040:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AGG___A__A__AAT
+  subcategory: both pegRNAs
+simulated:000041:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__G_GAC_G_A_C_A_
+  subcategory: both pegRNAs
+simulated:000042:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG___G__A__A__A_T
+  subcategory: both pegRNAs
+simulated:000043:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A___ACA____CAA_
+  subcategory: both pegRNAs
+simulated:000044:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_________TA___A_
+  subcategory: both pegRNAs
+simulated:000045:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AGG___AGTA_C___
+  subcategory: both pegRNAs
+simulated:000046:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A_G__CA__AG_AA_
+  subcategory: both pegRNAs
+simulated:000047:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA_GG_CAGT__C___
+  subcategory: both pegRNAs
+simulated:000048:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_G_G__AGT_GCA_T
+  subcategory: both pegRNAs
+simulated:000049:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___GGGA_A_TA_CA__
+  subcategory: both pegRNAs
+simulated:000050:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAGGG____TAGCA__
+  subcategory: both pegRNAs
+simulated:000051:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AGGGA_A__AGCA__
+  subcategory: both pegRNAs
+simulated:000052:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G__G__C__TA___A_
+  subcategory: both pegRNAs
+simulated:000053:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A____G_CA_TAG__A_
+  subcategory: both pegRNAs
+simulated:000054:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AGGGAC____G_AAT
+  subcategory: both pegRNAs
+simulated:000055:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A_G_______G___T
+  subcategory: both pegRNAs
+simulated:000056:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A_GGA_AG___CA__
+  subcategory: both pegRNAs
+simulated:000057:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA_G__C_GT__C___
+  subcategory: both pegRNAs
+simulated:000058:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA______CA_TAGCAA_
+  subcategory: both pegRNAs
+simulated:000059:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG__GG___GT___AA_
+  subcategory: both pegRNAs
+simulated:000060:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA__G_C___A___A_
+  subcategory: both pegRNAs
+simulated:000061:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AG____A_T_____T
+  subcategory: both pegRNAs
+simulated:000062:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AG_GA_______AA_
+  subcategory: both pegRNAs
+simulated:000063:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAGG____GT______
+  subcategory: right pegRNA
+simulated:000064:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_GG_ACA_TA_CAA_
+  subcategory: both pegRNAs
+simulated:000065:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAGG__C_G_____A_
+  subcategory: both pegRNAs
+simulated:000066:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A__G_CAG__GC__T
+  subcategory: both pegRNAs
+simulated:000067:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GAG___C_GTA_C___
+  subcategory: both pegRNAs
+simulated:000068:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G__GG__AGTA_C_A_
+  subcategory: both pegRNAs
+simulated:000069:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G__GG_C_G_A_C_AT
+  subcategory: both pegRNAs
+simulated:000070:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___GG_ACAG_AG__A_
+  subcategory: both pegRNAs
+simulated:000071:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA___GG_C_GT_G_AAT
+  subcategory: both pegRNAs
+simulated:000072:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__G_G_C_____CAAT
+  subcategory: both pegRNAs
+simulated:000073:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AGGG___GT___AAT
+  subcategory: both pegRNAs
+simulated:000074:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA__GAC_GTAG___T
+  subcategory: both pegRNAs
+simulated:000075:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AGG_AC____G_A__
+  subcategory: both pegRNAs
+simulated:000076:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_GG_A_AGT_G_AAT
+  subcategory: both pegRNAs
+simulated:000077:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_______AGT_G___T
+  subcategory: both pegRNAs
+simulated:000078:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA_GG_C_G__GC___
+  subcategory: both pegRNAs
+simulated:000079:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GAGG_AC__TAGC__T
+  subcategory: both pegRNAs
+simulated:000080:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_GG_A_A___G____
+  subcategory: both pegRNAs
+simulated:000081:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__GG__CA_T_GC___
+  subcategory: both pegRNAs
+simulated:000082:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAGG___A__AGC_A_
+  subcategory: both pegRNAs
+simulated:000083:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAGG_ACA_T_GC_AT
+  subcategory: both pegRNAs
+simulated:000084:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG__G_A__GT_G__A_
+  subcategory: both pegRNAs
+simulated:000085:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A____G_C_GTAG_A_T
+  subcategory: both pegRNAs
+simulated:000086:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_G__A_AG_AGCAAT
+  subcategory: both pegRNAs
+simulated:000087:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_____C_______AT
+  subcategory: both pegRNAs
+simulated:000088:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_G_G_C_GT___AAT
+  subcategory: both pegRNAs
+simulated:000089:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__G_G__A__A__AA_
+  subcategory: both pegRNAs
+simulated:000090:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__GGGA_A_T___AAT
+  subcategory: both pegRNAs
+simulated:000091:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AG_G__A___G_A__
+  subcategory: both pegRNAs
+simulated:000092:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A__GA_AG___CAA_
+  subcategory: both pegRNAs
+simulated:000093:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_____C_____C_AT
+  subcategory: both pegRNAs
+simulated:000094:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A_G___AG_A_CAA_
+  subcategory: both pegRNAs
+simulated:000095:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAGGGA_AG____A__
+  subcategory: both pegRNAs
+simulated:000096:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____G_G_CA_T__CAAT
+  subcategory: left pegRNA
+simulated:000097:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG__G__C_GTAGCAAT
+  subcategory: both pegRNAs
+simulated:000098:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA__G__A___T_GC_A_
+  subcategory: both pegRNAs
+simulated:000099:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A___GGA_A_T__C___
+  subcategory: both pegRNAs
+simulated:000100:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A____CAG_AGCA_T
+  subcategory: both pegRNAs
+simulated:000101:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A_GGACAGTA_C__T
+  subcategory: both pegRNAs
+simulated:000102:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG__GGAC_GT_GC_A_
+  subcategory: both pegRNAs
+simulated:000103:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____GGGAC_G_A____T
+  subcategory: left pegRNA
+simulated:000104:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA__GA__GT_G_A__
+  subcategory: both pegRNAs
+simulated:000105:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AG__A__G_A_C__T
+  subcategory: both pegRNAs
+simulated:000106:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AG____AGTA_CA__
+  subcategory: both pegRNAs
+simulated:000107:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AG_GAC_GTAG___T
+  subcategory: both pegRNAs
+simulated:000108:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___G__A_AGT_GCAAT
+  subcategory: both pegRNAs
+simulated:000109:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__A_GG_C_G_______
+  subcategory: right pegRNA
+simulated:000110:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAG____A_TAG_AAT
+  subcategory: both pegRNAs
+simulated:000111:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__A___AC______A__
+  subcategory: both pegRNAs
+simulated:000112:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA__GA_AGT__C___
+  subcategory: both pegRNAs
+simulated:000113:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAGGG___GT___A_T
+  subcategory: both pegRNAs
+simulated:000114:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_GG___A__A_____
+  subcategory: both pegRNAs
+simulated:000115:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__________G_AG__AT
+  subcategory: left pegRNA
+simulated:000116:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA__G_CA_TAG___T
+  subcategory: both pegRNAs
+simulated:000117:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_G__ACA___G_A__
+  subcategory: both pegRNAs
+simulated:000118:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G___G___GT__C___
+  subcategory: both pegRNAs
+simulated:000119:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_G__A___TA_CAA_
+  subcategory: both pegRNAs
+simulated:000120:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA___ACA_T___AA_
+  subcategory: both pegRNAs
+simulated:000121:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA__G_CA__AG_AAT
+  subcategory: both pegRNAs
+simulated:000122:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_____A__GTA___AT
+  subcategory: both pegRNAs
+simulated:000123:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAG_____G____A__
+  subcategory: both pegRNAs
+simulated:000124:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G__GGA_A_T_GCAA_
+  subcategory: both pegRNAs
+simulated:000125:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A_GG__AG_A_C_AT
+  subcategory: both pegRNAs
+simulated:000126:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A______A__G_A___AT
+  subcategory: both pegRNAs
+simulated:000127:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAG___CAG__G__AT
+  subcategory: both pegRNAs
+simulated:000128:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAG__A__G__GCA__
+  subcategory: both pegRNAs
+simulated:000129:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_GGG_C__T___AAT
+  subcategory: both pegRNAs
+simulated:000130:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A_GG_CAG__G__A_
+  subcategory: both pegRNAs
+simulated:000131:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__A___ACAG_AG___T
+  subcategory: both pegRNAs
+simulated:000132:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_G___CAG__G___T
+  subcategory: both pegRNAs
+simulated:000133:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG__GGAC_GT___A_T
+  subcategory: both pegRNAs
+simulated:000134:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA_G__C__TAGC_AT
+  subcategory: both pegRNAs
+simulated:000135:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AGG__CAG_AG__AT
+  subcategory: both pegRNAs
+simulated:000136:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__A_GG_C___A_CA__
+  subcategory: both pegRNAs
+simulated:000137:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAGGG_CAG___C__T
+  subcategory: both pegRNAs
+simulated:000138:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAG__AC_______A_
+  subcategory: both pegRNAs
+simulated:000139:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AGGGAC_G_AG_AA_
+  subcategory: both pegRNAs
+simulated:000140:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__G__AC_GT_GCAAT
+  subcategory: both pegRNAs
+simulated:000141:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A_GG_CA_TA____T
+  subcategory: both pegRNAs
+simulated:000142:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A__GAC_G__G_AAT
+  subcategory: both pegRNAs
+simulated:000143:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AG___C__T____AT
+  subcategory: both pegRNAs
+simulated:000144:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAG___CA___GCA_T
+  subcategory: both pegRNAs
+simulated:000145:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_G_GA_____GCA_T
+  subcategory: both pegRNAs
+simulated:000146:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A___G_A__G_AGCA__
+  subcategory: both pegRNAs
+simulated:000147:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_GG____GTA_____
+  subcategory: both pegRNAs
+simulated:000148:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G__GG_CAGTAGC__T
+  subcategory: both pegRNAs
+simulated:000149:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA_____AGTAG__A_
+  subcategory: both pegRNAs
+simulated:000150:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA_GG_C_GT_GCA__
+  subcategory: both pegRNAs
+simulated:000151:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G____A___T_G__A_
+  subcategory: both pegRNAs
+simulated:000152:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_GG_AC_____C__T
+  subcategory: both pegRNAs
+simulated:000153:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA__G_C_GT__C__T
+  subcategory: both pegRNAs
+simulated:000154:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_G_G___GT_G_AA_
+  subcategory: both pegRNAs
+simulated:000155:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAG_GAC__TA_____
+  subcategory: both pegRNAs
+simulated:000156:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAG_GAC___AGC_A_
+  subcategory: both pegRNAs
+simulated:000157:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG___G__AG_AG____
+  subcategory: both pegRNAs
+simulated:000158:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_G__AC____GCA_T
+  subcategory: both pegRNAs
+simulated:000159:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G___G_C__T__CAAT
+  subcategory: both pegRNAs
+simulated:000160:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AGG__CAGT_GC___
+  subcategory: both pegRNAs
+simulated:000161:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__GG__C_____CA__
+  subcategory: both pegRNAs
+simulated:000162:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_G_GA____AGCA_T
+  subcategory: both pegRNAs
+simulated:000163:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAGG__C___A_CAA_
+  subcategory: both pegRNAs
+simulated:000164:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAGG__CA_T_G_AA_
+  subcategory: both pegRNAs
+simulated:000165:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___G_G_C__TAG_AAT
+  subcategory: both pegRNAs
+simulated:000166:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAG___CA_T_GCA__
+  subcategory: both pegRNAs
+simulated:000167:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_GGGA_AGT__CA_T
+  subcategory: both pegRNAs
+simulated:000168:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A___A_A__A_C___
+  subcategory: both pegRNAs
+simulated:000169:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___G_G_CAGT__CAAT
+  subcategory: both pegRNAs
+simulated:000170:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AGGGACA____C__T
+  subcategory: both pegRNAs
+simulated:000171:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAGGGAC_GT__CA__
+  subcategory: both pegRNAs
+simulated:000172:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A__G___G_AGC_A_
+  subcategory: both pegRNAs
+simulated:000173:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____G_____G_A__AA_
+  subcategory: left pegRNA
+simulated:000174:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_____GGA_A__AG___T
+  subcategory: left pegRNA
+simulated:000175:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__A______G__G_AA_
+  subcategory: both pegRNAs
+simulated:000176:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA_GGA___TAGC___
+  subcategory: both pegRNAs
+simulated:000177:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA___G_A__G_A_C__T
+  subcategory: both pegRNAs
+simulated:000178:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG__G_ACA_T_G_A_T
+  subcategory: both pegRNAs
+simulated:000179:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAGGGA_AGTAGC__T
+  subcategory: both pegRNAs
+simulated:000180:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_G__ACA_TA___A_
+  subcategory: both pegRNAs
+simulated:000181:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_______C_GTA__A__
+  subcategory: both pegRNAs
+simulated:000182:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_G_GA__G_A____T
+  subcategory: both pegRNAs
+simulated:000183:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA_GGACAGTA__A__
+  subcategory: both pegRNAs
+simulated:000184:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG__GGACA_TAGCAAT
+  subcategory: both pegRNAs
+simulated:000185:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__GG_A__GT__CAA_
+  subcategory: both pegRNAs
+simulated:000186:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A____G_AC__T___A_T
+  subcategory: both pegRNAs
+simulated:000187:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_____GA___TAGCA_T
+  subcategory: both pegRNAs
+simulated:000188:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_GG_A___TAG___T
+  subcategory: both pegRNAs
+simulated:000189:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_____ACA__A_____
+  subcategory: both pegRNAs
+simulated:000190:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA__GACAG____A__
+  subcategory: both pegRNAs
+simulated:000191:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_____A_A__A__AA_
+  subcategory: both pegRNAs
+simulated:000192:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA__G__ACA_TAGC__T
+  subcategory: both pegRNAs
+simulated:000193:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAG_G___GT_G_A__
+  subcategory: both pegRNAs
+simulated:000194:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G____AC_GTAG____
+  subcategory: both pegRNAs
+simulated:000195:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA__G__ACA__AGC__T
+  subcategory: both pegRNAs
+simulated:000196:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A_GGA_AGT_GC_AT
+  subcategory: both pegRNAs
+simulated:000197:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA__GA__GT___A__
+  subcategory: both pegRNAs
+simulated:000198:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GAG_G_CA___GC__T
+  subcategory: both pegRNAs
+simulated:000199:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GAGGGA__G_______
+  subcategory: right pegRNA
+simulated:000200:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA_G_ACAGT___AA_
+  subcategory: both pegRNAs
+simulated:000201:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A______AC__TA____T
+  subcategory: both pegRNAs
+simulated:000202:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AGG__CA_TA_C_AT
+  subcategory: both pegRNAs
+simulated:000203:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A_GGA__G__GC_A_
+  subcategory: both pegRNAs
+simulated:000204:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_____GG___G____AA_
+  subcategory: left pegRNA
+simulated:000205:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A____G_A____A_CA_T
+  subcategory: both pegRNAs
+simulated:000206:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_GG__C__T_GCA__
+  subcategory: both pegRNAs
+simulated:000207:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GAG_G__A__A_C___
+  subcategory: both pegRNAs
+simulated:000208:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAG_G___GT___AAT
+  subcategory: both pegRNAs
+simulated:000209:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__A__G_____AGC_AT
+  subcategory: both pegRNAs
+simulated:000210:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AGG_ACA__A__AA_
+  subcategory: both pegRNAs
+simulated:000211:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_GG__CAGTAGCAAT
+  subcategory: both pegRNAs
+simulated:000212:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A_GGACA_TA____T
+  subcategory: both pegRNAs
+simulated:000213:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AGGG_CAG______T
+  subcategory: both pegRNAs
+simulated:000214:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A____GG__AG_____A_
+  subcategory: both pegRNAs
+simulated:000215:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G______A__AG____
+  subcategory: both pegRNAs
+simulated:000216:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA_GG_CA_T_GCAAT
+  subcategory: both pegRNAs
+simulated:000217:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA_GG_C__T_G_AAT
+  subcategory: both pegRNAs
+simulated:000218:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG__GGA_AG_AG_A_T
+  subcategory: both pegRNAs
+simulated:000219:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_GG_ACAG_____A_
+  subcategory: both pegRNAs
+simulated:000220:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A__G__A__A_C___
+  subcategory: both pegRNAs
+simulated:000221:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____GGGACAG_AG__AT
+  subcategory: left pegRNA
+simulated:000222:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAGG_A__G__GCA__
+  subcategory: both pegRNAs
+simulated:000223:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAG_GA_A___G__AT
+  subcategory: both pegRNAs
+simulated:000224:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_G__ACAG___C_AT
+  subcategory: both pegRNAs
+simulated:000225:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A___G_A_A_____A_T
+  subcategory: both pegRNAs
+simulated:000226:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__GGGA______C_A_
+  subcategory: both pegRNAs
+simulated:000227:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____G___C_______AT
+  subcategory: left pegRNA
+simulated:000228:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_G_G_CAGT__C__T
+  subcategory: both pegRNAs
+simulated:000229:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_____AC____G_AAT
+  subcategory: both pegRNAs
+simulated:000230:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA_G____G_A_CAAT
+  subcategory: both pegRNAs
+simulated:000231:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AG___CAGTA_CA__
+  subcategory: both pegRNAs
+simulated:000232:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__A_GGA_A_TA___A_
+  subcategory: both pegRNAs
+simulated:000233:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_GG__C__TA_C_AT
+  subcategory: both pegRNAs
+simulated:000234:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__G_G__A__A__A_T
+  subcategory: both pegRNAs
+simulated:000235:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG__GGAC__T______
+  subcategory: right pegRNA
+simulated:000236:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__GGG___G____A__
+  subcategory: both pegRNAs
+simulated:000237:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_____GGACAGT_G___T
+  subcategory: left pegRNA
+simulated:000238:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_GGGA_____GC___
+  subcategory: both pegRNAs
+simulated:000239:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAG_GA__GTA_____
+  subcategory: both pegRNAs
+simulated:000240:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_GG_A_AGT_G__AT
+  subcategory: both pegRNAs
+simulated:000241:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AG_GACA_T_GCAA_
+  subcategory: both pegRNAs
+simulated:000242:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_G_G__AG__GCA_T
+  subcategory: both pegRNAs
+simulated:000243:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG___GAC__TAG___T
+  subcategory: both pegRNAs
+simulated:000244:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA__G_C____G___T
+  subcategory: both pegRNAs
+simulated:000245:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAG_G__A__AGC__T
+  subcategory: both pegRNAs
+simulated:000246:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG__GG_C_G____A__
+  subcategory: both pegRNAs
+simulated:000247:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G__GG_C__T_G_A__
+  subcategory: both pegRNAs
+simulated:000248:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA__GGG_C_GTAGC_AT
+  subcategory: both pegRNAs
+simulated:000249:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_GG_AC_GTA___A_
+  subcategory: both pegRNAs
+simulated:000250:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A___GGA_____G__A_
+  subcategory: both pegRNAs
+simulated:000251:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A_GG_C_G__GC___
+  subcategory: both pegRNAs
+simulated:000252:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_____GGA__GT__CAA_
+  subcategory: left pegRNA
+simulated:000253:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_G_GA_A__A__A_T
+  subcategory: both pegRNAs
+simulated:000254:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G__GG_C__T_GC_AT
+  subcategory: both pegRNAs
+simulated:000255:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____G___________A_
+  subcategory: left pegRNA
+simulated:000256:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AG_G______G__A_
+  subcategory: both pegRNAs
+simulated:000257:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A______A_AGT__C_AT
+  subcategory: both pegRNAs
+simulated:000258:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AG_G__AGTAG__AT
+  subcategory: both pegRNAs
+simulated:000259:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__GG_ACA_T___AAT
+  subcategory: both pegRNAs
+simulated:000260:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAG_G____TA__A__
+  subcategory: both pegRNAs
+simulated:000261:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_G___CAGTA___A_
+  subcategory: both pegRNAs
+simulated:000262:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___G_G__A_TAG__AT
+  subcategory: both pegRNAs
+simulated:000263:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAG__AC_____C__T
+  subcategory: both pegRNAs
+simulated:000264:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G____AC_GT_GC_AT
+  subcategory: both pegRNAs
+simulated:000265:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AGG__C___A___AT
+  subcategory: both pegRNAs
+simulated:000266:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A__GA_A__AGCAAT
+  subcategory: both pegRNAs
+simulated:000267:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_G___CA_____A_T
+  subcategory: both pegRNAs
+simulated:000268:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____GG_ACAG_AGCAAT
+  subcategory: left pegRNA
+simulated:000269:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA____CAGTA_C___
+  subcategory: both pegRNAs
+simulated:000270:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AGG__C_G_A_C_AT
+  subcategory: both pegRNAs
+simulated:000271:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AGG_A_AG_AG__A_
+  subcategory: both pegRNAs
+simulated:000272:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG__G_A__GT_G_A_T
+  subcategory: both pegRNAs
+simulated:000273:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAGG____GT___AA_
+  subcategory: both pegRNAs
+simulated:000274:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G____AC___A_CA__
+  subcategory: both pegRNAs
+simulated:000275:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA__G____T__CAAT
+  subcategory: both pegRNAs
+simulated:000276:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA____G_C_G_AG____
+  subcategory: both pegRNAs
+simulated:000277:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA____GAC_G_AG__A_
+  subcategory: both pegRNAs
+simulated:000278:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A_____AGTA_C_A_
+  subcategory: both pegRNAs
+simulated:000279:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA__GG_A__G____AAT
+  subcategory: both pegRNAs
+simulated:000280:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA__G_C_GTAGCAAT
+  subcategory: both pegRNAs
+simulated:000281:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____GGGACA_T_G_A_T
+  subcategory: left pegRNA
+simulated:000282:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AG__A_A__AGC_AT
+  subcategory: both pegRNAs
+simulated:000283:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___GGGA___TA__A_T
+  subcategory: both pegRNAs
+simulated:000284:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAGG_A_A__AG_A_T
+  subcategory: both pegRNAs
+simulated:000285:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_G_G_C_G__GC_AT
+  subcategory: both pegRNAs
+simulated:000286:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G__GGAC__T__C__T
+  subcategory: both pegRNAs
+simulated:000287:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AGGG_CAGT_GC___
+  subcategory: both pegRNAs
+simulated:000288:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA__G__AC____GC__T
+  subcategory: both pegRNAs
+simulated:000289:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AG__A_AG_A___A_
+  subcategory: both pegRNAs
+simulated:000290:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA_GGACAGTA_CAAT
+  subcategory: both pegRNAs
+simulated:000291:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AGGG__A__AGCA_T
+  subcategory: both pegRNAs
+simulated:000292:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GAG_GA_AG_A_C_A_
+  subcategory: both pegRNAs
+simulated:000293:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A__GACA___GCA__
+  subcategory: both pegRNAs
+simulated:000294:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAG__A_A_T____A_
+  subcategory: both pegRNAs
+simulated:000295:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAGGG___GTA___AT
+  subcategory: both pegRNAs
+simulated:000296:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A___GGAC____G____
+  subcategory: both pegRNAs
+simulated:000297:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA__GG__CAG____A__
+  subcategory: both pegRNAs
+simulated:000298:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____G_____G_A___AT
+  subcategory: left pegRNA
+simulated:000299:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG___G__A_TA_CA_T
+  subcategory: both pegRNAs
+simulated:000300:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GAGGGA_AGT____A_
+  subcategory: both pegRNAs
+simulated:000301:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_GGGA_A_T__C_AT
+  subcategory: both pegRNAs
+simulated:000302:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG__G____GTA_CA_T
+  subcategory: both pegRNAs
+simulated:000303:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_G__A_A__AG_AA_
+  subcategory: both pegRNAs
+simulated:000304:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A__GAC_GTAGCAAT
+  subcategory: both pegRNAs
+simulated:000305:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA____CAGT_G_AAT
+  subcategory: both pegRNAs
+simulated:000306:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_____AC_GT_G__A_
+  subcategory: both pegRNAs
+simulated:000307:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA_GGA__GT_G__A_
+  subcategory: both pegRNAs
+simulated:000308:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA_GG__AGT_GCAAT
+  subcategory: both pegRNAs
+simulated:000309:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA_G_ACAG_AGC__T
+  subcategory: both pegRNAs
+simulated:000310:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG____A_A__A_CA__
+  subcategory: both pegRNAs
+simulated:000311:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__G___C__T___AAT
+  subcategory: both pegRNAs
+simulated:000312:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A____GGAC__T_G_A__
+  subcategory: both pegRNAs
+simulated:000313:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A__G_C_G_AG____
+  subcategory: both pegRNAs
+simulated:000314:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_____G__CAG_AGCAA_
+  subcategory: left pegRNA
+simulated:000315:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA_G_A__G__G____
+  subcategory: both pegRNAs
+simulated:000316:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____G_GACAGT_G___T
+  subcategory: left pegRNA
+simulated:000317:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AGGG_C_G_A_C__T
+  subcategory: both pegRNAs
+simulated:000318:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_G_GA____AG____
+  subcategory: both pegRNAs
+simulated:000319:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA____C_G_A__A_T
+  subcategory: both pegRNAs
+simulated:000320:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA___AC_GTA__AAT
+  subcategory: both pegRNAs
+simulated:000321:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GAG__A___T___A_T
+  subcategory: both pegRNAs
+simulated:000322:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAGGGA_AG__G__A_
+  subcategory: both pegRNAs
+simulated:000323:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA____G_CAGTAG_AAT
+  subcategory: both pegRNAs
+simulated:000324:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A___ACAGT__CAAT
+  subcategory: both pegRNAs
+simulated:000325:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_G___CAGTA_____
+  subcategory: both pegRNAs
+simulated:000326:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AG___CAGT_GCAA_
+  subcategory: both pegRNAs
+simulated:000327:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G___G__AGT_G__AT
+  subcategory: both pegRNAs
+simulated:000328:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A____GG_CA_____AA_
+  subcategory: both pegRNAs
+simulated:000329:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA_G_ACAG_A_CAA_
+  subcategory: both pegRNAs
+simulated:000330:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_____AC_G_______
+  subcategory: right pegRNA
+simulated:000331:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AG___C_G__GCAA_
+  subcategory: both pegRNAs
+simulated:000332:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A_GG_CA___GCAA_
+  subcategory: both pegRNAs
+simulated:000333:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A_GGAC_GTAG_A_T
+  subcategory: both pegRNAs
+simulated:000334:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG___G__A__A_C_AT
+  subcategory: both pegRNAs
+simulated:000335:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AGGGACA__AG_A__
+  subcategory: both pegRNAs
+simulated:000336:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA___G__C_G__GCAAT
+  subcategory: both pegRNAs
+simulated:000337:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAGG_ACA__AGC_A_
+  subcategory: both pegRNAs
+simulated:000338:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A_____A_T___A_T
+  subcategory: both pegRNAs
+simulated:000339:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA____GA____AGCAA_
+  subcategory: both pegRNAs
+simulated:000340:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_____CA__AGCAAT
+  subcategory: both pegRNAs
+simulated:000341:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA__GG_A__GTAG__AT
+  subcategory: both pegRNAs
+simulated:000342:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AGGG___GT_GC___
+  subcategory: both pegRNAs
+simulated:000343:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_____C__TAGCAAT
+  subcategory: both pegRNAs
+simulated:000344:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__G______T_GC___
+  subcategory: both pegRNAs
+simulated:000345:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GAG_GACAG_A_CA__
+  subcategory: both pegRNAs
+simulated:000346:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA_GGA_A_T____AT
+  subcategory: both pegRNAs
+simulated:000347:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A_G____G_____AT
+  subcategory: both pegRNAs
+simulated:000348:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA___ACAG_A_C__T
+  subcategory: both pegRNAs
+simulated:000349:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AGG_ACAG____AA_
+  subcategory: both pegRNAs
+simulated:000350:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA_GGACA_T____A_
+  subcategory: both pegRNAs
+simulated:000351:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A___A__GTAGCAAT
+  subcategory: both pegRNAs
+simulated:000352:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AG___CAGT_GC__T
+  subcategory: both pegRNAs
+simulated:000353:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA___GG_CA_TAGCAAT
+  subcategory: both pegRNAs
+simulated:000354:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____G_GA__G___C_AT
+  subcategory: left pegRNA
+simulated:000355:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAGGGAC_G__G__AT
+  subcategory: both pegRNAs
+simulated:000356:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___GG_A____AGC_A_
+  subcategory: both pegRNAs
+simulated:000357:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAG___CAGT_G__AT
+  subcategory: both pegRNAs
+simulated:000358:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__GG_ACA__A_CAA_
+  subcategory: both pegRNAs
+simulated:000359:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G___GA_____GCAA_
+  subcategory: both pegRNAs
+simulated:000360:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_GG__C___A__AAT
+  subcategory: both pegRNAs
+simulated:000361:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA__G_GACAGTA_C__T
+  subcategory: both pegRNAs
+simulated:000362:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AGG_A_______A__
+  subcategory: both pegRNAs
+simulated:000363:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_G___C_GTAG_AAT
+  subcategory: both pegRNAs
+simulated:000364:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A_GG____TAG_A_T
+  subcategory: both pegRNAs
+simulated:000365:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_____GGA___TA__A__
+  subcategory: left pegRNA
+simulated:000366:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A__G_C__TA_C_AT
+  subcategory: both pegRNAs
+simulated:000367:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GAG_GA_AG_A___A_
+  subcategory: both pegRNAs
+simulated:000368:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AGGG_____A_CA__
+  subcategory: both pegRNAs
+simulated:000369:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA____C__T____AT
+  subcategory: both pegRNAs
+simulated:000370:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_G_G__AG_AGC_A_
+  subcategory: both pegRNAs
+simulated:000371:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__A_GG_CA___G__AT
+  subcategory: both pegRNAs
+simulated:000372:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AGG_ACAG_AGCA_T
+  subcategory: both pegRNAs
+simulated:000373:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAG_G_CA_______T
+  subcategory: both pegRNAs
+simulated:000374:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_G___C__TA__AA_
+  subcategory: both pegRNAs
+simulated:000375:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A___A__GTA_CAAT
+  subcategory: both pegRNAs
+simulated:000376:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA__G__AG__GC_A_
+  subcategory: both pegRNAs
+simulated:000377:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__GG______AG__AT
+  subcategory: both pegRNAs
+simulated:000378:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AG_GACAG_AGCAA_
+  subcategory: both pegRNAs
+simulated:000379:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AG_G_CA__A_____
+  subcategory: both pegRNAs
+simulated:000380:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAGG____G__GC_AT
+  subcategory: both pegRNAs
+simulated:000381:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A____GGACAGTAG_A__
+  subcategory: both pegRNAs
+simulated:000382:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA____CA_TA__A__
+  subcategory: both pegRNAs
+simulated:000383:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA__GA__GTAG_AAT
+  subcategory: both pegRNAs
+simulated:000384:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG___GAC_GT__C__T
+  subcategory: both pegRNAs
+simulated:000385:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_G_G_CA_TAGC___
+  subcategory: both pegRNAs
+simulated:000386:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG__GGAC_G___C__T
+  subcategory: both pegRNAs
+simulated:000387:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA_G_A__GT____A_
+  subcategory: both pegRNAs
+simulated:000388:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AG__ACA______A_
+  subcategory: both pegRNAs
+simulated:000389:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_G_GA_A__AG__AT
+  subcategory: both pegRNAs
+simulated:000390:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_G_G__A__A_____
+  subcategory: both pegRNAs
+simulated:000391:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AGGG_C_GTA___AT
+  subcategory: both pegRNAs
+simulated:000392:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AG_G_CAGT_G_AAT
+  subcategory: both pegRNAs
+simulated:000393:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA_G__C_G___CA_T
+  subcategory: both pegRNAs
+simulated:000394:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA___ACA__A_CA_T
+  subcategory: both pegRNAs
+simulated:000395:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA____GACA_TA__AAT
+  subcategory: both pegRNAs
+simulated:000396:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_G__ACA_TA____T
+  subcategory: both pegRNAs
+simulated:000397:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_GG_A_AG__G_A__
+  subcategory: both pegRNAs
+simulated:000398:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAGG_AC__T______
+  subcategory: right pegRNA
+simulated:000399:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A_G_____TAGCAAT
+  subcategory: both pegRNAs
+simulated:000400:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_GG_A_AGTA_CAA_
+  subcategory: both pegRNAs
+simulated:000401:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_________TAG_AA_
+  subcategory: both pegRNAs
+simulated:000402:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G____ACAGTAG_AA_
+  subcategory: both pegRNAs
+simulated:000403:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAGG_____T_GC_AT
+  subcategory: both pegRNAs
+simulated:000404:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AGG___A___G_AA_
+  subcategory: both pegRNAs
+simulated:000405:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA_G_____TAG_A_T
+  subcategory: both pegRNAs
+simulated:000406:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA____G_____A__AAT
+  subcategory: both pegRNAs
+simulated:000407:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AGG____GTAG__A_
+  subcategory: both pegRNAs
+simulated:000408:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_______A_TAG___T
+  subcategory: both pegRNAs
+simulated:000409:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_G__A_AG____A_T
+  subcategory: both pegRNAs
+simulated:000410:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA__G_____G__G_AA_
+  subcategory: both pegRNAs
+simulated:000411:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAGG_A__GT_G_A__
+  subcategory: both pegRNAs
+simulated:000412:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_G_____GT_G__AT
+  subcategory: both pegRNAs
+simulated:000413:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA____GA_______A_T
+  subcategory: both pegRNAs
+simulated:000414:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_____GG___G_______
+  subcategory: single pegRNA (ambiguous)
+simulated:000415:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG__G_A____A__AAT
+  subcategory: both pegRNAs
+simulated:000416:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GAG_G_______C_A_
+  subcategory: both pegRNAs
+simulated:000417:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___GGGA_A_T_GCAAT
+  subcategory: both pegRNAs
+simulated:000418:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_G_GA_AGT_GC__T
+  subcategory: both pegRNAs
+simulated:000419:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAGG___AGTAGC__T
+  subcategory: both pegRNAs
+simulated:000420:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_GGGACA_T____AT
+  subcategory: both pegRNAs
+simulated:000421:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__GGG_CA___G_AA_
+  subcategory: both pegRNAs
+simulated:000422:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_G________G_AA_
+  subcategory: both pegRNAs
+simulated:000423:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA_G____G_AGCA__
+  subcategory: both pegRNAs
+simulated:000424:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____G__A_A_TAGCA_T
+  subcategory: left pegRNA
+simulated:000425:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_____CA_T_G_AA_
+  subcategory: both pegRNAs
+simulated:000426:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AG_G_C_G_AG___T
+  subcategory: both pegRNAs
+simulated:000427:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA_GGA__GTAG_A_T
+  subcategory: both pegRNAs
+simulated:000428:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_GG__CA_TA_C_AT
+  subcategory: both pegRNAs
+simulated:000429:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_GGG_CAG_AG__A_
+  subcategory: both pegRNAs
+simulated:000430:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAGG_A_A_T_G__A_
+  subcategory: both pegRNAs
+simulated:000431:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AG___C___A___AT
+  subcategory: both pegRNAs
+simulated:000432:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G____A_A_TA_CAA_
+  subcategory: both pegRNAs
+simulated:000433:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A__GA__G__G_AA_
+  subcategory: both pegRNAs
+simulated:000434:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAGG___A__A_CA_T
+  subcategory: both pegRNAs
+simulated:000435:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A__GA_A__AGCAAT
+  subcategory: both pegRNAs
+simulated:000436:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G__GG_CA_T______
+  subcategory: right pegRNA
+simulated:000437:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA_G_AC__T____AT
+  subcategory: both pegRNAs
+simulated:000438:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__A___AC_G__G___T
+  subcategory: both pegRNAs
+simulated:000439:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA_GG__A_____AAT
+  subcategory: both pegRNAs
+simulated:000440:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A__GAC_____C_A_
+  subcategory: both pegRNAs
+simulated:000441:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAGG___AG___C_A_
+  subcategory: both pegRNAs
+simulated:000442:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA_G_A_AG______T
+  subcategory: both pegRNAs
+simulated:000443:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___G__ACA_TA_C_A_
+  subcategory: both pegRNAs
+simulated:000444:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_____CA__AG___T
+  subcategory: both pegRNAs
+simulated:000445:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA___A_AGTA_CA__
+  subcategory: both pegRNAs
+simulated:000446:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__G__ACA___GC__T
+  subcategory: both pegRNAs
+simulated:000447:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____GG_A_AG__GCA__
+  subcategory: left pegRNA
+simulated:000448:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AG_GACA__AG_AA_
+  subcategory: both pegRNAs
+simulated:000449:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__G_GA___TA__AA_
+  subcategory: both pegRNAs
+simulated:000450:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_GGGA___T__CAAT
+  subcategory: both pegRNAs
+simulated:000451:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA___ACAGT__CA_T
+  subcategory: both pegRNAs
+simulated:000452:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA____GACAG___CA_T
+  subcategory: both pegRNAs
+simulated:000453:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_G_G___GT_G_A__
+  subcategory: both pegRNAs
+simulated:000454:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G___GA_AGTAG____
+  subcategory: both pegRNAs
+simulated:000455:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A_G__C__TA_C___
+  subcategory: both pegRNAs
+simulated:000456:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___GGGACA__A_CAAT
+  subcategory: both pegRNAs
+simulated:000457:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A__GA_AG_AGC__T
+  subcategory: both pegRNAs
+simulated:000458:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAG___CA_____A__
+  subcategory: both pegRNAs
+simulated:000459:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A___A_A_TAG_AA_
+  subcategory: both pegRNAs
+simulated:000460:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____G_GAC_G__G___T
+  subcategory: left pegRNA
+simulated:000461:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAG__AC__T_GC__T
+  subcategory: both pegRNAs
+simulated:000462:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____GG_A____A_CAA_
+  subcategory: left pegRNA
+simulated:000463:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AGGG___G_AG__AT
+  subcategory: both pegRNAs
+simulated:000464:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG____ACA__A_C_A_
+  subcategory: both pegRNAs
+simulated:000465:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAG__AC_G___C___
+  subcategory: both pegRNAs
+simulated:000466:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G___G_CAGTA___AT
+  subcategory: both pegRNAs
+simulated:000467:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AGGGA__G_A__AA_
+  subcategory: both pegRNAs
+simulated:000468:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AGGGACA___G_A_T
+  subcategory: both pegRNAs
+simulated:000469:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__A__GAC____G____
+  subcategory: both pegRNAs
+simulated:000470:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_GGG_C__T___AAT
+  subcategory: both pegRNAs
+simulated:000471:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG__G__CA_____AA_
+  subcategory: both pegRNAs
+simulated:000472:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G___G_C_GT_GCA__
+  subcategory: both pegRNAs
+simulated:000473:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___G__ACA_T___AA_
+  subcategory: both pegRNAs
+simulated:000474:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAGGGACA_T__CA_T
+  subcategory: both pegRNAs
+simulated:000475:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAG__ACAG__G__AT
+  subcategory: both pegRNAs
+simulated:000476:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_G___CAG__G____
+  subcategory: both pegRNAs
+simulated:000477:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA__G_CAGTAGC__T
+  subcategory: both pegRNAs
+simulated:000478:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AG_G__AGTAGCAAT
+  subcategory: both pegRNAs
+simulated:000479:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAG__A_AG__GCAAT
+  subcategory: both pegRNAs
+simulated:000480:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAG__ACA__A___AT
+  subcategory: both pegRNAs
+simulated:000481:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__GG_ACAGT_____T
+  subcategory: both pegRNAs
+simulated:000482:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AGG_AC___AGC___
+  subcategory: both pegRNAs
+simulated:000483:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA_GGA__G_A_C_A_
+  subcategory: both pegRNAs
+simulated:000484:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GAGGGACAGTA__A__
+  subcategory: both pegRNAs
+simulated:000485:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AG__A_A____CAAT
+  subcategory: both pegRNAs
+simulated:000486:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA_G_ACA__A___A_
+  subcategory: both pegRNAs
+simulated:000487:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_GG__CAGTAGC___
+  subcategory: both pegRNAs
+simulated:000488:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA___G_A_A___GCAA_
+  subcategory: both pegRNAs
+simulated:000489:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AG__ACA_TAG_AAT
+  subcategory: both pegRNAs
+simulated:000490:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A_G_A_____G_AAT
+  subcategory: both pegRNAs
+simulated:000491:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA__GA___T_GC_AT
+  subcategory: both pegRNAs
+simulated:000492:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA_G___AG_A__A__
+  subcategory: both pegRNAs
+simulated:000493:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA____G____T___A_T
+  subcategory: both pegRNAs
+simulated:000494:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__G_G__AG__G_AAT
+  subcategory: both pegRNAs
+simulated:000495:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG___GA__G_AGC_A_
+  subcategory: both pegRNAs
+simulated:000496:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAG__AC_G_AGCA__
+  subcategory: both pegRNAs
+simulated:000497:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A___G____G_A_____
+  subcategory: both pegRNAs
+simulated:000498:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA_G_______GCAA_
+  subcategory: both pegRNAs
+simulated:000499:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA___ACAGT__C___
+  subcategory: both pegRNAs
+simulated:000500:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA___GGA_AGTA__AA_
+  subcategory: both pegRNAs
+simulated:000501:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A_G____GT___AA_
+  subcategory: both pegRNAs
+simulated:000502:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__GGGAC___AGCA__
+  subcategory: both pegRNAs
+simulated:000503:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_GG_A_____G___T
+  subcategory: both pegRNAs
+simulated:000504:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA_GGACAGTAGCA_T
+  subcategory: both pegRNAs
+simulated:000505:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_GGGAC_GT_GCAA_
+  subcategory: both pegRNAs
+simulated:000506:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GAGG__C_G_AGC_A_
+  subcategory: both pegRNAs
+simulated:000507:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_G_G_CA_T_GC_AT
+  subcategory: both pegRNAs
+simulated:000508:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__G_G___G__GC__T
+  subcategory: both pegRNAs
+simulated:000509:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G__G___A_TA____T
+  subcategory: both pegRNAs
+simulated:000510:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___G___C_G__G___T
+  subcategory: both pegRNAs
+simulated:000511:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_G_G_CAG_A_C_A_
+  subcategory: both pegRNAs
+simulated:000512:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AG_G_CA_T_G_AA_
+  subcategory: both pegRNAs
+simulated:000513:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA___AC_GT_GC_A_
+  subcategory: both pegRNAs
+simulated:000514:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A____GA__G___CA_T
+  subcategory: both pegRNAs
+simulated:000515:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A___G___AG_AG_A__
+  subcategory: both pegRNAs
+simulated:000516:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AG____AG___CA__
+  subcategory: both pegRNAs
+simulated:000517:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A_GG___GTAG_AAT
+  subcategory: both pegRNAs
+simulated:000518:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A______C___A__AA_
+  subcategory: both pegRNAs
+simulated:000519:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA__G_CA____CA_T
+  subcategory: both pegRNAs
+simulated:000520:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__GG_A_AG_AG__AT
+  subcategory: both pegRNAs
+simulated:000521:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA_G_ACAGTA_____
+  subcategory: both pegRNAs
+simulated:000522:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__G_GA_A__AGC___
+  subcategory: both pegRNAs
+simulated:000523:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A______C_G_A_C___
+  subcategory: both pegRNAs
+simulated:000524:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_G_GAC__TAG_A__
+  subcategory: both pegRNAs
+simulated:000525:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AGG____GTA_CA__
+  subcategory: both pegRNAs
+simulated:000526:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AGGGA___TA_C__T
+  subcategory: both pegRNAs
+simulated:000527:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A__GA__G__GC_A_
+  subcategory: both pegRNAs
+simulated:000528:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAGGGAC_G_AG_A_T
+  subcategory: both pegRNAs
+simulated:000529:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_G__ACA______AT
+  subcategory: both pegRNAs
+simulated:000530:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG__GG__A____CAA_
+  subcategory: both pegRNAs
+simulated:000531:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G__GG__AGT_G_A__
+  subcategory: both pegRNAs
+simulated:000532:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG__G___A___G_A__
+  subcategory: both pegRNAs
+simulated:000533:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AG_G____TAGC__T
+  subcategory: both pegRNAs
+simulated:000534:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAGGG_C_GTA_C_A_
+  subcategory: both pegRNAs
+simulated:000535:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAGG___A___GCA__
+  subcategory: both pegRNAs
+simulated:000536:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__A__G_C_GT_G__A_
+  subcategory: both pegRNAs
+simulated:000537:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG__G_AC_G_AG____
+  subcategory: both pegRNAs
+simulated:000538:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G___GA_AG____A__
+  subcategory: both pegRNAs
+simulated:000539:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_____GAC_G_A_C__T
+  subcategory: both pegRNAs
+simulated:000540:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA__GAC__T_GCAAT
+  subcategory: both pegRNAs
+simulated:000541:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA__GA_A__AGC_AT
+  subcategory: both pegRNAs
+simulated:000542:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_G_G_____AGCA__
+  subcategory: both pegRNAs
+simulated:000543:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AG_______AGC_A_
+  subcategory: both pegRNAs
+simulated:000544:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__G_GA_A_TAG__A_
+  subcategory: both pegRNAs
+simulated:000545:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G____AC_G_AGCA_T
+  subcategory: both pegRNAs
+simulated:000546:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA____C___AG__A_
+  subcategory: both pegRNAs
+simulated:000547:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__G_G_C_GT______
+  subcategory: right pegRNA
+simulated:000548:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG____A_AG_A_____
+  subcategory: both pegRNAs
+simulated:000549:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A_____AG____A__
+  subcategory: both pegRNAs
+simulated:000550:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA__G___GT_G_A_T
+  subcategory: both pegRNAs
+simulated:000551:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G__G__C_G___CAAT
+  subcategory: both pegRNAs
+simulated:000552:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____GG_A_A__AGCAA_
+  subcategory: left pegRNA
+simulated:000553:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAGG_A___T_GCA__
+  subcategory: both pegRNAs
+simulated:000554:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG__GGACA__AGC__T
+  subcategory: both pegRNAs
+simulated:000555:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AG__ACAGT___A__
+  subcategory: both pegRNAs
+simulated:000556:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__A___A__GT__CA_T
+  subcategory: both pegRNAs
+simulated:000557:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A__GA_AG___C_AT
+  subcategory: both pegRNAs
+simulated:000558:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG__GG_CAGTAG_A__
+  subcategory: both pegRNAs
+simulated:000559:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_____A_A___GCAAT
+  subcategory: both pegRNAs
+simulated:000560:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA___AC_G_AGCAAT
+  subcategory: both pegRNAs
+simulated:000561:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__G_GA_AGT__CAA_
+  subcategory: both pegRNAs
+simulated:000562:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAGG_A_____GC_A_
+  subcategory: both pegRNAs
+simulated:000563:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GAGGGAC_G_A_CA__
+  subcategory: both pegRNAs
+simulated:000564:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____G__A_A__AG__A_
+  subcategory: left pegRNA
+simulated:000565:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GAGG__CAGT___A_T
+  subcategory: both pegRNAs
+simulated:000566:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___GGG__AGTAGCA__
+  subcategory: both pegRNAs
+simulated:000567:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA_GG__AG_AGCAA_
+  subcategory: both pegRNAs
+simulated:000568:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_____G____GT___AAT
+  subcategory: left pegRNA
+simulated:000569:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___G__A__G__G_AAT
+  subcategory: both pegRNAs
+simulated:000570:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AG_GA_AG_AG_A_T
+  subcategory: both pegRNAs
+simulated:000571:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_____GAC_GTA_C__T
+  subcategory: both pegRNAs
+simulated:000572:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_____G_________A__
+  subcategory: left pegRNA
+simulated:000573:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__A_____AG_AGC_AT
+  subcategory: both pegRNAs
+simulated:000574:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAG____AGTAG___T
+  subcategory: both pegRNAs
+simulated:000575:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA____CAG___C_A_
+  subcategory: both pegRNAs
+simulated:000576:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AGG_ACA_____A__
+  subcategory: both pegRNAs
+simulated:000577:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__A_G_A__G_____A_
+  subcategory: both pegRNAs
+simulated:000578:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA_GG_CAG_A_CAAT
+  subcategory: both pegRNAs
+simulated:000579:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA_____AGT_GCAA_
+  subcategory: both pegRNAs
+simulated:000580:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA_G_AC_GT_GCA_T
+  subcategory: both pegRNAs
+simulated:000581:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A___G_AC__T____A_
+  subcategory: both pegRNAs
+simulated:000582:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A_G__C_G_AG____
+  subcategory: both pegRNAs
+simulated:000583:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__G____A_T__C_A_
+  subcategory: both pegRNAs
+simulated:000584:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A____GGA___TA___AT
+  subcategory: both pegRNAs
+simulated:000585:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA_G__CA_____A_T
+  subcategory: both pegRNAs
+simulated:000586:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A_GG_C__T_GC_A_
+  subcategory: both pegRNAs
+simulated:000587:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_G_____GTA___A_
+  subcategory: both pegRNAs
+simulated:000588:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___G__A__GT_G____
+  subcategory: both pegRNAs
+simulated:000589:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_____G__AG_AG___T
+  subcategory: both pegRNAs
+simulated:000590:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G__GG__AG_____AT
+  subcategory: both pegRNAs
+simulated:000591:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG___GA_A_T_GCA__
+  subcategory: both pegRNAs
+simulated:000592:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_____GGA_A_TAGCA__
+  subcategory: left pegRNA
+simulated:000593:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A____G_ACAGTA_CAA_
+  subcategory: both pegRNAs
+simulated:000594:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA__G__A____AG_AAT
+  subcategory: both pegRNAs
+simulated:000595:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A_G_ACA__A__AAT
+  subcategory: both pegRNAs
+simulated:000596:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A__GACAG__G__A_
+  subcategory: both pegRNAs
+simulated:000597:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAG_GAC_GT___AA_
+  subcategory: both pegRNAs
+simulated:000598:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA__GG_A________A_
+  subcategory: both pegRNAs
+simulated:000599:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_G_GAC____G_A_T
+  subcategory: both pegRNAs
+simulated:000600:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAG__A_A_T_G_A_T
+  subcategory: both pegRNAs
+simulated:000601:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_G__AC_G__G_AAT
+  subcategory: both pegRNAs
+simulated:000602:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG__G_ACAG_A_CAA_
+  subcategory: both pegRNAs
+simulated:000603:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA_G___A__AG__AT
+  subcategory: both pegRNAs
+simulated:000604:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA_G___AG___CA_T
+  subcategory: both pegRNAs
+simulated:000605:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_____C_____CAA_
+  subcategory: both pegRNAs
+simulated:000606:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA__G__AC__TA_C_AT
+  subcategory: both pegRNAs
+simulated:000607:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GAGG_AC_GTAG_AA_
+  subcategory: both pegRNAs
+simulated:000608:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__A_GGACAGTA____T
+  subcategory: both pegRNAs
+simulated:000609:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_G_G_CAG_A_CA_T
+  subcategory: both pegRNAs
+simulated:000610:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AG_GA_A__A_C___
+  subcategory: both pegRNAs
+simulated:000611:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___GGGACA____CAA_
+  subcategory: both pegRNAs
+simulated:000612:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___GGG_C___AGC_AT
+  subcategory: both pegRNAs
+simulated:000613:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AG_G__AG__GC_A_
+  subcategory: both pegRNAs
+simulated:000614:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAG_G_C____GC__T
+  subcategory: both pegRNAs
+simulated:000615:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_G_G_CAG_A___AT
+  subcategory: both pegRNAs
+simulated:000616:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__G_GACA__AGCA__
+  subcategory: both pegRNAs
+simulated:000617:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G__GGA_AGTA__A__
+  subcategory: both pegRNAs
+simulated:000618:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA__G__A_______AAT
+  subcategory: both pegRNAs
+simulated:000619:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____G__ACA_TA___AT
+  subcategory: left pegRNA
+simulated:000620:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AGG_A____AGCA_T
+  subcategory: both pegRNAs
+simulated:000621:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AGG_A_A_T_G__AT
+  subcategory: both pegRNAs
+simulated:000622:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_GGG__AGT_GC_AT
+  subcategory: both pegRNAs
+simulated:000623:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A__G___GT______
+  subcategory: right pegRNA
+simulated:000624:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG___GAC____G_AAT
+  subcategory: both pegRNAs
+simulated:000625:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_G_G____TA_C_A_
+  subcategory: both pegRNAs
+simulated:000626:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__A_GGA_AGTA_CAA_
+  subcategory: both pegRNAs
+simulated:000627:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G__GGA_A_____AA_
+  subcategory: both pegRNAs
+simulated:000628:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AGG_A_A_T_G_A_T
+  subcategory: both pegRNAs
+simulated:000629:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA_GG__AG__GC___
+  subcategory: both pegRNAs
+simulated:000630:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AGGGA___T_GC_AT
+  subcategory: both pegRNAs
+simulated:000631:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A___G__C__T_GCAA_
+  subcategory: both pegRNAs
+simulated:000632:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG__G_____TAGCA_T
+  subcategory: both pegRNAs
+simulated:000633:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A_GGA___TA_C_A_
+  subcategory: both pegRNAs
+simulated:000634:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A____GGA_A_TAGC_AT
+  subcategory: both pegRNAs
+simulated:000635:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_G__A________A_
+  subcategory: both pegRNAs
+simulated:000636:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_G_G____T__C___
+  subcategory: both pegRNAs
+simulated:000637:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AG_G___GT_GC_AT
+  subcategory: both pegRNAs
+simulated:000638:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAG_G_C__T_G___T
+  subcategory: both pegRNAs
+simulated:000639:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AG__A__GTA_CA_T
+  subcategory: both pegRNAs
+simulated:000640:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_G_G_C_GT_GCA_T
+  subcategory: both pegRNAs
+simulated:000641:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_____GA_AG_AG____
+  subcategory: both pegRNAs
+simulated:000642:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAGGG_C__TAGCA_T
+  subcategory: both pegRNAs
+simulated:000643:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAGG_AC_GT__CAA_
+  subcategory: both pegRNAs
+simulated:000644:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_____CA__AG_AAT
+  subcategory: both pegRNAs
+simulated:000645:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AG_GA_AGT__C__T
+  subcategory: both pegRNAs
+simulated:000646:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AG_GA_A___GCAAT
+  subcategory: both pegRNAs
+simulated:000647:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G___G_CA_TA_C___
+  subcategory: both pegRNAs
+simulated:000648:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G______A_T__CA_T
+  subcategory: both pegRNAs
+simulated:000649:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A___G_ACAGT_G_A_T
+  subcategory: both pegRNAs
+simulated:000650:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AG_G_CAG_A_C__T
+  subcategory: both pegRNAs
+simulated:000651:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAG_G__A____CA_T
+  subcategory: both pegRNAs
+simulated:000652:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_G______T__CAA_
+  subcategory: both pegRNAs
+simulated:000653:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_G_G___G__G__A_
+  subcategory: both pegRNAs
+simulated:000654:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A_GGACAGTAG_AAT
+  subcategory: both pegRNAs
+simulated:000655:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A_G___A___GCAA_
+  subcategory: both pegRNAs
+simulated:000656:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AGG_ACA____C_AT
+  subcategory: both pegRNAs
+simulated:000657:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G___G__AGT___AAT
+  subcategory: both pegRNAs
+simulated:000658:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAGGG_C_GT__C_AT
+  subcategory: both pegRNAs
+simulated:000659:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG___GA___TAG__AT
+  subcategory: both pegRNAs
+simulated:000660:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AG_G______GCA_T
+  subcategory: both pegRNAs
+simulated:000661:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_____GA_A____CAAT
+  subcategory: both pegRNAs
+simulated:000662:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA_G____G_A_C_AT
+  subcategory: both pegRNAs
+simulated:000663:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA_G_ACAG__G___T
+  subcategory: both pegRNAs
+simulated:000664:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAGGGACA_TAGCA__
+  subcategory: both pegRNAs
+simulated:000665:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA__GG_AC__T_GCAAT
+  subcategory: both pegRNAs
+simulated:000666:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AGGG_C_G__G____
+  subcategory: both pegRNAs
+simulated:000667:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_G____AG__G____
+  subcategory: both pegRNAs
+simulated:000668:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A__G____TA___A_
+  subcategory: both pegRNAs
+simulated:000669:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AG_GACA_T____A_
+  subcategory: both pegRNAs
+simulated:000670:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG____A_AGT___A__
+  subcategory: both pegRNAs
+simulated:000671:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A_GGAC___AGC_AT
+  subcategory: both pegRNAs
+simulated:000672:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_GGGA_A_TA_CA_T
+  subcategory: both pegRNAs
+simulated:000673:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GAG__ACAG_AGCA_T
+  subcategory: both pegRNAs
+simulated:000674:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AG_GACA_TA_____
+  subcategory: both pegRNAs
+simulated:000675:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG___GA__GTA_CAA_
+  subcategory: both pegRNAs
+simulated:000676:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G__GGAC_G_AGC_AT
+  subcategory: both pegRNAs
+simulated:000677:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A__GACAGT___A__
+  subcategory: both pegRNAs
+simulated:000678:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_G__A_A_T_GC_A_
+  subcategory: both pegRNAs
+simulated:000679:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_GG____G___CA__
+  subcategory: both pegRNAs
+simulated:000680:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_G__AC__TAG__A_
+  subcategory: both pegRNAs
+simulated:000681:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A_G___A__A_____
+  subcategory: both pegRNAs
+simulated:000682:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_____G_A_AGT__CAA_
+  subcategory: left pegRNA
+simulated:000683:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___G__AC____GC_A_
+  subcategory: both pegRNAs
+simulated:000684:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAG_GACAG_____AT
+  subcategory: both pegRNAs
+simulated:000685:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___GGGA__GT_G__A_
+  subcategory: both pegRNAs
+simulated:000686:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG__GG_C_G___C__T
+  subcategory: both pegRNAs
+simulated:000687:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_GGG__A________
+  subcategory: right pegRNA
+simulated:000688:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A_GGACAGT_GCA_T
+  subcategory: both pegRNAs
+simulated:000689:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_G_____GT_GC___
+  subcategory: both pegRNAs
+simulated:000690:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA_G_AC___AG__A_
+  subcategory: both pegRNAs
+simulated:000691:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AGG____G_AGCAA_
+  subcategory: both pegRNAs
+simulated:000692:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG__GGAC_G__GC_AT
+  subcategory: both pegRNAs
+simulated:000693:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_____CA_TAGC___
+  subcategory: both pegRNAs
+simulated:000694:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAG__A_A___G_A__
+  subcategory: both pegRNAs
+simulated:000695:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA__GG_____TAGCAA_
+  subcategory: both pegRNAs
+simulated:000696:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAG_G__A_T___AAT
+  subcategory: both pegRNAs
+simulated:000697:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A_G_A__GT____AT
+  subcategory: both pegRNAs
+simulated:000698:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG__GG_CAGTA__AA_
+  subcategory: both pegRNAs
+simulated:000699:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AG__AC_GTA___A_
+  subcategory: both pegRNAs
+simulated:000700:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AG_G_CA_T_GCA__
+  subcategory: both pegRNAs
+simulated:000701:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG____A_A___G_A_T
+  subcategory: both pegRNAs
+simulated:000702:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA_______T__C_AT
+  subcategory: both pegRNAs
+simulated:000703:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G___G__AG___C__T
+  subcategory: both pegRNAs
+simulated:000704:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AGGGACA____C___
+  subcategory: both pegRNAs
+simulated:000705:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A_G____GTA_CAA_
+  subcategory: both pegRNAs
+simulated:000706:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AGG_A____AG_AA_
+  subcategory: both pegRNAs
+simulated:000707:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A______AC______AA_
+  subcategory: both pegRNAs
+simulated:000708:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_GG__CAGTA_C_A_
+  subcategory: both pegRNAs
+simulated:000709:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A___G_ACAGTAG___T
+  subcategory: both pegRNAs
+simulated:000710:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA__G_GACAGTAG____
+  subcategory: both pegRNAs
+simulated:000711:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AGGG__AG_A___AT
+  subcategory: both pegRNAs
+simulated:000712:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AG_G_C__T_G_A_T
+  subcategory: both pegRNAs
+simulated:000713:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_GG__C___A_CAAT
+  subcategory: both pegRNAs
+simulated:000714:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A__GACAGTA__A__
+  subcategory: both pegRNAs
+simulated:000715:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__A_G_A___TA_C_A_
+  subcategory: both pegRNAs
+simulated:000716:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_________AG__AT
+  subcategory: both pegRNAs
+simulated:000717:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AGGGA_____GC_AT
+  subcategory: both pegRNAs
+simulated:000718:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AG_GACA__AGC___
+  subcategory: both pegRNAs
+simulated:000719:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AGG_AC______AAT
+  subcategory: both pegRNAs
+simulated:000720:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_G___CA__A___A_
+  subcategory: both pegRNAs
+simulated:000721:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A__GACA______AT
+  subcategory: both pegRNAs
+simulated:000722:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAG___C_G_AG__A_
+  subcategory: both pegRNAs
+simulated:000723:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AGGG__AG_AGC_AT
+  subcategory: both pegRNAs
+simulated:000724:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA_GGA_____G____
+  subcategory: both pegRNAs
+simulated:000725:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_GG_AC_G_AGCA_T
+  subcategory: both pegRNAs
+simulated:000726:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A____G____GT____AT
+  subcategory: both pegRNAs
+simulated:000727:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_____A___TAG___T
+  subcategory: both pegRNAs
+simulated:000728:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG__G_AC____GC_AT
+  subcategory: both pegRNAs
+simulated:000729:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_____G__C_G__GC_A_
+  subcategory: left pegRNA
+simulated:000730:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_G_GACAGTAG_AAT
+  subcategory: both pegRNAs
+simulated:000731:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA___A_AG____A__
+  subcategory: both pegRNAs
+simulated:000732:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA_G__CAG___C_AT
+  subcategory: both pegRNAs
+simulated:000733:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AGG_AC_G_AG_A__
+  subcategory: both pegRNAs
+simulated:000734:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___G_GACAG_AG___T
+  subcategory: both pegRNAs
+simulated:000735:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A______A_AGT_GCA_T
+  subcategory: both pegRNAs
+simulated:000736:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G__G_A__GT_G____
+  subcategory: both pegRNAs
+simulated:000737:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG__GG___G__G_AA_
+  subcategory: both pegRNAs
+simulated:000738:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AG_G__A_T__C__T
+  subcategory: both pegRNAs
+simulated:000739:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AGG_A_A__AG_AA_
+  subcategory: both pegRNAs
+simulated:000740:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA__G__ACAGT___A_T
+  subcategory: both pegRNAs
+simulated:000741:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AG____A____CA__
+  subcategory: both pegRNAs
+simulated:000742:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA___GG_CA__AGC__T
+  subcategory: both pegRNAs
+simulated:000743:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAG___CA_TA_CA__
+  subcategory: both pegRNAs
+simulated:000744:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAG__ACA_TAG__A_
+  subcategory: both pegRNAs
+simulated:000745:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG__G_AC_GTA_CAAT
+  subcategory: both pegRNAs
+simulated:000746:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AGG_____TA__A__
+  subcategory: both pegRNAs
+simulated:000747:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA__GACA__A__AAT
+  subcategory: both pegRNAs
+simulated:000748:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AGGG_C_GTAG_AA_
+  subcategory: both pegRNAs
+simulated:000749:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA__G__A___T__CA__
+  subcategory: both pegRNAs
+simulated:000750:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G___GA____A__A_T
+  subcategory: both pegRNAs
+simulated:000751:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__G__A____A_CAA_
+  subcategory: both pegRNAs
+simulated:000752:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_G____A_T_G_AA_
+  subcategory: both pegRNAs
+simulated:000753:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A___AC___AG_A__
+  subcategory: both pegRNAs
+simulated:000754:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA______GT___A__
+  subcategory: both pegRNAs
+simulated:000755:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____G_GAC__TA___AT
+  subcategory: left pegRNA
+simulated:000756:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA____CA__A_CAAT
+  subcategory: both pegRNAs
+simulated:000757:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A___A_AG__GC_AT
+  subcategory: both pegRNAs
+simulated:000758:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A___GGA_A______AT
+  subcategory: both pegRNAs
+simulated:000759:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA_GG___GTA_CAA_
+  subcategory: both pegRNAs
+simulated:000760:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_GG___A____C_AT
+  subcategory: both pegRNAs
+simulated:000761:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G__G_ACAG____A_T
+  subcategory: both pegRNAs
+simulated:000762:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__A_G_AC_G______T
+  subcategory: both pegRNAs
+simulated:000763:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAGG___A_TA_C___
+  subcategory: both pegRNAs
+simulated:000764:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG__GGA_AGTAGCAAT
+  subcategory: both pegRNAs
+simulated:000765:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AGG_A___TAGC_A_
+  subcategory: both pegRNAs
+simulated:000766:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A_G__CAGT__C___
+  subcategory: both pegRNAs
+simulated:000767:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AGGG_C____GC_A_
+  subcategory: both pegRNAs
+simulated:000768:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G__GG_C______A__
+  subcategory: both pegRNAs
+simulated:000769:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA__GGG__AGT___A_T
+  subcategory: both pegRNAs
+simulated:000770:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAGGG___GT_GC_A_
+  subcategory: both pegRNAs
+simulated:000771:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_____A_AG_A_CAAT
+  subcategory: both pegRNAs
+simulated:000772:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AG___CAG__GCA__
+  subcategory: both pegRNAs
+simulated:000773:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_G____AG______T
+  subcategory: both pegRNAs
+simulated:000774:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA__GACAGTA_CA_T
+  subcategory: both pegRNAs
+simulated:000775:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA_G_ACA___GCAAT
+  subcategory: both pegRNAs
+simulated:000776:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_GGG_CAG_____A_
+  subcategory: both pegRNAs
+simulated:000777:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG___G__AG_AG_AA_
+  subcategory: both pegRNAs
+simulated:000778:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A____GA___TAGC___
+  subcategory: both pegRNAs
+simulated:000779:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A__GA_A_TAG___T
+  subcategory: both pegRNAs
+simulated:000780:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAG___C___A_____
+  subcategory: both pegRNAs
+simulated:000781:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A_GGA_A_T_____T
+  subcategory: both pegRNAs
+simulated:000782:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A____GACAGT__CA_T
+  subcategory: both pegRNAs
+simulated:000783:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A___G____GTA__A__
+  subcategory: both pegRNAs
+simulated:000784:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA___A_A_TA__A_T
+  subcategory: both pegRNAs
+simulated:000785:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A___AC_GT_GCA__
+  subcategory: both pegRNAs
+simulated:000786:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A_G_ACA__A__A_T
+  subcategory: both pegRNAs
+simulated:000787:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G__G_AC_____CAAT
+  subcategory: both pegRNAs
+simulated:000788:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA_G_ACAGTAGCA_T
+  subcategory: both pegRNAs
+simulated:000789:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A______CA_T___A_T
+  subcategory: both pegRNAs
+simulated:000790:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA_GGAC____G_A_T
+  subcategory: both pegRNAs
+simulated:000791:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_______GT____A_
+  subcategory: both pegRNAs
+simulated:000792:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A___G_AC__T______
+  subcategory: right pegRNA
+simulated:000793:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAGG__CA__AGCAAT
+  subcategory: both pegRNAs
+simulated:000794:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAGG_A__GT______
+  subcategory: right pegRNA
+simulated:000795:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__GG_A___T__CA__
+  subcategory: both pegRNAs
+simulated:000796:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AGGGA__G______T
+  subcategory: both pegRNAs
+simulated:000797:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_G_G__AG__G_AAT
+  subcategory: both pegRNAs
+simulated:000798:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA____CAGT_G_A__
+  subcategory: both pegRNAs
+simulated:000799:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A____GA_A_T__C_AT
+  subcategory: both pegRNAs
+simulated:000800:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAG_G_C__T__CAAT
+  subcategory: both pegRNAs
+simulated:000801:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_G__A____AG_AA_
+  subcategory: both pegRNAs
+simulated:000802:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____GG__C_G_AGCAA_
+  subcategory: left pegRNA
+simulated:000803:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A__G__AG____AAT
+  subcategory: both pegRNAs
+simulated:000804:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_____A__GT_G_AAT
+  subcategory: both pegRNAs
+simulated:000805:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G___GACA__AG____
+  subcategory: both pegRNAs
+simulated:000806:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA_GGAC_GT_GC_A_
+  subcategory: both pegRNAs
+simulated:000807:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____GGGA___TA__AAT
+  subcategory: left pegRNA
+simulated:000808:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG__GG_CAGTAGC___
+  subcategory: both pegRNAs
+simulated:000809:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_____G_C_G_AGCA_T
+  subcategory: both pegRNAs
+simulated:000810:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AG_GA_A__A__A_T
+  subcategory: both pegRNAs
+simulated:000811:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA____G_C_GT__CAAT
+  subcategory: both pegRNAs
+simulated:000812:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G__GGA__G_A_CAAT
+  subcategory: both pegRNAs
+simulated:000813:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_______C__T_GC___
+  subcategory: both pegRNAs
+simulated:000814:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA__G_C____GCA_T
+  subcategory: both pegRNAs
+simulated:000815:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAGGGA__GT__C___
+  subcategory: both pegRNAs
+simulated:000816:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___G__A_A___G__AT
+  subcategory: both pegRNAs
+simulated:000817:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A______C_GT_G____
+  subcategory: both pegRNAs
+simulated:000818:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AG__A__GTA__AAT
+  subcategory: both pegRNAs
+simulated:000819:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A_G_A__G_A____T
+  subcategory: both pegRNAs
+simulated:000820:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A___GG_CAG_A__AAT
+  subcategory: both pegRNAs
+simulated:000821:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAGGG_CAGT__C_A_
+  subcategory: both pegRNAs
+simulated:000822:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G___G___G_A_____
+  subcategory: both pegRNAs
+simulated:000823:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____G__A_AGTAG_A_T
+  subcategory: left pegRNA
+simulated:000824:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__G_____GTA_C_AT
+  subcategory: both pegRNAs
+simulated:000825:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_G___CAGTAGC_AT
+  subcategory: both pegRNAs
+simulated:000826:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A_GG_CA_TAGCA_T
+  subcategory: both pegRNAs
+simulated:000827:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A___GG_C______AAT
+  subcategory: both pegRNAs
+simulated:000828:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A__GA__G___CA__
+  subcategory: both pegRNAs
+simulated:000829:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AG__A___T__CAAT
+  subcategory: both pegRNAs
+simulated:000830:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__A_GG_C_____C_AT
+  subcategory: both pegRNAs
+simulated:000831:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA__G_GACAG_AGC__T
+  subcategory: both pegRNAs
+simulated:000832:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__G___CA__A_C___
+  subcategory: both pegRNAs
+simulated:000833:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__A_GGAC_GT_G__A_
+  subcategory: both pegRNAs
+simulated:000834:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A_____AG_____A_
+  subcategory: both pegRNAs
+simulated:000835:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A____G_A___T__CAA_
+  subcategory: both pegRNAs
+simulated:000836:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AG__A____AGCAAT
+  subcategory: both pegRNAs
+simulated:000837:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AGGG_C_G__GCA_T
+  subcategory: both pegRNAs
+simulated:000838:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AG_GA_AG_AG___T
+  subcategory: both pegRNAs
+simulated:000839:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A____G_AC_G_AG_A_T
+  subcategory: both pegRNAs
+simulated:000840:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___GG__C__T__C_A_
+  subcategory: both pegRNAs
+simulated:000841:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAG_G_C___A_C_AT
+  subcategory: both pegRNAs
+simulated:000842:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA__G____AG_AGC___
+  subcategory: both pegRNAs
+simulated:000843:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA_GGAC_G_A___AT
+  subcategory: both pegRNAs
+simulated:000844:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA__G_C____GCAA_
+  subcategory: both pegRNAs
+simulated:000845:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___GG__C_GT__CAA_
+  subcategory: both pegRNAs
+simulated:000846:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA_GG_CA_TA___AT
+  subcategory: both pegRNAs
+simulated:000847:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A__G_CAGTA____T
+  subcategory: both pegRNAs
+simulated:000848:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAGG_______GCA__
+  subcategory: both pegRNAs
+simulated:000849:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAG_GAC_G_AGC___
+  subcategory: both pegRNAs
+simulated:000850:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_____G_CAG_AG_A__
+  subcategory: both pegRNAs
+simulated:000851:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A___G__C___A____T
+  subcategory: both pegRNAs
+simulated:000852:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA____G__AG_A___A_
+  subcategory: both pegRNAs
+simulated:000853:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A__GACAGT__C__T
+  subcategory: both pegRNAs
+simulated:000854:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA____GACAGTAGC_AT
+  subcategory: both pegRNAs
+simulated:000855:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAGGGA____AGC_A_
+  subcategory: both pegRNAs
+simulated:000856:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AG____A__AG_A__
+  subcategory: both pegRNAs
+simulated:000857:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__A_GGA__G___CA_T
+  subcategory: both pegRNAs
+simulated:000858:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAG__A__G__GC_A_
+  subcategory: both pegRNAs
+simulated:000859:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___G__ACA_TAGCA__
+  subcategory: both pegRNAs
+simulated:000860:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_GGG_C__T____AT
+  subcategory: both pegRNAs
+simulated:000861:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__A__GAC_______A_
+  subcategory: both pegRNAs
+simulated:000862:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_G__AC_GT_GCAA_
+  subcategory: both pegRNAs
+simulated:000863:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A__GA_A_T__C_AT
+  subcategory: both pegRNAs
+simulated:000864:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA___G_A__G_A_CAA_
+  subcategory: both pegRNAs
+simulated:000865:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A_GG_CA____CA__
+  subcategory: both pegRNAs
+simulated:000866:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA_GG___GT__C___
+  subcategory: both pegRNAs
+simulated:000867:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A_GGA__G_AG_A_T
+  subcategory: both pegRNAs
+simulated:000868:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_G__AC____GC_AT
+  subcategory: both pegRNAs
+simulated:000869:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAG_GA_AG_A_C_AT
+  subcategory: both pegRNAs
+simulated:000870:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAG_______AGCA__
+  subcategory: both pegRNAs
+simulated:000871:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AG_G_CAGTA__A_T
+  subcategory: both pegRNAs
+simulated:000872:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_G___CA_____AA_
+  subcategory: both pegRNAs
+simulated:000873:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G__G__CA___GC___
+  subcategory: both pegRNAs
+simulated:000874:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___GG_ACAGT__CAAT
+  subcategory: both pegRNAs
+simulated:000875:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AGGG__AG_AG__AT
+  subcategory: both pegRNAs
+simulated:000876:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG__GGA_AG__G__A_
+  subcategory: both pegRNAs
+simulated:000877:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A_G___A_TA___AT
+  subcategory: both pegRNAs
+simulated:000878:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA____CA_T___AA_
+  subcategory: both pegRNAs
+simulated:000879:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA___A__G_A_____
+  subcategory: both pegRNAs
+simulated:000880:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_____GG_C_G__G____
+  subcategory: left pegRNA
+simulated:000881:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A__GAC__T___A_T
+  subcategory: both pegRNAs
+simulated:000882:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_GGGA______C___
+  subcategory: both pegRNAs
+simulated:000883:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_______CAG____A_T
+  subcategory: both pegRNAs
+simulated:000884:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA_GGACA_TA___AT
+  subcategory: both pegRNAs
+simulated:000885:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA___G__CAG_______
+  subcategory: right pegRNA
+simulated:000886:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA___GGA____AGC__T
+  subcategory: both pegRNAs
+simulated:000887:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A__GA__GT__C_AT
+  subcategory: both pegRNAs
+simulated:000888:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AG__A_______A_T
+  subcategory: both pegRNAs
+simulated:000889:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAG_G____TA_C_AT
+  subcategory: both pegRNAs
+simulated:000890:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A___A______CA__
+  subcategory: both pegRNAs
+simulated:000891:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA__GA_AGT_GC___
+  subcategory: both pegRNAs
+simulated:000892:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A___G__CAGTA____T
+  subcategory: both pegRNAs
+simulated:000893:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_GGGAC_GTAG_AA_
+  subcategory: both pegRNAs
+simulated:000894:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G____A_A_T___A__
+  subcategory: both pegRNAs
+simulated:000895:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAG__ACAGTAGCAA_
+  subcategory: both pegRNAs
+simulated:000896:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A_G_AC____GC__T
+  subcategory: both pegRNAs
+simulated:000897:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_GG__C___AG____
+  subcategory: both pegRNAs
+simulated:000898:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA___G_A__G_____A_
+  subcategory: both pegRNAs
+simulated:000899:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAGGG_CAG_A__A__
+  subcategory: both pegRNAs
+simulated:000900:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___G__A____A__AAT
+  subcategory: both pegRNAs
+simulated:000901:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_GG________C___
+  subcategory: both pegRNAs
+simulated:000902:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAG_G__A__AGC__T
+  subcategory: both pegRNAs
+simulated:000903:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____GG___AG_A__AA_
+  subcategory: left pegRNA
+simulated:000904:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AGG__C____GC_A_
+  subcategory: both pegRNAs
+simulated:000905:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A__GA_____GC__T
+  subcategory: both pegRNAs
+simulated:000906:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AG_G_C_____CA__
+  subcategory: both pegRNAs
+simulated:000907:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A_GG_CAG_AGC___
+  subcategory: both pegRNAs
+simulated:000908:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_GGGA_AGTA_CAA_
+  subcategory: both pegRNAs
+simulated:000909:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___GG___AGT____AT
+  subcategory: both pegRNAs
+simulated:000910:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAGGGA_A_TA__A_T
+  subcategory: both pegRNAs
+simulated:000911:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AGG__CAGTAGCA__
+  subcategory: both pegRNAs
+simulated:000912:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG__GGACAG__G_AA_
+  subcategory: both pegRNAs
+simulated:000913:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAGG_A____AG_A_T
+  subcategory: both pegRNAs
+simulated:000914:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_G_G_______C_A_
+  subcategory: both pegRNAs
+simulated:000915:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_GG__C____GC___
+  subcategory: both pegRNAs
+simulated:000916:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA___A__GT_G__A_
+  subcategory: both pegRNAs
+simulated:000917:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A______A_AGT__CAA_
+  subcategory: both pegRNAs
+simulated:000918:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA___GG_C_G_A_C__T
+  subcategory: both pegRNAs
+simulated:000919:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_GGG_C___A___AT
+  subcategory: both pegRNAs
+simulated:000920:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A_GGAC__T_G__A_
+  subcategory: both pegRNAs
+simulated:000921:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_____GACAG__G_AAT
+  subcategory: both pegRNAs
+simulated:000922:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA_G_AC__TA_C___
+  subcategory: both pegRNAs
+simulated:000923:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GAG__A___TAGC___
+  subcategory: both pegRNAs
+simulated:000924:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AGG_AC_GTA_C_A_
+  subcategory: both pegRNAs
+simulated:000925:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA_GGACAG_____AT
+  subcategory: both pegRNAs
+simulated:000926:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_G_G____T___A__
+  subcategory: both pegRNAs
+simulated:000927:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_GGG__A__AG_A__
+  subcategory: both pegRNAs
+simulated:000928:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AG_G_C__T_GCAA_
+  subcategory: both pegRNAs
+simulated:000929:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG___G______G_AA_
+  subcategory: both pegRNAs
+simulated:000930:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A____GGAC_GT_G_A__
+  subcategory: both pegRNAs
+simulated:000931:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GA___ACAGT_GC_A_
+  subcategory: both pegRNAs
+simulated:000932:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A_G__C_GTAGCA_T
+  subcategory: both pegRNAs
+simulated:000933:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_GGG___GT_G__AT
+  subcategory: both pegRNAs
+simulated:000934:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A_GG_CAGTA_CA_T
+  subcategory: both pegRNAs
+simulated:000935:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG___GA_AG_AGCAAT
+  subcategory: both pegRNAs
+simulated:000936:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_GGGA___T_GCAAT
+  subcategory: both pegRNAs
+simulated:000937:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA______GT_GC_A_
+  subcategory: both pegRNAs
+simulated:000938:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__GG__CAGT___A_T
+  subcategory: both pegRNAs
+simulated:000939:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__A__GACAG__GC_A_
+  subcategory: both pegRNAs
+simulated:000940:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__A__G____T_G_A__
+  subcategory: both pegRNAs
+simulated:000941:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA__G_CA__AG_A__
+  subcategory: both pegRNAs
+simulated:000942:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAG_GAC_G_AG___T
+  subcategory: both pegRNAs
+simulated:000943:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAG__AC_GTA__AAT
+  subcategory: both pegRNAs
+simulated:000944:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AGGGA__G__GCAA_
+  subcategory: both pegRNAs
+simulated:000945:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA_GG_____AGCA__
+  subcategory: both pegRNAs
+simulated:000946:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GAGG_ACA_T_G_A__
+  subcategory: both pegRNAs
+simulated:000947:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGAGG___A__AG_AA_
+  subcategory: both pegRNAs
+simulated:000948:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG____A_AG___CA_T
+  subcategory: both pegRNAs
+simulated:000949:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_____G_ACAG_______
+  subcategory: single pegRNA (ambiguous)
+simulated:000950:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A____GGA_AGT____AT
+  subcategory: both pegRNAs
+simulated:000951:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AGG__CAGT_GC__T
+  subcategory: both pegRNAs
+simulated:000952:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_AG_GA__G_AG_AA_
+  subcategory: both pegRNAs
+simulated:000953:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_G_G__AGTA_CA_T
+  subcategory: both pegRNAs
+simulated:000954:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A_G_ACAG__GC_A_
+  subcategory: both pegRNAs
+simulated:000955:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_G_GA_AG_A_____
+  subcategory: both pegRNAs
+simulated:000956:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA___GG_C_GTAG__A_
+  subcategory: both pegRNAs
+simulated:000957:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____GGGA_A_TAG_AAT
+  subcategory: left pegRNA
+simulated:000958:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAGG_ACAG___C_AT
+  subcategory: both pegRNAs
+simulated:000959:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG_GGG_CA___G_A_T
+  subcategory: both pegRNAs
+simulated:000960:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_____AC__TAG_AA_
+  subcategory: both pegRNAs
+simulated:000961:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAG__AC_G__GC__T
+  subcategory: both pegRNAs
+simulated:000962:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_AG_GA_AGTA____T
+  subcategory: both pegRNAs
+simulated:000963:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_GGGA___T__CAAT
+  subcategory: both pegRNAs
+simulated:000964:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____GGGA__G__GCA_T
+  subcategory: left pegRNA
+simulated:000965:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAG_GA_AG__G____
+  subcategory: both pegRNAs
+simulated:000966:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__GG_ACAGT______
+  subcategory: right pegRNA
+simulated:000967:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____GGGA____A_C__T
+  subcategory: left pegRNA
+simulated:000968:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GA_GG_C__T_G_A_T
+  subcategory: both pegRNAs
+simulated:000969:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A_GG__AGT_G__A_
+  subcategory: both pegRNAs
+simulated:000970:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_____G___AGT__C___
+  subcategory: left pegRNA
+simulated:000971:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__G_____C________T
+  subcategory: both pegRNAs
+simulated:000972:
+  category: partial replacement
+  details: programmed_substitution_read_bases=__GAG____A_TAG___T
+  subcategory: both pegRNAs
+simulated:000973:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A___G___CA_TAG_AA_
+  subcategory: both pegRNAs
+simulated:000974:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AGA_____AGTAGCA__
+  subcategory: both pegRNAs
+simulated:000975:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAG___C__T___AA_
+  subcategory: both pegRNAs
+simulated:000976:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_______A__GTAG_AA_
+  subcategory: left pegRNA
+simulated:000977:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____GGG__A_T___A__
+  subcategory: left pegRNA
+simulated:000978:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___AG_GA_A__AG_A__
+  subcategory: both pegRNAs
+simulated:000979:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AG_GA_____GC_A_
+  subcategory: both pegRNAs
+simulated:000980:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA__GG_A_AG_AG_A_T
+  subcategory: both pegRNAs
+simulated:000981:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__A_____A_T_GC_AT
+  subcategory: both pegRNAs
+simulated:000982:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA___G___A_TAG__AT
+  subcategory: both pegRNAs
+simulated:000983:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__A_GGACAG_AGCA__
+  subcategory: both pegRNAs
+simulated:000984:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAG_G__ACAGTAGCAAT
+  subcategory: both pegRNAs
+simulated:000985:
+  category: partial replacement
+  details: programmed_substitution_read_bases=____G__A__GTAGC___
+  subcategory: left pegRNA
+simulated:000986:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGAGG__C_GT_GC_A_
+  subcategory: both pegRNAs
+simulated:000987:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A__AG_G_CA__A____T
+  subcategory: both pegRNAs
+simulated:000988:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA____C___A__A__
+  subcategory: both pegRNAs
+simulated:000989:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_GAGG_____TA__A__
+  subcategory: both pegRNAs
+simulated:000990:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA___G___A__AG_AAT
+  subcategory: both pegRNAs
+simulated:000991:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A_A_____A_T___A_T
+  subcategory: both pegRNAs
+simulated:000992:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_AG___GACAGT____AT
+  subcategory: both pegRNAs
+simulated:000993:
+  category: partial replacement
+  details: programmed_substitution_read_bases=___A__GACAG_A____T
+  subcategory: both pegRNAs
+simulated:000994:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA___GGACAG_A_____
+  subcategory: both pegRNAs
+simulated:000995:
+  category: partial replacement
+  details: programmed_substitution_read_bases=_A__GG_______GCAAT
+  subcategory: both pegRNAs
+simulated:000996:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A_G_G__A__GTA_CAA_
+  subcategory: both pegRNAs
+simulated:000997:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AA_A__G____TA__AAT
+  subcategory: both pegRNAs
+simulated:000998:
+  category: partial replacement
+  details: programmed_substitution_read_bases=A____G_AC_G_AGC___
+  subcategory: both pegRNAs
+simulated:000999:
+  category: partial replacement
+  details: programmed_substitution_read_bases=AAGA_GG____T_G__A_
+  subcategory: both pegRNAs

@@ -1,0 +1,42 @@
+017171720:0000000006:
+  category: wild type
+  subcategory: mismatches
+  note: has an N
+
+017171720:0000000003:
+  category: intended edit
+  subcategory: replacement
+  note: no UMI at the beginning of the read
+
+017171720:0000000001:
+  category: intended edit
+  subcategory: replacement
+  note: has UMI at the beginning of the read
+
+017171720:0000000162:
+  category: unintended rejoining of RT'ed sequence
+  subcategory: left RT'ed, right not RT'ed
+  note: covers whole read, rejoins at right nick. left pegRNA extension is technically enough to cover the read, but right pegRNA extension contributes additional MH.
+
+017171720:0000000072:
+  category: unintended rejoining of RT'ed sequence
+  subcategory: left not RT'ed, right RT'ed
+  note: covers whole read, rejoins roughly halfway between nicks
+
+017171720:0000000698:
+  category: unintended rejoining of overlap-extended sequence
+  subcategory: left RT'ed, right RT'ed + overlap-extended
+  note: overlap extension on right has full left peg to end of PBS
+
+017171720:0000000086:
+  category: unintended rejoining of overlap-extended sequence
+  subcategory: left RT'ed + overlap-extended, right not RT'ed
+
+017171720:0000000350:
+  category: deletion
+  subcategory: mismatches
+  details: deletions=D:{678|679},80;mismatches=511N
+
+017171720:0000000270:
+  category: unintended rejoining of overlap-extended sequence
+  subcategory: left RT'ed + overlap-extended, right RT'ed + overlap-extended

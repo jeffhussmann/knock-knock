@@ -1,0 +1,40 @@
+LOCUS       RNF2                    1218 bp    DNA              UNK 01-JAN-1980
+DEFINITION  .
+ACCESSION   <unknown id>
+VERSION     <unknown id>
+KEYWORDS    .
+SOURCE      .
+  ORGANISM  .
+            .
+FEATURES             Location/Qualifiers
+     misc_feature    501..522
+                     /label="RNF2_1"
+                     /ApEinfo_fwdcolor="#75C6A9"
+     misc_feature    complement(699..718)
+                     /label="RNF2_0"
+                     /ApEinfo_fwdcolor="#9eafd2"
+     misc_feature    501..522
+                     /label="anchor"
+ORIGIN
+        1 gctaagtact tcctgtatgc cagctcttgg gcatttggaa gtcagtagta ggcttttact
+       61 gtcaagtagt tcatatttat aagtgtaaag attttgagtt tttcttcttt ttaatttttg
+      121 agaaccagtg aataatttgt tttttttatt ctcaagatta acaattccta aaaatcagtt
+      181 ttgagattta cttcctatct taatccattt agcctgctat aaaaaatact ttaggctggg
+      241 taatttataa gcaatagaaa tgtattacag ttctggagac tgggaattcc aagatcatgg
+      301 caccagcaga tgcagtgtct ggtgagggcc tattccttat agctgcttct ctgtgtcaga
+      361 acatgctgga agggccaaaa gtttccatca agcctctttt ataaaggcac taatttcatt
+      421 catgagggtg gagccctcat aacctgatca cctcccaaag tccccacctc ttaatattac
+      481 ttcattgaga ttagatttca acgtaggaat tttggtggga cacatacatt cagaccatag
+      541 cacttccctt ccaaatacta aaattgtttt tctctcttct ttatttccag caatgtctca
+      601 ggctgtgcag acaaacggaa ctcaaccatt aagcaaaaca tgggaactca gtttatatga
+      661 gttacaacga acacctcagg taatgactaa gatgactgcc aaggggcata tgagacgtgt
+      721 aaactgggat acatttttag aacatgaaaa cttaaataga acatagagta ataataaatt
+      781 tatattcaag cattcctgac ttctgtatgt tggctaacac tttattcatt gattgaacaa
+      841 ataatctgaa tactctatac aagcttttgt ggtaggtact gggtgaacag tggtgaataa
+      901 aacagatgta gcaccaacca tggactttac agacattgaa aaagtacata tctataaaat
+      961 tcacatgtga gaagttgtag aaagttgggc aagtcctcct tgctgtaata agtactgata
+     1021 aggcaccaag gaagactgtt ttgagatgat ggcagactag gggaggagca ggtttgaagg
+     1081 caacaaacat gcttaacact ggattaattt tgagattcct atacaacagg caggcagaga
+     1141 tgccaactat agatgatttt tatattagtc tgaactaaat acaaaatttt agggattgac
+     1201 agcacatttt aagcaata
+//

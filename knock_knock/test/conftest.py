@@ -3,7 +3,7 @@ import multiprocessing
 import pytest
 
 import knock_knock.test.read_sets
-import knock_knock.test.test_pegRNAs
+import knock_knock.test.pegRNAs.test_pegRNAs
 from knock_knock.outcome import DegenerateDeletion
 
 @pytest.fixture(scope='session', autouse=True)
@@ -37,8 +37,27 @@ def pytest_generate_tests(metafunc, source_dir=None):
 
         metafunc.parametrize(['read_set', 'qname'], params)
 
+    elif metafunc.function.__name__ == 'test_read':
+
+        read_sets = metafunc.module.get_all_read_sets()
+
+        params = []
+        
+        for read_set in read_sets.values():
+            for read_name in read_set.expected_categorizations:
+                if 'expected_failure' in read_set.expected_categorizations[read_name]:
+                    marks = [pytest.mark.xfail(strict=True)]
+                else:
+                    marks = []
+
+                param = pytest.param(read_set, read_name, marks=marks, id=f'{read_set.name} {read_name}')
+
+                params.append(param)
+
+        metafunc.parametrize(['read_set', 'read_name'], params)
+
     elif 'flap_sequence' in metafunc.fixturenames and 'downstream_genomic_sequence' in metafunc.fixturenames and 'expected_coordinates' in metafunc.fixturenames:
-        RTT_alignments = knock_knock.test.test_pegRNAs.load_RTT_alignments(source_dir=source_dir)
+        RTT_alignments = knock_knock.test.pegRNAs.test_pegRNAs.load_RTT_alignments(source_dir=source_dir)
 
         params = []
         

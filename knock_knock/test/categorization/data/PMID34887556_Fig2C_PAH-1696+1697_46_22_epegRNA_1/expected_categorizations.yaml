@@ -1,0 +1,16 @@
+017171854:0000000394:
+  category: unintended rejoining of RT'ed sequence
+  subcategory: left RT'ed, right not RT'ed
+  note: tests whether a pegRNA extension alignment is incorrectly called on the
+    right when the target alignment explains it better
+
+017171854:0000000499:
+  category: unintended rejoining of RT'ed sequence
+  subcategory: left not RT'ed, right RT'ed
+  note: tests whether a pegRNA extension alignment is incorrectly called on the
+    left when the target alignment explains it better
+
+017171854:0000000131:
+  category: deletion
+  subcategory: clean
+  details: deletions=D:{572|573|574|575|576|577},131

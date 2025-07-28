@@ -1,0 +1,28 @@
+017171791:0000000002:
+  category: intended edit
+  subcategory: deletion
+
+017171791:0000000020:
+  category: unintended rejoining of RT'ed sequence
+  subcategory: left RT'ed, right RT'ed
+
+017171791:0000000278:
+  category: unintended rejoining of RT'ed sequence
+  subcategory: left RT'ed, right not RT'ed
+
+017171791:0000000080:
+  category: unintended rejoining of RT'ed sequence
+  subcategory: left not RT'ed, right RT'ed
+
+017171791:0000000066:
+  category: deletion
+  subcategory: clean
+  details: deletions=D:{689|690},77
+
+017171791:0000000007:
+  category: wild type
+  subcategory: clean
+
+017171791:0000000008:
+  category: unintended rejoining of overlap-extended sequence
+  subcategory: left RT'ed, right RT'ed + overlap-extended

@@ -1,0 +1,12 @@
+features_to_show:
+- - PAH-1696+1697
+  - PAH-1696+1697_1
+- - PAH-1696+1697
+  - PAH-1696+1697_0
+genome_source: PAH-1696+1697
+primer_names:
+- PAH-1696+1697_1
+- PAH-1696+1697_0
+sources:
+- PAH-1696+1697
+target: PAH-1696+1697

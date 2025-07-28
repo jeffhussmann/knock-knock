@@ -1,0 +1,2 @@
+sample_name,R1,experiment_type,editing_strategy,sequencing_start_feature_name,sgRNAs
+extracted,extracted.fastq,single_flap,PMID31634902_Fig4H_FANCF_1Tins_6GA_1,FANCF_0,FANCF_4h_1Tins_6GtoA;FANCF_4d_+48_nicking

@@ -1,0 +1,12 @@
+features_to_show:
+- - AAVS1-1653+1715
+  - AAVS1-1653+1715_0
+- - AAVS1-1653+1715
+  - AAVS1-1653+1715_1
+genome_source: AAVS1-1653+1715
+primer_names:
+- AAVS1-1653+1715_0
+- AAVS1-1653+1715_1
+sources:
+- AAVS1-1653+1715
+target: AAVS1-1653+1715

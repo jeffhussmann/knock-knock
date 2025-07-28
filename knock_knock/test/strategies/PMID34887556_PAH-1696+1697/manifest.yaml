@@ -1,9 +1,0 @@
-features_to_show:
-- - PAH-1696+1697
-  - forward_primer
-- - PAH-1696+1697
-  - reverse_primer
-genome_source: hg38
-sources:
-- PAH-1696+1697
-target: PAH-1696+1697

@@ -1,0 +1,2 @@
+sample_name,R1,experiment_type,editing_strategy,sequencing_start_feature_name,sgRNAs
+extracted,extracted.fastq,single_flap,PMID31634902_Fig3B_HEK3_+026_1,HEK3_0,HEK3_3b;HEK3_3b_+26_nicking

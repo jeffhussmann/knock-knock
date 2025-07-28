@@ -1,9 +1,0 @@
-features_to_show:
-- - HEK3
-  - forward_primer
-- - HEK3
-  - reverse_primer
-genome_source: hg38
-sources:
-- HEK3
-target: HEK3

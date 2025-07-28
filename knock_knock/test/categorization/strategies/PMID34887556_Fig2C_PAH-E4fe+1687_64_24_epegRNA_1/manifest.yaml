@@ -1,0 +1,12 @@
+features_to_show:
+- - PAH-E4fe+1687
+  - PAH-E4fe+1687_1
+- - PAH-E4fe+1687
+  - PAH-E4fe+1687_0
+genome_source: PAH-E4fe+1687
+primer_names:
+- PAH-E4fe+1687_1
+- PAH-E4fe+1687_0
+sources:
+- PAH-E4fe+1687
+target: PAH-E4fe+1687
