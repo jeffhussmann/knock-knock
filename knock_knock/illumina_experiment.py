@@ -534,7 +534,9 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
     def align(self):
         for read_type in self.read_types_to_align:
-            self.generate_alignments_with_blast(read_type=read_type)
+            filter_to_discard = lambda al: al.get_tag('BS') < 30
+            
+            self.generate_alignments_with_blast(read_type=read_type, filter_to_discard=filter_to_discard)
 
             if 'phiX' in self.supplemental_index_names:
                 self.generate_alignments_with_blast(read_type=read_type,
