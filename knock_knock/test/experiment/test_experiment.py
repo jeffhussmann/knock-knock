@@ -1,47 +1,102 @@
 import shutil
 from pathlib import Path
 
-import pytest
+import pandas as pd
+import yaml
 
 import hits.utilities
 
-import knock_knock.illumina_experiment
+import knock_knock.experiment
+import knock_knock.test
+
+import knock_knock.test.partial_incorporation
 
 memoized_property = hits.utilities.memoized_property
 
-parent = Path(__file__).parent
+parent = Path(__file__).resolve().parent
 
-class Experiment(knock_knock.illumina_experiment.IlluminaExperiment):
+class Comparison(knock_knock.test.Extractor):
+    base_dir = parent
+    sample_name = 'sample'
+
+    def __init__(self, name):
+        self.name = name
+
+        self.data_dir = type(self).base_dir / 'data' / name
+        self.strategy_dir = type(self).base_dir / 'strategies' / name
+
+    def experiment(self, results_prefix):
+        identifier = knock_knock.experiment.ExperimentIdentifier(type(self).base_dir,
+                                                                 self.name,
+                                                                 type(self).sample_name,
+                                                                )
+
+        return knock_knock.test.Experiment(identifier, results_prefix)
+
     @memoized_property
-    def results_dir(self):
-        d = self.base_dir / 'test_results' 
+    def expected_results_experiment(self):
+        return self.experiment('expected')
 
-        d = self.add_batch_name_directories(d)
+    @memoized_property
+    def actual_results_experiment(self):
+        exp = self.experiment('actual')
 
-        d /= self.sample_name
+        if exp.results_dir.exists():
+            shutil.rmtree(exp.results_dir)
 
-        return d 
+        return exp
 
-@pytest.fixture(scope='module', params=knock_knock.experiment.get_all_batch_names(parent))
-def experiment(request):
-    prefixed_name = request.param
+    def extract_test_from_existing_editing_strategy(self, editing_strategy):
+        self.data_dir.mkdir(exist_ok=True, parents=True)
 
-    experiment = {
-        'expected': knock_knock.illumina_experiment.IlluminaExperiment(parent, prefixed_name, 'simulated'),
-        'actual': Experiment(parent, prefixed_name, 'simulated'),
-    }
+        self.copy_editing_strategy(editing_strategy)
+        self.generate_fastqs(editing_strategy)
+        self.generate_sample_sheet(editing_strategy)
 
-    if experiment['actual'].results_dir.is_dir():
-        shutil.rmtree(experiment['actual'].results_dir)
+    def generate_fastqs(self, editing_strategy):
+        reads, expected_categorizations = knock_knock.test.partial_incorporation.generate_simulated_reads(editing_strategy, reads_per_sequence=100)
 
-    for stage in ['preprocess', 'align', 'categorize']:
-        experiment['actual'].process(stage=stage)
+        with open(self.data_dir / 'R1.fastq', 'w') as R1_fh, open(self.data_dir / 'R2.fastq', 'w') as R2_fh:
+            for R1, R2 in reads:
+                # Note: name already has prefix
+                R1_fh.write(str(R1))
+                R2_fh.write(str(R2))
 
-    yield experiment
+    def generate_sample_sheet(self, editing_strategy):
+        sample_sheet_fn = self.data_dir / 'sample_sheet.csv'
 
-    shutil.rmtree(experiment['actual'].results_dir)
+        sample_sheet = {
+            'sample_name': type(self).sample_name,
+            'R1': 'R1.fastq',
+            'R2': 'R2.fastq',
+            'experiment_type': 'prime_editing' if len(editing_strategy.pegRNA_names) == 1 else 'twin_prime',
+            'editing_strategy': self.name,
+            'sequencing_start_feature_name': editing_strategy.sequencing_start_feature_name,
+            'sgRNAs': ';'.join(editing_strategy.pegRNA_names),
+        }
+        
+        sample_sheet = pd.Series(sample_sheet).to_frame().T.set_index('sample_name')
 
-def test_outcome_counts(experiment):
-    expected = experiment['expected'].outcome_counts
-    actual = experiment['actual'].outcome_counts
+        sample_sheet.to_csv(sample_sheet_fn)
+
+    def process(self):
+        self.actual_results_experiment.process(stage='preprocess')
+        self.actual_results_experiment.process(stage='align')
+        self.actual_results_experiment.process(stage='categorize')
+
+def get_all_comparisons():
+    dirs = (parent / 'data').iterdir()
+    
+    comparisons = {}
+
+    for d in dirs:
+        name = d.name
+        comparison = Comparison(name)
+        comparisons[name] = comparison
+
+    return comparisons
+
+def test_outcome_counts(comparison):
+    expected = comparison.expected_results_experiment.outcome_counts
+    actual = comparison.actual_results_experiment.outcome_counts
     assert (expected == actual).all()

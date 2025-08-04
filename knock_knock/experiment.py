@@ -10,6 +10,7 @@ import sys
 
 from collections import defaultdict, Counter
 from contextlib import ExitStack
+from dataclasses import dataclass
 from itertools import chain
 from pathlib import Path
 from textwrap import dedent
@@ -83,10 +84,24 @@ UMI_annotation_fields = [
 
 UMIAnnotation = annotation.Annotation_factory(UMI_annotation_fields)
 
+@dataclass
+class Identifier:
+    def __post_init__(self):
+        if hasattr(self, 'base_dir') and not isinstance(self.base_dir, Path):
+            self.base_dir = Path(self.base_dir)
+
+@dataclass
+class ExperimentIdentifier(Identifier):
+    base_dir: Path
+    batch_name: str
+    sample_name: str
+
+    def __str__(self):
+        return f'{self.batch_name}, {self.sample_name}'
+
 class Experiment:
-    def __init__(self, base_dir, batch_name, sample_name, description=None, progress=None):
-        self.batch_name = batch_name
-        self.sample_name = sample_name
+    def __init__(self, identifier, description=None, experiment_group=None, progress=None):
+        self.identifier = identifier
 
         if progress is None or getattr(progress, '_silent', False):
             self.silent = True
@@ -100,8 +115,6 @@ class Experiment:
             return progress(iterable, **kwargs)
 
         self.progress = pass_along_kwargs
-
-        self.base_dir = Path(base_dir)
 
         if description is None:
             description = self.load_description()
@@ -119,11 +132,6 @@ class Experiment:
         self.max_reads = self.description.get('max_reads', None)
         if self.max_reads is not None:
             self.max_reads = int(self.max_reads)
-
-        # When checking if an Experiment meets filtering conditions, want to be
-        # able to just test description.
-        self.description['batch'] = batch_name
-        self.description['sample_name'] = sample_name
 
         self.fns = {
             'results_dir': self.results_dir,
@@ -171,15 +179,15 @@ class Experiment:
         ]
 
     def __repr__(self):
-        return f'{self.__class__.__name__}: batch_name={self.batch_name}, sample_name={self.sample_name}, base_dir={self.base_dir}'
+        return f'{self.__class__.__name__}: {self.identifier}'
 
     @memoized_property
     def length_to_store_unknown(self):
         return int(self.max_relevant_length * 1.05)
 
     def load_description(self):
-        sample_sheet = load_sample_sheet(self.base_dir, self.batch_name)
-        return sample_sheet[self.sample_name]
+        sample_sheet = load_sample_sheet(self.identifier.base_dir, self.identifier.batch_name)
+        return sample_sheet[self.identifier.sample_name]
 
     @property
     def experiment_type(self):
@@ -198,36 +206,17 @@ class Experiment:
         # Will be overloaded by any subclass that separates out common sequences.
         return self.preprocessed_read_type
 
-    def add_batch_name_directories(self, d):
-        if isinstance(self.batch_name, tuple):
-            for level in self.batch_name:
-                d /= level
-        else:
-            d /= self.batch_name
-
-        return d
-
     @memoized_property
     def results_dir(self):
-        d = self.base_dir / 'results' 
-
-        d = self.add_batch_name_directories(d)
-
-        d /= self.sample_name
-
-        return d 
+        return self.identifier.base_dir / 'results' / self.identifier.batch_name / self.identifier.sample_name
 
     @memoized_property
     def data_dir(self):
-        d = self.base_dir / 'data'
-
-        d = self.add_batch_name_directories(d)
-
-        return d
+        return self.identifier.base_dir / 'data' / self.identifier.batch_name
 
     @memoized_property
     def supplemental_indices(self):
-        locations = knock_knock.editing_strategy.locate_supplemental_indices(self.base_dir)
+        locations = knock_knock.editing_strategy.locate_supplemental_indices(self.identifier.base_dir)
         return {name: locations[name] for name in self.supplemental_index_names}
 
     @property
@@ -241,7 +230,7 @@ class Experiment:
 
     @memoized_property
     def editing_strategy(self):
-        strat = knock_knock.editing_strategy.EditingStrategy(self.base_dir,
+        strat = knock_knock.editing_strategy.EditingStrategy(self.identifier.base_dir,
                                                              self.editing_strategy_name,
                                                              donor=self.donor,
                                                              nonhomologous_donor=self.nonhomologous_donor,
@@ -329,7 +318,7 @@ class Experiment:
                 missing_file = True
 
         if missing_file:
-            logger.warning(f'{self.batch_name}, {self.sample_name} {read_type} {fn_source} not found')
+            logger.warning(f'{self.identifier} {read_type} {fn_source} not found')
             reads = []
         else:
             reads = fastq.reads(fn_source, up_to_space=True)
@@ -768,7 +757,7 @@ class Experiment:
                         architecture.categorize()
                     except:
                         print()
-                        print(self.sample_name, name)
+                        print(self.identifier, name)
                         raise
 
                 outcome_to_qnames[architecture.category, architecture.subcategory].append(name)
@@ -985,10 +974,10 @@ class Experiment:
         
         if show_title:
             if outcome is None:
-                title = f'{self.batch_name}: {self.sample_name}'
+                title = f"{self.identifier}"
             else:
                 category, subcategory = outcome
-                title = f'{self.batch_name}: {self.sample_name}\n{category}: {subcategory}'
+                title = f"{self.identifier}\n{category}: {subcategory}"
 
             ax.set_title(title)
             
@@ -1255,7 +1244,7 @@ class Experiment:
                 </head>
                 <body>
                 '''))
-            fh.write(f'<h2>{self.batch_name}: {self.sample_name}</h1>\n')
+            fh.write(f"<h2>{self.identifier}</h1>\n")
             fh.write(f'<h2>{description}</h2>\n')
             
             fig = self.length_distribution_figure(outcome=outcome)
@@ -1317,10 +1306,12 @@ def load_sample_sheet_from_csv(csv_fn):
     return sample_sheet
 
 def load_sample_sheet(base_dir, batch_name):
-    data_dir = Path(base_dir) / 'data'
+    base_dir = Path(base_dir)
+
+    data_dir = base_dir / 'data'
     data_yaml_fn = data_dir / batch_name / 'sample_sheet.yaml'
 
-    results_dir = Path(base_dir) / 'results'
+    results_dir = base_dir / 'results'
     results_yaml_fn = results_dir / batch_name / 'sample_sheet.yaml'
 
     csv_fn = data_yaml_fn.with_suffix('.csv')
@@ -1363,34 +1354,26 @@ def get_combined_sample_sheet(base_dir):
 
     return combined
 
-def process_experiment_stage(base_dir,
-                             batch_name,
-                             sample_name,
+def process_experiment_stage(identifier,
                              stage,
                              progress=None,
-                             print_timestamps=False,
                             ):
-    sample_sheet = load_sample_sheet(base_dir, batch_name)
+
+    sample_sheet = load_sample_sheet(identifier.base_dir, identifier.batch_name)
 
     if sample_sheet is None:
-        print(f'Error: {batch_name} not found in {base_dir}')
+        print(f'Error: {identifier.batch_name} not found in {identifier.base_dir}')
         sys.exit(1)
-    elif sample_name not in sample_sheet:
-        print(f'Error: {sample_name} not found in {batch_name} sample sheet')
+    elif identifier.sample_name not in sample_sheet:
+        print(f'Error: {identifier.sample_name} not found in {identifier.batch_name} sample sheet')
         sys.exit(1)
     else:
-        description = sample_sheet[sample_name]
+        description = sample_sheet[identifier.sample_name]
 
     exp_class = get_exp_class(description.get('platform'))
-    exp = exp_class(base_dir, batch_name, sample_name, description=description, progress=progress)
-
-    if print_timestamps:
-        print(f'{utilities.current_time_string()} Started {batch_name}: {sample_name} {stage}')
+    exp = exp_class(identifier, description=description, progress=progress)
 
     exp.process(stage)
-
-    if print_timestamps:
-        print(f'{utilities.current_time_string()} Finished {batch_name}: {sample_name} {stage}')
 
 def get_exp_class(platform):
     if platform == 'illumina':

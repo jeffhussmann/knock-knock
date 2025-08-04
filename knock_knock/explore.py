@@ -206,7 +206,7 @@ class Explorer:
 
             if isinstance(als, dict):
                 read_details = [
-                    f'exp name: {exp.sample_name}',
+                    f'exp: {exp.identifier}',
                     f'query name: {als["R1"][0].query_name}',
                     f'R1 sequence: {als["R1"][0].get_forward_sequence()}',
                     f'R2 sequence: {als["R2"][0].get_forward_sequence()}',
@@ -216,7 +216,7 @@ class Explorer:
                     architecture = exp.no_overlap_pair_categorizer(als, exp.editing_strategy)
             else:
                 read_details = [
-                    f'exp name: {exp.sample_name}',
+                    f'exp: {exp.identifier}',
                     f'query name: {als[0].query_name} ({read_id})',
                     f'sequence: {als[0].get_forward_sequence()}',
                 ]

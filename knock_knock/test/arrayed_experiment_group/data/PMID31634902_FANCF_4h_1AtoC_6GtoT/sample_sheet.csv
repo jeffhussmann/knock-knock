@@ -1,0 +1,4 @@
+sample_name,sanitized_sample_name,R1,group,replicate,color,R2,sequencing_primers
+sample_001,sample00000,sample_001_R1.fastq,FANCF_FANCF_FANCF_4h_1AtoC_6GtoT_,1,1,sample_001_R2.fastq,truseq;truseq
+sample_002,sample00001,sample_002_R1.fastq,FANCF_FANCF_FANCF_4h_1AtoC_6GtoT_,2,1,sample_002_R2.fastq,truseq;truseq
+sample_003,sample00002,sample_003_R1.fastq,FANCF_FANCF_FANCF_4h_1AtoC_6GtoT_,3,1,sample_003_R2.fastq,truseq;truseq

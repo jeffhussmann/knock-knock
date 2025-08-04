@@ -1,10 +1,10 @@
-import itertools
 import random
 from pathlib import Path
 
 import pandas as pd
 import yaml
 
+import hits.adapters
 import hits.fastq
 import hits.utilities
 
@@ -33,9 +33,9 @@ class ReadSet(knock_knock.test.categorization.ReadSet):
         reads, expected_categorizations = generate_simulated_reads(editing_strategy)
 
         with open(self.fastq_fn, 'w') as fh:
-            for read in reads:
+            for R1, R2 in reads:
                 # Note: name already has prefix
-                fh.write(str(read))
+                fh.write(str(R1))
 
         self.expected_categorizations_fn.write_text(yaml.safe_dump(expected_categorizations))
 
@@ -57,6 +57,8 @@ class ReadSet(knock_knock.test.categorization.ReadSet):
 
 def generate_simulated_reads(editing_strategy, reads_per_sequence=1, max_sequences=1000):
     strat = editing_strategy
+
+    primers = hits.adapters.primers['truseq']
 
     subs = strat.pegRNA_substitutions[strat.target]
 
@@ -83,6 +85,8 @@ def generate_simulated_reads(editing_strategy, reads_per_sequence=1, max_sequenc
         
         if strat.sequencing_direction == '-':
             amplicon = hits.utilities.reverse_complement(amplicon)
+
+        amplicon = primers['R1'] + amplicon + hits.utilities.reverse_complement(primers['R2'])
 
         qual = hits.fastq.unambiguous_sanger_Q40(len(amplicon))
     
@@ -142,8 +146,13 @@ def generate_simulated_reads(editing_strategy, reads_per_sequence=1, max_sequenc
 
             total_read_i += 1
         
-            read = hits.fastq.Read(name, amplicon, qual)
-            reads.append(read)
+            R1_seq = amplicon[len(primers['R1']):]
+            R1 = hits.fastq.Read(name, R1_seq, qual[:len(R1_seq)])
+
+            R2_seq = hits.utilities.reverse_complement(amplicon)[len(primers['R2']):]
+            R2 = hits.fastq.Read(name, R2_seq, qual[:len(R2_seq)])
+
+            reads.append((R1, R2))
 
             expected_categorizations[name] = {
                 'category': category,

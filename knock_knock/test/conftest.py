@@ -6,10 +6,6 @@ import knock_knock.test.read_sets
 import knock_knock.test.pegRNAs.test_pegRNAs
 from knock_knock.outcome import DegenerateDeletion
 
-@pytest.fixture(scope='session', autouse=True)
-def always_spawn():
-    multiprocessing.set_start_method('fork')
-
 def pytest_assertrepr_compare(op, left, right):
     if isinstance(left, DegenerateDeletion) and isinstance(right, DegenerateDeletion) and op == '==':
         return [
@@ -55,6 +51,20 @@ def pytest_generate_tests(metafunc, source_dir=None):
                 params.append(param)
 
         metafunc.parametrize(['read_set', 'read_name'], params)
+
+    elif metafunc.fixturenames == ['comparison']:
+        comparisons = metafunc.module.get_all_comparisons()
+
+        params = []
+        
+        for name, comparison in comparisons.items():
+            comparison.process()
+
+            param = pytest.param(comparison, marks=[], id=name)
+
+            params.append(param)
+
+        metafunc.parametrize(['comparison'], params)
 
     elif 'flap_sequence' in metafunc.fixturenames and 'downstream_genomic_sequence' in metafunc.fixturenames and 'expected_coordinates' in metafunc.fixturenames:
         RTT_alignments = knock_knock.test.pegRNAs.test_pegRNAs.load_RTT_alignments(source_dir=source_dir)

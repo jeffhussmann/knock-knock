@@ -20,8 +20,8 @@ from hits.utilities import memoized_property, memoized_with_args
 logger = logging.getLogger(__name__)
 
 class IlluminaExperiment(knock_knock.experiment.Experiment):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, identifier, description=None, experiment_group=None, progress=None):
+        super().__init__(identifier, description=description, experiment_group=experiment_group, progress=progress)
         
         self.fns.update({
             'no_overlap_outcome_counts': self.results_dir / 'no_overlap_outcome_counts.csv',
@@ -64,13 +64,15 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
                     if not fn.exists():
                         pass
 
-        self.paired_end = 'R2' in self.description
-
         self.UMI_key = self.description.get('UMI_key')
 
         self.trim_to_max_length = self.description.get('trim_to_max_length')
         if self.trim_to_max_length is not None:
             self.trim_to_max_length = int(self.trim_to_max_length)
+
+    @property
+    def paired_end(self):
+        return 'R2' in self.description
 
     @property
     def preprocessed_read_type(self):
@@ -572,7 +574,8 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
    
         cs_exp = self.common_sequences_experiment
         cs_exp.results_dir.mkdir(exist_ok=True)
-        fn = cs_exp.fns_by_read_type['fastq'][self.preprocessed_read_type]
+
+        fn = cs_exp.fns_by_read_type['fastq'][cs_exp.preprocessed_read_type]
 
         with gzip.open(fn, 'wt', compresslevel=1) as fh:
             for rank, (seq, count) in enumerate(seq_counts.most_common(1000)):
@@ -634,17 +637,30 @@ class CommonSequencesExperiment(IlluminaExperiment):
     def __init__(self, experiment):
         self.experiment = experiment
 
-        super().__init__(experiment.base_dir, experiment.batch_name, experiment.sample_name)
+        super().__init__(experiment.identifier)
 
-        self.description = self.experiment.description
+    @property
+    def paired_end(self):
+        return False
+
+    def load_description(self):
+        return self.experiment.description
 
     @memoized_property
     def results_dir(self):
         return self.experiment.results_dir / 'common_sequences'
 
     @memoized_property
+    def data_dir(self):
+        return self.results_dir
+
+    @memoized_property
     def editing_strategy(self):
         return self.experiment.editing_strategy
+
+    @memoized_property
+    def experiment_type(self):
+        return self.experiment.experiment_type
 
     @property
     def uncommon_read_type(self):

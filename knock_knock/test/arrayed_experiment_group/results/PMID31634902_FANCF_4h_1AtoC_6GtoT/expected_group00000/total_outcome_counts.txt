@@ -1,0 +1,4 @@
+intended edit,substitution,programmed_substitution_read_bases=AG,60
+partial edit,partial incorporation,programmed_substitution_read_bases=A_,60
+partial edit,partial incorporation,programmed_substitution_read_bases=_G,60
+wild type,clean,,60

@@ -1,0 +1,81 @@
+## Generated at 2025-07-31 15:28:27
+simulated:000000	182	1.000	40.000	wild type	clean			
+simulated:000001	182	1.000	40.000	wild type	clean			
+simulated:000002	182	1.000	40.000	wild type	clean			
+simulated:000003	182	1.000	40.000	wild type	clean			
+simulated:000004	182	1.000	40.000	wild type	clean			
+simulated:000005	182	1.000	40.000	wild type	clean			
+simulated:000006	182	1.000	40.000	wild type	clean			
+simulated:000007	182	1.000	40.000	wild type	clean			
+simulated:000008	182	1.000	40.000	wild type	clean			
+simulated:000009	182	1.000	40.000	wild type	clean			
+simulated:000010	182	1.000	40.000	wild type	clean			
+simulated:000011	182	1.000	40.000	wild type	clean			
+simulated:000012	182	1.000	40.000	wild type	clean			
+simulated:000013	182	1.000	40.000	wild type	clean			
+simulated:000014	182	1.000	40.000	wild type	clean			
+simulated:000015	182	1.000	40.000	wild type	clean			
+simulated:000016	182	1.000	40.000	wild type	clean			
+simulated:000017	182	1.000	40.000	wild type	clean			
+simulated:000018	182	1.000	40.000	wild type	clean			
+simulated:000019	182	1.000	40.000	wild type	clean			
+simulated:000020	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=_G		
+simulated:000021	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=_G		
+simulated:000022	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=_G		
+simulated:000023	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=_G		
+simulated:000024	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=_G		
+simulated:000025	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=_G		
+simulated:000026	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=_G		
+simulated:000027	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=_G		
+simulated:000028	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=_G		
+simulated:000029	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=_G		
+simulated:000030	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=_G		
+simulated:000031	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=_G		
+simulated:000032	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=_G		
+simulated:000033	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=_G		
+simulated:000034	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=_G		
+simulated:000035	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=_G		
+simulated:000036	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=_G		
+simulated:000037	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=_G		
+simulated:000038	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=_G		
+simulated:000039	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=_G		
+simulated:000040	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=A_		
+simulated:000041	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=A_		
+simulated:000042	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=A_		
+simulated:000043	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=A_		
+simulated:000044	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=A_		
+simulated:000045	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=A_		
+simulated:000046	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=A_		
+simulated:000047	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=A_		
+simulated:000048	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=A_		
+simulated:000049	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=A_		
+simulated:000050	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=A_		
+simulated:000051	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=A_		
+simulated:000052	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=A_		
+simulated:000053	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=A_		
+simulated:000054	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=A_		
+simulated:000055	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=A_		
+simulated:000056	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=A_		
+simulated:000057	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=A_		
+simulated:000058	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=A_		
+simulated:000059	182	1.000	40.000	partial edit	partial incorporation	programmed_substitution_read_bases=A_		
+simulated:000060	182	1.000	40.000	intended edit	substitution	programmed_substitution_read_bases=AG		
+simulated:000061	182	1.000	40.000	intended edit	substitution	programmed_substitution_read_bases=AG		
+simulated:000062	182	1.000	40.000	intended edit	substitution	programmed_substitution_read_bases=AG		
+simulated:000063	182	1.000	40.000	intended edit	substitution	programmed_substitution_read_bases=AG		
+simulated:000064	182	1.000	40.000	intended edit	substitution	programmed_substitution_read_bases=AG		
+simulated:000065	182	1.000	40.000	intended edit	substitution	programmed_substitution_read_bases=AG		
+simulated:000066	182	1.000	40.000	intended edit	substitution	programmed_substitution_read_bases=AG		
+simulated:000067	182	1.000	40.000	intended edit	substitution	programmed_substitution_read_bases=AG		
+simulated:000068	182	1.000	40.000	intended edit	substitution	programmed_substitution_read_bases=AG		
+simulated:000069	182	1.000	40.000	intended edit	substitution	programmed_substitution_read_bases=AG		
+simulated:000070	182	1.000	40.000	intended edit	substitution	programmed_substitution_read_bases=AG		
+simulated:000071	182	1.000	40.000	intended edit	substitution	programmed_substitution_read_bases=AG		
+simulated:000072	182	1.000	40.000	intended edit	substitution	programmed_substitution_read_bases=AG		
+simulated:000073	182	1.000	40.000	intended edit	substitution	programmed_substitution_read_bases=AG		
+simulated:000074	182	1.000	40.000	intended edit	substitution	programmed_substitution_read_bases=AG		
+simulated:000075	182	1.000	40.000	intended edit	substitution	programmed_substitution_read_bases=AG		
+simulated:000076	182	1.000	40.000	intended edit	substitution	programmed_substitution_read_bases=AG		
+simulated:000077	182	1.000	40.000	intended edit	substitution	programmed_substitution_read_bases=AG		
+simulated:000078	182	1.000	40.000	intended edit	substitution	programmed_substitution_read_bases=AG		
+simulated:000079	182	1.000	40.000	intended edit	substitution	programmed_substitution_read_bases=AG		

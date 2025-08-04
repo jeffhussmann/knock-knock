@@ -1,2 +1,2 @@
 sample_name,R1,experiment_type,editing_strategy,sgRNAs
-simulated,simulated.fastq,prime_editing,PMID31634902_FANCF_4h_1AtoC_6GtoT,FANCF_4h_1AtoC_6GtoT
+sample,sample.fastq,prime_editing,PMID31634902_FANCF_4h_1AtoC_6GtoT,FANCF_4h_1AtoC_6GtoT
