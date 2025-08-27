@@ -1155,59 +1155,9 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
     @memoized_property
     def outcomes_containing_pegRNA_programmed_edits(self):
-        strat = self.editing_strategy
-
-        outcomes_containing_pegRNA_programmed_edits = {}
-
-        outcome_fractions = self.outcome_fractions()
-
-        if outcome_fractions is not None:
-
-            if strat.pegRNA_substitutions is not None:
-                SNVs = strat.pegRNA_substitutions[strat.target]
-                # Note: sorting SNVs is critical here to match the order in outcome.SNV_read_bases.
-                SNV_order = sorted(SNVs)
-
-                for SNV_name in SNVs:
-                    outcomes_containing_pegRNA_programmed_edits[SNV_name] = []
-
-            else:
-                SNVs = None
-            
-            if strat.pegRNA_programmed_insertion is not None:
-                insertion = strat.pegRNA_programmed_insertion
-
-                outcomes_containing_pegRNA_programmed_edits[str(insertion)] = []
-
-            else:
-                insertion = None
-
-            if strat.pegRNA_programmed_deletion is not None:
-                deletion = strat.pegRNA_programmed_deletion
-
-                outcomes_containing_pegRNA_programmed_edits[str(deletion)] = []
-
-            else:
-                deletion = None
-
-            for c, s, d  in outcome_fractions.index:
-                if c in {'intended edit', 'partial replacement', 'partial edit'}:
-                    details = knock_knock.outcome.Details.from_string(d)
-
-                    if SNVs is not None:
-                        for SNV_name, read_base in zip(SNV_order, details.programmed_substitution_read_bases):
-                            SNV = SNVs[SNV_name]
-                            if read_base == SNV['alternative_base']:
-                                outcomes_containing_pegRNA_programmed_edits[SNV_name].append((c, s, d))
-
-                    if insertion is not None and insertion in details['insertions']:
-                        outcomes_containing_pegRNA_programmed_edits[str(insertion)].append((c, s, d))
-
-                    if deletion is not None and deletion in details['deletions']:
-                        outcomes_containing_pegRNA_programmed_edits[str(deletion)].append((c, s, d))
-
-        return outcomes_containing_pegRNA_programmed_edits
-
+        return knock_knock.outcome.outcomes_containing_pegRNA_programmed_edits(self.editing_strategy,
+                                                                               self.outcome_fractions(),
+                                                                              )
     @memoized_property
     def pegRNA_conversion_fractions(self):
         fs = {}

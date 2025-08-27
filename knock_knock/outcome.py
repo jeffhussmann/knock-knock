@@ -562,3 +562,54 @@ def extract_deletion_boundaries(editing_strategy,
     }
 
     return deletion_boundaries
+
+def outcomes_containing_pegRNA_programmed_edits(editing_strategy,
+                                                outcome_fractions,
+                                               ):
+    outcomes_containing_pegRNA_programmed_edits = {}
+
+    if editing_strategy.pegRNA_substitutions is not None:
+        subs = editing_strategy.pegRNA_substitutions[editing_strategy.target]
+        # Note: sorting subs is critical here to match order set elsewhere
+        sub_order = sorted(subs)
+
+        for sub_name in subs:
+            outcomes_containing_pegRNA_programmed_edits[sub_name] = []
+
+    else:
+        subs = None
+    
+    if editing_strategy.pegRNA_programmed_insertion is not None:
+        insertion = editing_strategy.pegRNA_programmed_insertion
+
+        outcomes_containing_pegRNA_programmed_edits[str(insertion)] = []
+
+    else:
+        insertion = None
+
+    if editing_strategy.pegRNA_programmed_deletion is not None:
+        deletion = editing_strategy.pegRNA_programmed_deletion
+
+        outcomes_containing_pegRNA_programmed_edits[str(deletion)] = []
+
+    else:
+        deletion = None
+
+    if outcome_fractions is not None:
+        for c, s, d  in outcome_fractions.index:
+            if c in {'intended edit', 'partial replacement', 'partial edit'}:
+                details = Details.from_string(d)
+
+                if subs is not None:
+                    for sub_name, read_base in zip(sub_order, details.programmed_substitution_read_bases):
+                        sub = subs[sub_name]
+                        if read_base == sub['alternative_base']:
+                            outcomes_containing_pegRNA_programmed_edits[sub_name].append((c, s, d))
+
+                if insertion is not None and insertion in details['insertions']:
+                    outcomes_containing_pegRNA_programmed_edits[str(insertion)].append((c, s, d))
+
+                if deletion is not None and deletion in details['deletions']:
+                    outcomes_containing_pegRNA_programmed_edits[str(deletion)].append((c, s, d))
+
+    return outcomes_containing_pegRNA_programmed_edits
