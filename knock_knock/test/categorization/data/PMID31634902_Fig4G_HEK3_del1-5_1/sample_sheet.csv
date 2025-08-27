@@ -1,2 +1,2 @@
-sample_name,R1,experiment_type,editing_strategy,sequencing_start_feature_name,sgRNAs
-extracted,extracted.fastq,single_flap,PMID31634902_Fig4G_HEK3_del1-5_1,HEK3_0,HEK3_4g_del1-5;HEK3_4a_+90_nicking
+sample_name,R1,experiment_type,editing_strategy,sequencing_start_feature_name,sgRNAs,platform
+extracted,extracted_R1.fastq,single_flap,PMID31634902_Fig4G_HEK3_del1-5_1,HEK3_0,HEK3_4g_del1-5;HEK3_4a_+90_nicking,illumina

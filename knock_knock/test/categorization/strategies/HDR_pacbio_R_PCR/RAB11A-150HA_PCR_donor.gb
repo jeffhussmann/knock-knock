@@ -1,0 +1,38 @@
+LOCUS       RAB11A-150HA_PCR_donor  1027 bp    DNA              UNK 01-JAN-1980
+DEFINITION  .
+ACCESSION   <unknown id>
+VERSION     <unknown id>
+KEYWORDS    .
+SOURCE      .
+  ORGANISM  .
+            .
+FEATURES             Location/Qualifiers
+     misc_feature    1..148
+                     /label="HA_1"
+                     /ApEinfo_fwdcolor="#c7b0e3"
+     misc_feature    149..877
+                     /label="donor_specific"
+                     /ApEinfo_fwdcolor="#b1ff67"
+     misc_feature    878..1027
+                     /label="HA_2"
+                     /ApEinfo_fwdcolor="#85dae9"
+ORIGIN
+        1 gccggaaatg gcgcagcggc agggaggggc tcttcaccca gtccggcagt tgaagctcgg
+       61 cgctcgggtt acccctgcag cgacgccccc tggtcccaca gataccactg ctgctcccgc
+      121 cctttcgctc ctcggccgcg caatgggcgg atcgggtggg actagtggca gcaagggcga
+      181 ggagctgttc accggggtgg tgcccatcct ggtcgagctg gacggcgacg taaacggcca
+      241 caagttcagc gtgcgcggcg agggcgaggg cgatgccacc aacggcaagc tgaccctgaa
+      301 gttcatctgc accaccggca agctgcccgt gccctggccc accctcgtga ccaccctgac
+      361 ctacggcgtg cagtgcttca gccgctaccc cgaccacatg aagcgccacg acttcttcaa
+      421 gtccgccatg cccgaaggct acgtccagga gcgcaccatc agcttcaagg acgacggcac
+      481 ctacaagacc cgcgccgagg tgaagttcga gggcgacacc ctggtgaacc gcatcgagct
+      541 gaagggcatc gacttcaagg aggacggcaa catcctgggg cacaagctgg agtacaactt
+      601 caacagccac aacgtctata tcaccgccga caagcagaag aacggcatca aggccaactt
+      661 caagatccgc cacaacgtgg aggacggcag cgtgcagctc gccgaccact accagcagaa
+      721 cacccccatc ggcgacggcc ccgtgctgct gcccgacaac cactacctga gcacccagtc
+      781 cgtgctgagc aaagacccca acgagaagcg cgatcacatg gtcctgctgg agttcgtgac
+      841 cgccgccggg atcactggaa ccggtgctgg aagtggtaca cgcgacgacg agtacgacta
+      901 cctctttaaa ggtgaggcca tgggctctcg cactctacac agtcctcgtt cggggacccg
+      961 ggccactccc ggtggaccct cgtgccggcc acccctgcac tgatataggc ctccctcagc
+     1021 ccttcct
+//

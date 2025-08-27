@@ -217,7 +217,7 @@ class EditingStrategyBuilder:
         amplicon_primers
         sgRNAs
     optional keys:
-        donor_sequence
+        donor
         nonhomologous_donor_sequence
         extra_sequences
     '''
@@ -295,7 +295,7 @@ class EditingStrategyBuilder:
         return protospacer_features_in_amplicon
 
     def build(self, generate_pegRNA_genbanks=False):
-        donor_info = self.info.get('donor_sequence')
+        donor_info = self.info.get('donor')
 
         if donor_info is None:
             donor_name = None
@@ -422,7 +422,7 @@ class EditingStrategyBuilder:
                 # TODO: untested code branch here
                 cut_after_offset = [offset for offset in effector.cut_after_offset if offset is not None][0]
 
-                if protospacer_feature.strand == 1:
+                if protospacer_feature.location.strand == 1:
                     # protospacer_feature.end is the first nt of the PAM
                     cut_after = protospacer_feature.location.end + cut_after_offset
                 else:

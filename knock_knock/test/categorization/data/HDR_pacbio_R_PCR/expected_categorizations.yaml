@@ -1,0 +1,38 @@
+m54050R1_171216_031623/000016843259/ccs:
+  category: WT
+  subcategory: WT
+
+m54050R1_171216_031623/000005243651/ccs:
+  category: HDR
+  subcategory: HDR
+  note: in reverse orientation
+
+m54050R1_171216_031623/000007864577/ccs:
+  category: HDR
+  subcategory: HDR
+  note: in forward orientation
+
+m54050R1_171216_031623/000005767686/ccs:
+  category: blunt misintegration
+  subcategory: 5' blunt, 3' blunt
+
+m54050R1_171216_031623/000006226167/ccs:
+  category: blunt misintegration
+  subcategory: 5' HDR, 3' blunt
+
+m54050R1_171216_031623/000008913505/ccs:
+  category: blunt misintegration
+  subcategory: 5' blunt, 3' HDR
+
+m54050R1_171216_031623/000011927889/ccs:
+  category: concatenated misintegration
+  subcategory: HDR
+
+m54050R1_171216_031623/000012780115/ccs:
+  category: concatenated misintegration
+  subcategory: HDR
+  note: 4 copies
+
+m54050R1_171216_031623/000025100965/ccs:
+  category: concatenated misintegration
+  subcategory: 5' and 3' blunt

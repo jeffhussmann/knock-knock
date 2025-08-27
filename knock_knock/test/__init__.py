@@ -5,10 +5,11 @@ import yaml
 import hits.utilities
 
 import knock_knock.illumina_experiment
+import knock_knock.pacbio_experiment
 
 memoized_property = hits.utilities.memoized_property
 
-class Experiment(knock_knock.illumina_experiment.IlluminaExperiment):
+class Experiment:
     def __init__(self, identifier, results_prefix):
         self.results_prefix = results_prefix
         super().__init__(identifier)
@@ -18,6 +19,12 @@ class Experiment(knock_knock.illumina_experiment.IlluminaExperiment):
         d = super().results_dir
 
         return d.parent / f'{self.results_prefix}_{d.name}'
+
+class IlluminaExperiment(Experiment, knock_knock.illumina_experiment.IlluminaExperiment):
+    pass
+
+class PacbioExperiment(Experiment, knock_knock.pacbio_experiment.PacbioExperiment):
+    pass
 
 class Extractor:
     def copy_editing_strategy(self, editing_strategy):

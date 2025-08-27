@@ -1,0 +1,31 @@
+01:01101:003537:013249:
+  category: simple indel
+  subcategory: insertion
+
+01:01101:003289:018577:
+  category: HDR
+  subcategory: HDR
+
+01:01101:002907:012365:
+  category: incomplete HDR
+  subcategory: 5' HDR, 3' imperfect
+
+01:02102:016040:022638:
+  category: incomplete HDR
+  subcategory: 5' imperfect, 3' HDR
+
+01:01104:023418:014351:
+  category: donor fragment
+  subcategory: 5' imperfect, 3' imperfect
+
+01:01111:017338:012248:
+  category: donor fragment
+  subcategory: 5' imperfect, 3' imperfect
+
+01:01102:023630:017143:
+  category: WT
+  subcategory: WT
+
+01:01101:010520:007855:
+  category: complex misintegration
+  subcategory: complex misintegration

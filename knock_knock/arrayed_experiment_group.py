@@ -18,6 +18,7 @@ import knock_knock.experiment_group
 import knock_knock.outcome
 import knock_knock.illumina_experiment
 import knock_knock.parallel
+import knock_knock.pacbio_experiment
 import knock_knock.editing_strategy
 import knock_knock.utilities
 
@@ -118,7 +119,16 @@ class Batch:
     def group(self, group_name):
         identifier = GroupIdentifier(self.identifier, group_name)
 
-        return ArrayedExperimentGroup(identifier,
+        platform = self.group_descriptions.loc[group_name, 'platform']
+
+        if platform == 'illumina':
+            Group = ArrayedIlluminaExperimentGroup
+        elif platform == 'pacbio':
+            Group = ArrayedPacbioExperimentGroup
+        else:
+            raise ValueError
+
+        return Group(identifier,
                                       baseline_condition=self.baseline_condition,
                                       progress=self.progress,
                                      )
@@ -381,17 +391,11 @@ class ExperimentIdentifier(knock_knock.experiment.Identifier):
     def __str__(self):
         return f'{self.group_id}, {self.sample_name}'
 
-class ArrayedExperiment(knock_knock.illumina_experiment.IlluminaExperiment):
+class ArrayedExperiment:
     def __init__(self, identifier, experiment_group=None, **kwargs):
-        if experiment_group is None:
-            experiment_group = ArrayedExperimentGroup(identifier.group_id)
-
         self.experiment_group = experiment_group
 
         super().__init__(identifier, **kwargs)
-
-    def __repr__(self):
-        return f'{self.__class__.__name__}: {self.identifier}'
 
     def load_description(self):
         description = {
@@ -409,9 +413,13 @@ class ArrayedExperiment(knock_knock.illumina_experiment.IlluminaExperiment):
         sanitized_sample_name = self.description.get('sanitized_sample_name', self.identifier.sample_name)
         return self.experiment_group.results_dir / sanitized_sample_name
 
-class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
-    Experiment = ArrayedExperiment
+class ArrayedIlluminaExperiment(ArrayedExperiment, knock_knock.illumina_experiment.IlluminaExperiment):
+    pass
 
+class ArrayedPacbioExperiment(ArrayedExperiment, knock_knock.pacbio_experiment.PacbioExperiment):
+    pass
+
+class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
     def __init__(self,
                  identifier,
                  progress=None,
@@ -584,12 +592,6 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
     def condition_query(self, query_string):
         conditions_df = pd.DataFrame(self.full_conditions, index=self.full_conditions, columns=self.full_condition_keys)
         return conditions_df.query(query_string).index
-
-    def experiment(self, identifier):
-        exp = ArrayedExperiment(identifier,
-                                experiment_group=self,
-                               )
-        return exp
 
     @memoized_property
     def sanitized_sample_name_to_sample_name(self):
@@ -1208,6 +1210,12 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         explorer = knock_knock.explore.ArrayedGroupExplorer(self, **kwargs)
         return explorer.layout
 
+class ArrayedIlluminaExperimentGroup(ArrayedExperimentGroup):
+    Experiment = ArrayedIlluminaExperiment
+
+class ArrayedPacbioExperimentGroup(ArrayedExperimentGroup):
+    Experiment = ArrayedPacbioExperiment
+
 def sanitize_and_validate_sample_sheet(sample_sheet_fn):
     sample_sheet_df = knock_knock.utilities.read_and_sanitize_csv(sample_sheet_fn)
 
@@ -1224,11 +1232,13 @@ def sanitize_and_validate_sample_sheet(sample_sheet_fn):
     if 'genome_source' not in sample_sheet_df.columns:
         sample_sheet_df['genome_source'] = sample_sheet_df['genome']
 
+    if 'platform' not in sample_sheet_df.columns:
+        sample_sheet_df['platform'] = 'illumina'
+
     # Confirm mandatory columns are present.
 
     mandatory_columns = [
         'sample_name',
-        'R1',
         'amplicon_primers',
         'sgRNAs',
         'genome',
@@ -1239,8 +1249,7 @@ def sanitize_and_validate_sample_sheet(sample_sheet_fn):
     
     missing_columns = [col for col in mandatory_columns if col not in sample_sheet_df]
     if len(missing_columns) > 0:
-        if not(missing_columns == ['R1'] and 's3_path' in sample_sheet_df):
-            raise ValueError(f'{missing_columns} column(s) not found in sample sheet')
+        raise ValueError(f'{missing_columns} column(s) not found in sample sheet')
 
     if not sample_sheet_df['sample_name'].is_unique:
         counts = sample_sheet_df['sample_name'].value_counts()
@@ -1258,7 +1267,7 @@ def sanitize_and_validate_sample_sheet(sample_sheet_fn):
     
     return sample_sheet_df
 
-def make_default_strategy_name(amplicon_primers, genome, genome_source, extra_sequences='', donor=''):
+def make_default_strategy_name(amplicon_primers, genome, genome_source, extra_sequences='', donor='', platform='illumina'):
     strategy_name = f'{amplicon_primers}_{genome}'
 
     if genome_source != genome:
@@ -1270,6 +1279,8 @@ def make_default_strategy_name(amplicon_primers, genome, genome_source, extra_se
     if donor != '':
         strategy_name = f'{strategy_name}_{donor}'
 
+    strategy_name = f'{strategy_name}_{platform}'
+
     # Names can't contain a forward slash since they are a path component.
     strategy_name = strategy_name.replace('/', '_SLASH_')
 
@@ -1280,15 +1291,15 @@ def make_strategies(base_dir, sample_sheet_df):
 
     strategies = {}
 
-    grouped = sample_sheet_df.groupby(['amplicon_primers', 'genome', 'genome_source', 'donor', 'extra_sequences'])
+    grouped = sample_sheet_df.groupby(['amplicon_primers', 'genome', 'genome_source', 'donor', 'extra_sequences', 'platform'])
 
-    for (amplicon_primers, genome, genome_source, donor, extra_sequences), rows in grouped:
+    for (amplicon_primers, genome, genome_source, donor, extra_sequences, platform), rows in grouped:
         all_sgRNAs = set()
         for sgRNAs in rows['sgRNAs']:
             if sgRNAs != '':
                 all_sgRNAs.update(sgRNAs.split(';'))
 
-        strategy_name = make_default_strategy_name(amplicon_primers, genome, genome_source, extra_sequences, donor)
+        strategy_name = make_default_strategy_name(amplicon_primers, genome, genome_source, extra_sequences, donor, platform)
 
         extra_sequences = ';'.join(set(extra_sequences.split(';')) - valid_supplemental_indices)
 
@@ -1473,8 +1484,9 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
     sequencing_primers = detect_sequencing_primers(base_dir, batch_name, sample_sheet_df)
     sample_sheet_df['sequencing_primers'] = sample_sheet_df['sample_name'].map(sequencing_primers)
 
-    sequencing_start_feature_names = detect_sequencing_start_feature_names(base_dir, batch_name, sample_sheet_df)
-    sample_sheet_df['sequencing_start_feature_name'] = sample_sheet_df['sample_name'].map(sequencing_start_feature_names).fillna('')
+    if 'R1' in sample_sheet_df.columns:
+        sequencing_start_feature_names = detect_sequencing_start_feature_names(base_dir, batch_name, sample_sheet_df)
+        sample_sheet_df['sequencing_start_feature_name'] = sample_sheet_df['sample_name'].map(sequencing_start_feature_names).fillna('')
 
     # For each set of editing strategy parameter values, assign the most common
     # sequencing_start_feature_name to all samples.
@@ -1493,16 +1505,22 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
     keys_to_feature_name = {}
 
     for keys, rows in grouped:
-        orientations = rows['sequencing_start_feature_name'].value_counts().drop('', errors='ignore')
-        
+        if 'sequencing_start_feature_name' not in rows.columns:
+            orientations = set()
+        else:
+            orientations = rows['sequencing_start_feature_name'].value_counts().drop('', errors='ignore')
+
         if len(orientations) == 0:
             row = rows.iloc[0]
+
             strategy_name = make_default_strategy_name(row['amplicon_primers'],
                                                        row['genome'],
                                                        row['genome_source'],
                                                        row['extra_sequences'],
                                                        row['donor'],
+                                                       row['platform'],
                                                       )
+
             strat = knock_knock.editing_strategy.EditingStrategy(base_dir, strategy_name) 
 
             feature_name = sorted(strat.primers)[0]
@@ -1585,6 +1603,7 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
         'donor',
         'extra_sequences',
         'sequencing_start_feature_name',
+        'platform',
     ]
 
     optional_keys = [
@@ -1600,10 +1619,10 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
 
     grouped = sample_sheet_df.groupby(group_keys)
 
-    for group_i, ((amplicon_primers, genome, genome_source, sgRNAs, donor, extra_sequences, sequencing_start_feature_name), group_rows) in enumerate(grouped):
-        strategy_name = make_default_strategy_name(amplicon_primers, genome, genome_source, extra_sequences, donor)
+    for group_i, ((amplicon_primers, genome, genome_source, sgRNAs, donor, extra_sequences, sequencing_start_feature_name, platform), group_rows) in enumerate(grouped):
+        strategy_name = make_default_strategy_name(amplicon_primers, genome, genome_source, extra_sequences, donor, platform)
 
-        group_name = f'{strategy_name}_{sgRNAs}_{donor}'
+        group_name = f'{strategy_name}_{sgRNAs}'
         group_name = group_name.replace(';', '+')
 
         sanitized_group_name = get_sanitized_group_name(group_i)
@@ -1627,6 +1646,9 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
 
             if knock_knock.utilities.is_one_sided(experiment_type) and strat.pegRNA_names is not None and len(strat.pegRNA_names) == 2:
                 experiment_type = f'{experiment_type}_dual_flap'
+
+        elif len(strat.pegRNA_names) == 0 and strat.donor is not None:
+            experiment_type = 'HDR'
 
         elif strat.pegRNA_names is None or len(strat.pegRNA_names) <= 1:
             experiment_type = 'single_flap'
@@ -1673,6 +1695,7 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
             'genome': genome,
             'sgRNAs': sgRNAs,
             'donor': donor,
+            'platform': platform,
             'min_relevant_length': min_relevant_length,
             'condition_keys': ';'.join(shortened_condition_columns),
             'baseline_condition': baseline_condition,
@@ -1708,13 +1731,12 @@ def make_group_descriptions_and_sample_sheet(base_dir, sample_sheet_df, batch_na
 
                 samples[sample_name] = {
                     'sanitized_sample_name': sanitized_sample_names[sample_name],
-                    'R1': Path(row['R1']).name,
                     'group': group_name,
                     'replicate': rep_i,
                     'color': group_i + 1,
                 }
 
-                for k in ['R2', 'I1', 'I2']:
+                for k in ['R1', 'R2', 'I1', 'I2', 'CCS_fastq_fn']:
                     if k in row:
                         samples[sample_name][k] = Path(row[k]).name
 
@@ -1745,7 +1767,7 @@ def setup_from_metadata(base_dir, batch_name, download=False):
     strategies_dir.mkdir(exist_ok=True)
 
     sample_sheet_fn = batch_metadata_dir / 'sample_sheet.csv'
-    sample_sheet_df = knock_knock.arrayed_experiment_group.sanitize_and_validate_sample_sheet(sample_sheet_fn)
+    sample_sheet_df = sanitize_and_validate_sample_sheet(sample_sheet_fn)
 
     extensions_to_copy = {
         '.fasta',
@@ -1756,10 +1778,12 @@ def setup_from_metadata(base_dir, batch_name, download=False):
 
     fns_to_copy = [fn.name for fn in batch_metadata_dir.iterdir() if fn.suffix in extensions_to_copy]
 
-    for name in ['amplicon_primers.csv', 'sgRNAs.csv'] + fns_to_copy:
+    for name in ['amplicon_primers.csv', 'sgRNAs.csv', 'donors.csv'] + fns_to_copy:
         src = batch_metadata_dir / name
         dest = strategies_dir / name
-        shutil.copyfile(src, dest)
+
+        if src.exists():
+            shutil.copyfile(src, dest)
     
     if download:
         S3_fns = []

@@ -29,7 +29,7 @@ def plot_outcome_stratified_lengths(outcome_stratified_lengths,
 
     total_reads = outcome_stratified_lengths.total_reads
     highest_points = outcome_stratified_lengths.highest_points(level=level, smooth_window=smooth_window)
-    outcome_to_color = outcome_stratified_lengths.outcome_to_color(level=level, smooth_window=smooth_window)
+    outcome_to_color = outcome_stratified_lengths.outcome_to_color(smooth_window=smooth_window)
 
     if total_reads == 0:
         return
@@ -127,9 +127,9 @@ def plot_outcome_stratified_lengths(outcome_stratified_lengths,
 
             if length_ranges is not None:
                 if outcome in group:
-                    for _, row in length_ranges(outcome).iterrows():
-                        ax.axvspan(row.start - 0.5, row.end + 0.5,
-                                   gid=f'length_range_{sanitized_string}_{row.start}_{row.end}',
+                    for start, end in length_ranges(outcome=outcome):
+                        ax.axvspan(start - 0.5, end + 0.5,
+                                   gid=f'length_range_{sanitized_string}_{start}_{end}',
                                    alpha=0.0,
                                    facecolor='white',
                                    edgecolor='black',

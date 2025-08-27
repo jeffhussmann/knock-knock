@@ -17,7 +17,7 @@ def process_experiment(Group, identifier, stages, exp_i=None, num_exps=None):
     exp = group.experiment(identifier)
 
     if exp_i is not None:
-        progress_string = f'({exp_i + 1: >7,} / {num_exps: >7,} )'
+        progress_string = f'({exp_i + 1: >7,} / {num_exps: >7,}) '
     else:
         progress_string = ''
 
@@ -63,7 +63,16 @@ class ExperimentGroup:
             if generate_summary_figures:
                 stages.append('generate_summary_figures')
 
-            args = [(type(self), identifier, stages) for identifier in self.all_experiment_ids]
+            args = [
+                (
+                    type(self),
+                    identifier,
+                    stages,
+                    exp_i,
+                    len(self.all_experiment_ids),
+                )
+                for exp_i, identifier in enumerate(self.all_experiment_ids)
+            ]
 
             pool.starmap(process_experiment, args)
 

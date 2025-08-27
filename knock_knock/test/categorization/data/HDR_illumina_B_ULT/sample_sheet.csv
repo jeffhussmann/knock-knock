@@ -1,0 +1,2 @@
+sample_name,experiment_type,editing_strategy,sequencing_start_feature_name,sgRNAs,platform,R1,R2
+extracted,HDR,HDR_illumina_B_ULT,BCAP31_ILL_1,BCAP31,illumina,extracted_R1.fastq,extracted_R2.fastq

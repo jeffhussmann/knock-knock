@@ -260,10 +260,7 @@ class Experiment:
         fns = defaultdict(dict)
 
         for read_type in self.read_types:
-            if read_type == 'CCS':
-                fns['fastq'][read_type] = self.fns['CCS_fastqs']
-            else:
-                fns['fastq'][read_type] = self.results_dir / f'{read_type}.fastq.gz'
+            fns['fastq'][read_type] = self.results_dir / f'{read_type}.fastq.gz'
 
             fns['primary_bam'][read_type] = self.results_dir / f'{read_type}_alignments.bam'
             fns['primary_bam_by_name'][read_type] = self.results_dir / f'{read_type}_alignments.by_name.bam'
@@ -354,21 +351,27 @@ class Experiment:
                                                               )
         lengths.to_file(self.fns['outcome_stratified_lengths'])
 
-    def length_ranges(self, outcome=None):
-        if outcome is None:
-            lengths = self.read_lengths
-        else:
-            if isinstance(outcome, str):
-                level = 'category'
-            else:
-                level = 'subcategory'
-
-            lengths = self.outcome_stratified_lengths.lengths_df(level=level).loc[outcome]
+    @memoized_with_kwargs
+    def length_ranges(self, *, outcome=None):
+        lengths = self.outcome_stratified_lengths.by_outcome(outcome)
 
         nonzero, = np.nonzero(lengths)
         ranges = [(i, i) for i in nonzero]
 
-        return pd.DataFrame(ranges, columns=['start', 'end'])
+        return ranges
+
+    @memoized_with_kwargs
+    def length_to_length_range(self, *, outcome=None):
+        length_to_length_range = {}
+        
+        for start, end in self.length_ranges(outcome=outcome):
+            length_range = (start, end)
+            for length in range(start, end + 1):
+                length_to_length_range[length] = length_range
+
+        length_to_length_range[-1] = (self.length_to_store_unknown, self.length_to_store_unknown)
+                
+        return length_to_length_range
     
     def alignment_groups(self, fn_key='bam_by_name', outcome=None, read_type=None):
         '''
@@ -641,7 +644,7 @@ class Experiment:
             outcome_fractions = None
         else:
             outcome_fractions = self.outcome_counts / self.outcome_counts.sum()
-            outcome_fractions.name = self.sample_name 
+            outcome_fractions.name = str(self.identifier) 
 
         return outcome_fractions
 
@@ -912,14 +915,12 @@ class Experiment:
             ys_to_check = all_ys
         else:
             if isinstance(outcome, tuple):
-                level = 'subcategory'
                 label = ': '.join(outcome)
             else:
-                level = 'category'
                 label = outcome
 
-            outcome_lengths = self.outcome_stratified_lengths.lengths_df(level=level).loc[outcome]
-            color = self.outcome_stratified_lengths.outcome_to_color(level=level, smooth_window=self.length_plot_smooth_window)[outcome]
+            outcome_lengths = self.outcome_stratified_lengths.by_outcome(outcome)
+            color = self.outcome_stratified_lengths.outcome_to_color(smooth_window=self.length_plot_smooth_window)[outcome]
 
             outcome_ys = outcome_lengths / self.total_reads
 
@@ -1131,17 +1132,21 @@ class Experiment:
             yield diagram
 
     def generate_length_range_figures(self, specific_outcome=None, num_examples=1):
-        by_length = defaultdict(lambda: utilities.ReservoirSampler(num_examples))
+        length_to_length_range = self.length_to_length_range(outcome=specific_outcome)
+
+        # Downsampling these here is redundant since alignment_groups_to_diagrams
+        # will downsample anyways but avoid excessive memory usage.
+        by_length_range = defaultdict(lambda: utilities.ReservoirSampler(num_examples))
 
         al_groups = self.alignment_groups(outcome=specific_outcome)
 
         for name, als in al_groups:
             length = self.qname_to_inferred_length[name]
 
-            if length == -1:
-                length = self.length_to_store_unknown
+            length = min(length, self.max_relevant_length)
 
-            by_length[length].add((name, als))
+            length_range = length_to_length_range[length]
+            by_length_range[length_range].add((name, als))
 
         if specific_outcome is None:
             fns = self.fns
@@ -1161,13 +1166,13 @@ class Experiment:
         else:
             description = 'Generating length-specific diagrams'
 
-        items = self.progress(by_length.items(), desc=description, total=len(by_length))
+        items = self.progress(by_length_range.items(), desc=description, total=len(by_length_range))
 
-        for length, sampler in items:
+        for (start, end), sampler in items:
             als = sampler.sample
             diagrams = self.alignment_groups_to_diagrams(als, num_examples=num_examples)
             im = hits.visualize.make_stacked_Image([d.fig for d in diagrams])
-            fn = fns['length_range_figure'](length, length)
+            fn = fns['length_range_figure'](start, end)
             im.save(fn)
 
     def generate_all_outcome_length_range_figures(self):

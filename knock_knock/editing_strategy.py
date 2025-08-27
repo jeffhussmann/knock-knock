@@ -967,12 +967,14 @@ class EditingStrategy:
             'donor': self.reference_sequences[donor],
          }
 
-        # Load homology arms from gff features.
 
         if self.infer_homology_arms:
             donor_SNVs, HAs = self.inferred_donor_SNVs_and_HAs
             HAs = copy.deepcopy(HAs)
+
         else:
+            # Load homology arms from gff features.
+
             HAs = defaultdict(dict)
 
             ref_name_to_source = {

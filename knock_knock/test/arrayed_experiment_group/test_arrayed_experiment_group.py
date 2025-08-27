@@ -19,7 +19,7 @@ parent = Path(__file__).resolve().parent
 class GroupIdentifier(knock_knock.arrayed_experiment_group.GroupIdentifier):
     results_prefix: str
 
-class Group(knock_knock.arrayed_experiment_group.ArrayedExperimentGroup):
+class Group(knock_knock.arrayed_experiment_group.ArrayedIlluminaExperimentGroup):
     def __init__(self, identifier):
         self.results_prefix = identifier.results_prefix
         super().__init__(identifier)

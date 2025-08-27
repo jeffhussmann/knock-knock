@@ -321,6 +321,6 @@ def decorate_outcome_browser(exp, min_total_to_label=0.1):
         decorate_with_help_toggle(group)
 
     with exp.fns['outcome_browser'].open('w') as fh:
-        fh.write(before_svg_template(title=exp.sample_name))
+        fh.write(before_svg_template(title=str(exp.identifier)))
         d.write(fh, encoding='unicode')
         fh.write(after_svg)

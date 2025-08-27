@@ -37,7 +37,7 @@ class PoolWithLoggerThread:
     '''
     
     def __init__(self, processes, log_dir):
-        self.logger, self.file_handler = knock_knock.utilities.configure_logging_to_file(log_dir, verbose=True)
+        self.logger, self.file_handler = knock_knock.utilities.configure_logging_to_file(log_dir, 'knock_knock', verbose=True)
         # I don't really understand multiprocessing.Queue() vs.
         # multiprocessing.Manager().Queue(), but only the latter works here.
         manager = multiprocessing.Manager()

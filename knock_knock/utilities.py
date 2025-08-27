@@ -42,13 +42,13 @@ def read_and_sanitize_csv(csv_fn, index_col=None):
 
     return possibly_series
 
-def configure_logging_to_file(log_dir, verbose=True):
+def configure_logging_to_file(log_dir, name, verbose=True):
     log_dir = Path(log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
 
     log_fn = log_dir / f'log_{datetime.datetime.now():%y%m%d-%H%M%S}.out'
 
-    logger = logging.getLogger('knock_knock')
+    logger = logging.getLogger(name)
     logger.propagate = False
     logger.setLevel(logging.DEBUG)
     file_handler = logging.FileHandler(log_fn)
@@ -63,6 +63,17 @@ def configure_logging_to_file(log_dir, verbose=True):
         print(f'Logging in {log_fn}')
 
     return logger, file_handler
+
+class FileLoggingContext:
+    def __init__(self, log_dir, name):
+        self.logger, self.file_handler = configure_logging_to_file(log_dir, name)
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, *args):
+        self.logger.removeHandler(self.file_handler)
+        self.file_handler.close()
 
 def is_one_sided(experiment_type):
     return experiment_type is not None and any(experiment_type.startswith(name) for name in ['TECseq', 'seeseq']) 

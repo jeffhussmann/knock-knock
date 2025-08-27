@@ -99,15 +99,7 @@ class Experiment(knock_knock.experiment.Experiment):
         interval_length = 25
         starts = np.arange(0, self.max_relevant_length + interval_length, interval_length)
 
-        if outcome is None:
-            lengths = self.read_lengths
-        else:
-            if isinstance(outcome, str):
-                all_lengths = self.outcome_stratified_lengths.lengths_df(level='category')
-            else:
-                all_lengths = self.outcome_stratified_lengths.lengths_df(level='subcategory')
-
-            lengths = all_lengths.loc[outcome]
+        lengths = self.outcome_stratified_lengths.by_outcome(outcome)
 
         ranges = []
 

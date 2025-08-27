@@ -89,6 +89,17 @@ class OutcomeStratifiedLengths:
 
         return df
 
+    def by_outcome(self, outcome=None):
+        if outcome is None:
+            return self.lengths_for_all_reads
+        else:
+            if isinstance(outcome, str):
+                level = 'category'
+            else:
+                level = 'subcategory'
+
+            return self.lengths_df(level=level).loc[outcome]
+
     @memoized_with_kwargs
     def cumulative_lengths_from_end(self, *, level='subcategory'):
         return self.lengths_df(level=level).iloc[:, ::-1].cumsum(axis=1).iloc[:, ::-1]
@@ -129,12 +140,18 @@ class OutcomeStratifiedLengths:
         return highest_points
 
     @memoized_with_kwargs
-    def outcome_to_color(self, *, level='subcategory', smooth_window=0):
+    def outcome_to_color(self, *, smooth_window=0):
         # To minimize the chance that a color will be used more than once in the same panel in 
         # outcome_stratified_lengths plots, sort color order by highest point.
-        highest_points = self.highest_points(level=level, smooth_window=smooth_window)
-        color_order = sorted(highest_points, key=highest_points.get, reverse=True)
-        outcome_to_color = {outcome: f'C{i % 10}' for i, outcome in enumerate(color_order)}
+
+        outcome_to_color = {}
+
+        for level in ['category', 'subcategory']:
+            highest_points = self.highest_points(level=level, smooth_window=smooth_window)
+            color_order = sorted(highest_points, key=highest_points.get, reverse=True)
+            for i, outcome in enumerate(color_order):
+                outcome_to_color[outcome] = f'C{i % 10}'
+
         return outcome_to_color
 
     def truncate_to_max_length(self, new_max_length):
