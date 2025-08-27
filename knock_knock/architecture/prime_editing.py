@@ -193,6 +193,7 @@ class Architecture(knock_knock.architecture.Categorizer):
     @property
     def sequencing_direction(self):
         sequencing_direction = self.editing_strategy.sequencing_direction
+
         if self.flipped:
             sequencing_direction = sam.opposite_strand[sequencing_direction]
 
@@ -2477,8 +2478,6 @@ class Architecture(knock_knock.architecture.Categorizer):
             self.register_uncategorized()
 
         self.relevant_alignments = sam.make_nonredundant(self.relevant_alignments)
-
-        self.details = str(self.Details)
 
         self.categorized = True
 

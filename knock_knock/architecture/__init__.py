@@ -43,6 +43,10 @@ class Categorizer:
 
         self.Details = knock_knock.outcome.Details()
 
+    @property
+    def details(self):
+        return str(self.Details)
+
     @memoized_property
     def Q30_fractions(self):
         at_least_30 = np.array(self.qual) >= 30

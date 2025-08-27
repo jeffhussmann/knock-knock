@@ -950,8 +950,6 @@ class Architecture(prime_editing.Architecture):
 
         self.relevant_alignments = sam.make_nonredundant(self.relevant_alignments)
 
-        self.details = str(self.Details)
-
         self.categorized = True
 
         return self.category, self.subcategory, self.details, self.Details
