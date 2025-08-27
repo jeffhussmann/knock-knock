@@ -207,7 +207,7 @@ class Explorer:
             if isinstance(als, dict):
                 read_details = [
                     f'exp: {exp.identifier}',
-                    f'query name: {als["R1"][0].query_name}',
+                    f'{als["R1"][0].query_name}:',
                     f'R1 sequence: {als["R1"][0].get_forward_sequence()}',
                     f'R2 sequence: {als["R2"][0].get_forward_sequence()}',
                 ]
@@ -217,7 +217,7 @@ class Explorer:
             else:
                 read_details = [
                     f'exp: {exp.identifier}',
-                    f'query name: {als[0].query_name} ({read_id})',
+                    f'{als[0].query_name}{f" ({read_id})" if read_id != als[0].query_name else ""}:',
                     f'sequence: {als[0].get_forward_sequence()}',
                 ]
 
@@ -234,10 +234,10 @@ class Explorer:
                 inferred_amplicon_length = architecture.inferred_amplicon_length
 
                 read_details = read_details[:2] + [
-                    f'category: {architecture.category}',
-                    f'subcategory: {architecture.subcategory}',
-                    f'details: {architecture.details}',
-                    f'inferred amplicon length: {inferred_amplicon_length}', 
+                    f'  category: {architecture.category}',
+                    f'  subcategory: {architecture.subcategory}',
+                    f'  details: {architecture.details}',
+                    f'  inferred amplicon length: {inferred_amplicon_length}', 
                 ] + read_details[2:]
 
                 if self.non_widgets['alignments_to_show'].value == 'relevant':
