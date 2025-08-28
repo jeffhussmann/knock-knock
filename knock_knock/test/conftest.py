@@ -1,6 +1,6 @@
-import multiprocessing
-
 import pytest
+
+import knock_knock.editing_strategy
 
 import knock_knock.test.read_sets
 import knock_knock.test.pegRNAs.test_pegRNAs
@@ -40,11 +40,17 @@ def pytest_generate_tests(metafunc, source_dir=None):
         params = []
         
         for read_set in read_sets.values():
+            indices = knock_knock.editing_strategy.locate_supplemental_indices(read_set.base_dir)
+
             for read_name in read_set.expected_categorizations:
+                marks = []
+
                 if 'expected_failure' in read_set.expected_categorizations[read_name]:
-                    marks = [pytest.mark.xfail(strict=True)]
-                else:
-                    marks = []
+                    marks.append(pytest.mark.xfail(strict=True))
+
+                if 'requires_genome' in read_set.expected_categorizations[read_name]:
+                    genome = read_set.expected_categorizations[read_name]['requires_genome']
+                    marks.append(pytest.mark.skipif(genome not in indices, reason=f'missing required genome: {genome}'))
 
                 param = pytest.param(read_set, read_name, marks=marks, id=f'{read_set.name} {read_name}')
 

@@ -1134,8 +1134,8 @@ class Experiment:
     def generate_length_range_figures(self, specific_outcome=None, num_examples=1):
         length_to_length_range = self.length_to_length_range(outcome=specific_outcome)
 
-        # Downsampling these here is redundant since alignment_groups_to_diagrams
-        # will downsample anyways but avoid excessive memory usage.
+        # Downsampling these here is redundant (since alignment_groups_to_diagrams
+        # will downsample anyways) but avoids excessive memory usage.
         by_length_range = defaultdict(lambda: utilities.ReservoirSampler(num_examples))
 
         al_groups = self.alignment_groups(outcome=specific_outcome)

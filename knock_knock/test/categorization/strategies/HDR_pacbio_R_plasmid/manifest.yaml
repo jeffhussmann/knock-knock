@@ -1,0 +1,29 @@
+donor: pML217_RAB11A-150HA
+donor_specific: donor_specific
+features_to_show:
+- - RAB11A_PAC
+  - RAB11A_PAC_0
+- - RAB11A_PAC
+  - RAB11A_PAC_1
+- - pML217_RAB11A-150HA
+  - HA_1
+- - pML217_RAB11A-150HA
+  - HA_2
+- - pML217_RAB11A-150HA
+  - donor_specific
+- - pML217_RAB11A-150HA
+  - PCR_adapter_1
+- - pML217_RAB11A-150HA
+  - PCR_adapter_2
+- - RAB11A_PAC
+  - HA_1
+- - RAB11A_PAC
+  - HA_2
+genome_source: RAB11A
+primer_names:
+- RAB11A_PAC_0
+- RAB11A_PAC_1
+sources:
+- RAB11A_PAC
+- pML217_RAB11A-150HA
+target: RAB11A_PAC

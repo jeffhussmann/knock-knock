@@ -1,0 +1,25 @@
+m54050R1_171216_031623/000004719497/ccs:
+  category: HDR
+  subcategory: HDR
+
+m54050R1_171216_031623/000008782488/ccs:
+  category: complex misintegration
+  subcategory: complex misintegration
+
+m54050R1_171216_031623/000006750865/ccs:
+  category: genomic insertion
+  subcategory: e_coli
+  requires_genome: e_coli
+
+m54050R1_171216_031623/000013632398/ccs:
+  category: genomic insertion
+  subcategory: e_coli
+  requires_genome: e_coli
+
+m54050R1_171216_031623/000016057008/ccs:
+  category: concatenated misintegration
+  subcategory: HDR
+
+m54050R1_171216_031623/000009109669/ccs:
+  category: incomplete HDR
+  subcategory: 5' imperfect, 3' HDR
