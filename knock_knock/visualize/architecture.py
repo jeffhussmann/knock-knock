@@ -71,7 +71,7 @@ class ReadDiagram:
     color_overrides: dict = field(default_factory=dict)
     title: Optional[str] = None
     title_y: float = 1.02
-    architecture_mode: str = 'illumina'
+    platform: str = 'illumina'
     label_differences: bool = False
     label_dimples: bool = True
     label_overrides: dict = field(default_factory=dict)
@@ -245,7 +245,7 @@ class ReadDiagram:
 
         self.height_per_unit = 40
 
-        if self.architecture_mode == 'illumina':
+        if self.platform == 'illumina':
             self.dimple_height = 0.003
         else:
             self.dimple_height = 0.001
@@ -923,7 +923,7 @@ class ReadDiagram:
                     if not qs:
                         continue
 
-                    if self.architecture_mode == 'illumina':
+                    if self.platform == 'illumina':
                         gap_allowed = 1
                     else:
                         gap_allowed = 4

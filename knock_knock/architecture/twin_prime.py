@@ -640,7 +640,7 @@ class Architecture(prime_editing.Architecture):
             else:
                 raise ValueError
 
-        if self.mode == 'nanopore':
+        if self.platform == 'nanopore':
             mismatches = []
         else:
             mismatches = self.non_pegRNA_mismatches

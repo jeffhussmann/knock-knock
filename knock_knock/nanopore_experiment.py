@@ -27,7 +27,7 @@ class Experiment(knock_knock.experiment.Experiment):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.architecture_mode = 'nanopore'
+        self.platform = 'nanopore'
 
         self.read_types = [
             'nanopore_by_name',

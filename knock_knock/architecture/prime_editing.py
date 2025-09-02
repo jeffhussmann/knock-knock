@@ -1973,7 +1973,7 @@ class Architecture(knock_knock.architecture.Categorizer):
                 self.category = 'partial edit'
                 self.subcategory = 'partial incorporation'
 
-        if self.mode == 'nanopore':
+        if self.platform == 'nanopore':
             mismatches = []
         else:
             mismatches = self.non_pegRNA_mismatches
@@ -2262,7 +2262,7 @@ class Architecture(knock_knock.architecture.Categorizer):
         deletions = [indel for indel in interesting_indels + uninteresting_indels if indel.kind == 'D']
         insertions = [indel for indel in interesting_indels + uninteresting_indels if indel.kind == 'I']
 
-        if self.mode == 'nanopore':
+        if self.platform == 'nanopore':
             mismatches = []
         else:
             mismatches = self.non_pegRNA_mismatches

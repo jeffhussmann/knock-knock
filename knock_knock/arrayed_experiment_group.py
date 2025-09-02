@@ -119,7 +119,7 @@ class Batch:
     def group(self, group_name):
         identifier = GroupIdentifier(self.identifier, group_name)
 
-        platform = self.group_descriptions.loc[group_name, 'platform']
+        platform = self.group_descriptions.loc[group_name].get('platform', 'illumina')
 
         if platform == 'illumina':
             Group = ArrayedIlluminaExperimentGroup
@@ -574,8 +574,8 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         return self.first_experiment.categorizer
 
     @property
-    def architecture_mode(self):
-        return self.first_experiment.architecture_mode
+    def platform(self):
+        return self.first_experiment.platform
 
     @property
     def editing_strategy(self):

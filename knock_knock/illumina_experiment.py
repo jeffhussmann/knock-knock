@@ -47,7 +47,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
         self.x_tick_multiple = 100
 
-        self.architecture_mode = 'illumina'
+        self.platform = 'illumina'
 
         self.outcome_fn_keys = [
             'outcome_list',

@@ -224,7 +224,7 @@ class Explorer:
                 if self.by_outcome:
                     architecture = exp.categorizer(als,
                                              exp.editing_strategy,
-                                             mode=exp.architecture_mode,
+                                             platform=exp.platform,
                                              error_corrected=exp.has_UMIs,
                                             )
 

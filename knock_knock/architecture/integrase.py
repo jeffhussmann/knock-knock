@@ -707,7 +707,7 @@ class Architecture(twin_prime.Architecture):
                                label_pegRNAs=True,
                                draw_pegRNAs=False,
                                label_features_on_alignments=False,
-                               architecture_mode='nanopore',
+                               platform='nanopore',
                                flip_donor=(self.sequencing_direction == '-'),
                                refs_to_draw={
                                    self.editing_strategy.target,

@@ -16,7 +16,7 @@ class PacbioExperiment(Experiment):
 
         self.x_tick_multiple = 500
 
-        self.architecture_mode = 'pacbio'
+        self.platform = 'pacbio'
 
         ccs_fastq_fns = ensure_list(self.description['CCS_fastq_fn'])
         self.fns['CCS_fastqs'] = [self.data_dir / name for name in ccs_fastq_fns]

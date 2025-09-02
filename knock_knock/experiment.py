@@ -752,7 +752,7 @@ class Experiment:
                 else:
                     architecture = self.categorizer(als,
                                                     self.editing_strategy,
-                                                    mode=self.architecture_mode,
+                                                    platform=self.platform,
                                                     error_corrected=self.has_UMIs,
                                                    )
 
@@ -1121,7 +1121,7 @@ class Experiment:
                 kwargs['read_label'] = 'sequencing read pair'
                 architecture = knock_knock.architecture.architecture.NonoverlappingPairArchitecture(als['R1'], als['R2'], self.editing_strategy)
             else:
-                architecture = self.categorizer(als, self.editing_strategy, mode=self.architecture_mode)
+                architecture = self.categorizer(als, self.editing_strategy, mode=self.platform)
 
             try:
                 diagram = architecture.plot(title='', **kwargs)
@@ -1286,7 +1286,7 @@ class Experiment:
         else:
             als = qname_to_als[read_id]
 
-        architecture = self.categorizer(als, self.editing_strategy, mode=self.architecture_mode)
+        architecture = self.categorizer(als, self.editing_strategy, platform=self.platform)
 
         return architecture
 
