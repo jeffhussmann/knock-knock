@@ -162,6 +162,7 @@ class NoOverlapPairArchitecture(Architecture):
                                                                  features_to_show=self.plot_parameters['features_to_show'],
                                                                  label_overrides=self.plot_parameters['label_overrides'],
                                                                  feature_heights=self.plot_parameters['feature_heights'],
+                                                                 architecture=self,
                                                                  **plot_kwargs,
                                                                 )
 

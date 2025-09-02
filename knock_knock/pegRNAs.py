@@ -57,8 +57,14 @@ default_feature_colors = {
     'deletion': 'darkgrey',
 }
 
-def PBS_name(pegRNA_name):
+def make_PBS_name(pegRNA_name):
     return f'{pegRNA_name}_PBS'
+
+def make_HA_RT_name(pegRNA_name):
+    return f'HA_RT_{pegRNA_name}'
+
+def make_HA_PBS_name(pegRNA_name):
+    return f'HA_PBS_{pegRNA_name}'
 
 def protospacer_name(pegRNA_name):
     return f'{pegRNA_name}_protospacer'
@@ -114,8 +120,10 @@ class pegRNA:
 
         self.features = {}
 
-        self.PBS_name = PBS_name(self.name)
+        self.PBS_name = make_PBS_name(self.name)
         self.protospacer_name = protospacer_name(self.name)
+        self.HA_PBS_name = make_HA_PBS_name(self.name)
+        self.HA_RT_name = make_HA_RT_name(self.name)
 
         self.substitutions = None
         self.deletion = None
@@ -266,6 +274,15 @@ class pegRNA:
             (self.target_name, self.PBS_name): target_PBS_feature,
             (self.target_name, self.protospacer_name): target_protospacer_feature,
         })
+
+        # self.HA_PBS_name is an alias for PBS.
+        target_HA_PBS = copy.deepcopy(self.features[self.target_name, self.PBS_name])
+        target_HA_PBS.attribute['ID'] = self.HA_PBS_name
+        self.features[self.target_name, self.HA_PBS_name] = target_HA_PBS
+
+        pegRNA_HA_PBS = copy.deepcopy(self.features[self.name, 'PBS'])
+        pegRNA_HA_PBS.attribute['ID'] = self.HA_PBS_name
+        self.features[self.name, self.HA_PBS_name] = pegRNA_HA_PBS
 
     @property
     def strand(self):
@@ -517,6 +534,7 @@ class pegRNA:
 
         strands = {
             'target': features['target', 'PBS'].strand,
+            'PBS': features['target', 'PBS'].strand,
             'pegRNA': '-',
         }
 
@@ -734,41 +752,24 @@ class pegRNA:
                                          )
         new_features[names['pegRNA'], name] = feature
 
-
-        HA_PBS_name = f'HA_PBS_{names["pegRNA"]}'
-        HA_RT_name = f'HA_RT_{names["pegRNA"]}'
-
-        # Make target HA features.
-
-        HA_PBS = copy.deepcopy(features['target', 'PBS'])
-        HA_PBS.attribute['ID'] = HA_PBS_name
-        new_features[self.target_name, HA_PBS_name] = HA_PBS
-
         if self.edit_properties['HA_RT'] is not None:
             target_HA_RT = gff.Feature.from_fields(seqname=self.target_name,
                                                    start=starts['target', 'HA_RT'],
                                                    end=ends['target', 'HA_RT'],
-                                                   strand=HA_PBS.strand,
-                                                   ID=HA_RT_name,
+                                                   strand=strands['PBS'],
+                                                   ID=self.HA_RT_name,
                                                   )
             target_HA_RT.attribute['color'] = default_feature_colors['RTT']
-            new_features[self.target_name, HA_RT_name] = target_HA_RT
+            new_features[self.target_name, self.HA_RT_name] = target_HA_RT
 
-        # Make pegRNA HA features.
-
-        HA_PBS = copy.deepcopy(features['pegRNA', 'PBS'])
-        HA_PBS.attribute['ID'] = HA_PBS_name
-        new_features[names['pegRNA'], HA_PBS_name] = HA_PBS
-
-        if self.edit_properties['HA_RT'] is not None:
             pegRNA_HA_RT = gff.Feature.from_fields(seqname=names['pegRNA'],
                                                    start=starts['pegRNA', 'HA_RT'],
                                                    end=ends['pegRNA', 'HA_RT'],
                                                    strand='-',
-                                                   ID=HA_RT_name,
+                                                   ID=self.HA_RT_name,
                                                   )
             pegRNA_HA_RT.attribute['color'] = default_feature_colors['RTT']
-            new_features[names['pegRNA'], HA_RT_name] = pegRNA_HA_RT
+            new_features[names['pegRNA'], self.HA_RT_name] = pegRNA_HA_RT
 
         self.features.update(new_features)
 

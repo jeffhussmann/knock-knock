@@ -261,6 +261,7 @@ class Explorer:
                                                                          exp.editing_strategy,
                                                                          inferred_amplicon_length=inferred_amplicon_length,
                                                                          title='',
+                                                                         architecture=architecture,
                                                                          **plot_kwargs,
                                                                         )
 

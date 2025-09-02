@@ -169,12 +169,6 @@ class Architecture(prime_editing.Architecture):
         ),
     ]
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        self.ins_size_to_split_at = 1
-        self.categorized = False
-
     @memoized_property
     def pegRNA_alignments_by_side_of_read(self):
         als = {}
@@ -202,7 +196,7 @@ class Architecture(prime_editing.Architecture):
         else:
             left_al, right_al = second_pegRNA_al, first_pegRNA_al
 
-        extension_results = self.are_mutually_extending_from_shared_feature(left_al, 'overlap', right_al, 'overlap')
+        extension_results = self.are_mutually_extending_from_shared_feature(left_al, right_al, 'overlap')
 
         if extension_results['status'] == 'definite':
             status = 'definite'
@@ -1112,6 +1106,7 @@ class Architecture(prime_editing.Architecture):
 
         diagram = knock_knock.visualize.architecture.ReadDiagram(als_to_plot,
                                                                  strat,
+                                                                 architecture=self,
                                                                  **diagram_kwargs,
                                                                 )
 

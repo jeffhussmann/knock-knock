@@ -129,9 +129,9 @@ class Batch:
             raise ValueError
 
         return Group(identifier,
-                                      baseline_condition=self.baseline_condition,
-                                      progress=self.progress,
-                                     )
+                     baseline_condition=self.baseline_condition,
+                     progress=self.progress,
+                    )
 
     @memoized_property
     def groups(self):
@@ -587,7 +587,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
     def condition_replicates(self, condition):
         sample_names = self.condition_to_sample_names[condition]
-        return [self.experiment(sample_name) for sample_name in sample_names]
+        return [self.experiment(ExperimentIdentifier(self.identifier, sample_name)) for sample_name in sample_names]
 
     def condition_query(self, query_string):
         conditions_df = pd.DataFrame(self.full_conditions, index=self.full_conditions, columns=self.full_condition_keys)
@@ -602,7 +602,8 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
             sanitized_sample_name = get_sanitized_sample_name(sanitized_sample_name)
 
         sample_name = self.sanitized_sample_name_to_sample_name[sanitized_sample_name]
-        return self.experiment(sample_name)
+        identifier = ExperimentIdentifier(self.identifier, sample_name)
+        return self.experiment(identifier)
 
     @memoized_property
     def full_condition_to_experiment(self):

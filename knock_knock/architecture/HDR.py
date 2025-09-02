@@ -6,8 +6,10 @@ import knock_knock.architecture
 import knock_knock.outcome
 import knock_knock.visualize.architecture
 
-from hits import fastq, interval, sam, sw
-from hits.utilities import memoized_property, memoized_with_args
+from hits import interval, sam, sw, utilities
+from hits.utilities import memoized_property
+
+from knock_knock.outcome import Details
 
 class Architecture(knock_knock.architecture.Categorizer):
     category_order = [
@@ -30,7 +32,7 @@ class Architecture(knock_knock.architecture.Categorizer):
             'complex indel',
             (
                 'complex indel',
-             'multiple indels',
+                'multiple indels',
             ),
         ),
         (
@@ -146,101 +148,32 @@ class Architecture(knock_knock.architecture.Categorizer):
         'minimal alignment to intended target',
     ]
 
-    def __init__(self, alignments, editing_strategy, error_corrected=False, mode='illumina'):
-        super().__init__(alignments, editing_strategy, error_corrected=error_corrected, mode=mode)
-
-        self.mode = mode
-
-        if mode == 'illumina':
-            self.max_indel_allowed_in_donor = 1
-        elif mode == 'pacbio':
-            self.max_indel_allowed_in_donor = 3
+    def __init__(self, alignments, editing_strategy, error_corrected=False, platform='illumina'):
+        super().__init__(alignments, editing_strategy, error_corrected=error_corrected, platform=platform)
 
         self.error_corrected = error_corrected
 
-        self.original_alignments = [al for al in alignments if not al.is_unmapped]
-        self.unmapped_alignments = [al for al in alignments if al.is_unmapped]
-
-        self.relevant_alignments = self.original_alignments
+        if self.platform == 'illumina':
+            self.max_indel_allowed_in_donor = 1
+        elif self.platform == 'pacbio':
+            self.max_indel_allowed_in_donor = 3
 
         self.ignore_target_outside_amplicon = True
 
-        if self.seq is None:
-            length = 0
-        else:
-            length = len(self.seq)
-
-        self.inferred_amplicon_length = length
-
     @memoized_property
     def target_alignments(self):
-        if self.seq is None:
-            return []
-
-        strat = self.editing_strategy
-
-        primers = strat.primers_by_side_of_target
-        target_seq_bytes = strat.reference_sequence_bytes[strat.target]
-
-        original_als = [al for al in self.original_alignments if al.reference_name == strat.target]
-
-        processed_als = []
-
-        for al in original_als:
-            if self.ignore_target_outside_amplicon:
-                # Ignore alignments to the target that fall entirely outside the amplicon interval.
-                # These should typically be considered genomic insertions and caught by supplementary alignments;
-                # counting on target alignments to get them would make behavior dependent on the amount of flanking
-                # sequence included around the amplicon.
-                if not (strat.amplicon_interval & sam.reference_interval(al)):
-                    continue
-
-            query_interval = interval.get_covered(al)
-
-            # Primers frequently contain 1 nt deletions, sometimes causing truncated alignments at the edges
-            # of reads. If alignment ends close to but not at a read end, try to refine.
-            extend_before = (0 < query_interval.start <= len(primers[5]) + 5)
-            extend_after = (len(self.seq) - 1 - len(primers[3]) - 5 <= query_interval.end < len(self.seq) - 1)
-            if extend_before or extend_after:
-                al = sw.extend_repeatedly(al, target_seq_bytes, extend_before=extend_before, extend_after=extend_after)
-
-            split_als = knock_knock.architecture.comprehensively_split_alignment(al, strat, self.mode)
-
-            extended = [sw.extend_alignment(split_al, target_seq_bytes) for split_al in split_als]
-
-            processed_als.extend(extended)
-
-        # If processed alignments don't cover either edge, this typically means non-specific amplification.
-        # Try to realign each uncovered edge to the relevant primer to check for this.
-        existing_covered = interval.get_disjoint_covered(processed_als)
-
-        possible_edge_als = []
-
-        if existing_covered.start != 0:
-            possible_edge_als.append(self.realign_edges_to_primers(5))
-
-        if existing_covered.end != len(self.seq) - 1:
-            possible_edge_als.append(self.realign_edges_to_primers(3))
-
-        for edge_al in possible_edge_als:
-            if edge_al is not None:
-                new_covered = interval.get_covered(edge_al) - existing_covered
-                # Only add the new alignment if it explains a substantial new amount of the read.
-                if new_covered.total_length > 10:
-                    processed_als.append(edge_al)
-        
-        return processed_als
+        return self.refined_target_alignments
 
     @memoized_property
     def donor_alignments(self):
         if self.editing_strategy.donor is None:
             return []
 
-        original_als = [al for al in self.original_alignments if al.reference_name == self.editing_strategy.donor]
+        original_als = [al for al in self.alignments if al.reference_name == self.editing_strategy.donor]
         processed_als = []
 
         for al in original_als:
-            split_als = knock_knock.architecture.comprehensively_split_alignment(al, self.editing_strategy, self.mode)
+            split_als = self.comprehensively_split_alignment(al)
             processed_als.extend(split_als)
 
         return processed_als
@@ -250,11 +183,11 @@ class Architecture(knock_knock.architecture.Categorizer):
         if self.editing_strategy.nonhomologous_donor is None:
             return []
 
-        original_als = [al for al in self.original_alignments if al.reference_name == self.editing_strategy.nonhomologous_donor]
+        original_als = [al for al in self.alignments if al.reference_name == self.editing_strategy.nonhomologous_donor]
         processed_als = []
 
         for al in original_als:
-            split_als = knock_knock.architecture.comprehensively_split_alignment(al, self.editing_strategy, self.mode)
+            split_als = self.comprehensively_split_alignment(al)
             processed_als.extend(split_als)
 
         return processed_als
@@ -276,49 +209,17 @@ class Architecture(knock_knock.architecture.Categorizer):
     @memoized_property
     def target_and_donor_alignments(self):
         return self.target_alignments + self.donor_alignments
+
+    @memoized_property
+    def HA_names_by_side_of_read(self):
+        read_side_to_HA_name = {}
+        
+        for read_side, target_side in self.read_side_to_target_side.items():
+            HA_name = self.editing_strategy.homology_arms[target_side]['target'].ID
+            read_side_to_HA_name[read_side] = HA_name
+            
+        return read_side_to_HA_name
     
-    @memoized_property
-    def supplemental_alignments(self):
-        als = [al for al in self.original_alignments if al.reference_name not in self.editing_strategy.reference_sequences]
-
-        # For performance reasons, cap the number of alignments considered, prioritizing
-        # alignments that explain more matched bases.
-        def priority(al):
-            return al.query_alignment_length - al.get_tag('NM')
-
-        best_als = sorted(als, key=priority, reverse=True)[:100]
-
-        split_als = []
-        for al in best_als:
-            split_als.extend(sam.split_at_large_insertions(al, 10))
-
-        return split_als
-
-    @memoized_property
-    def extra_alignments(self):
-        strat = self.editing_strategy
-        extra_ref_names = {n for n in strat.reference_sequences if n not in [strat.target, strat.donor]}
-        als = [al for al in self.original_alignments if al.reference_name in extra_ref_names]
-        return als
-
-    @memoized_with_args
-    def whole_read_minus_edges(self, edge_length):
-        return interval.Interval(edge_length, len(self.seq) - 1 - edge_length)
-
-    def register_deletion(self):
-        self.category = 'simple indel'
-
-        indel = self.indel_near_cut[0]
-
-        if indel.kind == 'D':
-            if indel.length < 50:
-                self.subcategory = 'deletion <50 nt'
-            else:
-                self.subcategory = 'deletion >=50 nt'
-
-        self.details = self.indel_string
-        self.relevant_alignments = self.parsimonious_target_alignments
-
     def register_integration_details(self):
         strat = self.editing_strategy
         donor_al = self.donor_specific_integration_alignments[0]
@@ -389,16 +290,58 @@ class Architecture(knock_knock.architecture.Categorizer):
         self.details = 'n/a'
 
         self.relevant_alignments = interval.make_parsimonious(self.parsimonious_target_alignments + self.nonspecific_amplification)
-    
-    def categorize(self):
-        if self.editing_strategy.donor is None and self.editing_strategy.nonhomologous_donor is None:
-           self.categorize_no_donor()
-        else:
-            self.categorize_with_donor()
-        
-        return self.category, self.subcategory, self.details, self.Details
 
-    def categorize_with_donor(self):
+    def register_single_read_covering_target_alignment(self):
+        target_alignment = self.single_read_covering_target_alignment
+
+        interesting_indels, uninteresting_indels = self.interesting_and_uninteresting_indels([target_alignment])
+
+        if self.platform in ['pacbio', 'ont', 'nanopore']:
+            deletions = [indel for indel in interesting_indels if indel.kind == 'D']
+            insertions = [indel for indel in interesting_indels if indel.kind == 'I']
+
+            mismatches = []
+        else:
+            deletions = [indel for indel in interesting_indels + uninteresting_indels if indel.kind == 'D']
+            insertions = [indel for indel in interesting_indels + uninteresting_indels if indel.kind == 'I']
+
+            _, mismatches = self.summarize_mismatches_in_alignments([target_alignment])
+
+        self.Details = Details(
+            deletions=deletions,
+            insertions=insertions,
+            mismatches=mismatches,
+        )
+
+        self.relevant_alignments = [target_alignment]
+
+        if len(self.mismatches_near_cut) > 0:
+            self.category = 'uncategorized'
+            self.subcategory = 'mismatch(es) near cut'
+
+        elif len(interesting_indels) == 0:
+            self.category = 'WT'
+            self.subcategory = 'WT'
+
+        elif len(interesting_indels) == 1:
+            self.category = 'simple indel'
+
+            indel = interesting_indels[0]
+
+            if indel.kind == 'D':
+                if indel.length < 50:
+                    self.subcategory = 'deletion <50 nt'
+                else:
+                    self.subcategory = 'deletion >=50 nt'
+
+            elif indel.kind == 'I':
+                self.subcategory = 'insertion'
+
+        else: # more than one indel
+            self.category = 'uncategorized'
+            self.subcategory = 'multiple indels near cut'
+
+    def categorize(self):
         if self.seq is None or len(self.seq) <= self.editing_strategy.combined_primer_length + 10:
             self.category = 'malformed layout'
             self.subcategory = 'too short'
@@ -429,40 +372,8 @@ class Architecture(knock_knock.architecture.Categorizer):
             self.subcategory = 'primer far from read edge'
             self.relevant_alignments = self.uncategorized_relevant_alignments
 
-        elif not self.has_integration:
-            if self.indel_near_cut is not None:
-                #self.details = self.indel_string
-                self.relevant_alignments = self.parsimonious_target_alignments
-
-                if len(self.indel_near_cut) > 1:
-                    self.category = 'uncategorized'
-                    self.subcategory = 'multiple indels near cut'
-                else:
-                    self.category = 'simple indel'
-
-                    indel = self.indel_near_cut[0]
-
-                    if indel.kind == 'D':
-                        if indel.length < 50:
-                            self.subcategory = 'deletion <50 nt'
-                        else:
-                            self.subcategory = 'deletion >=50 nt'
-
-                        #self.outcome = knock_knock.outcome.DeletionOutcome.from_string(self.details)
-
-                    elif indel.kind == 'I':
-                        self.subcategory = 'insertion'
-                        #self.outcome = knock_knock.outcome.InsertionOutcome.from_string(self.details)
-
-            elif len(self.mismatches_near_cut) > 0:
-                self.category = 'uncategorized'
-                self.subcategory = 'mismatch(es) near cut'
-                self.relevant_alignments = self.uncategorized_relevant_alignments
-
-            else:
-                self.category = 'WT'
-                self.subcategory = 'WT'
-                self.relevant_alignments = self.parsimonious_target_alignments
+        elif self.single_read_covering_target_alignment:
+            self.register_single_read_covering_target_alignment()
 
         elif self.integration_summary == 'donor':
             junctions = set(self.junction_summary_per_side.values())
@@ -576,96 +487,6 @@ class Architecture(knock_knock.architecture.Categorizer):
 
         return self.category, self.subcategory, self.details, self.Details
     
-    def categorize_no_donor(self):
-        if self.seq is None or len(self.seq) <= self.editing_strategy.combined_primer_length + 15:
-            self.category = 'malformed layout'
-            self.subcategory = 'too short'
-            self.relevant_alignments = self.uncategorized_relevant_alignments
-
-        elif all(al.is_unmapped for al in self.target_and_donor_alignments):
-            self.category = 'malformed layout'
-            self.subcategory = 'no alignments detected'
-            self.relevant_alignments = self.uncategorized_relevant_alignments
-
-        elif self.extra_copy_of_primer:
-            self.category = 'malformed layout'
-            self.subcategory = 'extra copy of primer'
-            self.relevant_alignments = self.uncategorized_relevant_alignments
-
-        elif self.missing_a_primer:
-            self.category = 'malformed layout'
-            self.subcategory = 'missing a primer'
-            self.relevant_alignments = self.uncategorized_relevant_alignments
-
-        elif self.primer_strands[5] != self.primer_strands[3]:
-            self.category = 'malformed layout'
-            self.subcategory = 'primers not in same orientation'
-            self.relevant_alignments = self.uncategorized_relevant_alignments
-        
-        elif not self.primer_alignments_reach_edges:
-            self.category = 'malformed layout'
-            self.subcategory = 'primer far from read edge'
-            self.relevant_alignments = self.uncategorized_relevant_alignments
-
-        elif self.single_merged_primer_alignment is not None:
-            num_indels = len(self.all_indels_near_cuts)
-            if num_indels > 0:
-                if num_indels > 1:
-                    self.category = 'complex indel'
-                    self.subcategory = 'multiple indels'
-                else:
-                    self.category = 'simple indel'
-                    indel = self.indel_near_cut[0]
-                    if indel.kind == 'D':
-                        if indel.length < 50:
-                            self.subcategory = 'deletion <50 nt'
-                        else:
-                            self.subcategory = 'deletion >=50 nt'
-                    elif indel.kind == 'I':
-                        self.subcategory = 'insertion'
-
-                # Split at every indel
-                if self.mode == 'illumina':
-                    split_at_both = []
-
-                    for al in self.parsimonious_target_alignments:
-                        split_at_dels = sam.split_at_deletions(al, 1)
-                        for split_al in split_at_dels:
-                            split_at_both.extend(sam.split_at_large_insertions(split_al, 1))
-                    self.relevant_alignments = split_at_both
-                else:
-                    self.relevant_alignments = self.parsimonious_target_alignments
-
-                self.details = ' '.join(map(str, self.all_indels_near_cuts))
-            else:
-                self.category = 'WT'
-                self.subcategory = 'WT'
-                self.relevant_alignments = self.parsimonious_target_alignments
-        
-        elif self.nonspecific_amplification is not None:
-            self.register_nonspecific_amplification()
-
-        elif self.genomic_insertion is not None:
-            self.register_genomic_insertion()
-
-        else:
-            self.category = 'uncategorized'
-            self.subcategory = 'uncategorized'
-            self.details = 'n/a'
-
-        return self.category, self.subcategory, self.details
-    
-    @memoized_property
-    def all_primer_alignments(self):
-        ''' Get all alignments that contain the amplicon primers. '''
-        als = {}
-        for side, primer in self.editing_strategy.primers_by_side_of_target.items():
-            # Prefer to have the primers annotated on the strand they anneal to,
-            # so don't require strand match here.
-            als[side] = [al for al in self.parsimonious_alignments if sam.overlaps_feature(al, primer, False)]
-
-        return als
-
     @memoized_property
     def gap_alignments(self):
         gap_als = []
@@ -775,20 +596,55 @@ class Architecture(knock_knock.architecture.Categorizer):
     def gap_covered_by_target_alignment(self):
         return len(self.all_target_gap_alignments) > 0
 
+    # To identify sequencing orientation for sequencing platforms for which
+    # orientation isn't fixed, find long primer-containing alignments.
+
+    @memoized_property
+    def all_primer_alignments(self):
+        ''' Dictionary of 
+        {
+            side_of_target: all target alignments that overlap the primer on that side
+            for side_of_target in [5, 3]
+        }
+
+        If multiple alignments share the feature, take the longest.
+        '''
+
+        als = {}
+
+        for side_of_target in [5, 3]:
+            side_als = [al for al in self.target_alignments if self.overlaps_primer(al, side_of_target, by='target')]
+
+            # Partition into equivalence classes of shared feature.
+            primer_name = self.editing_strategy.primers_by_side_of_target[side_of_target].ID
+
+            def relation(first_al, second_al):
+                return self.share_feature(first_al, primer_name, second_al, primer_name)
+
+            eq_classes = utilities.equivalence_classes(side_als, relation)
+
+            side_als = [max(als, key=lambda al: al.query_alignment_length) for als in eq_classes]
+
+            als[side_of_target] = side_als
+
+        return als
+
     @memoized_property
     def extra_copy_of_primer(self):
-        ''' Check if too many alignments containing either primer were found. '''
-        return any(len(als) > 1 for side, als in self.all_primer_alignments.items())
+        ''' Check if more than one alignment containing either primer were found. '''
+        return any(len(als) > 1 for als in self.all_primer_alignments.values())
     
     @memoized_property
     def missing_a_primer(self):
-        ''' Check if either primer was not found in an alignments. '''
-        return any(len(als) == 0 for side, als in self.all_primer_alignments.items())
+        ''' Check if either primer was not found in any alignment. '''
+        return any(len(als) == 0 for als in self.all_primer_alignments.values())
         
     @memoized_property
     def primer_alignments(self):
-        ''' Get the single alignment containing each primer. '''
+        ''' The single alignment containing each primer. '''
+
         primer_als = {5: None, 3: None}
+
         for side in [5, 3]:
             if len(self.all_primer_alignments[side]) == 1:
                 primer_als[side] = self.all_primer_alignments[side][0]
@@ -797,12 +653,15 @@ class Architecture(knock_knock.architecture.Categorizer):
         
     @memoized_property
     def primer_strands(self):
-        ''' Get which strand each primer-containing alignment mapped to. '''
+        ''' Which strand each primer-containing alignment mapped to. '''
+
         strands = {5: None, 3: None}
+
         for side in [5, 3]:
             al = self.primer_alignments[side]
             if al is not None:
                 strands[side] = sam.get_strand(al)
+
         return strands
     
     @memoized_property
@@ -821,11 +680,14 @@ class Architecture(knock_knock.architecture.Categorizer):
     @memoized_property
     def covered_by_primers_alignments(self):
         ''' How much of the read is covered by alignments containing the primers? '''
+
         if self.sequencing_direction is None:
             # primer-containing alignments mapped to opposite strands
             return None
+
         elif self.primer_alignments is None:
             return None
+
         else:
             return interval.get_disjoint_covered([self.primer_alignments[5], self.primer_alignments[3]])
 
@@ -849,69 +711,28 @@ class Architecture(knock_knock.architecture.Categorizer):
             overlap = covered & strat.donor_specific_intervals
             return overlap.total_length > 0
 
-    def overlaps_primer(self, al, side, require_correct_strand=True):
-        primer = self.editing_strategy.primers_by_side_of_read[side]
-        num_overlapping_bases = al.get_overlap(primer.start, primer.end + 1)
-        overlaps = num_overlapping_bases > 0
-        correct_strand = sam.get_strand(al) == self.editing_strategy.sequencing_direction 
-
-        return overlaps and (correct_strand or not require_correct_strand)
-
     @memoized_property
     def any_donor_specific_present(self):
         als_to_check = self.parsimonious_and_gap_alignments
         return any(self.overlaps_donor_specific(al) for al in als_to_check)
 
     @memoized_property
-    def single_merged_primer_alignment(self):
-        ''' If the alignments from the primers are adjacent to each other on the query, merge them.
-        If there is only one expected cut site, only try to perform a single merge. If there are
-        more than one cut sites, merge all target alignments. '''
-
-        primer_als = self.primer_alignments
-        ref_seqs = self.editing_strategy.reference_sequences
-
-        if len(self.editing_strategy.sgRNAs) <= 1:
-            if primer_als[5] is not None and primer_als[3] is not None:
-                merged = sam.merge_adjacent_alignments(primer_als[5], primer_als[3], ref_seqs)
-            else:
-                merged = None
-        else:
-            # If there is a single target alignment that reaches both primers (after splitting),
-            # use it to avoid edge cases. 
-            merged = None
-            for al in self.parsimonious_target_alignments:
-                if all(self.overlaps_primer(al, side, False) for side in ['left', 'right']):
-                    merged = al
-                    break
-
-            if merged is None:
-                merged = sam.merge_multiple_adjacent_alignments(self.parsimonious_target_alignments, ref_seqs)
-                if merged is not None:
-                    primers = self.editing_strategy.primers_by_side_of_target.values()
-                    # Prefer to have the primers annotated on the strand they anneal to,
-                    # so don't require strand match here.
-                    reaches_primers = all(sam.overlaps_feature(merged, primer, False) for primer in primers)
-                    if not reaches_primers:
-                        merged = None
-
-        return merged
-    
-    @memoized_property
     def has_integration(self):
         covered = self.covered_by_primers_alignments
         start_covered = covered is not None and covered.start <= 10
+
         if not start_covered:
             return False
+
         else:
-            if self.single_merged_primer_alignment is None:
+            if self.single_read_covering_target_alignment is None:
                 return True
             else:
                 return False
 
     @memoized_property
     def mismatches_near_cut(self):
-        merged_primer_al = self.single_merged_primer_alignment
+        merged_primer_al = self.single_read_covering_target_alignment
         if merged_primer_al is None:
             return []
         else:
@@ -919,97 +740,10 @@ class Architecture(knock_knock.architecture.Categorizer):
             tuples = sam.aligned_tuples(merged_primer_al, self.editing_strategy.target_sequence)
             for true_read_i, read_b, ref_i, ref_b, qual in tuples:
                 if ref_i is not None and true_read_i is not None:
-                    if read_b != ref_b and ref_i in self.near_cut_intervals:
+                    if read_b != ref_b and ref_i in self.editing_strategy.around_cuts(5):
                         mismatches.append(ref_i)
 
             return mismatches
-
-    @memoized_property
-    def indel_near_cut(self):
-        d = self.largest_deletion_near_cut
-        i = self.largest_insertion_near_cut
-
-        if d is None:
-            d_length = 0
-        else:
-            d_length = d.length
-
-        if i is None:
-            i_length = 0
-        else:
-            i_length = i.length
-
-        if d_length == 0 and i_length == 0:
-            scar = None
-        elif d_length > i_length:
-            scar = [d]
-        elif i_length > d_length:
-            scar = [i]
-        else:
-            scar = [d, i]
-
-        return scar
-
-    @memoized_property
-    def all_indels_near_cuts(self):
-        indels_near_cuts = []
-        for indel in self.indels:
-            if indel.kind == 'D':
-                d = indel
-                d_interval = interval.Interval(min(d.starts_ats), max(d.starts_ats) + d.length - 1)
-                if d_interval & self.near_cut_intervals:
-                    indels_near_cuts.append(d)
-            elif indel.kind == 'I':
-                ins = indel
-                if any(sa in self.near_cut_intervals for sa in ins.starts_afters):
-                    indels_near_cuts.append(ins)
-
-        return indels_near_cuts
-
-    @memoized_property
-    def near_cut_intervals(self):
-        return self.editing_strategy.around_cuts(10)
-
-    @memoized_property
-    def largest_deletion_near_cut(self):
-        dels = [indel for indel in self.indels if indel.kind == 'D']
-
-        near_cut = []
-        for deletion in dels:
-            del_interval = interval.Interval(min(deletion.starts_ats), max(deletion.starts_ats) + deletion.length - 1)
-            if del_interval & self.near_cut_intervals:
-                near_cut.append(deletion)
-
-        if near_cut:
-            largest = max(near_cut, key=lambda d: d.length)
-            largest = self.editing_strategy.expand_degenerate_indel(largest)
-        else:
-            largest = None
-
-        return largest
-
-    @memoized_property
-    def largest_insertion_near_cut(self):
-        insertions = [indel for indel in self.indels if indel.kind == 'I']
-
-        near_cut = [ins for ins in insertions if any(sa in self.near_cut_intervals for sa in ins.starts_afters)]
-
-        if near_cut:
-            largest = max(near_cut, key=lambda ins: len(ins.seqs[0]))
-            largest = self.editing_strategy.expand_degenerate_indel(largest)
-        else:
-            largest = None
-
-        return largest
-    
-    @memoized_property
-    def indel_string(self):
-        if self.indel_near_cut is None:
-            indel_string = None
-        else:
-            indel_string = ' '.join(map(str, self.indel_near_cut))
-
-        return indel_string
 
     @memoized_property
     def parsimonious_alignments(self):
@@ -1522,7 +1256,7 @@ class Architecture(knock_knock.architecture.Categorizer):
     def indels(self):
         indels = []
 
-        al = self.single_merged_primer_alignment
+        al = self.single_read_covering_target_alignment
 
         if al is not None:
             for i, (kind, length) in enumerate(al.cigar):
@@ -1829,11 +1563,6 @@ class Architecture(knock_knock.architecture.Categorizer):
 
         final = parsimonious + supp_als
 
-        if len(final) == 0:
-            # If there aren't any real alignments, pass along unmapped alignments in
-            # case visualization needs to get seq or qual from them.
-            final = self.unmapped_alignments
-
         return final
 
     @memoized_property
@@ -1896,7 +1625,7 @@ class Architecture(knock_knock.architecture.Categorizer):
             inferred_amplicon_length=self.inferred_amplicon_length,
             highlight_programmed_substitutions=True,
             feature_heights=feature_heights,
-            architecture_mode=self.mode,
+            platform=self.platform,
             high_resolution_parallelograms=(self.read_length < 1000),
         )
 
@@ -1912,6 +1641,7 @@ class Architecture(knock_knock.architecture.Categorizer):
 
         diagram = knock_knock.visualize.architecture.ReadDiagram(als_to_plot,
                                                                  strat,
+                                                                 architecture=self,
                                                                  **manual_diagram_kwargs,
                                                                 )
 
@@ -1921,8 +1651,8 @@ class NonoverlappingPairArchitecture:
     def __init__(self, als, editing_strategy):
         self.editing_strategy = editing_strategy
         self.layouts = {
-            'R1': Architecture(als['R1'], editing_strategy, mode='illumina'),
-            'R2': Architecture(als['R2'], editing_strategy, mode='illumina'),
+            'R1': Architecture(als['R1'], editing_strategy, platform='illumina'),
+            'R2': Architecture(als['R2'], editing_strategy, platform='illumina'),
         }
         if self.layouts['R1'].name != self.layouts['R2'].name:
             raise ValueError

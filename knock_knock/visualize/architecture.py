@@ -104,6 +104,7 @@ class ReadDiagram:
     feature_line_width: float = 0.005
     gap_between_als: float = 0.003
     label_cut: bool = False
+    architecture: Optional[knock_knock.architecture.Categorizer] = None
 
     def __post_init__(self):
         self.all_reference_sequences = {
@@ -142,7 +143,7 @@ class ReadDiagram:
 
                 for al in als:
                     if al.reference_name in refs_to_split:
-                        split_als = knock_knock.architecture.comprehensively_split_alignment(al, self.editing_strategy, self.architecture_mode, programmed_substitutions=self.editing_strategy.pegRNA_programmed_alternative_bases)
+                        split_als = self.architecture.comprehensively_split_alignment(al)
 
                         seq_bytes = self.editing_strategy.reference_sequence_bytes[al.reference_name]
                         extended = [sw.extend_alignment(al, seq_bytes) for al in split_als]

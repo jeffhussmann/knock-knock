@@ -787,23 +787,6 @@ class EditingStrategy:
         return primers
 
     @memoized_property
-    def primers_by_PAM_side(self):
-        primers = {}
-
-        for primer_name, primer in self.primers.items():
-            primer = self.features[self.target, primer_name]
-            primer_interval = interval.Interval.from_feature(primer)
-            
-            for side, PAM_side_interval in self.PAM_side_intervals.items():
-                if primer_interval & PAM_side_interval:
-                    primers[side] = primer
-
-        if len(primers) != 2:
-            raise ValueError(f'not a primer on each side of cut: {primers}')
-
-        return primers
-    
-    @memoized_property
     def primers_by_side_of_target(self):
         by_side = {}
         primers = [primer for primer in self.primers.values()]
@@ -818,33 +801,14 @@ class EditingStrategy:
             return self.sequencing_start.strand
 
     @memoized_property
-    def primers_by_side_of_read(self):
-        if self.sequencing_direction == '+':
-            read_to_target = {
-                'left': 5,
-                'right': 3,
-            }
-
-        elif self.sequencing_direction == '-':
-            read_to_target = {
-                'left': 3,
-                'right': 5,
-            }
-
-        else:
-            raise ValueError(self.sequencing_direction)
-
-        by_side = {
-            read: self.primers_by_side_of_target[read_to_target[read]]
-            for read in ['left', 'right']
-        }
-
-        return by_side
-
-    @memoized_property
     def primers_by_strand(self):
         by_strand = {primer.strand: primer for primer in self.primers.values()}
         return by_strand
+
+    @memoized_property
+    def primer_intervals(self):
+        ''' Dictionary of target intervals covered by primers. ''' 
+        return {name: interval.Interval.from_feature(f) for name, f in self.primers.items()}
 
     @memoized_property
     def between_primers_interval(self):
@@ -889,10 +853,6 @@ class EditingStrategy:
         return {self.target_side_to_PAM_side[side]: intvl for side, intvl in self.target_side_intervals.items()}
     
     @memoized_property
-    def read_side_intervals(self):
-        return {self.target_side_to_read_side[side]: intvl for side, intvl in self.target_side_intervals.items()}
-
-    @memoized_property
     def target_side_to_PAM_side(self):
         if self.protospacer_feature is None:
             return None
@@ -906,26 +866,6 @@ class EditingStrategy:
             target_to_PAM = {5: 'PAM-proximal', 3: 'PAM-distal'}
 
         return target_to_PAM
-
-    @memoized_property
-    def target_side_to_read_side(self):
-        if self.sequencing_start is None:
-            return None
-        
-        read_start_interval = interval.Interval.from_feature(self.sequencing_start)
-        
-        if self.target_side_intervals[5] & read_start_interval:
-            target_to_read = {5: 'left', 3: 'right'}
-        elif self.target_side_intervals[3] & read_start_interval:
-            target_to_read = {5: 'right', 3: 'left'}
-        else:
-            raise ValueError
-            
-        return target_to_read
-
-    @memoized_property
-    def read_side_to_target_side(self):
-        return utilities.reverse_dictionary(self.target_side_to_read_side)
 
     @memoized_property
     def PAM_side_to_target_side(self):
@@ -966,7 +906,6 @@ class EditingStrategy:
             'target': self.reference_sequences[self.target],
             'donor': self.reference_sequences[donor],
          }
-
 
         if self.infer_homology_arms:
             donor_SNVs, HAs = self.inferred_donor_SNVs_and_HAs
@@ -1047,13 +986,7 @@ class EditingStrategy:
             else:
                 PAM_side = None
 
-            # If sequencing start isn't annotated, don't populate by read side.
-            if self.target_side_to_read_side is not None:
-                read_side = self.target_side_to_read_side[target_side]
-            else:
-                read_side = None
-
-            for key in [target_side, PAM_side, read_side]:
+            for key in [target_side, PAM_side]:
                 if key is not None:
                     if key in HAs:
                         raise ValueError(key)

@@ -14,9 +14,11 @@ memoized_with_args = utilities.memoized_with_args
 idx = pd.IndexSlice
 
 class Categorizer:
-    def __init__(self, alignments, editing_strategy, **kwargs):
+    def __init__(self, alignments, editing_strategy, platform='illumina', flipped=False, **kwargs):
         self.alignments = [al for al in alignments if not al.is_unmapped]
+
         self.editing_strategy = editing_strategy
+        self.platform = platform
 
         alignment = alignments[0]
 
@@ -42,6 +44,8 @@ class Categorizer:
         self.categorized = False
 
         self.Details = knock_knock.outcome.Details()
+
+        self.flipped = flipped
 
     @property
     def details(self):
@@ -70,6 +74,74 @@ class Categorizer:
         ]
         
         return p_als
+
+    @memoized_property
+    def initial_target_alignments(self):
+        t_als = [
+            al for al in self.alignments
+            if al.reference_name == self.editing_strategy.target
+        ]
+        
+        return t_als
+
+    def seed_and_extend(self, on, query_start, query_end):
+        extender = self.editing_strategy.seed_and_extender[on]
+        return extender(self.seq_bytes, query_start, query_end, self.query_name)
+    
+    @memoized_property
+    def perfect_right_edge_alignment(self):
+        ''' Single end reads may end in the middle of a rearrangement. '''
+        min_length = 5
+        
+        edge_al = None
+
+        def is_valid(al):
+            long_enough = al.query_alignment_length >= min_length
+            overlaps_amplicon_interval = interval.are_overlapping(interval.get_covered_on_ref(al), self.editing_strategy.amplicon_interval)
+            return long_enough and overlaps_amplicon_interval
+
+        for length in range(20, 3, -1):
+            start = max(0, len(self.seq) - length)
+            end = len(self.seq)
+
+            als = self.seed_and_extend('target', start, end)
+
+            valid = [al for al in als if is_valid(al)]
+            
+        if len(valid) > 0:
+            edge_al = max(valid, key=lambda al: al.query_alignment_length)
+
+            if edge_al.is_reverse:
+                edge_al.query_qualities = self.qual[::-1]
+            else:
+                edge_al.query_qualities = self.qual
+
+        return edge_al
+
+    @memoized_property
+    def refined_target_alignments(self):
+        ''' Initial refinement.
+        '''
+
+        refined_als = self.split_and_extend_alignments(self.initial_target_alignments)
+
+        # TODO: figure out way to control false positives here.
+        # Require to explain enough unexplained length?
+
+        # Non-specific amplification can produce short primer alignments that may not
+        # be picked up by initial alignment. Realign each edge to primers to check for this.
+
+        for side in [5, 3]:
+            primer_al = self.realign_edges_to_primers(side)
+            if primer_al is not None:
+                refined_als.append(primer_al)
+
+        if self.perfect_right_edge_alignment is not None:
+            refined_als.append(self.perfect_right_edge_alignment)
+
+        refined_als = interval.make_parsimonious(refined_als)
+
+        return refined_als
 
     @memoized_property
     def whole_read(self):
@@ -156,6 +228,429 @@ class Categorizer:
             category, subcats = cls.category_order[c]
             return category
 
+    @property
+    def programmed_substitutions(self):
+        return {}
+
+    @memoized_property
+    def target_side_to_read_side(self):
+        if self.sequencing_direction == '+':
+            target_to_read = {
+                5: 'left',
+                3: 'right',
+            }
+        else:
+            target_to_read = {
+                5: 'right',
+                3: 'left',
+            }
+            
+        return target_to_read
+
+    @memoized_property
+    def read_side_to_target_side(self):
+        return utilities.reverse_dictionary(self.target_side_to_read_side)
+
+    @memoized_property
+    def primers_by_side_of_read(self):
+        by_side = {
+            read_side: self.editing_strategy.primers_by_side_of_target[self.read_side_to_target_side[read_side]]
+            for read_side in ['left', 'right']
+        }
+
+        return by_side
+
+    def overlaps_primer(self, alignment, side, by='read', require_correct_orientation=False):
+        ''' Note that sequencing_direction is a dependency if require_correct_orientation == True
+        or if by == 'read'.
+        '''
+
+        if by == 'read':
+            primers = self.primers_by_side_of_read
+        elif by == 'target':
+            primers = self.editing_strategy.primers_by_side_of_target
+        else:
+            raise ValueError
+
+        primer = primers[side]
+
+        # Primers are annotated on the strand they anneal to, so don't require strand match here.
+        overlaps = sam.overlaps_feature(alignment, primer, require_same_strand=False)
+
+        if require_correct_orientation:
+            satisifes_orientation_requirement = sam.get_strand(alignment) == self.sequencing_direction 
+        else:
+            satisifes_orientation_requirement = True
+
+        return overlaps and satisifes_orientation_requirement
+
+    @memoized_property
+    def extra_alignments(self):
+        # Any alignments not to the target, pegRNAs, or donor.
+
+        strat = self.editing_strategy
+
+        non_extra_ref_names = {strat.target}
+
+        if strat.pegRNA_names is not None:
+            non_extra_ref_names.update(strat.pegRNA_names)
+
+        if strat.donor is not None:
+            non_extra_ref_names.add(strat.donor)
+
+        extra_ref_names = {n for n in strat.reference_sequences if n not in non_extra_ref_names}
+
+        als = [al for al in self.alignments if al.reference_name in extra_ref_names]
+
+        return als
+    
+    def extend_primer_alignment(self, al):
+        ''' If an edge of a target alignment falls in a primer and isn't at the edge of the read,
+        try to extend repeatedly towards the edge of the amplicon.
+        '''
+
+        strat = self.editing_strategy
+
+        if al.reference_name == strat.target:
+            target_seq_bytes = strat.reference_sequence_bytes[strat.target]
+
+            ref_edges = sam.reference_edges(al)
+            query_interval = interval.get_covered(al)
+            query_edges = {
+                5: query_interval.start,
+                3: query_interval.end,
+            }
+
+            interior = self.whole_read_minus_edges(1)
+
+            for side, ref_edge in ref_edges.items():
+                for primer_name, primer_interval in strat.primer_intervals.items():
+                    if query_edges[side] in interior and ref_edge in primer_interval:
+
+                        if primer_name == strat.primers_by_side_of_target[5].ID:
+                            kwargs = dict(extend_after=False)
+                        elif primer_name == strat.primers_by_side_of_target[3].ID: 
+                            kwargs = dict(extend_before=False)
+                        else:
+                            raise ValueError
+
+                        al = sw.extend_repeatedly(al, target_seq_bytes, **kwargs)
+
+        return al
+
+    @memoized_property
+    def target_edge_alignments(self):
+        ''' Target alignments in the expected orientation closest to each edge of the read.
+        Taken as the flanking context between which any editing happened.
+        Dependencies:
+            refined_target_alignments: split at indels, then extended 
+            sequencing_direction: predefined for Illumina, inferred for long read.
+        '''
+
+        edge_alignments = {
+            'left': [],
+            'right': [],
+        }
+
+        # Note: previously re-merged here.
+
+        for al in self.refined_target_alignments:
+            if sam.get_strand(al) != self.sequencing_direction:
+                continue
+
+            covered = interval.get_covered(al)
+
+            if covered.total_length >= 10:
+                if covered.start <= 5 or (self.overlaps_primer(al, 'left') and covered.start < 25):
+                    edge_alignments['left'].append(al)
+                
+                if covered.end >= len(self.seq) - 1 - 5 or self.overlaps_primer(al, 'right'):
+                    edge_alignments['right'].append(al)
+
+        for edge in ['left', 'right']:
+            if len(edge_alignments[edge]) == 0:
+                edge_alignments[edge] = None
+            else:
+                edge_alignments[edge] = max(edge_alignments[edge], key=lambda al: al.query_alignment_length)
+
+        return edge_alignments
+
+    @memoized_property
+    def cropped_primer_alignments(self):
+        primers = self.primers_by_side_of_read
+
+        primer_alignments = {}
+
+        for side in ['left', 'right']:
+            al = self.target_edge_alignments[side]
+            primer_alignments[side] = sam.crop_al_to_feature(al, primers[side])
+
+        return primer_alignments
+
+    @memoized_property
+    def covered_by_primers(self):
+        return interval.get_disjoint_covered(self.cropped_primer_alignments.values())
+
+    @memoized_property
+    def not_covered_by_primers(self):
+        ''' More complicated than function name suggests. If there are primer
+        alignments, returns the query interval between but not covered by them to enable ignoring
+        the region outside of them, which is likely to be the result of incorrect trimming.
+        '''
+        if self.covered_by_primers.is_empty:
+            not_covered_by_primers = self.whole_read
+
+        elif self.cropped_primer_alignments['left'] and not self.cropped_primer_alignments['right']:
+            not_covered_by_primers = interval.Interval(self.covered_by_primers.end + 1, self.whole_read.end)
+
+        elif self.cropped_primer_alignments['right'] and not self.cropped_primer_alignments['left']:
+            not_covered_by_primers = interval.Interval(self.whole_read.start, self.covered_by_primers.start - 1)
+
+        else:
+            not_covered_by_primers = interval.Interval(self.covered_by_primers.start, self.covered_by_primers.end) - self.covered_by_primers 
+
+        if not_covered_by_primers.is_empty:
+            not_covered_by_primers = interval.Interval.empty()
+
+        return not_covered_by_primers
+
+    @memoized_property
+    def single_read_covering_target_alignment(self):
+        need_to_cover = self.whole_read_minus_edges(2) & self.not_covered_by_primers
+
+        merged_als = sam.merge_any_adjacent_pairs(self.target_alignments, self.editing_strategy.reference_sequences)
+
+        covering_als = []
+
+        for al in merged_als:
+            if (need_to_cover - interval.get_covered(al)).total_length == 0:
+                covering_als.append(al)
+                
+        if len(covering_als) > 0:
+            covering_al = covering_als[0]
+        else:
+            covering_al = None
+            
+        return covering_al
+
+    @memoized_property
+    def target_edge_alignments_list(self):
+        return [al for al in self.target_edge_alignments.values() if al is not None]
+
+    def extract_indels_from_alignments(self, als):
+        strat = self.editing_strategy
+
+        around_cut_interval = strat.around_cuts(5)
+
+        primer_intervals = interval.make_disjoint(strat.primer_intervals.values())
+
+        indels = []
+
+        for al in als:
+            for i, (cigar_op, length) in enumerate(al.cigar):
+                if cigar_op == sam.BAM_CDEL:
+                    nucs_before = sam.total_reference_nucs(al.cigar[:i])
+                    starts_at = al.reference_start + nucs_before
+                    ends_at = starts_at + length - 1
+
+                    indel_interval = interval.Interval(starts_at, ends_at)
+
+                    indel = knock_knock.outcome.DegenerateDeletion([starts_at], length)
+
+                elif cigar_op == sam.BAM_CINS:
+                    ref_nucs_before = sam.total_reference_nucs(al.cigar[:i])
+                    starts_after = al.reference_start + ref_nucs_before - 1
+
+                    indel_interval = interval.Interval(starts_after, starts_after)
+
+                    read_nucs_before = sam.total_read_nucs(al.cigar[:i])
+                    insertion = al.query_sequence[read_nucs_before:read_nucs_before + length]
+
+                    indel = knock_knock.outcome.DegenerateInsertion([starts_after], [insertion])
+                    
+                else:
+                    continue
+
+                near_cut = len(indel_interval & around_cut_interval) > 0
+                entirely_in_primer = indel_interval in primer_intervals
+
+                indel = self.editing_strategy.expand_degenerate_indel(indel)
+                indels.append((indel, near_cut, entirely_in_primer))
+
+        # Ignore any indels entirely contained in primers.
+
+        indels = [(indel, near_cut) for indel, near_cut, entirely_in_primer in indels if not entirely_in_primer]
+
+        return indels
+
+    def interesting_and_uninteresting_indels(self, als):
+        ''' For illumina data, uninteresting indels are entirely contained in a primer,
+        or a single base deletion more than 5 nts from an expected cut.
+        All other indels are interesting.
+
+        For long read data, insertions and deletions less than 5 nts long and more than
+        5 nts from an expected cut site are also uninteresting.
+        '''
+
+        indels = self.extract_indels_from_alignments(als)
+
+        interesting = []
+        uninteresting = []
+
+        for indel, near_cut in indels:
+            if near_cut:
+                append_to = interesting
+
+            else:
+                if self.platform == 'illumina':
+                    if indel.kind == 'D' and indel.length == 1:
+                        append_to = uninteresting
+                    else:
+                        append_to = interesting
+
+                elif self.platform in ['pacbio', 'ont', 'nanopore']:
+                    if indel.length < 5:
+                        append_to = uninteresting
+                    else:
+                        append_to = interesting
+
+            append_to.append(indel)
+
+        return interesting, uninteresting
+
+    def summarize_mismatches_in_alignments(self, relevant_alignments):
+        ''' TODO: this docstring is out of date.
+        Record bases seen at programmed substitution positions relative to target +.
+        '''
+        substitutions = self.editing_strategy.pegRNA_substitutions
+
+        target = self.editing_strategy.target
+        position_to_substitution_name = {}
+
+        if substitutions is not None:
+            for ref_name in substitutions:
+                for name in substitutions[ref_name]:
+                    position_to_substitution_name[ref_name, substitutions[ref_name][name]['position']] = name
+
+        read_bases_at_substitution_locii = {name: [] for name in position_to_substitution_name.values()}
+
+        non_pegRNA_mismatches = []
+
+        for al in relevant_alignments:
+            is_pegRNA_al = al.reference_name in self.editing_strategy.pegRNA_names
+
+            ref_seq = self.editing_strategy.reference_sequences[al.reference_name]
+
+            for true_read_i, read_b, ref_i, ref_b, qual in sam.aligned_tuples(al, ref_seq):
+                if true_read_i is None or ref_i is None:
+                    continue
+
+                if (al.reference_name, ref_i) in position_to_substitution_name:
+                    substitution_name = position_to_substitution_name[al.reference_name, ref_i]
+
+                    # read_b is relative to al.reference_name + strand.
+                    # If target, done.
+                    # If pegRNA, flip if necessary
+                    if substitutions[al.reference_name][substitution_name]['strand'] == '-':
+                        read_b = utilities.reverse_complement(read_b)
+
+                    # For combination edits, a target alignment may spuriously
+                    # extend across an substitution, creating a disagreement with a pegRNA
+                    # alignment. If this happens, gave precedence to the pegRNA
+                    # alignment.
+
+                    read_bases_at_substitution_locii[substitution_name].append((read_b, qual, is_pegRNA_al))
+                else:
+                    substitution_name = None
+
+                if al.reference_name == target and read_b != ref_b:
+                    if substitution_name is None:
+                        matches_pegRNA = False
+                    else:
+                        pegRNA_base = substitutions[target][substitution_name]['alternative_base']
+
+                        matches_pegRNA = (pegRNA_base == read_b)
+
+                    if not matches_pegRNA:
+                        mismatch = knock_knock.outcome.Mismatch(ref_i, read_b)
+                        non_pegRNA_mismatches.append(mismatch)
+
+        non_pegRNA_mismatches = knock_knock.outcome.Mismatches(non_pegRNA_mismatches)
+
+        return read_bases_at_substitution_locii, non_pegRNA_mismatches
+
+    @property
+    def inferred_amplicon_length(self):
+        ''' Infer the length of the amplicon including the portion
+        of primers that is present in the genome. To prevent synthesis
+        errors in primers from shifting this slightly, identify the
+        distance in the query between the end of the left primer and
+        the start of the right primer, then add the expected length of
+        both primers to this. If the sequencing read is single-end
+        and doesn't reach the right primer but ends in an alignment
+        to the target, parsimoniously assume that this alignment continues
+        on through the primer to infer length.
+        ''' 
+
+        if self.seq  == '':
+            return 0
+        elif (self.whole_read - self.covered_by_primers).total_length == 0:
+            return len(self.seq)
+        elif len(self.seq) <= 50:
+            return len(self.seq)
+
+        left_al = self.target_edge_alignments['left']
+        right_al = self.target_edge_alignments['right']
+
+        left_primer = self.primers_by_side_of_read['left']
+        right_primer = self.primers_by_side_of_read['right']
+
+        left_offset_to_q = self.feature_offset_to_q(left_al, left_primer.ID)
+        right_offset_to_q = self.feature_offset_to_q(right_al, right_primer.ID)
+
+        # Only trust the inferred length if there are non-spurious target alignments
+        # to both edges.
+        def is_nonspurious(al):
+            min_nonspurious_length = 15
+            return al is not None and al.query_alignment_length >= min_nonspurious_length
+
+        if is_nonspurious(left_al) and is_nonspurious(right_al):
+            # Calculate query distance between inner primer edges.
+            if len(left_offset_to_q) > 0:
+                left_inner_edge_offset = max(left_offset_to_q)
+                left_inner_edge_q = left_offset_to_q[left_inner_edge_offset]
+            else:
+                left_inner_edge_q = 0
+
+            if len(right_offset_to_q) > 0:
+                right_inner_edge_offset = max(right_offset_to_q)
+                right_inner_edge_q = right_offset_to_q[right_inner_edge_offset]
+            else:
+                right_inner_edge_q = sam.query_interval(right_al)[1]
+
+            # *_inner_edge_q is last position in the primer, so shift each by one to 
+            # have boundaries of region between them.
+            length_seen_between_primers = (right_inner_edge_q - 1) - (left_inner_edge_q + 1) + 1
+
+            right_al_edge_in_target = sam.reference_edges(right_al)[3]
+
+            # Calculated inferred unseen length.
+            if self.sequencing_direction == '+':
+                distance_to_right_primer = right_primer.start - right_al_edge_in_target
+            else:
+                distance_to_right_primer = right_al_edge_in_target - right_primer.end
+
+            # right_al might extend past the primer start, so only care about positive values.
+            inferred_extra_at_end = max(distance_to_right_primer, 0)
+
+            # Combine seen with inferred unseen and expected primer legnths.
+            inferred_length = length_seen_between_primers + inferred_extra_at_end + len(left_primer) + len(right_primer)
+
+        else:
+            inferred_length = -1
+
+        return inferred_length
+
     def q_to_feature_offset(self, al, feature_name, editing_strategy=None):
         ''' Returns dictionary of 
                 {true query position: offset into feature relative to its strandedness
@@ -209,15 +704,16 @@ class Categorizer:
         return share_any
 
     def are_mutually_extending_from_shared_feature(self,
-                                                   left_al, left_feature_name,
-                                                   right_al, right_feature_name,
+                                                   left_al,
+                                                   right_al,
+                                                   feature_name,
                                                    contribution_test=lambda al: False,
                                                   ):
         strat = self.editing_strategy
         
         results = None
 
-        if not self.share_feature(left_al, left_feature_name, right_al, right_feature_name):
+        if not self.share_feature(left_al, feature_name, right_al, feature_name):
             results = {
                 'status': 'don\'t share feature',
                 'alignments': {
@@ -233,16 +729,15 @@ class Categorizer:
         else: 
             switch_results = sam.find_best_query_switch_after(left_al,
                                                               right_al,
-                                                              strat.reference_sequences[left_al.reference_name],
-                                                              strat.reference_sequences[right_al.reference_name],
-                                                              min,
+                                                              reference_sequences=strat.reference_sequences,
+                                                              tie_break=min,
                                                              )
                                                         
             # Does an optimal switch point occur somewhere in the shared feature?
 
             switch_interval = interval.Interval(min(switch_results['best_switch_points']), max(switch_results['best_switch_points']))
             
-            left_feature_interval = self.feature_query_interval(left_al, left_feature_name)
+            left_feature_interval = self.feature_query_interval(left_al, feature_name)
 
             switch_in_shared = interval.are_overlapping(switch_interval, left_feature_interval)
 
@@ -258,9 +753,8 @@ class Categorizer:
             # the overlapping feature?
 
             cropped_left_al = sam.crop_al_to_query_int(left_al, 0, switch_interval.end)
-            left_possible_contribution_past_overlap = interval.get_covered(cropped_left_al) & left_of_feature
 
-            right_feature_interval = self.feature_query_interval(right_al, right_feature_name)
+            right_feature_interval = self.feature_query_interval(right_al, feature_name)
 
             right_of_feature = interval.Interval(right_feature_interval.end + 1, self.whole_read.end)
 
@@ -274,7 +768,6 @@ class Categorizer:
             # overlapping feature?
 
             cropped_right_al = sam.crop_al_to_query_int(right_al, switch_interval.start + 1, self.whole_read.end)
-            right_possible_contribution_past_overlap = interval.get_covered(cropped_right_al) & right_of_feature
 
             overlap_reaches_read_end = right_of_feature.is_empty
 
@@ -331,9 +824,6 @@ class Categorizer:
 
         feature_in_alignment = strat.features[alignment_to_extend.reference_name, feature_name_in_alignment]
         feature_al = sam.crop_al_to_feature(alignment_to_extend, feature_in_alignment)
-
-        # Only extend if the alignment cleanly covers the whole feature.
-        covers_whole_feature = sam.feature_overlap_length(feature_al, feature_in_alignment) == len(feature_in_alignment)
 
         if feature_al is not None and not sam.contains_indel(feature_al):
             # Create a new alignment covering the feature on ref_to_search,
@@ -435,13 +925,32 @@ class Categorizer:
 
         return [al for length_minus_edits, al in decorated_als if length_minus_edits == max_length_minus_edits]
 
+    def split_and_extend_alignments(self, als):
+        all_split_als = []
+
+        for al in als:
+            split_als = self.comprehensively_split_alignment(al)
+
+            seq_bytes = self.editing_strategy.reference_sequence_bytes[al.reference_name]
+
+            extended_als = []
+            
+            for split_al in split_als:
+                extended_al = sw.extend_alignment(split_al, seq_bytes)
+                extended_al = self.extend_primer_alignment(extended_al)
+                extended_als.append(extended_al)
+
+            all_split_als.extend(extended_als)
+        
+        return sam.make_nonredundant(all_split_als)
+
     def realign_edges_to_primers(self, read_side):
         if self.seq is None:
             return []
 
-        buffer_length = 5
+        strat = self.editing_strategy
 
-        target_seq = self.editing_strategy.target_sequence
+        buffer_length = 5
 
         edge_als = []
 
@@ -449,78 +958,40 @@ class Categorizer:
             primer = self.editing_strategy.primers_by_side_of_target[amplicon_side]
 
             if amplicon_side == 5:
-                amplicon_slice = idx[primer.start:primer.end + 1 + buffer_length]
+                target_interval = interval.Interval(primer.start, primer.end + buffer_length)
             else:
-                amplicon_slice = idx[primer.start - buffer_length:primer.end + 1]
-
-            amplicon_side_seq = target_seq[amplicon_slice]
+                target_interval = interval.Interval(primer.start - buffer_length, primer.end)
 
             if read_side == 5:
-                read_slice = idx[:len(primer) + buffer_length]
+                read_interval = interval.Interval(0, len(primer) + buffer_length)
             else:
-                read_slice = idx[-(len(primer) + buffer_length):]
+                read_interval = interval.Interval(len(self.seq) - len(primer) - buffer_length, len(self.seq))
 
-            if amplicon_side == 5:
-                alignment_type = 'fixed_start'
-            else:
-                alignment_type = 'fixed_end'
+            ref_intervals = {strat.target: target_interval}
 
-            read = self.read[read_slice]
-            if amplicon_side != read_side:
-                read = read.reverse_complement()
-
-            soft_clip_length = len(self.seq) - len(read)
-
-            targets = [('amplicon_side', amplicon_side_seq)]
-            temp_header = pysam.AlignmentHeader.from_references([n for n, s in targets], [len(s) for n, s in targets])
-
-            als = sw.align_read(read, targets, 5, temp_header,
-                                alignment_type=alignment_type,
+            als = sw.align_read(self.read,
+                                [(strat.target, strat.target_sequence)],
+                                5,
+                                strat.header,
                                 max_alignments_per_target=1,
-                                both_directions=False,
                                 min_score_ratio=0,
+                                read_interval=read_interval,
+                                ref_intervals=ref_intervals,
                                )
-
-            # The fixed edge alignment strategy used can produce alignments that start or 
-            # end with a deletion. Remove these.
-            als = [sam.remove_terminal_deletions(al) for al in als]
 
             if len(als) > 0:
                 al = als[0]
-
-                if amplicon_side == 5:
-                    ref_start_offset = primer.start
-                    new_cigar = al.cigar + [(sam.BAM_CSOFT_CLIP, soft_clip_length)]
-                else:
-                    ref_start_offset = primer.start - buffer_length
-                    new_cigar = [(sam.BAM_CSOFT_CLIP, soft_clip_length)] + al.cigar
 
                 if read_side == 5:
                     primer_query_interval = interval.Interval(0, len(primer) - 1)
                 elif read_side == 3:
                     # can't just use buffer_length as start in case read is shorter than primer + buffer_length
-                    primer_query_interval = interval.Interval(len(read) - len(primer), np.inf)
+                    primer_query_interval = interval.Interval(len(self.seq) - len(primer), np.inf)
 
-                if amplicon_side != read_side:
-                    al = sam.flip_alignment(al)
-
-                edits_in_primer = sam.edit_distance_in_query_interval(al, primer_query_interval, ref_seq=amplicon_side_seq)
+                edits_in_primer = sam.edit_distance_in_query_interval(al, primer_query_interval, ref_seq=strat.target_sequence)
 
                 if edits_in_primer <= 5:
-                    al.reference_start = al.reference_start + ref_start_offset
-                    al.cigar = sam.collapse_soft_clip_blocks(new_cigar)
-                    if al.is_reverse:
-                        seq = utilities.reverse_complement(self.seq)
-                        qual = self.qual[::-1]
-                    else:
-                        seq = self.seq
-                        qual = self.qual
-                    al.query_sequence = seq
-                    al.query_qualities = qual
-                    al_dict = al.to_dict()
-                    al_dict['ref_name'] = self.editing_strategy.target
-                    edge_al = pysam.AlignedSegment.from_dict(al_dict, self.editing_strategy.header)
-                    edge_als.append((edits_in_primer, edge_al))
+                    edge_als.append((edits_in_primer, al))
 
         edge_als = sorted(edge_als, key=lambda t: t[0])
 
@@ -528,8 +999,130 @@ class Categorizer:
             edge_al = None
         else:
             edge_al = edge_als[0][1]
+
+        if edge_al is not None:
+            seq_bytes = strat.reference_sequence_bytes[edge_al.reference_name]
+            edge_al = sw.extend_alignment(edge_al, seq_bytes)
             
         return edge_al
+
+    def comprehensively_split_alignment(self, al):
+        ''' It is easier to reason about alignments if any that contain long
+        insertions, long deletions, or clusters of many edits are split into
+        multiple alignments.
+        '''
+
+        strat = self.editing_strategy
+
+        split_als = []
+
+        if self.platform == 'illumina':
+            for split_1 in split_at_edit_clusters(al, strat.reference_sequences, programmed_substitutions=self.programmed_substitutions):
+                for split_2 in sam.split_at_deletions(split_1, 1):
+                    for split_3 in sam.split_at_large_insertions(split_2, 1):
+                        cropped_al = crop_terminal_mismatches(split_3, strat.reference_sequences)
+                        if cropped_al is not None and cropped_al.query_alignment_length >= 5:
+                            split_als.append(cropped_al)
+
+        elif self.platform in ['pacbio', 'ont', 'nanopore']:
+            # Empirically, for long read data, it is hard to find a threshold
+            # for number of edits within a window that doesn't produce a lot
+            # of false positive splits, so don't try to split at edit clusters.
+
+            if al.reference_name == strat.target:
+                # First split at short indels close to expected cuts.
+                exempt = strat.not_around_cuts(20)
+                for split_1 in sam.split_at_deletions(al, 3, exempt_if_overlaps=exempt):
+                    for split_2 in sam.split_at_large_insertions(split_1, 3, exempt_if_overlaps=exempt):
+                        # Then at longer indels anywhere.
+                        for split_3 in sam.split_at_deletions(split_2, 10):
+                            for split_4 in sam.split_at_large_insertions(split_3, 10):
+                                split_als.append(split_4)
+            else:
+                for split_1 in sam.split_at_deletions(al, 10):
+                    for split_2 in sam.split_at_large_insertions(split_1, 10):
+                        split_als.append(split_2)
+
+        else:
+            raise ValueError(self.platform)
+
+        return split_als
+
+    @memoized_property
+    def supplemental_alignments(self):
+        supp_als = [
+            al for al in self.alignments
+            if (not al.is_unmapped) and al.reference_name not in self.primary_ref_names
+        ]
+
+        if self.platform in ['pacbio', 'ont', 'nanopore']:
+            ins_size_to_split_at = 10
+        else:
+            ins_size_to_split_at = 2
+
+        split_als = []
+        for supp_al in supp_als:
+            split_als.extend(sam.split_at_large_insertions(supp_al, ins_size_to_split_at))
+        
+        few_mismatches = []
+        # Alignments generated with STAR will have MD tags, but alignments
+        # generated with blastn or minimap2 will not. 
+        for al in split_als:
+            ref_seq = self.editing_strategy.reference_sequences.get(al.reference_name)
+            if al.has_tag('MD') or ref_seq is not None:
+                if sam.total_edit_distance(al, ref_seq=ref_seq) / al.query_alignment_length < 0.2:
+                    few_mismatches.append(al)
+            else:
+                few_mismatches.append(al)
+
+        # Convert relevant supp als to target als.
+        # Any that overlap the amplicon interval should not be considered supplemental_als
+        # to prevent the intended amplicon from being considered nonspecific amplification.
+
+        strat = self.editing_strategy
+
+        if strat.reference_name_in_genome_source:
+            target_als_outside_amplicon = []
+            other_reference_als = []
+
+            target_interval = interval.Interval(0, len(strat.target_sequence) - 1)
+
+            for al in few_mismatches:
+
+                if al.reference_name != strat.reference_name_in_genome_source:
+                    other_reference_als.append(al)
+
+                else:
+                    conversion_results = strat.convert_genomic_alignment_to_target_coordinates(al)
+
+                    if conversion_results:
+                        converted_interval = interval.Interval(conversion_results['start'], conversion_results['end'])
+    
+                        if not interval.are_overlapping(converted_interval, target_interval):
+                            other_reference_als.append(al)
+
+                        else:
+                            al_dict = al.to_dict()
+
+                            al_dict['ref_name'] = strat.target
+                            
+                            converted_al = pysam.AlignedSegment.from_dict(al_dict, strat.header)
+
+                            converted_al.reference_start = conversion_results['start']
+
+                            converted_al.is_reverse = (conversion_results['strand'] == '-')
+
+                            overlaps_amplicon = interval.get_covered_on_ref(converted_al) & strat.amplicon_interval
+
+                            if not overlaps_amplicon:
+                                target_als_outside_amplicon.append(converted_al)
+
+            final_als = other_reference_als + target_als_outside_amplicon
+
+        else:
+            final_als = few_mismatches
+
+        return final_als
 
 class NoOverlapPairCategorizer(Categorizer):
     def __init__(self, alignments, editing_strategy):
@@ -724,53 +1317,6 @@ def crop_terminal_mismatches(al, reference_sequences):
 
     return cropped_al
 
-def comprehensively_split_alignment(al, editing_strategy, mode,
-                                    ins_size_to_split_at=None,
-                                    del_size_to_split_at=None,
-                                    programmed_substitutions=None,
-                                   ):
-    ''' It is easier to reason about alignments if any that contain long insertions, long deletions, or clusters
-    of many edits are split into multiple alignments.
-    '''
-
-    split_als = []
-
-    if mode == 'illumina':
-        if ins_size_to_split_at is None:
-            ins_size_to_split_at = 3
-        
-        if del_size_to_split_at is None:
-            del_size_to_split_at = 1
-
-        for split_1 in split_at_edit_clusters(al, editing_strategy.reference_sequences, programmed_substitutions=programmed_substitutions):
-            for split_2 in sam.split_at_deletions(split_1, del_size_to_split_at):
-                for split_3 in sam.split_at_large_insertions(split_2, ins_size_to_split_at):
-                    cropped_al = crop_terminal_mismatches(split_3, editing_strategy.reference_sequences)
-                    if cropped_al is not None and cropped_al.query_alignment_length >= 5:
-                        split_als.append(cropped_al)
-
-    elif mode in ['pacbio', 'ont', 'nanopore']:
-        # Empirically, for Pacbio data, it is hard to find a threshold for number of edits within a window that
-        # doesn't produce a lot of false positive splits, so don't try to split at edit clusters.
-
-        if al.reference_name == editing_strategy.target:
-            # First split at short indels close to expected cuts.
-            exempt = editing_strategy.not_around_cuts(20)
-            for split_1 in sam.split_at_deletions(al, 3, exempt_if_overlaps=exempt):
-                for split_2 in sam.split_at_large_insertions(split_1, 3, exempt_if_overlaps=exempt):
-                    # Then at longer indels anywhere.
-                    for split_3 in sam.split_at_deletions(split_2, 10):
-                        for split_4 in sam.split_at_large_insertions(split_3, 10):
-                            split_als.append(split_4)
-        else:
-            for split_1 in sam.split_at_deletions(al, 10):
-                for split_2 in sam.split_at_large_insertions(split_1, 10):
-                    split_als.append(split_2)
-
-    else:
-        raise ValueError(mode)
-
-    return split_als
 
 def junction_microhomology(reference_sequences, first_al, second_al):
     if first_al is None or second_al is None:

@@ -57,12 +57,18 @@ def identify_homology_arms(donor_seq, donor_type, target_seq, cut_after, require
     possible_HA_boundaries = []
     
     for before_al in alignments['before_cut']:
+        before_strand = sam.get_strand(before_al)
+
         for after_al in alignments['after_cut']:
-            if sam.get_strand(before_al) == sam.get_strand(after_al):
-                strand = sam.get_strand(before_al)
+            after_strand = sam.get_strand(after_al)
+
+            if before_strand == after_strand:
+                strand = before_strand
+
                 if strand == '+':
                     if before_al.reference_end < after_al.reference_start:
                         possible_HA_boundaries.append((donor_seq, before_al.reference_start, after_al.reference_end))
+
                 elif strand == '-':
                     if before_al.reference_start > after_al.reference_end:
                         flipped_seq = utilities.reverse_complement(donor_seq)
