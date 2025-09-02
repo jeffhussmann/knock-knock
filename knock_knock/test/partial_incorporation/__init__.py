@@ -49,6 +49,7 @@ class ReadSet(knock_knock.test.categorization.ReadSet):
             'editing_strategy': self.name,
             'sequencing_start_feature_name': editing_strategy.sequencing_start_feature_name,
             'sgRNAs': ';'.join(editing_strategy.pegRNA_names),
+            'platform': 'illumina',
         }
         
         sample_sheet = pd.Series(sample_sheet).to_frame().T.set_index('sample_name')

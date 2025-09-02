@@ -32,11 +32,6 @@ class ReadSet(knock_knock.test.Extractor):
     def __init__(self, name):
         self.name = name
 
-        self.data_dir = type(self).base_dir / 'data' / name
-        self.strategy_dir = type(self).base_dir / 'strategies' / name
-
-        self.sample_sheet_fn = self.data_dir / 'sample_sheet.csv'
-
         self.R1_fastq_fn = self.data_dir / f'{type(self).sample_name}_R1.fastq'
         self.R2_fastq_fn = self.data_dir / f'{type(self).sample_name}_R2.fastq'
 
@@ -44,28 +39,8 @@ class ReadSet(knock_knock.test.Extractor):
 
         self.expected_categorizations_fn = self.data_dir / 'expected_categorizations.yaml'
 
-    @memoized_property
-    def sample_sheet(self):
-        return pd.read_csv(self.sample_sheet_fn, index_col='sample_name').loc[type(self).sample_name]
-
-    @memoized_property
-    def platform(self):
-        return self.sample_sheet['platform']
-
-    def experiment(self, results_prefix):
-        identifier = knock_knock.experiment.ExperimentIdentifier(type(self).base_dir,
-                                                                 self.name,
-                                                                 type(self).sample_name,
-                                                                )
-
-        if self.platform == 'illumina':
-            exp_class = knock_knock.test.IlluminaExperiment
-        elif self.platform == 'pacbio':
-            exp_class = knock_knock.test.PacbioExperiment
-        else:
-            raise ValueError
-
-        return exp_class(identifier, results_prefix)
+    def __str__(self):
+        return self.name
 
     @memoized_property
     def expected_categorizations(self):

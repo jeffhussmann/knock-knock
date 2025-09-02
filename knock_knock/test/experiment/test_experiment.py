@@ -2,11 +2,9 @@ import shutil
 from pathlib import Path
 
 import pandas as pd
-import yaml
 
 import hits.utilities
 
-import knock_knock.experiment
 import knock_knock.test
 
 import knock_knock.test.partial_incorporation
@@ -21,17 +19,6 @@ class Comparison(knock_knock.test.Extractor):
 
     def __init__(self, name):
         self.name = name
-
-        self.data_dir = type(self).base_dir / 'data' / name
-        self.strategy_dir = type(self).base_dir / 'strategies' / name
-
-    def experiment(self, results_prefix):
-        identifier = knock_knock.experiment.ExperimentIdentifier(type(self).base_dir,
-                                                                 self.name,
-                                                                 type(self).sample_name,
-                                                                )
-
-        return knock_knock.test.Experiment(identifier, results_prefix)
 
     @memoized_property
     def expected_results_experiment(self):
@@ -73,6 +60,7 @@ class Comparison(knock_knock.test.Extractor):
             'editing_strategy': self.name,
             'sequencing_start_feature_name': editing_strategy.sequencing_start_feature_name,
             'sgRNAs': ';'.join(editing_strategy.pegRNA_names),
+            'platform': 'illumina',
         }
         
         sample_sheet = pd.Series(sample_sheet).to_frame().T.set_index('sample_name')

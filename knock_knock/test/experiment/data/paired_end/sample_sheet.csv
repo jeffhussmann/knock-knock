@@ -1,2 +1,2 @@
-sample_name,R1,R2,experiment_type,editing_strategy,sequencing_start_feature_name,sgRNAs
-sample,R1.fastq,R2.fastq,prime_editing,paired_end,reverse_primer,FANCF_4h_1AtoC_6GtoT
+sample_name,R1,R2,experiment_type,editing_strategy,sequencing_start_feature_name,sgRNAs,platform
+sample,R1.fastq,R2.fastq,prime_editing,paired_end,reverse_primer,FANCF_4h_1AtoC_6GtoT,illumina

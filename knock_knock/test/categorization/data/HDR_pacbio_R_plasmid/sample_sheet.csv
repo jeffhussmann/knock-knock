@@ -1,2 +1,2 @@
-sample_name,experiment_type,editing_strategy,sequencing_start_feature_name,sgRNAs,platform,CCS_fastq_fn
-extracted,HDR,HDR_pacbio_R_plasmid,RAB11A_PAC_0,RAB11A,pacbio,extracted_CCS.fastq
+sample_name,experiment_type,editing_strategy,sequencing_start_feature_name,sgRNAs,platform,CCS_fastq_fn,supplemental_indices
+extracted,HDR,HDR_pacbio_R_plasmid,RAB11A_PAC_0,RAB11A,pacbio,extracted_CCS.fastq,e_coli

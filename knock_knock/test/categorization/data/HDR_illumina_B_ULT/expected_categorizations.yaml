@@ -29,3 +29,8 @@
 01:01101:010520:007855:
   category: complex misintegration
   subcategory: complex misintegration
+
+01:02102:011872:012784:
+  category: simple indel
+  subcategory: insertion
+  note: deletion in left primer
