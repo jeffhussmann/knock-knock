@@ -40,3 +40,32 @@
 017171720:0000000270:
   category: unintended rejoining of overlap-extended sequence
   subcategory: left RT'ed + overlap-extended, right RT'ed + overlap-extended
+
+017171720:0000006373:
+  category: wild type
+  subcategory: mismatches
+  note: error at beginning of primer prevents trimming of Ns from start
+
+017171720:0000000041:
+  category: unintended rejoining of RT'ed sequence
+  subcategory: left RT'ed, right RT'ed
+  note: has a deletion and an N in the left primer
+
+017171720:0000000074:
+  category: unintended rejoining of RT'ed sequence
+  subcategory: left RT'ed, right RT'ed
+  note: left RT extension not required to cover but does so with 1 fewer mismatch
+
+017171720:0000000244:
+  category: unintended rejoining of RT'ed sequence
+  subcategory: left RT'ed, right RT'ed
+  note: left RT extension not required to cover but does so with 1 fewer mismatch
+
+017171720:0000000070:
+  category: unintended rejoining of RT'ed sequence
+  subcategory: left RT'ed, right RT'ed
+  note: right RT extension not required to cover but does so with 1 fewer mismatch. Has 2 deletions in right primer.
+
+017171720:0000007037:
+  category: unintended rejoining of RT'ed sequence
+  subcategory: left RT'ed, right not seen

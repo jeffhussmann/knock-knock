@@ -1,0 +1,2 @@
+sample_name,experiment_type,editing_strategy,sequencing_start_feature_name,sgRNAs,platform,R1
+extracted,single_flap,PMID31634902_Fig3B_EMX1_+014_1,EMX1_0,EMX1_3b;EMX1_3b_+14_nicking,illumina,extracted_R1.fastq

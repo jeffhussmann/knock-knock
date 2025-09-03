@@ -1,0 +1,18 @@
+010287225:0000002490:
+  category: wild type
+  subcategory: short indel far from cut
+  note: 1 nt deletion and many mismatches
+
+010287225:0000000007:
+  category: wild type
+  subcategory: mismatches
+  note: 1 nt deletion in left primer
+
+010287225:0000001104:
+  category: unintended rejoining of RT'ed sequence
+  subcategory: no scaffold
+
+010287225:0000019353:
+  category: wild type
+  subcategory: mismatches
+  note: has non-programmed mismatch at programmed position

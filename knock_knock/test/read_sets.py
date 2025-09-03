@@ -94,7 +94,6 @@ class ReadSet:
         except:
             architecture.category = 'error'
             architecture.subcategory = 'error'
-            architecture.details = 'error'
 
         expected = self.expected_values[qname]
 

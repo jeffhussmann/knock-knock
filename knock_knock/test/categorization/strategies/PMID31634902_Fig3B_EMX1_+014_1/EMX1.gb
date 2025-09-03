@@ -1,0 +1,41 @@
+LOCUS       EMX1                    1277 bp    DNA              UNK 01-JAN-1980
+DEFINITION  .
+ACCESSION   <unknown id>
+VERSION     <unknown id>
+KEYWORDS    .
+SOURCE      .
+  ORGANISM  .
+            .
+FEATURES             Location/Qualifiers
+     misc_feature    501..520
+                     /label="EMX1_0"
+                     /ApEinfo_fwdcolor="#75C6A9"
+     misc_feature    complement(759..777)
+                     /label="EMX1_1"
+                     /ApEinfo_fwdcolor="#9eafd2"
+     misc_feature    501..520
+                     /label="anchor"
+ORIGIN
+        1 gtctggctgt ccaggcactg ctcttgatat aaacaccacc tcctagttat gaaaccatgc
+       61 ccattctgcc tctctgtatg gaaaagagca tggggctggc ccgtggggtg gtgtccactt
+      121 taggccctgt gggagatcat gggaacccac gcagtgggtc ataggctctc tcatttacta
+      181 ctcacatcca ctctgtgaag aagcgattat gatctctcct ctagaaactc gtagagtccc
+      241 atgtctgccg gcttccagag cctgcactcc tccaccttgg cttggctttg ctggggctag
+      301 aggagctagg atgcacagca gctctgtgac cctttgtttg agaggaacag gaaaaccacc
+      361 cttctctctg gcccactgtg tcctcttcct gccctgccat ccccttctgt gaatgttaga
+      421 cccatgggag cagctggtca gaggggaccc cggcctgggg cccctaaccc tatgtagcct
+      481 cagtcttccc atcaggctct cagctcagcc tgagtgttga ggccccagtg gctgctctgg
+      541 gggcctcctg agtttctcat ctgtgcccct ccctccctgg cccaggtgaa ggtgtggttc
+      601 cagaaccgga ggacaaagta caaacggcag aagctggagg aggaagggcc tgagtccgag
+      661 cagaagaaga agggctccca tcacatcaac cggtggcgca ttgccacgaa gcaggccaat
+      721 ggggaggaca tcgatgtcac ctccaatgac tagggtgggc aaccacaaac ccacgagggc
+      781 agagtgctgc ttgctgctgg ccaggcccct gcgtgggccc aagctggact ctggccactc
+      841 cctggccagg ctttggggag gcctggagtc atggccccac agggcttgaa gcccggggcc
+      901 gccattgaca gagggacaag caatgggctg gctgaggcct gggaccactt ggccttctcc
+      961 tcggagagcc tgcctgcctg ggcgggcccg cccgccaccg cagcctccca gctgctctcc
+     1021 gtgtctccaa tctccctttt gttttgatgc atttctgttt taatttattt tccaggcacc
+     1081 actgtagttt agtgatcccc agtgtccccc ttccctatgg gaataataaa agtctctctc
+     1141 ttaatgacac gggcatccag ctccagcccc agagcctggg gtggtagatt ccggctctga
+     1201 gggccagtgg gggctggtag agcaaacgcg ttcagggcct gggagcctgg ggtggggtac
+     1261 tggtggaggg ggtcaag
+//

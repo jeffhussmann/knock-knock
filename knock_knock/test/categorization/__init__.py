@@ -9,7 +9,6 @@ import hits.utilities
 
 memoized_property = hits.utilities.memoized_property
 
-import knock_knock.experiment
 import knock_knock.illumina_experiment
 import knock_knock.pacbio_experiment
 import knock_knock.test
@@ -41,6 +40,9 @@ class ReadSet(knock_knock.test.Extractor):
 
     def __str__(self):
         return self.name
+
+    def __repr__(self):
+        return str(self)
 
     @memoized_property
     def expected_categorizations(self):

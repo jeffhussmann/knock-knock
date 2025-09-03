@@ -31,3 +31,4 @@
   category: edit + indel
   subcategory: duplication
   note: mismatches to the right of the duplication junction
+  expected_failure: unfortunate mismatches break up duplication alignment

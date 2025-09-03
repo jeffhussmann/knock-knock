@@ -67,7 +67,7 @@ class Architecture(prime_editing.Architecture):
 
             buffer = 0
 
-            primer_feature = strat.primers_by_side_of_read['left']
+            primer_feature = self.primers_by_side_of_read['left']
 
             primer_interval = hits.interval.Interval.from_feature(primer_feature)
 
@@ -185,17 +185,14 @@ class Architecture(prime_editing.Architecture):
 
             self.relevant_alignments = self.uncategorized_relevant_alignments
 
-        self.details = str(self.Details)
-
         self.categorized = True
 
         return self.category, self.subcategory, self.details, self.Details
 
-    @memoized_property
     def plot_parameters(self):
         strat = self.editing_strategy
 
-        plot_parameters = super().plot_parameters
+        plot_parameters = super().plot_parameters()
 
         for virtual_primer in {(strat.target, name) for name in strat.primers if name != strat.sequencing_start_feature_name}:
             plot_parameters['features_to_show'].remove(virtual_primer)

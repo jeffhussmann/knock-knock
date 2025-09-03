@@ -7,7 +7,7 @@ import knock_knock.outcome
 import knock_knock.visualize.architecture
 
 from hits import interval, sam, sw, utilities
-from hits.utilities import memoized_property
+from hits.utilities import memoized_property, memoized_with_kwargs
 
 from knock_knock.outcome import Details
 
@@ -219,6 +219,41 @@ class Architecture(knock_knock.architecture.Categorizer):
             read_side_to_HA_name[read_side] = HA_name
             
         return read_side_to_HA_name
+
+    @memoized_with_kwargs
+    def extension_chain_template(self, *, side):
+        candidate_alignments = [
+            {'left': self.target_edge_alignments['left'], 'right': self.target_alignments},
+            self.donor_alignments,
+            {'left': self.target_alignments, 'right': self.target_edge_alignments['right']},
+        ]
+
+        shared_features = [
+            self.HA_names_by_side_of_read['left'],
+            self.HA_names_by_side_of_read['right'],
+        ]
+
+        names = [
+            'first target',
+            'donor',
+            'second target',
+        ]
+
+        last_al_to_description = {
+            'none': 'no target',
+            'first target': 'not HDR\'ed',
+            'donor': 'incomplete HDR',
+            'second target': 'HDR',
+        }
+
+        extension_chain_template = knock_knock.architecture.ExtensionChainTemplate(candidate_alignments,
+                                                                                   shared_features,
+                                                                                   names,
+                                                                                   last_al_to_description,
+                                                                                   side,
+                                                                                  )
+
+        return extension_chain_template 
     
     def register_integration_details(self):
         strat = self.editing_strategy
