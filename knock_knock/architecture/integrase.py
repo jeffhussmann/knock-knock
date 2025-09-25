@@ -163,7 +163,7 @@ class Architecture(twin_prime.Architecture):
         return target_edge_als
 
     @memoized_property
-    def between_primers(self):
+    def between_primers_inclusive(self):
         if self.primer_alignments['left'] is not None:
             start = interval.get_covered(self.primer_alignments['left']).start
         else:
@@ -177,7 +177,7 @@ class Architecture(twin_prime.Architecture):
         return interval.Interval(start, end)
 
     def overlaps_outside_primers(self, al):
-        return (hits.interval.get_covered(al) - self.between_primers).total_length > 0
+        return (hits.interval.get_covered(al) - self.between_primers_inclusive).total_length > 0
 
     @memoized_property
     def starts_at_expected_location(self):
@@ -464,7 +464,7 @@ class Architecture(twin_prime.Architecture):
 
     @memoized_property
     def rejoining_edges(self):
-        gap = self.not_covered_by_primers - hits.interval.get_disjoint_covered(self.target_edge_alignments_list)
+        gap = self.between_primers_inclusive - hits.interval.get_disjoint_covered(self.target_edge_alignments_list)
 
         overlap_gap = [al for al in self.nonredundant_donor_alignments + self.nonredundant_supplemental_alignments if (hits.interval.get_covered(al) & gap).total_length  > 0]
 
@@ -621,7 +621,7 @@ class Architecture(twin_prime.Architecture):
         elif any(len(als) > 1 for side, als in self.long_primer_alignments.items()):
             malformed = 'likely concatamer'
 
-        elif (self.whole_read - self.between_primers).total_length > 500:
+        elif (self.whole_read - self.between_primers_inclusive).total_length > 500:
             malformed = 'likely concatamer'
 
         else:

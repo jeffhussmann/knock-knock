@@ -132,7 +132,7 @@ class Architecture(prime_editing.Architecture):
                     'second target',
                    ]:
             
-            if (key in covered) and (self.not_covered_by_primers - covered[key]).is_empty:
+            if (key in covered) and (self.between_primers - covered[key]).is_empty:
                 minimal_cover = key
                 break
 

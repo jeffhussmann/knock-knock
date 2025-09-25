@@ -315,8 +315,10 @@ class ReadDiagram:
 
         self.plot_read()
 
+        self.ref_p_to_xs = {}
+
         if self.ref_centric:
-            self.draw_target_and_donor()
+            self.draw_references()
 
         self.update_size()
 
@@ -1415,7 +1417,7 @@ class ReadDiagram:
                                      annotation_clip=False,
                                     )
 
-        # Draw target and donor names next to diagrams.
+        # Draw reference names next to diagrams.
         label = self.label_overrides.get(ref_name, ref_name)
 
         self.ax.annotate(label,
@@ -1503,35 +1505,26 @@ class ReadDiagram:
                     
         self.ax.set_ylim(self.min_y - 0.1 * self.height, self.max_y + 0.1 * self.height)
 
-        return ref_p_to_x
+        self.ref_p_to_xs[ref_name] = ref_p_to_x
 
-    def draw_target_and_donor(self):
+    def draw_references(self):
         if len(self.alignments) == 0:
             return
 
-        strat = self.editing_strategy
+        ref_y = self.max_y + self.target_and_donor_y_gap
+
+        for ref_name in self.references_above:
+            if ref_name in self.refs_to_draw:
+                self.draw_reference(ref_name, ref_y, self.flip_target)
+                ref_y += 7 * self.gap_between_als
+
+        ref_y = self.min_y - self.target_and_donor_y_gap
+
+        for ref_name in self.references_below:
+            if ref_name in self.refs_to_draw:
+                self.draw_reference(ref_name, ref_y, self.flip_target)
+                ref_y -= 7 * self.gap_between_als
         
-        if self.target_above:
-            target_y = self.max_y + self.target_and_donor_y_gap
-        else:
-            target_y = self.min_y - self.target_and_donor_y_gap
-
-        if self.donor_below:
-            donor_y = target_y - self.target_and_donor_y_gap
-        else:
-            donor_y = self.max_y + self.target_and_donor_y_gap
-
-        params = []
-
-        if strat.target in self.refs_to_draw and len(self.alignment_coordinates[strat.target]) > 0:
-            params.append((strat.target, target_y, self.flip_target))
-
-        if strat.donor in self.refs_to_draw and len(self.alignment_coordinates[strat.donor]) > 0:
-            params.append((strat.donor, donor_y, self.flip_donor))
-
-        for ref_name, ref_y, flip in params:
-            self.draw_reference(ref_name, ref_y, flip)
-
     @property
     def height(self):
         return self.max_y - self.min_y

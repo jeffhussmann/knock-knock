@@ -1402,8 +1402,8 @@ def get_all_experiments(base_dir,
     if conditions is None:
         conditions = {}
 
-    if groups_to_exclude is None:
-        groups_to_exclude = set()
+    if batch_names_to_exclude is None:
+        batch_names_to_exclude = set()
 
     def check_conditions(exp):
         for k, v in conditions.items():
@@ -1450,17 +1450,18 @@ def get_all_experiments(base_dir,
 
             exp_class = get_exp_class(description.get('platform'))
             
-            exp = exp_class(base_dir, batch_name, sample_name, description=description, progress=progress)
+            identifier = ExperimentIdentifier(base_dir, batch_name, sample_name)
+            exp = exp_class(identifier, description=description, progress=progress)
             exps.append(exp)
 
-    filtered = [exp for exp in exps if check_conditions(exp) and exp.batch_name not in batch_names_to_exclude]
+    filtered = [exp for exp in exps if check_conditions(exp) and exp.identifier.batch_name not in batch_names_to_exclude]
     if len(filtered) == 0:
         raise ValueError('No experiments met conditions')
 
     if as_dictionary:
         d = {}
         for exp in filtered:
-            d[exp.batch_name, exp.sample_name] = exp
+            d[exp.identifier.batch_name, exp.identifier.sample_name] = exp
         
         filtered = d
 

@@ -220,23 +220,13 @@ class Architecture(knock_knock.architecture.Categorizer):
             
         return read_side_to_HA_name
 
-    @memoized_with_kwargs
-    def extension_chain_template(self, *, side):
-        candidate_alignments = [
-            {'left': self.target_edge_alignments['left'], 'right': self.target_alignments},
-            self.donor_alignments,
-            {'left': self.target_alignments, 'right': self.target_edge_alignments['right']},
-        ]
-
-        shared_features = [
-            self.HA_names_by_side_of_read['left'],
-            self.HA_names_by_side_of_read['right'],
-        ]
-
-        names = [
-            'first target',
-            'donor',
-            'second target',
+    def extension_chain_link_specifications(self):
+        links = [
+            (self.target_alignments, ('first target', 'second target')),
+                self.HA_names_by_side_of_read['left'],
+            (self.donor_alignments, ('donor', 'donor')),
+                self.HA_names_by_side_of_read['right'],
+            (self.target_alignments, ('second target', 'first target')),
         ]
 
         last_al_to_description = {
@@ -246,14 +236,7 @@ class Architecture(knock_knock.architecture.Categorizer):
             'second target': 'HDR',
         }
 
-        extension_chain_template = knock_knock.architecture.ExtensionChainTemplate(candidate_alignments,
-                                                                                   shared_features,
-                                                                                   names,
-                                                                                   last_al_to_description,
-                                                                                   side,
-                                                                                  )
-
-        return extension_chain_template 
+        return links, last_al_to_description 
     
     def register_integration_details(self):
         strat = self.editing_strategy
@@ -650,15 +633,16 @@ class Architecture(knock_knock.architecture.Categorizer):
         for side_of_target in [5, 3]:
             side_als = [al for al in self.target_alignments if self.overlaps_primer(al, side_of_target, by='target')]
 
-            # Partition into equivalence classes of shared feature.
-            primer_name = self.editing_strategy.primers_by_side_of_target[side_of_target].ID
+            if len(side_als) > 0:
+                # Partition into equivalence classes of shared feature.
+                primer_name = self.editing_strategy.primers_by_side_of_target[side_of_target].ID
 
-            def relation(first_al, second_al):
-                return self.share_feature(first_al, primer_name, second_al, primer_name)
+                def relation(first_al, second_al):
+                    return self.share_feature(first_al, primer_name, second_al, primer_name)
 
-            eq_classes = utilities.equivalence_classes(side_als, relation)
+                eq_classes = utilities.equivalence_classes(side_als, relation)
 
-            side_als = [max(als, key=lambda al: al.query_alignment_length) for als in eq_classes]
+                side_als = [max(als, key=lambda al: al.query_alignment_length) for als in eq_classes]
 
             als[side_of_target] = side_als
 

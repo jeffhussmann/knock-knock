@@ -192,29 +192,18 @@ class Architecture(prime_editing.Architecture):
         other_pegRNA_name = self.other_pegRNA_name(pegRNA_al_to_extend.reference_name)
         return self.extend_alignment_from_shared_feature(pegRNA_al_to_extend, 'overlap', other_pegRNA_name, 'overlap')
 
-    @memoized_with_kwargs
-    def extension_chain_template(self, *, side):
+    def extension_chain_link_specifications(self):
         left_pegRNA_name = self.editing_strategy.pegRNA_names_by_side_of_read['left']
         right_pegRNA_name = self.editing_strategy.pegRNA_names_by_side_of_read['right']
 
-        candidate_alignments = [
-            {'left': self.target_edge_alignments['left'], 'right': self.target_alignments},
-            self.pegRNA_alignments_by_pegRNA_name[left_pegRNA_name],
-            self.pegRNA_alignments_by_pegRNA_name[right_pegRNA_name],
-            {'left': self.target_alignments, 'right': self.target_edge_alignments['right']},
-        ]
-
-        shared_features = [
-            knock_knock.pegRNAs.make_HA_PBS_name(left_pegRNA_name),
-            'overlap',
-            knock_knock.pegRNAs.make_HA_PBS_name(right_pegRNA_name),
-        ]
-
-        names = [
-            'first target',
-            'first pegRNA',
-            'second pegRNA',
-            'second target',
+        links = [
+            (self.target_alignments, ('first target', 'second target')),
+                knock_knock.pegRNAs.make_HA_PBS_name(left_pegRNA_name),
+            (self.pegRNA_alignments_by_pegRNA_name[left_pegRNA_name], ('first pegRNA', 'second pegRNA')),
+                'overlap',
+            (self.pegRNA_alignments_by_pegRNA_name[right_pegRNA_name], ('second pegRNA', 'first pegRNA')),
+                knock_knock.pegRNAs.make_HA_PBS_name(right_pegRNA_name),
+            (self.target_alignments, ('second target', 'first target')),
         ]
 
         last_al_to_description = {
@@ -225,14 +214,7 @@ class Architecture(prime_editing.Architecture):
             'second target': 'RT\'ed + overlap-extended',
         }
 
-        extension_chain_template = knock_knock.architecture.ExtensionChainTemplate(candidate_alignments,
-                                                                                   shared_features,
-                                                                                   names,
-                                                                                   last_al_to_description,
-                                                                                   side,
-                                                                                  )
-
-        return extension_chain_template 
+        return links, last_al_to_description
 
     @property
     def reconcile_function(self):
@@ -253,22 +235,22 @@ class Architecture(prime_editing.Architecture):
         for side in ['left', 'right']:
             chain = self.extension_chains_by_side[side]
 
-            if chain['description'] in ['not seen', 'no target']:
+            if chain.description in ['not seen', 'no target']:
                 last_al = None
 
             else:
-                if chain['description'] == 'RT\'ed + overlap-extended':
-                    if 'second target' in chain['alignments']:
-                        last_al = chain['alignments']['second target']
+                if chain.description == 'RT\'ed + overlap-extended':
+                    if 'second target' in chain.alignments:
+                        last_al = chain.alignments['second target']
                     else:
-                        last_al = chain['alignments']['second pegRNA']
+                        last_al = chain.alignments['second pegRNA']
 
                 else:
-                    if chain['description'] == 'not RT\'ed':
-                        last_al = chain['alignments']['first target']
+                    if chain.description == 'not RT\'ed':
+                        last_al = chain.alignments['first target']
 
-                    elif chain['description'] == 'RT\'ed':
-                        last_al = chain['alignments']['first pegRNA']
+                    elif chain.description == 'RT\'ed':
+                        last_al = chain.alignments['first pegRNA']
 
             last_als[side] = last_al
 
@@ -287,15 +269,15 @@ class Architecture(prime_editing.Architecture):
 
         chain = self.extension_chains_by_side[side]
 
-        if chain['description'] in ['not seen', 'no target']:
+        if chain.description in ['not seen', 'no target']:
             relevant_edge = None
 
         else:
-            if chain['description'] == 'RT\'ed + overlap-extended':
-                if 'second target' in chain['alignments']:
-                    al = chain['alignments']['second target']
+            if chain.description == 'RT\'ed + overlap-extended':
+                if 'second target' in chain.alignments:
+                    al = chain.alignments['second target']
                 else:
-                    al = chain['alignments']['second pegRNA']
+                    al = chain.alignments['second pegRNA']
 
                 this_side_overlap = strat.features[this_side_pegRNA_name, 'overlap']
                 other_side_overlap = strat.features[other_side_pegRNA_name, 'overlap']
@@ -322,8 +304,8 @@ class Architecture(prime_editing.Architecture):
                     relevant_edge = up_to_overlap_end + up_to_opposite_PBS_end + extra_genomic
                     
             else:
-                if chain['description'] == 'not RT\'ed':
-                    al = chain['alignments']['first target']
+                if chain.description == 'not RT\'ed':
+                    al = chain.alignments['first target']
 
                     target_PBS_name = strat.PBS_names_by_side_of_read[side]
                     target_PBS = strat.features[strat.target, target_PBS_name]
@@ -336,8 +318,8 @@ class Architecture(prime_editing.Architecture):
                     else:
                         relevant_edge = target_PBS.start - al.reference_start
 
-                elif chain['description'] == 'RT\'ed':
-                    al = chain['cropped_last_al']
+                elif chain.description == 'RT\'ed':
+                    al = chain.cropped_last_al
 
                     relevant_edge = PBS_end - al.reference_start
                 
@@ -348,9 +330,9 @@ class Architecture(prime_editing.Architecture):
         chains = self.extension_chains_by_side
 
         return (
-            chains['left']['description'] == 'RT\'ed + overlap-extended' and
-            chains['right']['description'] == 'RT\'ed + overlap-extended' and 
-            chains['left']['query_covered'] == chains['right']['query_covered']
+            chains['left'].description == 'RT\'ed + overlap-extended' and
+            chains['right'].description == 'RT\'ed + overlap-extended' and 
+            chains['left'].query_covered == chains['right'].query_covered
         )
 
     @memoized_property
@@ -358,9 +340,9 @@ class Architecture(prime_editing.Architecture):
         chains = self.possible_extension_chains_by_side
 
         return (
-            chains['left']['description'] == 'RT\'ed + overlap-extended' and
-            chains['right']['description'] == 'RT\'ed + overlap-extended' and 
-            chains['left']['query_covered'] == chains['right']['query_covered']
+            chains['left'].description == 'RT\'ed + overlap-extended' and
+            chains['right'].description == 'RT\'ed + overlap-extended' and 
+            chains['left'].query_covered == chains['right'].query_covered
         )
 
     @memoized_property
@@ -444,25 +426,10 @@ class Architecture(prime_editing.Architecture):
 
         contains_RTed_sequence = {
             side for side in ['left', 'right']
-            if chains[side]['description'].startswith('RT\'ed')
+            if chains[side].description.startswith('RT\'ed')
         }
 
         return contains_RTed_sequence
-
-    @memoized_property
-    def uncovered_by_extension_chains(self):
-        chains = self.extension_chains_by_side
-
-        left_covered = chains['left']['query_covered']
-        right_covered = chains['right']['query_covered']
-
-        combined_covered = left_covered | right_covered
-        uncovered = self.not_covered_by_primers - combined_covered
-
-        # Allow failure to explain the last few nts of the read.
-        uncovered = uncovered & self.whole_read_minus_edges(2)
-
-        return uncovered
 
     @memoized_property
     def is_unintended_rejoining(self):
@@ -480,7 +447,7 @@ class Architecture(prime_editing.Architecture):
 
         integrase_sites = []
 
-        chains_are_distinct = chains['left']['query_covered'] != chains['right']['query_covered']
+        chains_are_distinct = chains['left'].query_covered != chains['right'].query_covered
 
         side_and_strands = [('left', '+')]
 
@@ -488,9 +455,9 @@ class Architecture(prime_editing.Architecture):
             side_and_strands.append(('right', '-'))
 
         for side, strand in side_and_strands:
-            if 'overlap' in chains[side]['description']:
+            if 'overlap' in chains[side].description:
                 relevant_threshold = pegRNA_pair.complete_integrase_site_ends_in_RT_and_overlap_extended_target_sequence[strand]
-            elif chains[side]['description'].startswith('RT\'ed'):
+            elif chains[side].description.startswith('RT\'ed'):
                 relevant_threshold = pegRNA_pair.complete_integrase_site_ends_in_RT_extended_target_sequence[strand]
             else:
                 continue
@@ -508,7 +475,7 @@ class Architecture(prime_editing.Architecture):
 
         edges = {side: self.get_extension_chain_edge(side) for side in ['left', 'right']}
 
-        if any('overlap' in chains[side]['description'] for side in ['left', 'right']):
+        if any('overlap' in chains[side].description for side in ['left', 'right']):
             self.category = 'unintended rejoining of overlap-extended sequence'
 
         else:
@@ -525,7 +492,7 @@ class Architecture(prime_editing.Architecture):
                 'right': 'right',
             }
 
-        self.subcategory = f'left {chains[possibly_flipped_side["left"]]["description"]}, right {chains[possibly_flipped_side["right"]]["description"]}'
+        self.subcategory = f'left {chains[possibly_flipped_side["left"]].description}, right {chains[possibly_flipped_side["right"]].description}'
 
         MH_nts = self.extension_chain_junction_microhomology
 
@@ -543,7 +510,7 @@ class Architecture(prime_editing.Architecture):
         self.Details = Details(**details_kwargs)
 
         als_by_ref = defaultdict(list)
-        for al in list(chains['left']['alignments'].values()) + list(chains['right']['alignments'].values()):
+        for al in list(chains['left'].alignments.values()) + list(chains['right'].alignments.values()):
             als_by_ref[al.reference_name].append(al)
 
         self.relevant_alignments = []
@@ -576,8 +543,8 @@ class Architecture(prime_editing.Architecture):
         else:
             raise ValueError
 
-        self.relevant_alignments = self.extension_chains_by_side['left']['parsimonious_alignments'] + \
-                                   self.extension_chains_by_side['right']['parsimonious_alignments'] + \
+        self.relevant_alignments = self.extension_chains_by_side['left'].parsimonious_alignments + \
+                                   self.extension_chains_by_side['right'].parsimonious_alignments + \
                                    self.extension_chain_gap_covers
 
     @memoized_property
@@ -706,8 +673,8 @@ class Architecture(prime_editing.Architecture):
                     continue
 
                 def priority_key(al):
-                    is_extension_al = (al == self.extension_chains_by_side['left']['alignments'].get('first pegRNA')) or \
-                                      (al == self.extension_chains_by_side['right']['alignments'].get('first pegRNA'))
+                    is_extension_al = (al == self.extension_chains_by_side['left'].alignments.get('first pegRNA')) or \
+                                      (al == self.extension_chains_by_side['right'].alignments.get('first pegRNA'))
 
                     overlap_length = sam.feature_overlap_length(al, self.editing_strategy.features[pegRNA_name, 'overlap'])
                     return is_extension_al, overlap_length
@@ -739,7 +706,7 @@ class Architecture(prime_editing.Architecture):
 
                 for side in ['left', 'right']:
                     pegRNA_name = self.pegRNA_names_by_side_of_read[side]
-                    ref_p = strat.feature_offset_to_ref_p(pegRNA_name, 'overlap')[anchor_offset]
+                    ref_p = strat.features[pegRNA_name, 'overlap'].offset_to_ref_p[anchor_offset]
                     manual_anchors[pegRNA_name] = (q, ref_p)
                 
         return manual_anchors
@@ -867,26 +834,30 @@ class Architecture(prime_editing.Architecture):
             right_name = self.pegRNA_names_by_side_of_read['right']
             right_visible = (right_name not in invisible_references) and any(al.reference_name == right_name for al in diagram.alignments)
 
-            ref_p_to_xs['left'] = diagram.draw_reference(left_name, ref_ys['left'],
+            diagram.draw_reference(left_name, ref_ys['left'],
                                                          flip=True,
                                                          label_features=label_pegRNAs,
                                                          visible=left_visible,
                                                         )
 
+            ref_p_to_xs['left'] = diagram.ref_p_to_xs[left_name]
+
             diagram.max_x = max(old_max_x, ref_p_to_xs['left'](0))
 
-            ref_p_to_xs['right'] = diagram.draw_reference(right_name, ref_ys['right'],
+            diagram.draw_reference(right_name, ref_ys['right'],
                                                           flip=False,
                                                           label_features=label_pegRNAs,
                                                           visible=right_visible,
                                                          )
+
+            ref_p_to_xs['right'] = diagram.ref_p_to_xs[right_name]
 
             diagram.min_x = min(old_min_x, ref_p_to_xs['right'](0))
 
             diagram.ax.set_xlim(diagram.min_x, diagram.max_x)
 
             if annotate_overlap and self.manual_anchors and (left_name, 'overlap') in strat.features:
-                offset_to_ref_ps = strat.feature_offset_to_ref_p(left_name, 'overlap')
+                offset_to_ref_ps = strat.features[left_name, 'overlap'].offset_to_ref_p
                 overlap_xs = sorted([ref_p_to_xs['left'](offset_to_ref_ps[0]), ref_p_to_xs['left'](offset_to_ref_ps[max(offset_to_ref_ps)])])
 
                 overlap_xs = knock_knock.visualize.architecture.adjust_edges(overlap_xs)

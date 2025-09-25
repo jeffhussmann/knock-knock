@@ -2,19 +2,28 @@
   category: wild type
   subcategory: clean
   note: n/a
+
 010287999:0000000004:
   category: intended edit
   subcategory: combination
   note: n/a
+
 010287999:0000000971:
   category: edit + indel
   subcategory: duplication
   note: short duplication towards end of read
+
 010287999:0000008991:
   category: edit + indel
   subcategory: duplication
   note: (presumably) longer duplication that is truncated by end of read
+
 010287999:0000002532:
   category: edit + indel
   subcategory: deletion
   note: n/a
+
+010287999:0000003497:
+  category: edit + indel
+  subcategory: deletion
+  note: untrimmed illumina adapter at the end

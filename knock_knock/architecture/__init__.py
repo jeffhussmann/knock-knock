@@ -2,6 +2,8 @@ import copy
 import re
 
 from collections import defaultdict
+from dataclasses import dataclass
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -155,7 +157,6 @@ class Categorizer:
                                                    self.editing_strategy.reference_sequences,
                                                    max_deletion_length=2,
                                                    max_insertion_length=2,
-                                                   forbidden_region=self.editing_strategy.around_cuts(10),
                                                   )
 
         refined_als = interval.make_parsimonious(refined_als)
@@ -273,8 +274,8 @@ class Categorizer:
     @memoized_property
     def primers_by_side_of_read(self):
         by_side = {
-            read_side: self.editing_strategy.primers_by_side_of_target[self.read_side_to_target_side[read_side]]
-            for read_side in ['left', 'right']
+            self.target_side_to_read_side[target_side]: primer
+            for target_side, primer in self.editing_strategy.primers_by_side_of_target.items()
         }
 
         return by_side
@@ -291,10 +292,13 @@ class Categorizer:
         else:
             raise ValueError
 
-        primer = primers[side]
+        primer = primers.get(side)
 
-        # Primers are annotated on the strand they anneal to, so don't require strand match here.
-        overlaps = sam.overlaps_feature(alignment, primer, require_same_strand=False)
+        if primer is None:
+            overlaps = False
+        else:
+            # Primers are annotated on the strand they anneal to, so don't require strand match here.
+            overlaps = sam.overlaps_feature(alignment, primer, require_same_strand=False)
 
         if require_correct_orientation:
             satisifes_orientation_requirement = sam.get_strand(alignment) == self.sequencing_direction 
@@ -396,13 +400,11 @@ class Categorizer:
 
     @memoized_property
     def cropped_primer_alignments(self):
-        primers = self.primers_by_side_of_read
-
         primer_alignments = {}
 
-        for side in ['left', 'right']:
+        for side, primer in self.primers_by_side_of_read.items():
             al = self.target_edge_alignments[side]
-            primer_alignments[side] = sam.crop_al_to_feature(al, primers[side])
+            primer_alignments[side] = sam.crop_al_to_feature(al, primer)
 
         return primer_alignments
 
@@ -411,31 +413,35 @@ class Categorizer:
         return interval.get_disjoint_covered(self.cropped_primer_alignments.values())
 
     @memoized_property
-    def not_covered_by_primers(self):
+    def between_primers(self):
         ''' More complicated than function name suggests. If there are primer
         alignments, returns the query interval between but not covered by them to enable ignoring
         the region outside of them, which is likely to be the result of incorrect trimming.
         '''
         if self.covered_by_primers.is_empty:
-            not_covered_by_primers = self.whole_read
+            between_primers = self.whole_read
 
         elif self.cropped_primer_alignments['left'] and not self.cropped_primer_alignments['right']:
-            not_covered_by_primers = interval.Interval(self.covered_by_primers.end + 1, self.whole_read.end)
+            between_primers = interval.Interval(self.covered_by_primers.end + 1, self.whole_read.end)
 
         elif self.cropped_primer_alignments['right'] and not self.cropped_primer_alignments['left']:
-            not_covered_by_primers = interval.Interval(self.whole_read.start, self.covered_by_primers.start - 1)
+            between_primers = interval.Interval(self.whole_read.start, self.covered_by_primers.start - 1)
 
         else:
-            not_covered_by_primers = interval.Interval(self.covered_by_primers.start, self.covered_by_primers.end) - self.covered_by_primers 
+            between_primers = interval.Interval(self.covered_by_primers.start, self.covered_by_primers.end) - self.covered_by_primers 
 
-        if not_covered_by_primers.is_empty:
-            not_covered_by_primers = interval.Interval.empty()
+        if between_primers.is_empty:
+            between_primers = interval.Interval.empty()
 
-        return not_covered_by_primers
+        return between_primers
+
+    @memoized_property
+    def between_primers_inclusive(self):
+        return self.covered_by_primers | self.between_primers
 
     @memoized_property
     def single_read_covering_target_alignment(self):
-        need_to_cover = self.whole_read_minus_edges(2) & self.not_covered_by_primers
+        need_to_cover = self.whole_read_minus_edges(2) & self.between_primers
 
         merged_als = sam.merge_any_adjacent_pairs(self.target_alignments, self.editing_strategy.reference_sequences)
 
@@ -613,8 +619,13 @@ class Categorizer:
 
         if self.seq  == '':
             return 0
+
+        elif len(self.editing_strategy.primers) == 0:
+            return len(self.seq)
+
         elif (self.whole_read - self.covered_by_primers).total_length == 0:
             return len(self.seq)
+
         elif len(self.seq) <= 50:
             return len(self.seq)
 
@@ -682,17 +693,17 @@ class Categorizer:
         if editing_strategy is None:
             editing_strategy = self.editing_strategy
 
-        if (al.reference_name, feature_name) not in editing_strategy.features:
+        feature = editing_strategy.features.get((al.reference_name, feature_name))
+        if feature is None:
             return {}
 
-        ref_p_to_feature_offset = editing_strategy.ref_p_to_feature_offset(al.reference_name, feature_name)
         seq = editing_strategy.reference_sequences[al.reference_name]
         
         q_to_feature_offset = {}
         
         for q, read_b, ref_p, ref_b, qual in sam.aligned_tuples(al, seq):
-            if q is not None and ref_p in ref_p_to_feature_offset:
-                q_to_feature_offset[q] = ref_p_to_feature_offset[ref_p]
+            if q is not None and ref_p in feature.ref_p_to_offset:
+                q_to_feature_offset[q] = feature.ref_p_to_offset[ref_p]
                 
         return q_to_feature_offset
 
@@ -844,6 +855,8 @@ class Categorizer:
         feature_in_alignment = strat.features[alignment_to_extend.reference_name, feature_name_in_alignment]
         feature_al = sam.crop_al_to_feature(alignment_to_extend, feature_in_alignment)
 
+        feature_in_ref = strat.features[ref_to_search, feature_name_in_ref]
+
         if feature_al is not None and not sam.contains_indel(feature_al):
             # Create a new alignment covering the feature on ref_to_search,
             # which will then be used as input to sw.extend_alignment.
@@ -862,14 +875,12 @@ class Categorizer:
             # Get the ref interval covered.
 
             feature_offsets = self.q_to_feature_offset(feature_al, feature_name_in_alignment).values()
-            ref_ps = [strat.feature_offset_to_ref_p(ref_to_search, feature_name_in_ref)[fo] for fo in feature_offsets]
+            ref_ps = [feature_in_ref.offset_to_ref_p[fo] for fo in feature_offsets]
 
             if len(ref_ps) == 0:
                 raise ValueError
             else:
                 ref_interval = interval.Interval(min(ref_ps), max(ref_ps))
-
-            feature_in_ref = strat.features[ref_to_search, feature_name_in_ref]
 
             # Figure out the strand.
             if feature_in_ref.strand == feature_in_alignment.strand:
@@ -911,13 +922,13 @@ class Categorizer:
 
         return extended_al
 
-    def find_extending_alignment(self, alignment_to_extend, from_side, candidates_alignments, shared_feature, require_definite=True):
+    def find_extending_alignment(self, alignment_to_extend, from_side, candidate_alignments, shared_feature, require_definite=True):
 
         extension_side = opposite_side(from_side)
         
         by_status = defaultdict(list)
             
-        for candidate_al in candidates_alignments:
+        for candidate_al in candidate_alignments:
             if from_side == 'left':
                 left_al = alignment_to_extend
                 right_al = candidate_al
@@ -952,52 +963,23 @@ class Categorizer:
         return extension_al, cropped_extension_al, croppped_original_al
 
     def build_extension_chain_on_side(self, side, require_definite=True):
-        template = self.extension_chain_template(side=side)
-        
-        current_name = template.names[0]
+        link_specifications, last_al_to_description = self.extension_chain_link_specifications()
 
-        current_al = template.candidate_alignments[0]
+        if side == 'left':
+            order = 'forward'
+        else:
+            order = 'reverse'
 
-        alignments = {}
+        chain = ExtensionChain(link_specifications,
+                               last_al_to_description,
+                               order,
+                               side,
+                               require_definite=require_definite,
+                              ) 
 
-        if current_al is not None:
-            alignments[current_name] = current_al
-
-        previous_name = current_name
-
-        for shared_feature, current_name, candidate_alignments in zip(template.shared_features, template.names[1:], template.candidate_alignments[1:]):
-            extension_al, cropped_extension_al, cropped_original_al = self.find_extending_alignment(current_al, side, candidate_alignments, shared_feature, require_definite=require_definite)
-        
-            if extension_al is None:
-                break
-            else:
-                alignments[previous_name] = cropped_original_al
-
-                current_al = extension_al
-                alignments[current_name] = current_al
-
-                previous_name = current_name
-
-        query_covered = interval.get_disjoint_covered([])
-        query_covered_incremental = {'none': query_covered}
-
-        mismatches = {}
-
-        for name_order_i, name in enumerate(template.names):
-            if name in alignments:
-                mismatches[name] = len(get_mismatch_info(alignments[name], self.editing_strategy.reference_sequences, self.programmed_substitutions))
-                als_up_to = [alignments[key] for key in template.names[:name_order_i + 1]]
-                query_covered = interval.get_disjoint_covered(als_up_to)
-                query_covered_incremental[name] = query_covered
-
-        results = {
-            'query_covered': query_covered,
-            'query_covered_incremental': query_covered_incremental,
-            'alignments': alignments,
-            'mismatches': mismatches,
-        }
+        chain.build(self.target_edge_alignments[side], 'first target', self)
                 
-        return results
+        return chain
 
     def reconcile_extension_chains(self, require_definite=True):
         chains = {side: self.build_extension_chain_on_side(side, require_definite=require_definite) for side in ['left', 'right']}
@@ -1007,23 +989,21 @@ class Categorizer:
         # scenario in which it would be possible to remove from either the
         # left or right chain.)
 
-        template = self.extension_chain_template(side='left')
-
-        al_order = ['none'] + template.names
+        name_order = ['none'] + chains['left'].name_order
 
         possible_covers = set()
 
-        if chains['left']['query_covered'] != chains['right']['query_covered']:
-            for left_key in al_order:
-                if left_key in chains['left']['alignments']:
-                    left_al = chains['left']['alignments'][left_key]
+        if chains['left'].query_covered != chains['right'].query_covered:
+            for left_key in name_order:
+                if left_key in chains['left'].alignments:
+                    left_al = chains['left'].alignments[left_key]
 
-                    for right_key in al_order:
-                        if right_key in chains['right']['alignments']:
-                            right_al = chains['right']['alignments'][right_key]
+                    for right_key in name_order:
+                        if right_key in chains['right'].alignments:
+                            right_al = chains['right'].alignments[right_key]
 
-                            covered_left = chains['left']['query_covered_incremental'][left_key]
-                            covered_right = chains['right']['query_covered_incremental'][right_key]
+                            covered_left = chains['left'].query_covered_incremental[left_key]
+                            covered_right = chains['right'].query_covered_incremental[right_key]
 
                             # Check if left and right overlap or abut each other.
                             if covered_left.end >= covered_right.start - 1:
@@ -1036,7 +1016,7 @@ class Categorizer:
                                                                            )
 
                                 cropped_mismatches = {
-                                    side: chains[side]['mismatches'].copy()
+                                    side: chains[side].mismatches.copy()
                                     for side in ['left', 'right']
                                 }
 
@@ -1045,8 +1025,8 @@ class Categorizer:
                                 for side, last_key in [('left', left_key), ('right', right_key)]:
                                     cropped_mismatches[side][last_key] = len(get_mismatch_info(cropped_als[side], self.editing_strategy.reference_sequences, self.programmed_substitutions))
 
-                                    last_key_i = al_order.index(last_key)
-                                    total_mismatches[side] = sum(cropped_mismatches[side].get(key, 0) for key in al_order[:last_key_i + 1])
+                                    last_key_i = name_order.index(last_key)
+                                    total_mismatches[side] = sum(cropped_mismatches[side].get(key, 0) for key in name_order[:last_key_i + 1])
                                 
                                 possible_covers.add((left_key, right_key, total_mismatches['left'] + total_mismatches['right']))
 
@@ -1056,24 +1036,24 @@ class Categorizer:
             min_mismatches = min(mismatches for _, _, mismatches in possible_covers)
             possible_covers = {(left_key, right_key) for left_key, right_key, mismatches in possible_covers if mismatches == min_mismatches}
 
-            last_parsimonious_key['left'], last_parsimonious_key['right'] = self.reconcile_function(possible_covers, key=lambda pair: (al_order.index(pair[0]), al_order.index(pair[1])))
+            last_parsimonious_key['left'], last_parsimonious_key['right'] = self.reconcile_function(possible_covers, key=lambda pair: (name_order.index(pair[0]), name_order.index(pair[1])))
         else:
             for side, chain in chains.items():
-                maximal_covers = [k for k, covered in chain['query_covered_incremental'].items() if covered == chain['query_covered']]
-                last_parsimonious_key[side] = min(maximal_covers, key=al_order.index, default='none')
+                maximal_covers = [k for k, covered in chain.query_covered_incremental.items() if covered == chain.query_covered]
+                last_parsimonious_key[side] = min(maximal_covers, key=name_order.index, default='none')
 
         for side in ['left', 'right']:
             key = last_parsimonious_key[side]
 
-            chains[side]['description'] = template.last_al_to_description[key]
+            chains[side].description = chains[side].last_al_to_description[key]
 
-            last_index = al_order.index(key)
-            chains[side]['parsimonious_alignments'] = [al for key, al in chains[side]['alignments'].items() if al_order.index(key) <= last_index]
+            last_index = name_order.index(key)
+            chains[side].parsimonious_alignments = [al for key, al in chains[side].alignments.items() if name_order.index(key) <= last_index]
 
-            chains[side]['query_covered'] = chains[side]['query_covered_incremental'][key]
+            chains[side].query_covered = chains[side].query_covered_incremental[key]
 
         last_als = {
-            side: chains[side]['alignments'][last_parsimonious_key[side]]
+            side: chains[side].alignments[last_parsimonious_key[side]]
             if last_parsimonious_key[side] != 'none' else None
             for side in ['left', 'right']
         }
@@ -1081,21 +1061,21 @@ class Categorizer:
         cropped_als = sam.crop_to_best_switch_point(last_als['left'], last_als['right'], self.editing_strategy.reference_sequences)
 
         for side in ['left', 'right']:
-            chains[side]['cropped_last_al'] = cropped_als[side]
+            chains[side].cropped_last_al = cropped_als[side]
 
         # If one chain is absent and the other chain covers the whole read
         # (except possibly 2 nts at either edge), classify the missing side
         # as 'not seen'.
 
-        not_covered_by_primers_minus_edges = self.not_covered_by_primers & self.whole_read_minus_edges(2)
+        between_primers_minus_edges = self.between_primers & self.whole_read_minus_edges(2)
 
-        if not_covered_by_primers_minus_edges in chains['left']['query_covered']:
-            if chains['right']['description'] == 'no target':
-                chains['right']['description'] = 'not seen'
+        if between_primers_minus_edges in chains['left'].query_covered:
+            if chains['right'].description == 'no target':
+                chains['right'].description = 'not seen'
 
-        if not_covered_by_primers_minus_edges in chains['right']['query_covered']:
-            if chains['left']['description'] == 'no target':
-                chains['left']['description'] = 'not seen'
+        if between_primers_minus_edges in chains['right'].query_covered:
+            if chains['left'].description == 'no target':
+                chains['left'].description = 'not seen'
 
         return chains
 
@@ -1110,6 +1090,21 @@ class Categorizer:
     @memoized_property
     def possible_extension_chains_by_side(self):
         return self.reconcile_extension_chains(require_definite=False)
+
+    @memoized_property
+    def uncovered_by_extension_chains(self):
+        chains = self.extension_chains_by_side
+
+        left_covered = chains['left'].query_covered
+        right_covered = chains['right'].query_covered
+
+        combined_covered = left_covered | right_covered
+        uncovered = self.between_primers - combined_covered
+
+        # Allow failure to explain the last few nts of the read.
+        uncovered = uncovered & self.whole_read_minus_edges(2)
+
+        return uncovered
 
     def edits(self, al):
         return edit_positions(al, self.editing_strategy.reference_sequences).sum()
@@ -1174,7 +1169,10 @@ class Categorizer:
         edge_als = []
 
         for amplicon_side in [5, 3]:
-            primer = self.editing_strategy.primers_by_side_of_target[amplicon_side]
+            primer = self.editing_strategy.primers_by_side_of_target.get(amplicon_side)
+
+            if primer is None:
+                continue
 
             if amplicon_side == 5:
                 target_interval = interval.Interval(primer.start, primer.end + buffer_length)
@@ -1735,21 +1733,104 @@ def experiment_type_to_no_overlap_pair_categorizer(experiment_type):
 
     return experiment_type_to_categorizer(experiment_type)
 
-class ExtensionChainTemplate:
-    def __init__(self, candidate_alignments, shared_features, names, last_al_to_description, side): 
-        self.side = side
+class ExtensionChain:
+    def __init__(self,
+                 link_specifications,
+                 last_al_to_description,
+                 specification_order,
+                 direction_in_read,
+                 require_definite=True,
+                ):
 
-        candidate_alignments = [link[side] if isinstance(link, dict) else link for link in candidate_alignments]
+        self.specification_order = specification_order
+        self.direction_in_read = direction_in_read
 
-        if side == 'left':
-            pass
-        elif side == 'right':
-            candidate_alignments = candidate_alignments[::-1]
-            shared_features = shared_features[::-1]
-        else:
-            raise ValueError(side)
+        self.require_definite = require_definite
 
-        self.candidate_alignments = candidate_alignments
-        self.shared_features = shared_features
-        self.names = names
+        if specification_order == 'reverse':
+            link_specifications = link_specifications[::-1]
+
+        feature_names = link_specifications[1::2] + [None]
+        candidate_alignments_lists = link_specifications[::2]
+
+        self.name_order = []
+
+        self.links_by_name = {}
+
+        previous_link = None
+
+        for (candidate_alignments, names_tuple), next_feature_name in zip(candidate_alignments_lists, feature_names):
+            if self.specification_order == 'forward':
+                link_name = names_tuple[0]
+            elif self.specification_order == 'reverse':
+                link_name = names_tuple[1]
+            else:
+                raise ValueError(self.specification_order)
+
+            link = ExtensionChainLink(
+                link_name,
+                candidate_alignments,
+                next_feature_name,
+            )
+
+            if previous_link is not None:
+                previous_link.next_link = link
+
+            self.name_order.append(link_name)
+
+            self.links_by_name[link_name] = link
+
+            previous_link = link
+
         self.last_al_to_description = last_al_to_description
+
+    def build(
+        self,
+        starting_alignment,
+        entry_point,
+        architecture,
+    ):
+
+        current_link = self.links_by_name[entry_point]
+        current_link.alignment = starting_alignment
+
+        while current_link.alignment is not None and current_link.next_link is not None:
+            extension_al, cropped_extension_al, cropped_original_al = architecture.find_extending_alignment(
+                current_link.alignment,
+                self.direction_in_read,
+                current_link.next_link.candidate_alignments,
+                current_link.next_feature,
+                require_definite=self.require_definite,
+            )
+
+            if extension_al is not None:
+                current_link.next_link.alignment = extension_al
+                current_link.alignment = cropped_original_al
+
+            current_link = current_link.next_link
+
+        self.query_covered = interval.DisjointIntervals([])
+        self.query_covered_incremental = {'none': self.query_covered}
+
+        self.mismatches = {}
+
+        entry_point_i = self.name_order.index(entry_point)
+
+        self.alignments = {name: self.links_by_name[name].alignment for name in self.name_order if self.links_by_name[name].alignment is not None}
+
+        for name_order_i in range(entry_point_i, len(self.name_order)):
+            name = self.name_order[name_order_i]
+
+            if name in self.alignments:
+                self.mismatches[name] = len(get_mismatch_info(self.alignments[name], architecture.editing_strategy.reference_sequences, architecture.programmed_substitutions))
+                als_up_to = [self.alignments[other_name] for other_name in self.name_order[entry_point_i:name_order_i + 1]]
+                self.query_covered = interval.get_disjoint_covered(als_up_to)
+                self.query_covered_incremental[name] = self.query_covered
+
+@dataclass
+class ExtensionChainLink:
+    name: str
+    candidate_alignments: list[pysam.AlignedSegment]
+    next_feature: Optional[str] = None
+    next_link: Optional['ExtensionChainLink'] = None
+    alignment: Optional[pysam.AlignedSegment] = None

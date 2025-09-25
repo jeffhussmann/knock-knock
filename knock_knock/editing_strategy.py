@@ -110,7 +110,7 @@ class EditingStrategy:
             setattr(self, attribute_name, value)
 
         populate_attribute('sgRNAs', sgRNAs, force_list=True)
-        populate_attribute('primer_names', primer_names, force_list=True, default_value=['forward_primer', 'reverse_primer'])
+        populate_attribute('primer_names', primer_names, force_list=True, default_value='')
         populate_attribute('donor', donor)
         populate_attribute('nonhomologous_donor', nonhomologous_donor)
         populate_attribute('sequencing_start_feature_name', sequencing_start_feature_name)
@@ -520,9 +520,10 @@ class EditingStrategy:
             for protospacer_name in self.protospacer_features:
                 features_to_show.add((self.target, protospacer_name))
 
+            for primer_name in self.primer_names:
+                features_to_show.add((self.target, primer_name))
+
             for side in [5, 3]:
-                primer = (self.target, self.primers_by_side_of_target[side].attribute['ID'])
-                features_to_show.add(primer)
 
                 if self.homology_arms is not None and len(self.pegRNA_names) == 0:
                     target_HA = (self.target, self.homology_arms[side]['target'].attribute['ID'])
@@ -764,23 +765,8 @@ class EditingStrategy:
         return overlaps_cut
         
     @memoized_property
-    def most_extreme_primer_names(self):
-        # Default to the primers farthest to the left and right on the target.
-        all_primer_names = {name: feature for (_, name), feature in self.features.items()
-                            if name.startswith('forward_primer') or name.startswith('reverse_primer')
-                            }
-        left_most = min(all_primer_names, key=lambda n: all_primer_names[n].start)
-        right_most = max(all_primer_names, key=lambda n: all_primer_names[n].end)
-
-        primer_names = [left_most, right_most]
-
-        return primer_names
-
-    @memoized_property
     def primers(self):
         primer_names = self.primer_names
-        if primer_names is None:
-            primer_names = self.most_extreme_primer_names
 
         primers = {name: self.features[self.target, name] for name in primer_names}
 
@@ -788,9 +774,13 @@ class EditingStrategy:
 
     @memoized_property
     def primers_by_side_of_target(self):
-        by_side = {}
-        primers = [primer for primer in self.primers.values()]
-        by_side[5], by_side[3] = sorted(primers, key=lambda p: p.start)
+        strand_to_side = {
+            '+': 5,
+            '-': 3,
+        }
+
+        by_side = {strand_to_side[strand]: primer for strand, primer in self.primers_by_strand.items()}
+
         return by_side
 
     @memoized_property
@@ -819,26 +809,9 @@ class EditingStrategy:
     @memoized_property
     def combined_primer_length(self):
         if len(self.primers) != 2:
-            raise ValueError(self.primers)
+            return None
         else:
             return sum(len(f) for name, f in self.primers.items())
-
-    @memoized_with_args
-    def ref_p_to_feature_offset(self, ref_name, feature_name):
-        feature = self.features[ref_name, feature_name]
-        
-        if feature.strand == '+':
-            ref_p_order = range(feature.start, feature.end + 1)
-        elif feature.strand == '-':
-            ref_p_order = range(feature.end, feature.start - 1, -1)
-        else:
-            raise ValueError('feature needs to be stranded')
-            
-        return {ref_p: offset for offset, ref_p in enumerate(ref_p_order)}
-
-    @memoized_with_args
-    def feature_offset_to_ref_p(self, ref_name, feature_name):
-        return utilities.reverse_dictionary(self.ref_p_to_feature_offset(ref_name, feature_name))
 
     @memoized_property
     def target_side_intervals(self):
@@ -1066,8 +1039,14 @@ class EditingStrategy:
     @memoized_property
     def amplicon_interval(self):
         primers = self.primers_by_side_of_target
-        return interval.Interval(primers[5].start, primers[3].end)
 
+        if len(primers) == 0:
+            amplicon_interval = interval.Interval.empty()
+        else:
+            amplicon_interval = interval.Interval(primers[5].start, primers[3].end)
+
+        return amplicon_interval
+        
     @memoized_property
     def amplicon_length(self):
         return len(self.amplicon_interval)
@@ -1380,19 +1359,16 @@ class EditingStrategy:
             # O(n^2) nature means long amplicons become very slow.
             return singleton_to_full
 
-        # Indels that aren't contained in the amplicon can't be observed,
-        # so there is no need to register them.
-
-        amplicon_start = self.primers_by_side_of_target[5].start
-        amplicon_end = self.primers_by_side_of_target[3].end
-
         degenerate_dels = defaultdict(list)
 
-        possible_starts = range(amplicon_start, amplicon_end)
+        # Indels that aren't contained in the amplicon can't be observed,
+        # so there is no need to register them. Note that with no primers,
+        # amplicon interval will be empty, so no indels will be registered.
+        possible_starts = range(self.amplicon_interval.start, self.amplicon_interval.end + 1)
 
         for starts_at in possible_starts:
             before = self.target_sequence[:starts_at]
-            for length in range(1, amplicon_end - starts_at + 1):
+            for length in range(1, self.amplicon_interval.end - starts_at + 1):
                 after = self.target_sequence[starts_at + length:]
                 result = before + after
                 deletion = DegenerateDeletion([starts_at], length)

@@ -1,2 +1,2 @@
-sample_name,R1,experiment_type,editing_strategy,sequencing_start_feature_name,sgRNAs,platform
-simulated,simulated.fastq,twin_prime,PMID34887556_PAH_E4.2_45_EvoPreQ1+PAH_E4.4_43_EvoPreQ1,PAH-E4fe+1687_0,PAH_E4.2_45_EvoPreQ1;PAH_E4.4_43_EvoPreQ1,illumina
+sample_name,R1,experiment_type,editing_strategy,sequencing_start_feature_name,sgRNAs,platform,primer_names
+simulated,simulated.fastq,twin_prime,PMID34887556_PAH_E4.2_45_EvoPreQ1+PAH_E4.4_43_EvoPreQ1,PAH-E4fe+1687_0,PAH_E4.2_45_EvoPreQ1;PAH_E4.4_43_EvoPreQ1,illumina,PAH-E4fe+1687_0;PAH-E4fe+1687_1

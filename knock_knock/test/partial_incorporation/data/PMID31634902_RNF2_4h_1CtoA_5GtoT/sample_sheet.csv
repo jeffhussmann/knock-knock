@@ -1,2 +1,2 @@
-sample_name,R1,experiment_type,editing_strategy,sgRNAs,platform
-simulated,simulated.fastq,prime_editing,PMID31634902_RNF2_4h_1CtoA_5GtoT,RNF2_4h_1CtoA_5GtoT,illumina
+sample_name,R1,experiment_type,editing_strategy,sgRNAs,platform,primer_names
+simulated,simulated.fastq,prime_editing,PMID31634902_RNF2_4h_1CtoA_5GtoT,RNF2_4h_1CtoA_5GtoT,illumina,forward_primer;reverse_primer
