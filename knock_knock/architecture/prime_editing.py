@@ -2167,8 +2167,18 @@ class Architecture(knock_knock.architecture.Categorizer):
         feature_heights = {}
         color_overrides = {}
 
+        refs_to_flip = set()
+        refs_to_label = {strat.target, *strat.pegRNA_names}
+        
         flip_target = (self.sequencing_direction == '-')
-        flip_pegRNA = False
+
+        if flip_target:
+            refs_to_flip.add(strat.target)
+
+        refs_to_draw = set(strat.pegRNA_names)
+
+        if strat.amplicon_length < 10000:
+            refs_to_draw.add(strat.target)
 
         if len(strat.pegRNA_names) == 1:
             pegRNA_name = strat.pegRNA_names[0]
@@ -2176,7 +2186,8 @@ class Architecture(knock_knock.architecture.Categorizer):
             PBS_name = knock_knock.pegRNAs.make_PBS_name(pegRNA_name)
             PBS_strand = strat.features[strat.target, PBS_name].strand
 
-            flip_pegRNA = (flip_target and PBS_strand == '-') or (not flip_target and PBS_strand == '+')
+            if (flip_target and PBS_strand == '-') or (not flip_target and PBS_strand == '+'):
+                refs_to_flip.add(pegRNA_name)
 
             label_overrides[f'HA_RT_{pegRNA_name}'] = 'HA_RT'
 
@@ -2196,6 +2207,8 @@ class Architecture(knock_knock.architecture.Categorizer):
                 label_overrides[name] = new_name
 
         else:
+            refs_to_flip.add(self.pegRNA_names_by_side_of_read['left'])
+
             for pegRNA_name in strat.pegRNA_names:
                 color = strat.pegRNA_name_to_color[pegRNA_name]
                 light_color = hits.visualize.apply_alpha(color, 0.5)
@@ -2260,8 +2273,9 @@ class Architecture(knock_knock.architecture.Categorizer):
             'label_offsets': label_offsets,
             'feature_heights': feature_heights,
             'color_overrides': color_overrides,
-            'flip_target': flip_target,
-            'flip_pegRNA': flip_pegRNA,
+            'refs_to_flip': refs_to_flip,
+            'refs_to_label': refs_to_label,
+            'refs_to_draw': refs_to_draw,
         }
 
         return plot_parameters
@@ -2279,31 +2293,17 @@ class Architecture(knock_knock.architecture.Categorizer):
         label_overrides = manual_diagram_kwargs.pop('label_overrides', plot_parameters['label_overrides'])
         label_offsets = manual_diagram_kwargs.pop('label_offsets', plot_parameters['label_offsets'])
         feature_heights = manual_diagram_kwargs.pop('feature_heights', plot_parameters['feature_heights'])
+        refs_to_draw = manual_diagram_kwargs.pop('refs_to_draw', plot_parameters['refs_to_draw'])
+        refs_to_label = manual_diagram_kwargs.pop('refs_to_label', plot_parameters['refs_to_label'])
+        refs_to_flip = manual_diagram_kwargs.pop('refs_to_flip', plot_parameters['refs_to_flip'])
 
         if extra_features_to_show is not None:
             features_to_show.update(extra_features_to_show)
-
-        flip_target = plot_parameters['flip_target']
-        flip_pegRNA = plot_parameters['flip_pegRNA']
 
         if relevant and not self.categorized:
             self.categorize()
 
         strat = self.editing_strategy
-
-        if manual_diagram_kwargs.get('reverse_complement', False):
-            flip_pegRNA = not flip_pegRNA
-
-        if 'refs_to_draw' in manual_diagram_kwargs:
-            refs_to_draw = manual_diagram_kwargs.pop('refs_to_draw')
-        else:
-            refs_to_draw = set()
-
-            if strat.amplicon_length < 10000:
-                refs_to_draw.add(strat.target)
-
-            if strat.pegRNA_names is not None:
-                refs_to_draw.update(strat.pegRNA_names)
 
         if 'phiX' in strat.supplemental_indices:
             supplementary_reference_sequences = strat.supplemental_reference_sequences('phiX')
@@ -2319,11 +2319,12 @@ class Architecture(knock_knock.architecture.Categorizer):
 
         diagram_kwargs = dict(
             draw_sequence=True,
-            flip_target=flip_target,
             split_at_indels=False,
             features_to_show=features_to_show,
             manual_anchors=manual_anchors,
             refs_to_draw=refs_to_draw,
+            refs_to_flip=refs_to_flip,
+            refs_to_label=refs_to_label,
             label_offsets=label_offsets,
             label_overrides=label_overrides,
             inferred_amplicon_length=inferred_amplicon_length,
@@ -2347,37 +2348,5 @@ class Architecture(knock_knock.architecture.Categorizer):
                                                                  architecture=self,
                                                                  **manual_diagram_kwargs,
                                                                 )
-
-        # Note that diagram.alignments may be different than als_to_plot
-        # due to application of parsimony.
-
-        ## Draw the pegRNA.
-        #if strat.pegRNA_names is not None and any(al.reference_name in strat.pegRNA_names for al in diagram.alignments):
-
-        #    pegRNA_name = strat.pegRNA_names[0]
-
-        #    ref_y = diagram.max_y + diagram.target_and_donor_y_gap
-
-        #    # To ensure that features on pegRNAs that extend far to the right of
-        #    # the read are plotted, temporarily make the x range very wide.
-        #    old_min_x, old_max_x = diagram.min_x, diagram.max_x
-
-        #    diagram.min_x = -1000
-        #    diagram.max_x = 1000
-
-        #    diagram.draw_reference(pegRNA_name, ref_y, flip_pegRNA)
-
-        #    ref_p_to_xs = diagram.ref_p_to_xs[pegRNA_name]
-
-        #    pegRNA_seq = strat.reference_sequences[pegRNA_name]
-        #    pegRNA_min_x, pegRNA_max_x = sorted([ref_p_to_xs(0), ref_p_to_xs(len(pegRNA_seq) - 1)])
-
-        #    diagram.max_x = max(old_max_x, pegRNA_max_x)
-
-        #    diagram.min_x = min(old_min_x, pegRNA_min_x)
-
-        #    diagram.ax.set_xlim(diagram.min_x, diagram.max_x)
-
-        #    diagram.update_size()
 
         return diagram

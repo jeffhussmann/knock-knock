@@ -717,7 +717,6 @@ class Architecture(prime_editing.Architecture):
              annotate_overlap=True,
              label_integrase_features=False,
              draw_pegRNAs=True,
-             label_pegRNAs=False,
              extra_features_to_show=None,
              extra_label_overrides=None,
              **manual_diagram_kwargs,
@@ -730,14 +729,15 @@ class Architecture(prime_editing.Architecture):
         label_offsets = manual_diagram_kwargs.pop('label_offsets', plot_parameters['label_offsets'])
         feature_heights = manual_diagram_kwargs.pop('feature_heights', plot_parameters['feature_heights'])
         color_overrides = manual_diagram_kwargs.pop('color_overrides', plot_parameters['color_overrides'])
+        refs_to_draw = manual_diagram_kwargs.pop('refs_to_draw', plot_parameters['refs_to_draw'])
+        refs_to_label = manual_diagram_kwargs.pop('refs_to_label', plot_parameters['refs_to_label'])
+        refs_to_flip = manual_diagram_kwargs.pop('refs_to_flip', plot_parameters['refs_to_flip'])
 
         if extra_features_to_show is not None:
             features_to_show.update(extra_features_to_show)
 
         if extra_label_overrides is not None:
             label_overrides.update(extra_label_overrides)
-
-        flip_target = plot_parameters['flip_target']
 
         if relevant and not self.categorized:
             self.categorize()
@@ -752,17 +752,6 @@ class Architecture(prime_editing.Architecture):
                 if 'left' in name:
                     label_offsets[name] = 2
                     features_to_show.add((ref_name, name))
-
-        if 'refs_to_draw' in manual_diagram_kwargs:
-            refs_to_draw = manual_diagram_kwargs.pop('refs_to_draw')
-        else:
-            refs_to_draw = set()
-
-            if strat.amplicon_length < 10000:
-                refs_to_draw.add(strat.target)
-
-            if draw_pegRNAs:
-                refs_to_draw.update(strat.pegRNA_names)
 
         invisible_references = manual_diagram_kwargs.get('invisible_references', set())
 
@@ -787,12 +776,13 @@ class Architecture(prime_editing.Architecture):
 
         diagram_kwargs = dict(
             draw_sequence=True,
-            flip_target=flip_target,
             split_at_indels=False,
             label_offsets=label_offsets,
             features_to_show=features_to_show,
             manual_anchors=manual_anchors,
             refs_to_draw=refs_to_draw,
+            refs_to_flip=refs_to_flip,
+            refs_to_label=refs_to_label,
             label_overrides=label_overrides,
             inferred_amplicon_length=inferred_amplicon_length,
             color_overrides=color_overrides,
@@ -813,12 +803,9 @@ class Architecture(prime_editing.Architecture):
         # Note that diagram.alignments may be different than als_to_plot
         # due to application of parsimony.
 
-        # Draw the pegRNAs.
-        if draw_pegRNAs and any(al.reference_name in strat.pegRNA_names for al in diagram.alignments):
-            ref_ys = {}
-            ref_ys['left'] = diagram.max_y + diagram.target_and_donor_y_gap * 0.75
-            ref_ys['right'] = ref_ys['left'] + 7 * diagram.gap_between_als
+        # Draw the overlap.
 
+        if all(pegRNA_name in diagram.ref_ys for pegRNA_name in strat.pegRNA_names):
             # To ensure that features on pegRNAs that extend far to the right of
             # the read are plotted, temporarily make the x range very wide.
             old_min_x, old_max_x = diagram.min_x, diagram.max_x
@@ -827,29 +814,18 @@ class Architecture(prime_editing.Architecture):
             diagram.max_x = 1000
 
             ref_p_to_xs = {}
+            ref_ys = {}
 
             left_name = self.pegRNA_names_by_side_of_read['left']
-            left_visible = (left_name not in invisible_references) and any(al.reference_name == left_name for al in diagram.alignments)
 
             right_name = self.pegRNA_names_by_side_of_read['right']
-            right_visible = (right_name not in invisible_references) and any(al.reference_name == right_name for al in diagram.alignments)
 
-            diagram.draw_reference(left_name, ref_ys['left'],
-                                                         flip=True,
-                                                         label_features=label_pegRNAs,
-                                                         visible=left_visible,
-                                                        )
-
+            ref_ys['left'] = diagram.ref_ys[left_name]
             ref_p_to_xs['left'] = diagram.ref_p_to_xs[left_name]
 
             diagram.max_x = max(old_max_x, ref_p_to_xs['left'](0))
 
-            diagram.draw_reference(right_name, ref_ys['right'],
-                                                          flip=False,
-                                                          label_features=label_pegRNAs,
-                                                          visible=right_visible,
-                                                         )
-
+            ref_ys['right'] = diagram.ref_ys[right_name]
             ref_p_to_xs['right'] = diagram.ref_p_to_xs[right_name]
 
             diagram.min_x = min(old_min_x, ref_p_to_xs['right'](0))
@@ -868,20 +844,19 @@ class Architecture(prime_editing.Architecture):
                                          [overlap_xs[0], overlap_xs[0]],
                                          [overlap_xs[1], overlap_xs[1]],
                                          color=overlap_color,
-                                         alpha=0.3,
-                                         visible=left_visible and right_visible,
+                                         alpha=0.4,
                                         )
 
                 text_x = np.mean(overlap_xs)
-                text_y = np.mean([ref_ys['left'] + diagram.feature_line_width, ref_ys['right']])
+                text_y = ref_ys['right'] - 2 * diagram.ref_line_width
+
                 diagram.ax.annotate('overlap',
                                     xy=(text_x, text_y),
                                     color=overlap_color,
                                     ha='center',
-                                    va='center',
+                                    va='top',
                                     size=diagram.font_sizes['feature_label'],
                                     weight='bold',
-                                    visible=left_visible and right_visible,
                                    )
 
             diagram.update_size()

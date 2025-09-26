@@ -50,8 +50,6 @@ class ReadDiagram:
     highlight_programmed_substitutions: bool = False
     reverse_complement: bool = False
     label_left: bool = False
-    flip_donor: bool = False
-    flip_target: bool = False
     read_label: str = 'sequencing read'
     donor_below: bool = False
     target_above: bool = False
@@ -91,6 +89,8 @@ class ReadDiagram:
     manual_ref_extents: dict = field(default_factory=dict)
     manual_fade: Optional[dict] = None
     refs_to_draw: set = field(default_factory=set)
+    refs_to_flip: set = field(default_factory=set)
+    refs_to_label: set = field(default_factory=set)
     parallelogram_alpha: float = 0.05
     supplementary_reference_sequences: dict = field(default_factory=dict)
     invisible_references: set = field(default_factory=set)
@@ -316,6 +316,7 @@ class ReadDiagram:
         self.plot_read()
 
         self.ref_p_to_xs = {}
+        self.ref_ys = {}
 
         if self.ref_centric:
             self.draw_references()
@@ -1112,13 +1113,15 @@ class ReadDiagram:
     def draw_reference(self,
                        ref_name,
                        ref_y,
-                       flip,
-                       label_features=True,
                        visible=True,
                       ):
 
+        self.ref_ys[ref_name] = ref_y
+
         if ref_name in self.invisible_references:
             visible = False
+
+        flip = (ref_name in self.refs_to_flip)
 
         strat = self.editing_strategy
 
@@ -1168,7 +1171,7 @@ class ReadDiagram:
                 relevant_length = self.query_length
 
             if ref_name == strat.target and self.alignment_registration == 'centered on primers':
-                if self.flip_target:
+                if flip:
                     anchor_ref = strat.amplicon_interval.end - (len(strat.amplicon_interval) - relevant_length) / 2
                 else:
                     anchor_ref = strat.amplicon_interval.start + (len(strat.amplicon_interval) - relevant_length) / 2
@@ -1388,7 +1391,7 @@ class ReadDiagram:
                                      clip_on=False,
                                     )
 
-                if label_features:
+                if ref_name in self.refs_to_label:
                     name = feature.attribute['ID']
 
                     label = self.get_feature_label(feature.seqname, name)
@@ -1448,11 +1451,13 @@ class ReadDiagram:
                     cut_y_middle = ref_y
                     cut_y_top = ref_y + self.feature_line_width
 
+                    flip_target = (strat.target in self.refs_to_flip)
+
                     if strand == 'both':
                         ys = [cut_y_bottom, cut_y_top]
-                    elif (strand == '+' and not self.flip_target) or (strand == '-' and self.flip_target):
+                    elif (strand == '+' and not flip_target) or (strand == '-' and flip_target):
                         ys = [cut_y_middle, cut_y_top]
-                    elif (strand == '-' and not self.flip_target) or (strand == '+' and self.flip_target):
+                    elif (strand == '-' and not flip_target) or (strand == '+' and flip_target):
                         ys = [cut_y_bottom, cut_y_middle]
                     else:
                         raise ValueError(strand)
@@ -1515,14 +1520,14 @@ class ReadDiagram:
 
         for ref_name in self.references_above:
             if ref_name in self.refs_to_draw:
-                self.draw_reference(ref_name, ref_y, self.flip_target)
+                self.draw_reference(ref_name, ref_y)
                 ref_y += 7 * self.gap_between_als
 
         ref_y = self.min_y - self.target_and_donor_y_gap
 
         for ref_name in self.references_below:
             if ref_name in self.refs_to_draw:
-                self.draw_reference(ref_name, ref_y, self.flip_target)
+                self.draw_reference(ref_name, ref_y)
                 ref_y -= 7 * self.gap_between_als
         
     @property
