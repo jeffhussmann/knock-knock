@@ -128,7 +128,7 @@ class Experiment:
         self.nonhomologous_donor = self.description.get('nonhomologous_donor')
         self.primer_names = self.description.get('primer_names')
         self.sequencing_start_feature_name = self.description.get('sequencing_start_feature_name')
-        self.infer_homology_arms = self.description.get('infer_homology_arms', False)
+        self.infer_homology_arms = self.description.get('infer_homology_arms', True)
         self.max_reads = self.description.get('max_reads', None)
         if self.max_reads is not None:
             self.max_reads = int(self.max_reads)

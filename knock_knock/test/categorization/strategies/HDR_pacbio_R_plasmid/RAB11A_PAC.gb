@@ -15,12 +15,6 @@ FEATURES             Location/Qualifiers
                      /ApEinfo_fwdcolor="#9eafd2"
      misc_feature    501..526
                      /label="anchor"
-     misc_feature    1084..1231
-                     /label="HA_1"
-                     /ApEinfo_fwdcolor="#c7b0e3"
-     misc_feature    1232..1381
-                     /label="HA_2"
-                     /ApEinfo_fwdcolor="#85dae9"
 ORIGIN
         1 agtggacatc attggcaggg ggcattattc tgcttgttat aggcatactt gcccacaagt
        61 ctaaatcgag agtttgcata taggaggtag gaggtgtgac aataattgga taaaggcttt

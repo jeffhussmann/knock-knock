@@ -7,15 +7,6 @@ SOURCE      .
   ORGANISM  .
             .
 FEATURES             Location/Qualifiers
-     misc_feature    1..55
-                     /label="HA_1"
-                     /ApEinfo_fwdcolor="#c7b0e3"
-     misc_feature    56..145
-                     /label="donor_specific"
-                     /ApEinfo_fwdcolor="#b1ff67"
-     misc_feature    146..200
-                     /label="HA_2"
-                     /ApEinfo_fwdcolor="#85dae9"
 ORIGIN
         1 caggtggaag ccagctgcag gcaggggagg aaggaggccc ttactcttcc ttctttgtaa
        61 tcccagcagc atttacatac tcatgaagga ccatgtggtc acgaccactt cctggacctt

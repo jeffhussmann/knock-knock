@@ -7,3 +7,5 @@ sources:
 - RAB11A-150HA_PCR_donor
 - RAB11A_PAC
 target: RAB11A_PAC
+sgRNAs:
+- RAB11A

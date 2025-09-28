@@ -10,6 +10,7 @@ import yaml
 import pysam
 import numpy as np
 
+import Bio.Align
 import Bio.SeqIO
 
 import hits.visualize
@@ -45,7 +46,7 @@ class EditingStrategy:
                  sequencing_start_feature_name=None,
                  supplemental_indices=None,
                  gb_records=None,
-                 infer_homology_arms=False,
+                 infer_homology_arms=True,
                  min_relevant_length=None,
                  feature_to_replace=None,
                  manifest=None,
@@ -82,7 +83,12 @@ class EditingStrategy:
         self.target = self.manifest['target']
 
         self.sources = [s[:-len('.gb')] if s.endswith('.gb') else s for s in self.manifest.get('sources', [])]
+
+        if gb_records is None:
+            gb_records = self.load_gb_records()
+
         self.gb_records = gb_records
+
         self.manual_sgRNA_components = manual_sgRNA_components
 
         def strip_if_string(v):
@@ -229,6 +235,7 @@ class EditingStrategy:
     @memoized_property
     def pegRNA_names(self):
         ''' pegRNAs are sgRNAs that have an extension. '''
+
         if self.sgRNA_components is None:
             names = []
         else:
@@ -245,30 +252,31 @@ class EditingStrategy:
             names = [n for n, cs in self.sgRNA_components.items() if len(cs['extension']) == 0]
 
         return names
+
+    def load_gb_records(self):
+        gb_fns = [self.dir / (source + '.gb') for source in self.sources]
+
+        for fn in gb_fns:
+            if not fn.exists() and not fn.with_suffix('.fasta').exists():
+                logger.warning(f'{self.name}: {fn} does not exist')
+
+        gb_fns = [fn for fn in gb_fns if fn.exists()]
+
+        gb_records = []
+        for gb_fn in gb_fns:
+            for record in Bio.SeqIO.parse(gb_fn, 'genbank'):
+                gb_records.append(record)
+
+        return gb_records
     
     @memoized_property
     def fasta_records_and_gff_features(self):
-        ''' If self.gb_records is set, these override files. '''
         fasta_fns = [self.dir / (source + '.fasta') for source in self.sources]
         fasta_fns = [fn for fn in fasta_fns if fn.exists()]
         
         fasta_records = []
         all_gff_features = []
             
-        if self.gb_records is None:
-            gb_fns = [self.dir / (source + '.gb') for source in self.sources]
-
-            for fn in gb_fns:
-                if not fn.exists() and not fn.with_suffix('.fasta').exists():
-                    logger.warning(f'{self.name}: {fn} does not exist')
-
-            gb_fns = [fn for fn in gb_fns if fn.exists()]
-
-            self.gb_records = []
-            for gb_fn in gb_fns:
-                for record in Bio.SeqIO.parse(gb_fn, 'genbank'):
-                    self.gb_records.append(record)
-
         for gb_record in self.gb_records:
             fasta_record, gff_features = parse_benchling_genbank(gb_record)
 
@@ -504,34 +512,17 @@ class EditingStrategy:
     def features_to_show(self):
         if self.manual_features_to_show is not None:
             features_to_show = {tuple(f) for f in self.manual_features_to_show}
+
         else:
             features_to_show = set()
 
-            if self.donor is not None:
-                features_to_show.update({
-                (self.donor, 'GFP'),
-                (self.donor, 'GFP11'),
-                (self.donor, 'PPX'),
-                (self.donor, 'donor_specific'),
-                (self.donor, 'PCR_adapter_1'),
-                (self.donor, 'PCR_adapter_2'),
-            })
+            features_to_show.update(self.inferred_HA_features)
 
             for protospacer_name in self.protospacer_features:
                 features_to_show.add((self.target, protospacer_name))
 
             for primer_name in self.primer_names:
                 features_to_show.add((self.target, primer_name))
-
-            for side in [5, 3]:
-
-                if self.homology_arms is not None and len(self.pegRNA_names) == 0:
-                    target_HA = (self.target, self.homology_arms[side]['target'].attribute['ID'])
-                    features_to_show.add(target_HA)
-
-                    if self.has_shared_homology_arms:
-                        donor_HA = (self.donor, self.homology_arms[side]['donor'].attribute['ID'])
-                        features_to_show.add(donor_HA)
 
             features_to_show.update(set(self.PAM_features))
 
@@ -551,10 +542,6 @@ class EditingStrategy:
 
                 for pegRNA_name in self.pegRNA_names:
                     features_to_show.update({(pegRNA_name, name) for name in ['protospacer', 'scaffold', 'PBS', 'RTT']})
-
-            for pegRNA_name in self.pegRNA_names:
-                ps_name = knock_knock.pegRNAs.protospacer_name(pegRNA_name)
-                features_to_show.add((self.target, ps_name))
 
         return features_to_show
 
@@ -723,6 +710,7 @@ class EditingStrategy:
     def cut_after(self):
         ''' when processing assumes there will be only one cut, use this '''
         primary_cut_afters = []
+
         for name, cut_after in self.cut_afters.items():
             protospacer_name = name.rsplit('_', 1)[0]
             if protospacer_name == self.primary_protospacer:
@@ -875,30 +863,18 @@ class EditingStrategy:
         if donor is None:
             return None
 
-        ref_seqs = {
-            'target': self.reference_sequences[self.target],
-            'donor': self.reference_sequences[donor],
-         }
+        HAs = defaultdict(dict)
 
-        if self.infer_homology_arms:
-            donor_SNVs, HAs = self.inferred_donor_SNVs_and_HAs
-            HAs = copy.deepcopy(HAs)
+        ref_name_to_source = {
+            self.target: 'target',
+            donor: 'donor',
+        }
 
-        else:
-            # Load homology arms from gff features.
-
-            HAs = defaultdict(dict)
-
-            ref_name_to_source = {
-                self.target: 'target',
-                donor: 'donor',
-            }
-
-            for (ref_name, feature_name), feature in self.features.items():
-                source = ref_name_to_source.get(ref_name)
-                if source is not None:
-                    if feature_name.startswith('HA_'):
-                        HAs[feature_name][source] = feature
+        for (ref_name, feature_name), feature in self.features.items():
+            source = ref_name_to_source.get(ref_name)
+            if source is not None:
+                if feature_name.startswith('HA_'):
+                    HAs[feature_name][source] = feature
 
         if len(HAs) == 0:
             return None
@@ -910,25 +886,10 @@ class EditingStrategy:
         else:
             donor = self.donor
 
-        # Check if every HA name that exists on both the target and donor has the same
-        # sequence on each.
         for name in HAs:
             if 'target' not in HAs[name] or 'donor' not in HAs[name]:
                 continue
             
-            seqs = {}
-            for source in ['target', 'donor']:
-                ref_seq = ref_seqs[source]
-                HA = HAs[name][source]
-                HA_seq = ref_seq[HA.start:HA.end + 1]
-                if HA.strand == '-':
-                    HA_seq = utilities.reverse_complement(HA_seq)
-                    
-                seqs[source] = HA_seq
-                
-            if seqs['target'] != seqs['donor']:
-                logger.warning(f'{name} not identical sequence on target and donor')
-
             paired_HAs[name] = HAs[name]
 
         # We expect two HAs to exists on both target and donor.
@@ -1264,18 +1225,151 @@ class EditingStrategy:
 
     @memoized_property
     def inferred_HA_features(self):
-        features = {}
-        if self.donor is None or not self.infer_homology_arms:
-            pass
-        else:
-            donor_SNVs, HAs = self.inferred_donor_SNVs_and_HAs
-            
-            for HA_name in HAs:
-                features[self.target, HA_name] = HAs[HA_name]['target']
-                features[self.donor, HA_name] = HAs[HA_name]['donor']
+        ''' Strategy: for each orientation of the target sequence, find the best gap-free local alignment of target and donor.
+        To determine whether this is the first or second HA on the donor, check which side of the cut the aligned target
+        region overlaps more.
+        If it overlaps before the cut, this should be the first HA, and the remaining relevant target region is after the first alignment.
+        If it overlaps after the cut, this should be the second HA, and the remaining relevant target region is before the first alignment. 
+        Realign the donor to the remaining relevant target region.
+        Confirm that the second donor alignment falls on the expected side of the first one.
+        If both orientations of target produce property oriented alignments, return the orientation with highest total alignment score.
 
+        Note: it might be better to just align separately to the two sides of the cut, since this is a better
+        representation of the actual homology search.
+        '''
+
+        if self.donor is None or not self.infer_homology_arms:
+            return {}
+
+        def align(target_seq, donor_seq):
+            aligner = Bio.Align.PairwiseAligner(
+                match_score=2,
+                mismatch_score=-3,
+                open_gap_score=-np.inf,
+                extend_gap_score=-np.inf,
+                mode='local',
+            )
+
+            als = aligner.align(target_seq, donor_seq)
+
+            al = als[0]
+
+            target_subseqs, donor_subseqs = al.aligned
+
+            # Infinite gap penalities means there should only be one alignment block.
+            if len(target_subseqs) != 1 or len(donor_subseqs) != 1:
+                raise ValueError
+
+            target_start, target_end = target_subseqs[0]
+            donor_start, donor_end = donor_subseqs[0]
+
+            target_interval = hits.interval.Interval(target_start, target_end - 1)
+            donor_interval = hits.interval.Interval(donor_start, donor_end - 1)
+            
+            return target_interval, donor_interval, al.score
+
+        results = {}
+
+        for target_strand in ['+', '-']:
+            if target_strand == '-':
+                possibly_reversed_target_seq = hits.utilities.reverse_complement(self.target_sequence)
+                cut_after = len(self.target_sequence) - 1 - self.cut_after
+            else:
+                possibly_reversed_target_seq = self.target_sequence
+                cut_after = self.cut_after
+
+            before_cut = hits.interval.Interval(0, cut_after)
+            after_cut = hits.interval.Interval(cut_after + 1, len(self.target_sequence))
+
+            HA_intervals = {
+                self.target: {},
+                self.donor: {},
+            }
+
+            first_target_interval, first_donor_interval, first_score = align(possibly_reversed_target_seq, self.donor_sequence)
+
+            if (first_target_interval & before_cut).total_length >= (first_target_interval & after_cut).total_length:
+                first_HA = 5
+                second_HA = 3
+
+                target_offset = first_target_interval.end + 1
+
+                remaining_target = possibly_reversed_target_seq[target_offset:]
+
+            else:
+                first_HA = 3
+                second_HA = 5
+
+                target_offset = 0
+
+                remaining_target = possibly_reversed_target_seq[:first_target_interval.start]
+
+            HA_intervals[self.target][first_HA] = first_target_interval
+            HA_intervals[self.donor][first_HA] = first_donor_interval
+
+            second_target_interval, second_donor_interval, second_score = align(remaining_target, self.donor_sequence)
+
+            second_target_interval += target_offset
+
+            HA_intervals[self.target][second_HA] = second_target_interval
+            HA_intervals[self.donor][second_HA] = second_donor_interval
+
+            total_score = first_score + second_score
+
+            if target_strand == '-':
+                for which, interval in HA_intervals[self.target].items():
+                    flipped_start = len(self.target_sequence) - 1 - interval.end
+                    flipped_end = len(self.target_sequence) - 1 - interval.start
+                    HA_intervals[self.target][which] = hits.interval.Interval(flipped_start, flipped_end)
+                    
+            d_ints = HA_intervals[self.donor]
+            correctly_oriented = hits.interval.are_disjoint(d_ints[5], d_ints[3]) and d_ints[5] < d_ints[3]
+
+            if correctly_oriented: 
+                results[target_strand] = {
+                    'HA_intervals': HA_intervals,
+                    'total_score': total_score,
+                }
+                
+        if len(results) == 0:
+            features = {}
+        
+        else:
+            best_strand = max(results, key=lambda strand: results[strand]['total_score'])
+
+            feature_colors = {
+                'HA_5': '#c7b0e3',
+                'HA_3': '#85dae9',
+                'payload': '#b1ff67',
+            }
+
+            features = {}
+            for seq_name, intervals in results[best_strand]['HA_intervals'].items():
+                for side, interval in intervals.items():
+                    name = f'HA_{side}'
+                    feature = gff.Feature.from_fields(seqname=seq_name,
+                                                      start=interval.start,
+                                                      end=interval.end,
+                                                      strand='+' if seq_name == self.donor else best_strand,
+                                                      attribute_string=gff.make_attribute_string({
+                                                          'ID': name,
+                                                          'color': feature_colors[name],
+                                                      }),
+                                                     )
+                    features[seq_name, name] = feature
+            
+            features[self.donor, 'payload'] = gff.Feature.from_fields(seqname=self.donor,
+                                                                      start=features[self.donor, 'HA_5'].end + 1,
+                                                                      end=features[self.donor, 'HA_3'].start - 1,
+                                                                      strand='+',
+                                                                      attribute_string=gff.make_attribute_string({
+                                                                          'ID': 'payload',
+                                                                          'color': feature_colors['payload'],
+                                                                      }),
+                                                                     )
+        
         return features
-    
+
     @memoized_property
     def donor_SNVs(self):
         if self.donor is None:

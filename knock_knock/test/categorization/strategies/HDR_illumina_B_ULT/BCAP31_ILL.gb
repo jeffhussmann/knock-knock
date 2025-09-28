@@ -13,14 +13,6 @@ FEATURES             Location/Qualifiers
      misc_feature    complement(745..765)
                      /label="BCAP31_ILL_1"
                      /ApEinfo_fwdcolor="#9eafd2"
-     misc_feature    501..520
-                     /label="anchor"
-     misc_feature    572..626
-                     /label="HA_1"
-                     /ApEinfo_fwdcolor="#c7b0e3"
-     misc_feature    627..681
-                     /label="HA_2"
-                     /ApEinfo_fwdcolor="#85dae9"
 ORIGIN
         1 gcctggccca gcccggggag caggaggaca gagagggcaa ggccttcgag aacaggtgtg
        61 agcctggcct tcagtggggg aaacaggttg aagggctgtg gccgcttggg ggctccaggc

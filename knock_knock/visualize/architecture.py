@@ -368,10 +368,13 @@ class ReadDiagram:
 
         if (feature_reference, feature_name) in self.color_overrides:
             color = self.color_overrides[feature_reference, feature_name]
+
         elif feature_name in self.color_overrides:
             color = self.color_overrides[feature_name]
+
         else:
             color = feature.attribute.get('color')
+
             if color is None:
                 color = self.default_color
 
@@ -380,8 +383,10 @@ class ReadDiagram:
     def get_feature_height(self, feature_reference, feature_name):
         if (feature_reference, feature_name) in self.feature_heights:
             height = self.feature_heights[feature_reference, feature_name]
+
         elif feature_name in self.feature_heights:
             height = self.feature_heights[feature_name]
+
         else:
             height = 1
 
@@ -390,6 +395,7 @@ class ReadDiagram:
     def get_feature_label(self, feature_reference, feature_name):
         if (feature_reference, feature_name) in self.label_overrides:
             label = self.label_overrides[feature_reference, feature_name]
+
         else:
             label = self.label_overrides.get(feature_name, feature_name)
 

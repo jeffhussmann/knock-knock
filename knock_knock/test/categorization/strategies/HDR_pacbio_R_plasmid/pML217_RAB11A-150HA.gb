@@ -7,15 +7,6 @@ SOURCE      .
   ORGANISM  .
             .
 FEATURES             Location/Qualifiers
-     misc_feature    1739..1886
-                     /label="HA_1"
-                     /ApEinfo_fwdcolor="#c7b0e3"
-     misc_feature    1887..2615
-                     /label="donor_specific"
-                     /ApEinfo_fwdcolor="#b1ff67"
-     misc_feature    2616..2765
-                     /label="HA_2"
-                     /ApEinfo_fwdcolor="#85dae9"
 ORIGIN
         1 agcccgaccg ctgcgcctta tccggtaact atcgtcttga gtccaacccg gtaagacacg
        61 acttatcgcc actggcagca gccactggta acaggattag cagagcgagg tatgtaggcg
