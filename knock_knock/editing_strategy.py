@@ -1225,17 +1225,19 @@ class EditingStrategy:
 
     @memoized_property
     def inferred_HA_features(self):
-        ''' Strategy: for each orientation of the target sequence, find the best gap-free local alignment of target and donor.
-        To determine whether this is the first or second HA on the donor, check which side of the cut the aligned target
-        region overlaps more.
-        If it overlaps before the cut, this should be the first HA, and the remaining relevant target region is after the first alignment.
-        If it overlaps after the cut, this should be the second HA, and the remaining relevant target region is before the first alignment. 
-        Realign the donor to the remaining relevant target region.
-        Confirm that the second donor alignment falls on the expected side of the first one.
-        If both orientations of target produce property oriented alignments, return the orientation with highest total alignment score.
+        ''' Strategy: for each orientation of the target sequence, find the
+        best gap-free local alignment of the donor to the (orientation of the)
+        target sequence before the cut and after the cut. Donor orientation is
+        fixed, so the before-cut alignment on the donor should be before the
+        after-cut alignment. If both orientations of target produce alignments
+        with this property, return the orientation with highest total alignment
+        score.
 
-        Note: it might be better to just align separately to the two sides of the cut, since this is a better
-        representation of the actual homology search.
+        Notes: aligning separately to the two post-cut sides of the target 
+        best represents the homology search that will actually happen.
+        Donors will frequently have PAM disrupting substitutions. Since this
+        will be close to the edge of the target subsequence, the edge may not
+        be included in the alignment.
         '''
 
         if self.donor is None or not self.infer_homology_arms:
@@ -1273,48 +1275,37 @@ class EditingStrategy:
         for target_strand in ['+', '-']:
             if target_strand == '-':
                 possibly_reversed_target_seq = hits.utilities.reverse_complement(self.target_sequence)
-                cut_after = len(self.target_sequence) - 1 - self.cut_after
+                # Flipping cut after is weird since the definition means that we don't want 
+                # just the mirrored index of cut after - think about it as mirroring cut_after + 0.5
+                # and then rounding down.
+                cut_after = len(self.target_sequence) - 1 - self.cut_after - 1
             else:
                 possibly_reversed_target_seq = self.target_sequence
                 cut_after = self.cut_after
 
-            before_cut = hits.interval.Interval(0, cut_after)
-            after_cut = hits.interval.Interval(cut_after + 1, len(self.target_sequence))
+            before_cut = possibly_reversed_target_seq[:cut_after + 1]
+            after_cut = possibly_reversed_target_seq[cut_after + 1:]
+            print(target_strand, len(before_cut), len(after_cut))
+            print(before_cut[-10:], after_cut[:10])
 
             HA_intervals = {
                 self.target: {},
                 self.donor: {},
             }
 
-            first_target_interval, first_donor_interval, first_score = align(possibly_reversed_target_seq, self.donor_sequence)
+            before_cut_target_interval, before_cut_donor_interval, before_cut_score = align(before_cut, self.donor_sequence)
 
-            if (first_target_interval & before_cut).total_length >= (first_target_interval & after_cut).total_length:
-                first_HA = 5
-                second_HA = 3
+            HA_intervals[self.target][5] = before_cut_target_interval
+            HA_intervals[self.donor][5] = before_cut_donor_interval
 
-                target_offset = first_target_interval.end + 1
+            after_cut_target_interval, after_cut_donor_interval, after_cut_score = align(after_cut, self.donor_sequence)
 
-                remaining_target = possibly_reversed_target_seq[target_offset:]
+            after_cut_target_interval += cut_after + 1
 
-            else:
-                first_HA = 3
-                second_HA = 5
+            HA_intervals[self.target][3] = after_cut_target_interval
+            HA_intervals[self.donor][3] = after_cut_donor_interval
 
-                target_offset = 0
-
-                remaining_target = possibly_reversed_target_seq[:first_target_interval.start]
-
-            HA_intervals[self.target][first_HA] = first_target_interval
-            HA_intervals[self.donor][first_HA] = first_donor_interval
-
-            second_target_interval, second_donor_interval, second_score = align(remaining_target, self.donor_sequence)
-
-            second_target_interval += target_offset
-
-            HA_intervals[self.target][second_HA] = second_target_interval
-            HA_intervals[self.donor][second_HA] = second_donor_interval
-
-            total_score = first_score + second_score
+            total_score = before_cut_score + after_cut_score
 
             if target_strand == '-':
                 for which, interval in HA_intervals[self.target].items():

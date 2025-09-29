@@ -17,17 +17,16 @@ def test_same_orientation():
 
     expected_features = {
         ('RAB11A_PAC', 'HA_5'): ('+', 1083, 1230),
-        ('RAB11A_PAC', 'HA_3'): ('+', 1231, 1380),
+        ('RAB11A_PAC', 'HA_3'): ('+', 1239, 1380),
         ('RAB11A-150HA_PCR_donor', 'HA_5'): ('+', 0, 147),
-        ('RAB11A-150HA_PCR_donor', 'payload'): ('+', 148, 876),
-        ('RAB11A-150HA_PCR_donor', 'HA_3'): ('+', 877, 1026),
+        ('RAB11A-150HA_PCR_donor', 'payload'): ('+', 148, 884),
+        ('RAB11A-150HA_PCR_donor', 'HA_3'): ('+', 885, 1026),
     }
     
     assert summarize_features(strat.inferred_HA_features) == expected_features
 
-def test_flipped_orientation():
-    strat = knock_knock.editing_strategy.EditingStrategy(base_dir, 'HDR_pacbio_R_PCR')
-
+def flip_donor(strat):
+    ''' Return a new EditingStrategy with a reverse-complemented donor. '''
     records = {record.name: record for record in strat.gb_records}
 
     flipped_donor = records[strat.donor].reverse_complement()
@@ -42,14 +41,20 @@ def test_flipped_orientation():
                                                                             ],
                                                                             donor=flipped_donor.name,
                                                                            )
+    
+    return strat_with_flipped_donor
 
+def test_flipped_orientation():
+    strat = knock_knock.editing_strategy.EditingStrategy(base_dir, 'HDR_pacbio_R_PCR')
+
+    strat_with_flipped_donor = flip_donor(strat)
 
     expected_features = {
-        ('RAB11A_PAC', 'HA_5'): ('-', 1228, 1380),
-        ('RAB11A_PAC', 'HA_3'): ('-', 1083, 1227),
-        ('RAB11A-150HA_PCR_donor_flipped', 'HA_5'): ('+', 0, 152),
-        ('RAB11A-150HA_PCR_donor_flipped', 'payload'): ('+', 153, 881),
-        ('RAB11A-150HA_PCR_donor_flipped', 'HA_3'): ('+', 882, 1026),
+        ('RAB11A_PAC', 'HA_5'): ('-', 1239, 1380),
+        ('RAB11A_PAC', 'HA_3'): ('-', 1083, 1230),
+        ('RAB11A-150HA_PCR_donor_flipped', 'HA_5'): ('+', 0, 141),
+        ('RAB11A-150HA_PCR_donor_flipped', 'payload'): ('+', 142, 878),
+        ('RAB11A-150HA_PCR_donor_flipped', 'HA_3'): ('+', 879, 1026),
     }
 
     assert summarize_features(strat_with_flipped_donor.inferred_HA_features) == expected_features
