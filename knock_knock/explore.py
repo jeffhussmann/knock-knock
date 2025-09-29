@@ -36,7 +36,7 @@ class Explorer:
                 layout=Layout(height='200px', width='300px'),
             ),
             'read_id': Select(
-                description='read:',
+                description='Read:',
                 options=[],
                 layout=Layout(height='200px', width='500px'),
             ),
@@ -49,14 +49,12 @@ class Explorer:
             'save': Button(description='Save snapshot'),
             'read_details': Textarea(description='Read details:', layout=Layout(height='200px', width='1000px')),
             'alignments_to_show': ToggleButtons(
-                description='Alignments to show:',
                 options=['all', 'parsimonious', 'relevant'],
                 value='relevant',
                 style=dict(
-                    button_width = '80px',
-                    description_width='initial',
+                    button_width = '120px',
                 ),
-                layout={'width': '250px'},
+                layout={'width': '400px'},
             ),
         }
 
@@ -65,10 +63,11 @@ class Explorer:
             ('draw_mismatches', True, 'mismatches'),
         ]
 
-        self.draw_buttons = {}
+        self.draw_button_names = {name for name, *_ in draw_button_info}
+
         for key, default_value, label in draw_button_info:
             value = self.plot_kwargs.pop(key, default_value)
-            self.draw_buttons[key] = ToggleButton(value=value, description=label)
+            self.non_widgets[key] = ToggleButton(value=value, description=label)
 
         all_kwargs = {
             **{k: ipywidgets.fixed(v) for k, v in self.plot_kwargs.items()},
@@ -80,35 +79,51 @@ class Explorer:
 
         self.non_widgets['alignments_to_show'].observe(self.interactive.update, names='value')
 
-        for key in self.draw_buttons:
-            self.draw_buttons[key].observe(self.interactive.update, names='value')
+        for key in self.draw_button_names:
+            self.non_widgets[key].observe(self.interactive.update, names='value')
 
-        def make_row(keys):
-            return HBox([self.widgets[k] if k in self.widgets else self.non_widgets[k] for k in keys])
+        def resolve_key(key):
+            return self.widgets[key] if key in self.widgets else self.non_widgets[key]
+
+        def make_collection(keys, orientation, description=None):
+            Box = {'row': HBox, 'col': VBox}[orientation]
+
+            collection = Box([resolve_key(key) for key in keys],
+                             layout={'padding': '1px 1px 5px 1px'},
+                            )
+
+            if description is not None:
+                collection = HBox([Label(description), collection])
+
+            return collection
+
+        def make_row(keys, description=None):
+            return make_collection(keys, 'row', description=description)
 
         def make_col(keys, description=None):
-            col = VBox([self.draw_buttons[k] for k in keys])
-            if description is not None:
-                col = HBox([Label(description), col])
-
-            return col
+            return make_collection(keys, 'col', description=description)
 
         self.non_widgets['save'].on_click(self.save)
 
-        self.layout = VBox(
-            [make_row(selection_widget_keys),
-             HBox([self.non_widgets['alignments_to_show'],
-                   make_col([
-                       'draw_qualities',
-                       'draw_mismatches',
-                     ],
-                     description='Draw:',
-                   ),
-                  ]),
-             make_row(['file_name', 'save']),
-             self.interactive.children[-1],
-             make_row(['read_details']),
-             self.output,
+        self.layout = VBox([
+            make_row(selection_widget_keys),
+            HBox([
+                make_row([
+                    'alignments_to_show',
+                ],
+                description='Alignments to show:',
+                ),
+                make_row([
+                    'draw_qualities',
+                    'draw_mismatches',
+                ],
+                description='Draw:',
+                ),
+            ]),
+            make_row(['file_name', 'save']),
+            self.interactive.children[-1],
+            make_row(['read_details']),
+            self.output,
             ],
         )
 
@@ -193,6 +208,11 @@ class Explorer:
         return als
 
     def plot(self, read_id, **plot_kwargs):
+        ''' Note: executing %matplotlib inline breaks this by setting
+        the value returned by matplotlib.get_backend() to 'inline', prevening
+        ipywidgets' show_inline_matplotlib_plots from working.
+        '''
+
         with self.output:
             exp = self.get_current_experiment()
 
@@ -251,8 +271,8 @@ class Explorer:
             if self.non_widgets['alignments_to_show'].value == 'parsimonious':
                 plot_kwargs['parsimonious'] = True
 
-            for k in self.draw_buttons:
-                plot_kwargs[k] = self.draw_buttons[k].value
+            for k in self.draw_button_names:
+                plot_kwargs[k] = self.non_widgets[k].value
 
             if self.by_outcome:
                 diagram = architecture.plot(**plot_kwargs)
