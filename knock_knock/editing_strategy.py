@@ -1285,8 +1285,6 @@ class EditingStrategy:
 
             before_cut = possibly_reversed_target_seq[:cut_after + 1]
             after_cut = possibly_reversed_target_seq[cut_after + 1:]
-            print(target_strand, len(before_cut), len(after_cut))
-            print(before_cut[-10:], after_cut[:10])
 
             HA_intervals = {
                 self.target: {},

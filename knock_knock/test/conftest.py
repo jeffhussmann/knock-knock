@@ -52,6 +52,8 @@ def pytest_generate_tests(metafunc, source_dir=None):
                     genome = read_set.expected_categorizations[read_name]['requires_genome']
                     marks.append(pytest.mark.skipif(genome not in indices, reason=f'missing required genome: {genome}'))
 
+                marks.append(getattr(pytest.mark, read_set.full_results_experiment.experiment_type))
+
                 param = pytest.param(read_set, read_name, marks=marks, id=f'{read_set.name} {read_name}')
 
                 params.append(param)

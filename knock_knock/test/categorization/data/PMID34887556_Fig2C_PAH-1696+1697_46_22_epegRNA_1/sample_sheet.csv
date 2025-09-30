@@ -1,2 +1,2 @@
 sample_name,R1,experiment_type,editing_strategy,sequencing_start_feature_name,sgRNAs,platform
-extracted,extracted_R1.fastq,dual_flap,PMID34887556_Fig2C_PAH-1696+1697_46_22_epegRNA_1,PAH-1696+1697_0,PAH_E7.2_34_EvoPreQ1;PAH_E7.5_34_EvoPreQ1,illumina
+extracted,extracted_R1.fastq,twin_prime,PMID34887556_Fig2C_PAH-1696+1697_46_22_epegRNA_1,PAH-1696+1697_0,PAH_E7.2_34_EvoPreQ1;PAH_E7.5_34_EvoPreQ1,illumina

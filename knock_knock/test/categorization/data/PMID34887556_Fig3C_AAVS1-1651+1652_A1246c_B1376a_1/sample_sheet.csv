@@ -1,2 +1,2 @@
 sample_name,R1,experiment_type,editing_strategy,sequencing_start_feature_name,sgRNAs,platform
-extracted,extracted_R1.fastq,dual_flap,PMID34887556_Fig3C_AAVS1-1651+1652_A1246c_B1376a_1,AAVS1-1651+1652_0,AAVS1_A1246c;AAVS1_B1376a,illumina
+extracted,extracted_R1.fastq,twin_prime,PMID34887556_Fig3C_AAVS1-1651+1652_A1246c_B1376a_1,AAVS1-1651+1652_0,AAVS1_A1246c;AAVS1_B1376a,illumina

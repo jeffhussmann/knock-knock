@@ -1,2 +1,2 @@
 group,sanitized_group_name,supplemental_indices,experiment_type,editing_strategy,sequencing_start_feature_name,genome,sgRNAs,donor,min_relevant_length,condition_keys,baseline_condition
-FANCF_FANCF_FANCF_4h_1AtoC_6GtoT_,group00000,,single_flap,FANCF_FANCF,FANCF_0,FANCF,FANCF_4h_1AtoC_6GtoT,,100,,
+FANCF_FANCF_FANCF_4h_1AtoC_6GtoT_,group00000,,prime_editing,FANCF_FANCF,FANCF_0,FANCF,FANCF_4h_1AtoC_6GtoT,,100,,

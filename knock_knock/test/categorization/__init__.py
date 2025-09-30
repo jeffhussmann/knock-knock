@@ -115,7 +115,7 @@ class ReadSet(knock_knock.test.Extractor):
 
         with open(fastq_fn, 'w') as fh:
             for read in reads:
-                read.name = f'{ReadSet.read_prefix}{read.name}'
+                read.name = f'{type(self).read_prefix}{read.name}'
                 fh.write(str(read))
 
     def extract_paired_fastqs(self, existing_exp):
@@ -126,10 +126,10 @@ class ReadSet(knock_knock.test.Extractor):
         
         with open(self.R1_fastq_fn, 'w') as R1_fh, open(self.R2_fastq_fn, 'w') as R2_fh:
             for R1, R2 in read_pairs:
-                R1.name = f'{ReadSet.read_prefix}{R1.name}'
+                R1.name = f'{type(self).read_prefix}{R1.name}'
                 R1_fh.write(str(R1))
 
-                R2.name = f'{ReadSet.read_prefix}{R2.name}'
+                R2.name = f'{type(self).read_prefix}{R2.name}'
                 R2_fh.write(str(R2))
 
     def process_alignment_results_experiment(self):
@@ -165,13 +165,17 @@ class ReadSet(knock_knock.test.Extractor):
 
         return categorizations
 
+    def get_read_architecture(self, read_name):
+        read_name = f'{type(self).read_prefix}{read_name}'
+        return self.full_results_experiment.get_read_architecture(read_name)
+
     @memoized_property
     def categorized_from_alignments(self):
         exp = self.categorization_results_experiment
 
         exp.process(stage='categorize')
 
-        categorizations = {outcome.query_name[len(ReadSet.read_prefix):]: outcome for outcome in exp.outcome_iter()}
+        categorizations = {outcome.query_name[len(type(self).read_prefix):]: outcome for outcome in exp.outcome_iter()}
 
         return categorizations
 
