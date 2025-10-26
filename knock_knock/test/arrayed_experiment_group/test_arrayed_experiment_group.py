@@ -15,7 +15,7 @@ memoized_property = hits.utilities.memoized_property
 
 parent = Path(__file__).resolve().parent
 
-@dataclass
+@dataclass(frozen=True)
 class GroupIdentifier(knock_knock.arrayed_experiment_group.GroupIdentifier):
     results_prefix: str
 

@@ -1,11 +1,15 @@
+import dataclasses
 import logging
 
+import anndata
 import pandas as pd
 import scipy.sparse
+import tqdm
 
 from hits import utilities
 memoized_property = utilities.memoized_property
 memoized_with_args = utilities.memoized_with_args
+memoized_with_kwargs = utilities.memoized_with_kwargs
 
 import knock_knock.parallel
 
@@ -17,23 +21,55 @@ def process_experiment(Group, identifier, stages, exp_i=None, num_exps=None):
     exp = group.experiment(identifier)
 
     if exp_i is not None:
-        progress_string = f'({exp_i + 1: >7,} / {num_exps: >7,}) '
+        width = len(str(num_exps))
+        progress_string = f'({exp_i + 1: >{width},} / {num_exps: >{width},}) '
     else:
         progress_string = ''
 
     for stage in stages:
-        logger.info(f'{progress_string}Starting {identifier} {stage}')
+        logger.info(f'{progress_string}Starting ({identifier.summary}), stage {stage}')
         exp.process(stage=stage)
-        logger.info(f'{progress_string}Finished {identifier} {stage}')
+        logger.info(f'{progress_string}Finished ({identifier.summary}), stage {stage}')
 
 def postprocess_group(Group, identifier):
     group = Group(identifier)
     group.postprocess()
 
 class ExperimentGroup:
+    @property
+    def progress(self):
+        return tqdm.tqdm
+
+    @property
+    def column_names(self):
+        return [field.name for field in dataclasses.fields(type(self).Experiment.Identifier)][1:]
+
+    @classmethod
+    def from_identifier_fields(cls, **fields):
+        return cls(cls.Identifier(**fields))
 
     def experiment(self, identifier):
         return type(self).Experiment(identifier, experiment_group=self)
+
+    def experiment_identifier_from_fields(self, **fields):
+        return type(self).Experiment.Identifier(self.identifier, **fields)
+
+    def experiment_from_identifier_fields(self, **fields):
+        identifier = self.experiment_identifier_from_fields(**fields)
+        return self.experiment(identifier)
+
+    @property
+    def experiments(self):
+        for identifier in self.all_experiment_ids:
+            yield self.experiment(identifier)
+
+    @memoized_property
+    def first_experiment(self):
+        return next(self.experiments)
+
+    @property
+    def categorizer(self):
+        return self.first_experiment.categorizer
 
     def process(self,
                 generate_example_diagrams=False,
@@ -63,29 +99,38 @@ class ExperimentGroup:
             if generate_summary_figures:
                 stages.append('generate_summary_figures')
 
+            all_experiment_ids = list(self.all_experiment_ids)
             args = [
                 (
                     type(self),
                     identifier,
                     stages,
                     exp_i,
-                    len(self.all_experiment_ids),
+                    len(all_experiment_ids),
                 )
-                for exp_i, identifier in enumerate(self.all_experiment_ids)
+                for exp_i, identifier in enumerate(all_experiment_ids)
             ]
 
             pool.starmap(process_experiment, args)
 
         self.postprocess(generate_summary_figures=generate_summary_figures)
 
-    def make_outcome_counts(self):
+    def make_outcome_counts(self, level='details'):
+        # There can be long tails of outcome details observed only one time
+        # (e.g. a specific pattern of sequencing errors) that can make it
+        # slow to rely on pandas to merge outcome indexes.
+        # Instead, build a DOK sparse matrix.
+        # This is a scary potential point of failure that could scramble
+        # count to (outcome, experiment) mappings - be careful!
+
         all_counts = {}
 
         description = 'Loading outcome counts'
-        items = self.progress(self.full_condition_to_experiment.items(), desc=description)
-        for condition, exp in items:
-            if exp.outcome_counts is not None:
-                all_counts[condition] = exp.outcome_counts
+        experiments = self.progress(self.experiments, desc=description)
+        for exp in experiments:
+            counts = exp.outcome_counts(level=level, only_relevant=False)
+            if counts is not None:
+                all_counts[exp.identifier.specific_fields] = counts
 
         all_outcomes = set()
 
@@ -95,64 +140,67 @@ class ExperimentGroup:
         outcome_order = sorted(all_outcomes)
         outcome_to_index = {outcome: i for i, outcome in enumerate(outcome_order)}
 
-        counts = scipy.sparse.dok_matrix((len(outcome_order), len(self.full_conditions)), dtype=int)
+        all_identifiers = list(identifier.specific_fields for identifier in self.all_experiment_ids)
+
+        sparse_counts = scipy.sparse.dok_matrix((len(outcome_order), len(all_identifiers)), dtype=int)
 
         description = 'Combining outcome counts'
-        full_conditions = self.progress(self.full_conditions, desc=description)
 
-        for c_i, condition in enumerate(full_conditions):
-            if condition in all_counts:
-                for outcome, count in all_counts[condition].items():
+        for id_i, identifier in enumerate(self.progress(all_identifiers, desc=description)):
+            if identifier in all_counts:
+                for outcome, count in all_counts[identifier].items():
                     o_i = outcome_to_index[outcome]
-                    counts[o_i, c_i] = count
-                
-        scipy.sparse.save_npz(self.fns['outcome_counts'], counts.tocoo())
+                    sparse_counts[o_i, id_i] = count
 
-        df = pd.DataFrame(counts.toarray(),
-                          columns=self.full_conditions,
-                          index=pd.MultiIndex.from_tuples(outcome_order),
-                         )
+        var = pd.DataFrame(all_identifiers,
+                           columns=self.column_names,
+                          )
+                          
+        columns = ['category', 'subcategory', 'details']
+        columns = columns[:columns.index(level) + 1]
 
-        df.sum(axis=1).to_csv(self.fns['total_outcome_counts'], header=False)
+        obs = pd.DataFrame(outcome_order,
+                           columns=columns,
+                          )
 
-    @memoized_with_args
-    def outcome_counts_df(self, collapsed):
-        if collapsed:
-            prefix = 'collapsed_'
-        else:
-            prefix = ''
+        # Is CSC or CSR better here?
+        adata = anndata.AnnData(X=sparse_counts.tocsc(),
+                                obs=obs,
+                                var=var,
+                               )
 
-        key = prefix + 'outcome_counts'
+        adata.write_h5ad(self.fns['outcome_counts'])
+                                
+    @memoized_property
+    def outcome_counts_df(self):
+        fn = self.fns['outcome_counts']
 
-        total_counts = self.total_outcome_counts(collapsed)
-
-        if self.fns[key].exists() and total_counts is not None:
-            sparse_counts = scipy.sparse.load_npz(self.fns[key])
-            df = pd.DataFrame(sparse_counts.toarray(),
-                              index=total_counts.index,
-                              columns=pd.MultiIndex.from_tuples(self.full_conditions),
-                             )
-
-            df.index.names = self.outcome_index_levels
-            df.columns.names = self.outcome_column_levels
-
+        if fn.exists():
+            adata = anndata.read_h5ad(self.fns['outcome_counts'])
+            df = knock_knock.utilities.adata_to_df(adata)
         else:
             df = None
 
         return df
 
-    @memoized_with_args
-    def total_outcome_counts(self, collapsed):
-        if collapsed:
-            prefix = 'collapsed_'
-        else:
-            prefix = ''
+    @memoized_with_kwargs
+    def outcome_counts(self, *, level='details', only_relevant=True):
+        outcome_counts = self.outcome_counts_df
 
-        key = prefix + 'total_outcome_counts'
+        if outcome_counts is not None:
+            if only_relevant:
+                # See comment in Experiment.outcome_counts
+                outcome_counts = outcome_counts.drop(self.categorizer.non_relevant_categories, errors='ignore')
 
-        if self.fns[key].exists():
-            counts = pd.read_csv(self.fns[key], header=None, index_col=list(range(len(self.outcome_index_levels))), na_filter=False)
-        else:
-            counts = None
+            # Sort columns to avoid annoying pandas PerformanceWarnings.
+            outcome_counts = outcome_counts.sort_index(axis='columns')
 
-        return counts
+            if level == 'details':
+                pass
+            else:
+                keys = ['category', 'subcategory', 'details']
+                keys = keys[:keys.index(level) + 1]
+
+                outcome_counts = outcome_counts.groupby(keys).sum()
+
+        return outcome_counts

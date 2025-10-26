@@ -3,6 +3,7 @@ import matplotlib
 if 'inline' not in matplotlib.get_backend():
     matplotlib.use('Agg')
 
+import dataclasses
 import heapq
 import logging
 import shutil
@@ -10,7 +11,6 @@ import sys
 
 from collections import defaultdict, Counter
 from contextlib import ExitStack
-from dataclasses import dataclass
 from itertools import chain
 from pathlib import Path
 from textwrap import dedent
@@ -84,13 +84,29 @@ UMI_annotation_fields = [
 
 UMIAnnotation = annotation.Annotation_factory(UMI_annotation_fields)
 
-@dataclass
+@dataclasses.dataclass(frozen=True)
 class Identifier:
     def __post_init__(self):
-        if hasattr(self, 'base_dir') and not isinstance(self.base_dir, Path):
-            self.base_dir = Path(self.base_dir)
+        for field in dataclasses.fields(self):
+            if field.type == Path:
+                object.__setattr__(self, field.name, Path(self.__getattribute__(field.name)))
 
-@dataclass
+    @classmethod
+    def __field_names__(cls):
+        return tuple(field.name for field in dataclasses.fields(cls))
+
+    def __iter__(self):
+        return iter(dataclasses.astuple(self))
+
+    @property
+    def specific_fields(self):
+        return tuple(self)[1:]
+
+    @property
+    def summary(self):
+        return ', '.join(map(str, self.specific_fields))
+
+@dataclasses.dataclass(frozen=True)
 class ExperimentIdentifier(Identifier):
     base_dir: Path
     batch_name: str
@@ -102,6 +118,8 @@ class ExperimentIdentifier(Identifier):
 class Experiment:
     def __init__(self, identifier, description=None, experiment_group=None, progress=None):
         self.identifier = identifier
+
+        self.experiment_group = experiment_group
 
         if progress is None or getattr(progress, '_silent', False):
             self.silent = True
@@ -147,7 +165,10 @@ class Experiment:
 
             'length_ranges_dir': self.results_dir / 'length_ranges',
             'outcome_browser': self.results_dir / 'outcome_browser.html',
+
         }
+
+        self.chunks_dir = self.results_dir / 'chunks'
 
         def make_length_range_fig_fn(start, end):
             return self.fns['length_ranges_dir'] / f'{start}_{end}.png'
@@ -618,8 +639,8 @@ class Experiment:
         for fn in fns_to_merge:
             fn.unlink()
 
-    @memoized_property
-    def outcome_counts(self):
+    @memoized_with_kwargs
+    def outcome_counts(self, *, level='details', only_relevant=True):
         fn = self.fns['outcome_counts']
 
         try:
@@ -630,23 +651,43 @@ class Experiment:
                                  sep='\t',
                                  comment='#',
                                 ).squeeze('columns')
+
             counts.index.names = self.count_index_levels
             counts.name = None
+
+            if only_relevant:
+                # Exclude reads that are not from the targeted locus (e.g. phiX, 
+                # nonspecific amplification products, or cross-contamination
+                # from other samples) and therefore are not relevant to the 
+                # performance of the editing strategy.
+                counts = counts.drop(self.categorizer.non_relevant_categories, errors='ignore')
+
+            if level == 'details':
+                pass
+            else:
+                if level == 'subcategory':
+                    keys = ['category', 'subcategory']
+                elif level == 'category':
+                    keys = ['category']
+                else:
+                    raise ValueError
+
+                counts = counts.groupby(keys).sum()
 
         except (FileNotFoundError, pd.errors.EmptyDataError):
             counts = None
 
         return counts
 
-    @memoized_property
-    def outcome_fractions(self):
-        if self.outcome_counts is None:
-            outcome_fractions = None
+    @memoized_with_kwargs
+    def outcome_fractions(self, *, level='details', only_relevant=True):
+        counts = self.outcome_counts(level=level, only_relevant=only_relevant)
+        if counts is None:
+            fractions = None
         else:
-            outcome_fractions = self.outcome_counts / self.outcome_counts.sum()
-            outcome_fractions.name = str(self.identifier) 
+            fractions = counts / counts.sum()
 
-        return outcome_fractions
+        return fractions
 
     @memoized_with_kwargs
     def deletion_boundaries(self, *, include_simple_deletions=True, include_edit_plus_deletions=False):

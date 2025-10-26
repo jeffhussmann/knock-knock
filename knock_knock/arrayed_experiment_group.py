@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 def get_metadata_dir(base_dir):
     return Path(base_dir) / 'metadata'
 
-@dataclass
+@dataclass(frozen=True)
 class BatchIdentifier(knock_knock.experiment.Identifier):
     base_dir: Path
     batch_name: str
@@ -367,7 +367,7 @@ def get_all_experiments(base_dir=Path.home() / 'projects' / 'knock_knock', progr
 
     return exps
 
-@dataclass
+@dataclass(frozen=True)
 class GroupIdentifier(knock_knock.experiment.Identifier):
     batch_id: BatchIdentifier
     group_name: str
@@ -379,7 +379,7 @@ class GroupIdentifier(knock_knock.experiment.Identifier):
     def __str__(self):
         return f'{self.batch_id}, {self.group_name}'
 
-@dataclass
+@dataclass(frozen=True)
 class ExperimentIdentifier(knock_knock.experiment.Identifier):
     group_id: GroupIdentifier
     sample_name: str
@@ -392,11 +392,6 @@ class ExperimentIdentifier(knock_knock.experiment.Identifier):
         return f'{self.group_id}, {self.sample_name}'
 
 class ArrayedExperiment:
-    def __init__(self, identifier, experiment_group=None, **kwargs):
-        self.experiment_group = experiment_group
-
-        super().__init__(identifier, **kwargs)
-
     def load_description(self):
         description = {
             **self.experiment_group.description,
@@ -524,8 +519,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
             self.condition_to_sample_names[condition].append(sample_name)
 
         self.fns = {
-            'total_outcome_counts': self.results_dir / 'total_outcome_counts.txt',
-            'outcome_counts': self.results_dir  / 'outcome_counts.npz',
+            'outcome_counts': self.results_dir  / 'outcome_counts.h5ad',
             'pegRNA_conversion_fractions': self.results_dir / 'pegRNA_conversion_fractions.csv',
 
             'partial_incorporation_figure_high_threshold': self.results_dir / 'partial_incorporation.png',
@@ -556,14 +550,6 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
     @memoized_property
     def results_dir(self):
         return self.identifier.base_dir / 'results' / self.identifier.batch_id.batch_name / self.sanitized_group_name
-
-    def experiments(self):
-        for identifier in self.all_experiment_ids:
-            yield self.experiment(identifier)
-
-    @memoized_property
-    def first_experiment(self):
-        return next(self.experiments())
 
     @property
     def preprocessed_read_type(self):
@@ -732,7 +718,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
     def group_by_condition(self, df):
         if len(self.condition_keys) == 0:
-            # Supplying a constant function to by means
+            # Supplying a constant function to 'by' means
             # all columns will be grouped together. Making
             # this constant value 'all' means that will be
             # the name of eventual aggregated column. 

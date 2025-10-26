@@ -132,6 +132,10 @@ class ReadSet(knock_knock.test.Extractor):
                 R2.name = f'{type(self).read_prefix}{R2.name}'
                 R2_fh.write(str(R2))
 
+    def process_full_results_experiment(self):
+        for stage in ['preprocess', 'align', 'categorize']:
+            self.full_results_experiment.process(stage=stage)
+
     def process_alignment_results_experiment(self):
         exp = self.alignment_results_experiment
 
@@ -156,12 +160,12 @@ class ReadSet(knock_knock.test.Extractor):
 
     @memoized_property
     def categorized_from_fastq(self):
-        exp = self.full_results_experiment
+        self.process_full_results_experiment()
 
-        for stage in ['preprocess', 'align', 'categorize']:
-            exp.process(stage=stage)
-
-        categorizations = {outcome.query_name[len(type(self).read_prefix):]: outcome for outcome in exp.outcome_iter()}
+        categorizations = {
+            outcome.query_name[len(type(self).read_prefix):]: outcome
+            for outcome in self.full_results_experiment.outcome_iter()
+        }
 
         return categorizations
 

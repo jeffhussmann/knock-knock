@@ -2,6 +2,8 @@ from pathlib import Path
 
 import datetime
 import logging
+
+import anndata
 import pandas as pd
 
 def read_and_sanitize_csv(csv_fn, index_col=None):
@@ -77,3 +79,18 @@ class FileLoggingContext:
 
 def is_one_sided(experiment_type):
     return experiment_type is not None and any(experiment_type.startswith(name) for name in ['TECseq', 'seeseq']) 
+
+def adata_to_df(adata):
+    df = pd.DataFrame(data=adata.to_df().values,
+                      index=pd.MultiIndex.from_frame(adata.obs),
+                      columns=pd.MultiIndex.from_frame(adata.var),
+                     )
+
+    return df
+
+def df_to_adata(df):
+    adata = anndata.AnnData(df.values,
+                            obs=df.index.to_frame(index=False),
+                            var=df.columns.to_frame(index=False),
+                           )
+    return adata
