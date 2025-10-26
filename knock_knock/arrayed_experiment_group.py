@@ -556,10 +556,6 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         return self.first_experiment.preprocessed_read_type
 
     @property
-    def categorizer(self):
-        return self.first_experiment.categorizer
-
-    @property
     def platform(self):
         return self.first_experiment.platform
 
@@ -686,35 +682,6 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
             condition_labels[condition] = label
 
         return condition_labels
-
-    @memoized_with_kwargs
-    def outcome_counts(self, *, level='details', only_relevant=True):
-        outcome_counts = self.outcome_counts_df(False)
-
-        if outcome_counts is not None:
-            if only_relevant:
-                # Exclude reads that are not from the targeted locus (e.g. phiX, 
-                # nonspecific amplification products, or cross-contamination
-                # from other samples) and therefore are not relevant to the 
-                # performance of the editing strategy.
-                outcome_counts = outcome_counts.drop(self.categorizer.non_relevant_categories, errors='ignore')
-
-            # Sort columns to avoid annoying pandas PerformanceWarnings.
-            outcome_counts = outcome_counts.sort_index(axis='columns')
-
-            if level == 'details':
-                pass
-            else:
-                if level == 'subcategory':
-                    keys = ['category', 'subcategory']
-                elif level == 'category':
-                    keys = ['category']
-                else:
-                    raise ValueError
-
-                outcome_counts = outcome_counts.groupby(keys).sum()
-
-        return outcome_counts
 
     def group_by_condition(self, df):
         if len(self.condition_keys) == 0:
