@@ -2003,30 +2003,41 @@ class EditingStrategy:
 
         return name_to_description
 
-    #@memoized_property
-    #def intended_edit_sequence(self):
-    #    if len(self.pegRNA_names) != 2:
-    #        raise NotImplementedError
+    @memoized_property
+    def intended_edit_sequence(self):
+        if len(self.pegRNAs) == 1:
+            # Edit replaces target from start of PBS to end of HA_RT with pegRNA from start of PBS to end of RTT
 
-    #    results = knock_knock.pegRNAs.infer_twin_pegRNA_features(self.pegRNA_names,
-    #                                                             self.target,
-    #                                                             self.features,
-    #                                                             self.reference_sequences,
-    #                                                            )
+            pegRNA_seq = self.reference_sequences[self.pegRNA.name]
+            pegRNA_slice = slice(self.features[self.pegRNA.name, self.pegRNA.HA_RT_name].start, self.features[self.pegRNA.name, self.pegRNA.HA_PBS_name].end + 1)
 
-    #    primer_seqs = {side: self.primers_by_side_of_read[side].sequence(self.reference_sequences) for side in ['left', 'right']}
-    #    primer_seqs['right'] = utilities.reverse_complement(primer_seqs['right'])
+            from_pegRNA = utilities.reverse_complement(pegRNA_seq[pegRNA_slice])
 
-    #    extended_expected_seq = results['intended_edit_seq']
-    #    if self.sequencing_direction == '-':    
-    #        extended_expected_seq = utilities.reverse_complement(extended_expected_seq)
+            target_HA_RT = self.features[self.target, self.pegRNA.HA_RT_name]
+            target_HA_PBS = self.features[self.target, self.pegRNA.HA_PBS_name]
 
-    #    start = extended_expected_seq.index(primer_seqs['left'])
-    #    end = extended_expected_seq.index(primer_seqs['right']) + len(primer_seqs['right'])
+            strand_on_target = target_HA_PBS.strand
 
-    #    expected_seq = extended_expected_seq[start:end]
+            if strand_on_target == '+':
+                target_up_to = target_HA_PBS.start
+                target_after = target_HA_RT.end + 1
 
-    #    return expected_seq
+            else:
+                target_up_to = target_HA_RT.start
+                target_after = target_HA_PBS.end + 1
+
+                from_pegRNA = utilities.reverse_complement(from_pegRNA)
+
+            target_before = self.target_sequence[:target_up_to]
+            target_after = self.target_sequence[target_after:]
+
+            edited_target = target_before + from_pegRNA + target_after
+
+        else:
+            logger.warning('intended edit not implemented')
+            edited_target = self.target_sequence
+
+        return edited_target
 
 def parse_benchling_genbank(gb_record):
     convert_strand = {
@@ -2076,9 +2087,12 @@ def get_all_strategies(base_dir):
 
 def locate_supplemental_indices(base_dir):
     base_dir = Path(base_dir)
+
     override_fn = base_dir / 'index_locations.yaml'
+
     if override_fn.exists():
         locations = yaml.safe_load(override_fn.read_text())
+
     else:
         locations = {}
         indices_dir = base_dir / 'indices'
