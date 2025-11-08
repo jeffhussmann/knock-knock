@@ -15,7 +15,6 @@ def blast(ref_fn,
           reads,
           bam_fn=None,
           bam_by_name_fn=None,
-          max_insertion_length=None,
           manual_temp_dir=None,
           return_alignments=False,
           ref_name_prefix_to_append=None,
@@ -25,7 +24,6 @@ def blast(ref_fn,
         reads: either a path to a fastq/fastq.gz file, or a list of such paths, or an iterator over hits.fastq.Read objects
         bam_fn: path to write reference coordinate-sorted alignments
         bam_by_name_fn: path to write query name-sorted alignments
-        max_insertion_length: If not None, any alignments with insertions longer than max_insertion_length will be split into multiple alignments.
         ref_name_prefix_to_append: If not None, prefix to append before reference names in header.
         filter_to_discard: If evaluates to True on an alignment, don't report that alignment.
     '''
@@ -179,20 +177,14 @@ def blast(ref_fn,
 
                 al = possibly_standardize_header(al)
 
-                # TODO: can this be removed since architecture will take care of it?
-                if max_insertion_length is not None:
-                    split_als = sam.split_at_large_insertions(al, max_insertion_length + 1)
-                else:
-                    split_als = [al]
+                if bam_fn is not None:
+                    sorter.write(al)
 
-                for split_al in split_als:
-                    if bam_fn is not None:
-                        sorter.write(split_al)
-                    if bam_by_name_fn is not None:
-                        by_name_sorter.write(split_al)
+                if bam_by_name_fn is not None:
+                    by_name_sorter.write(al)
 
-                    if return_alignments:
-                        alignments.append(split_al)
+                if return_alignments:
+                    alignments.append(al)
 
             for name in fastq_dict['+']:
                 if name not in aligned_names:
