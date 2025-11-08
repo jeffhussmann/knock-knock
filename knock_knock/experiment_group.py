@@ -37,16 +37,12 @@ def postprocess_group(Group, identifier):
 
 class ExperimentGroup:
     @property
-    def progress(self):
-        return tqdm.tqdm
-
-    @property
     def column_names(self):
         return [field.name for field in dataclasses.fields(type(self).Experiment.Identifier)][1:]
 
     @classmethod
-    def from_identifier_fields(cls, **fields):
-        return cls(cls.Identifier(**fields))
+    def from_identifier_fields(cls, fields, **kwargs):
+        return cls(cls.Identifier(**fields), **kwargs)
 
     def experiment(self, identifier):
         return type(self).Experiment(identifier, experiment_group=self)

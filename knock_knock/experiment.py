@@ -32,42 +32,13 @@ import knock_knock.lengths
 import knock_knock.outcome
 import knock_knock.editing_strategy
 import knock_knock.utilities
+import knock_knock.visualize
 import knock_knock.visualize.lengths
 
 from . import svg, table, explore
 
 logger = logging.getLogger(__name__)
 
-class ColorGroupCycler:
-    def __init__(self):
-        starts_20c = np.arange(4) * 4
-        starts_20b = np.array([3, 1, 0, 2, 4]) * 4
-
-        groups_20c = [bokeh.palettes.Category20c_20[start:start + 3] for start in starts_20c]
-        groups_20b = [bokeh.palettes.Category20b_20[start:start + 3] for start in starts_20b]
-
-        self.all_groups = (groups_20c + groups_20b)
-        
-    def __getitem__(self, key):
-        group_num, replicate = key
-        group = self.all_groups[group_num % len(self.all_groups)]
-        color = group[replicate % len(group)]
-        return color
-    
-color_groups = ColorGroupCycler()
-
-def extract_color(description):
-    color = description.get('color')
-
-    if color is None or color == 0:
-        color = 'grey'
-    else:
-        num = int(color) - 1
-        replicate = int(description.get('replicate', 1)) - 1
-        color = color_groups[num, replicate]
-
-    return color
-        
 def ensure_list(possibly_list):
     if isinstance(possibly_list, list):
         definitely_list = possibly_list
@@ -121,18 +92,7 @@ class Experiment:
 
         self.experiment_group = experiment_group
 
-        if progress is None or getattr(progress, '_silent', False):
-            self.silent = True
-            def ignore_kwargs(x, **kwargs):
-                return x
-            progress = ignore_kwargs
-        else:
-            self.silent = False
-
-        def pass_along_kwargs(iterable, **kwargs):
-            return progress(iterable, **kwargs)
-
-        self.progress = pass_along_kwargs
+        self.progress = knock_knock.utilities.possibly_default_progress(progress)
 
         if description is None:
             description = self.load_description()

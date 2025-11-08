@@ -94,3 +94,12 @@ def df_to_adata(df):
                             var=df.columns.to_frame(index=False),
                            )
     return adata
+
+def possibly_default_progress(progress):
+    if progress is None or getattr(progress, '_silent', False):
+        def ignore_kwargs(x, **kwargs):
+            return x
+
+        progress = ignore_kwargs
+    
+    return progress
