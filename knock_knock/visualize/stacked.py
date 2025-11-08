@@ -4,7 +4,7 @@ import warnings
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Union, Optional
+from typing import Any
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -25,13 +25,13 @@ logger = logging.getLogger(__name__)
 @dataclass
 class StackedDiagrams:
     outcome_order: list
-    editing_strategies: Union[knock_knock.editing_strategy.EditingStrategy, dict]
+    editing_strategies: knock_knock.editing_strategy.EditingStrategy | dict
 
-    ax: Optional[plt.Axes] = None
+    ax: plt.Axes | None = None
     block_alpha: float = 0.1
     center_at_PAM: bool = False
-    cut_color: Optional[Any] = hits.visualize.apply_alpha('black', 0.5)
-    draw_all_sequence: Union[bool, float] = False
+    cut_color: Any | None = hits.visualize.apply_alpha('black', 0.5)
+    draw_all_sequence: bool | float = False
     draw_cuts: bool = True
     draw_donor_on_top: bool = False
     draw_imperfect_MH: bool = False
@@ -46,17 +46,17 @@ class StackedDiagrams:
     inches_per_nt: float = 0.12
     inches_per_outcome: float = 0.25
     line_widths: float = 1.5
-    num_outcomes: Optional[int] = None
+    num_outcomes: int | None = None
     color_overrides: dict = field(default_factory=dict)
     label_overrides: dict = field(default_factory=dict)
     preserve_x_lims: bool = False
     replacement_text_for_complex: dict = field(default_factory=dict)
     shift_x: float = 0
     text_size: int = 8
-    title: Optional[str] = None
+    title: str | None = None
     title_size: int = 14
     title_offset: int = 20
-    title_color: Optional[Any] = 'black'
+    title_color: Any | None = 'black'
     window: int = 70
     RTT_xs: dict = field(default_factory=dict)
 

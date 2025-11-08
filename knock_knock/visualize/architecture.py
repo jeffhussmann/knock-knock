@@ -1,7 +1,7 @@
 import copy
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Union, Optional
+from typing import Any
 
 import matplotlib
 
@@ -35,7 +35,7 @@ def adjust_edges(xs):
 
 @dataclass
 class ReadDiagram:
-    alignments: Union[list, dict]
+    alignments: list | dict
     editing_strategy: knock_knock.editing_strategy.EditingStrategy
 
     ref_centric: bool = True
@@ -56,9 +56,9 @@ class ReadDiagram:
     manual_refs_below: list = field(default_factory=list)
     draw_features_on_alignments: bool = True
     label_features_on_alignments: bool = False
-    ax: Optional[plt.Axes] = None
+    ax: plt.Axes | None = None
     features_to_hide: set = field(default_factory=set)
-    features_to_show: Optional[set] = None
+    features_to_show: set | None = None
     feature_heights: dict = field(default_factory=dict)
     refs_to_hide: set = field(default_factory=set)
     draw_edge_numbers: bool = True
@@ -67,7 +67,7 @@ class ReadDiagram:
     hide_donor_alignments: bool = False
     default_color: Any = 'grey'
     color_overrides: dict = field(default_factory=dict)
-    title: Optional[str] = None
+    title: str | None = None
     title_y: float = 1.02
     platform: str = 'illumina'
     label_differences: bool = False
@@ -76,18 +76,18 @@ class ReadDiagram:
     split_at_indels: bool = False
     only_target_and_donor: bool = False
     alignment_registration: str = 'centered on primers'
-    width_per_unit: Optional[float] = None
-    arrow_width: Optional[float] = None
+    width_per_unit: float | None = None
+    arrow_width: float | None = None
     emphasize_parsimonious: bool = False
-    manual_x_lims: Optional[tuple] = None
+    manual_x_lims: tuple | None = None
     label_offsets: dict = field(default_factory=dict)
     invisible_alignments: list = field(default_factory=list)
-    query_interval: Optional[tuple] = None
+    query_interval: tuple | None = None
     hide_xticks: bool = False
-    inferred_amplicon_length: Optional[int] = None
+    inferred_amplicon_length: int | None = None
     manual_anchors: dict = field(default_factory=dict)
     manual_ref_extents: dict = field(default_factory=dict)
-    manual_fade: Optional[dict] = None
+    manual_fade: dict | None = None
     refs_to_draw: set = field(default_factory=set)
     refs_to_flip: set = field(default_factory=set)
     refs_to_label: set = field(default_factory=set)
@@ -104,7 +104,7 @@ class ReadDiagram:
     feature_line_width: float = 0.005
     gap_between_als: float = 0.003
     label_cut: bool = False
-    architecture: Optional[knock_knock.architecture.Categorizer] = None
+    architecture: knock_knock.architecture.Categorizer | None = None
 
     def __post_init__(self):
         self.all_reference_sequences = {

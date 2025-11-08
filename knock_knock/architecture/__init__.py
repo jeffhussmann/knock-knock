@@ -3,7 +3,7 @@ import re
 
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Optional
+from typing import Self
 
 import numpy as np
 import pandas as pd
@@ -1831,6 +1831,6 @@ class ExtensionChain:
 class ExtensionChainLink:
     name: str
     candidate_alignments: list[pysam.AlignedSegment]
-    next_feature: Optional[str] = None
-    next_link: Optional['ExtensionChainLink'] = None
-    alignment: Optional[pysam.AlignedSegment] = None
+    next_feature: str | None = None
+    next_link: Self | None = None
+    alignment: pysam.AlignedSegment| None = None

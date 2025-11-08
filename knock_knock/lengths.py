@@ -34,7 +34,7 @@ class OutcomeStratifiedLengths:
         for (cat, subcat), counts in subcategory_lengths.items():
             array = np.zeros(self.max_length + 1, dtype=int)
             for length, value in counts.items():
-                if length == -1:
+                if length is None:
                     array[self.length_to_store_unknown] = value
                 elif length >= self.max_relevant_length:
                     array[self.max_relevant_length] += value
