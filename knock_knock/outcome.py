@@ -1,7 +1,10 @@
-import inspect
+import dataclasses
+import typing
+import types
 import urllib.parse
+
 from collections import OrderedDict
-from dataclasses import dataclass
+
 
 import numpy as np
 import pandas as pd
@@ -40,10 +43,12 @@ class DegenerateDeletion(Detail):
     @classmethod
     def collapse(cls, degenerate_deletions):
         lengths = {d.length for d in degenerate_deletions}
+
         if len(lengths) > 1:
             for d in degenerate_deletions:
                 print(d)
             raise ValueError
+
         length = lengths.pop()
 
         starts_ats = set()
@@ -376,7 +381,7 @@ class AnchoredInt(Int):
     def perform_anchor_shift(self, anchor):
         return type(self)(self - anchor)
 
-class FormattedFloat(float):
+class FormattedFloat(float, Detail):
     def __str__(self):
         return f'{self:0.3f}'
 
@@ -399,6 +404,8 @@ tag_to_Detail = OrderedDict({
     'deletions': Deletions,
     'insertions': Insertions,
     'mismatches': Mismatches,
+    'names': Strs,
+    'num_edits': Int,
 })
 
 tag_order = {tag: i for i, tag in enumerate(tag_to_Detail)}.__getitem__
@@ -451,52 +458,99 @@ class Details(Detail):
 
     __repr__ = __str__
 
-@dataclass
+@dataclasses.dataclass
 class CategorizationRecord:
-    query_name: str
-    inferred_amplicon_length: int
+    query_name: Str
+    inferred_amplicon_length: Int | None
     Q30_fraction: FormattedFloat
     mean_Q: FormattedFloat
-    category: str
-    subcategory: str
-    details: Details.from_string
-    UMI_seq: str = ''
-    UMI_qual: str = ''
+    category: Str
+    subcategory: Str
+    details: Details
+    UMI_seq: Str = ''
+    UMI_qual: Str = ''
 
     delimiter = '\t'
 
     @classmethod
     def from_string(cls, line):
-        fields = line.strip('\n').split(cls.delimiter)
+        values = line.strip('\n').split(cls.delimiter)
+
+        fields = dataclasses.fields(cls)
         
-        if len(fields) != len(cls.parameters):
-            raise ValueError(f'expected {len(cls.parameters)} parameters, got {len(fields)}')
+        if len(values) != len(fields):
+            raise ValueError(f'expected {len(fields)} parameters, got {len(values)}')
 
         args = []
-        for field, (name, parameter) in zip(fields, cls.parameters):
-            args.append(parameter.annotation(field))
+
+        for value, field in zip(values, fields):
+            if typing.get_origin(field.type) is types.UnionType:
+                success = False
+
+                for type_ in typing.get_args(field.type):
+                    try:
+                        if type_ is types.NoneType:
+                            if value == 'None':
+                                arg = None
+                            else:
+                                raise TypeError
+                        else:
+                            arg = type_.from_string(value)
+
+                    except:
+                        continue
+
+                    success = True
+                    break
+
+                if not success:
+                    raise TypeError(value, field.type)
+
+            else:
+                arg = field.type.from_string(value)
+
+            args.append(arg)
 
         return cls(*args)
 
     @classmethod
     def from_architecture(cls, architecture, **overrides):
-        args = [overrides[name] if name in overrides else getattr(architecture, name) for name, _ in cls.parameters]
+        args = [
+            overrides[field.name] if field.name in overrides else getattr(architecture, field.name)
+            for field in dataclasses.fields(cls)
+        ]
+
         return cls(*args)
 
     def __str__(self):
-        fields = []
+        values = []
 
-        for name, parameter in self.parameters:
-            field = getattr(self, name)
-            if type(parameter.annotation) == type and not isinstance(field, parameter.annotation):
-                field = parameter.annotation(field)
+        for field in dataclasses.fields(self):
+            value = getattr(self, field.name)
 
-            fields.append(field)
+            if typing.get_origin(field.type) is types.UnionType:
+                success = False
 
-        return '\t'.join(str(field) for field in fields)
+                for type_ in typing.get_args(field.type):
+                    if not isinstance(value, type_):
+                        try:
+                            value = type_(value)
+                        except:
+                            continue
 
-signature = inspect.signature(CategorizationRecord.__init__)
-CategorizationRecord.parameters = list(signature.parameters.items())[1:]
+                    success = True
+                    break
+
+                if not success:
+                    raise TypeError(value, field.type)
+
+            else:
+                if not isinstance(value, field.type):
+                    value = field.type(value)
+
+            values.append(value)
+
+        return '\t'.join(str(value) for value in values)
 
 def add_directionalities_to_deletions(outcomes, editing_strategy):
     combined_categories = []
