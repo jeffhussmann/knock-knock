@@ -13,6 +13,7 @@ import numpy as np
 import Bio.Align
 import Bio.SeqIO
 
+import hits.restriction
 import hits.visualize
 from hits import fasta, genomes, gff, utilities, mapping_tools, interval, sam, sw
 
@@ -53,7 +54,9 @@ class EditingStrategy:
                  manual_sgRNA_components=None,
                  max_programmed_deletion_length=None,
                  additional_attributes=None,
+                 restriction_enzymes=None,
                 ):
+
         self.name = name
 
         self.base_dir = Path(base_dir)
@@ -120,6 +123,7 @@ class EditingStrategy:
         populate_attribute('donor', donor)
         populate_attribute('nonhomologous_donor', nonhomologous_donor)
         populate_attribute('sequencing_start_feature_name', sequencing_start_feature_name)
+        populate_attribute('restriction_enzymes', restriction_enzymes, default_value=[])
 
         self.donor_type = self.manifest.get('donor_type')
         self.donor_specific = self.manifest.get('donor_specific', 'GFP11') 
@@ -698,11 +702,18 @@ class EditingStrategy:
     @memoized_property
     def cut_afters(self):
         cut_afters = {}
+
         for name, protospacer in self.protospacer_features.items():
             effector = effectors[protospacer.attribute['effector']]
 
             for strand, cut_after in effector.cut_afters(protospacer).items():
                 cut_afters[f'{name}_{strand}'] = cut_after
+
+        for enzyme_name in self.restriction_enzymes:
+            enzyme = hits.restriction.enzymes[enzyme_name]
+            for strand, positions in enzyme.cut_afters(self.target_sequence).items():
+                for position in positions:
+                    cut_afters[f'{enzyme_name}_{position}_{strand}'] = position
 
         return cut_afters
     
