@@ -1,8 +1,8 @@
 # Metadata from outcome_list:
-## Generated at 2025-07-31 15:28:27
+## Generated at 2025-10-28 10:10:06
 # Metadata from too_short_outcome_list:
-## Generated at 2025-07-31 15:28:27
-wild type	clean		20
-partial edit	partial incorporation	programmed_substitution_read_bases=_G	20
-partial edit	partial incorporation	programmed_substitution_read_bases=A_	20
-intended edit	substitution	programmed_substitution_read_bases=AG	20
+## Generated at 2025-10-28 10:10:06
+wild type	clean		10
+partial edit	partial incorporation	programmed_substitution_read_bases=_G	10
+partial edit	partial incorporation	programmed_substitution_read_bases=A_	10
+intended edit	substitution	programmed_substitution_read_bases=AG	10

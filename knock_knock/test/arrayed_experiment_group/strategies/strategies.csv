@@ -1,2 +1,2 @@
 name,genome,genome_source,amplicon_primers,sgRNAs,extra_sequences,donor
-FANCF_FANCF,FANCF,FANCF,FANCF,FANCF_4h_1AtoC_6GtoT,,
+FANCF_FANCF_illumina,FANCF,FANCF,FANCF,FANCF_4h_1AtoC_6GtoT,,

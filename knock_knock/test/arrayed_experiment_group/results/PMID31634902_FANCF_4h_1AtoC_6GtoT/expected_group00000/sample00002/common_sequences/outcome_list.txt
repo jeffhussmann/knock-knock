@@ -1,5 +1,5 @@
-## Generated at 2025-07-31 15:28:27
-0000000000_0000000030	182	0.995	39.918	wild type	clean			
-0000000001_0000000030	182	0.995	39.918	partial edit	partial incorporation	programmed_substitution_read_bases=_G		
-0000000002_0000000030	182	0.995	39.918	partial edit	partial incorporation	programmed_substitution_read_bases=A_		
-0000000003_0000000030	182	0.995	39.918	intended edit	substitution	programmed_substitution_read_bases=AG		
+## Generated at 2025-10-28 10:10:06
+0000000000_0000000020	182	0.995	39.918	wild type	clean			
+0000000001_0000000020	182	0.995	39.918	partial edit	partial incorporation	programmed_substitution_read_bases=_G		
+0000000002_0000000020	182	0.995	39.918	partial edit	partial incorporation	programmed_substitution_read_bases=A_		
+0000000003_0000000020	182	0.995	39.918	intended edit	substitution	programmed_substitution_read_bases=AG		

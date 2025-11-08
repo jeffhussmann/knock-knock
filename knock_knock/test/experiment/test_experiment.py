@@ -85,6 +85,6 @@ def get_all_comparisons():
     return comparisons
 
 def test_outcome_counts(comparison):
-    expected = comparison.expected_results_experiment.outcome_counts
-    actual = comparison.actual_results_experiment.outcome_counts
+    expected = comparison.expected_results_experiment.outcome_counts(only_relevant=False)
+    actual = comparison.actual_results_experiment.outcome_counts(only_relevant=False)
     assert (expected == actual).all()

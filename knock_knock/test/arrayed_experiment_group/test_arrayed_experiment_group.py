@@ -90,6 +90,8 @@ class Comparison:
 
         knock_knock.arrayed_experiment_group.setup_from_metadata(type(self).base_dir, self.name)
 
+        self.generate_fastqs(editing_strategy)
+
     def copy_metadata_sequences(self, editing_strategy):
         strat = editing_strategy
 
@@ -101,7 +103,9 @@ class Comparison:
 
     def generate_fastqs(self, editing_strategy):
         for sample_i, sample_name in enumerate(self.sample_names):
-            reads, _ = knock_knock.test.partial_incorporation.generate_simulated_reads(editing_strategy, reads_per_sequence=10 * sample_i)
+            reads, _ = knock_knock.test.partial_incorporation.generate_simulated_reads(editing_strategy,
+                                                                                       reads_per_sequence=10 * sample_i,
+                                                                                      )
 
             with open(self.fastq_fns[sample_name]['R1'], 'w') as R1_fh, open(self.fastq_fns[sample_name]['R2'], 'w') as R2_fh:
                 for R1, R2 in reads:

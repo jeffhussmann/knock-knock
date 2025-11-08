@@ -13,8 +13,6 @@ FEATURES             Location/Qualifiers
      misc_feature    complement(1933..1957)
                      /label="RAB11A_PAC_1"
                      /ApEinfo_fwdcolor="#9eafd2"
-     misc_feature    501..526
-                     /label="anchor"
 ORIGIN
         1 agtggacatc attggcaggg ggcattattc tgcttgttat aggcatactt gcccacaagt
        61 ctaaatcgag agtttgcata taggaggtag gaggtgtgac aataattgga taaaggcttt
