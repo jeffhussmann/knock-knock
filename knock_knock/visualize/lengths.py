@@ -7,6 +7,7 @@ import pandas as pd
 
 def plot_outcome_stratified_lengths(outcome_stratified_lengths,
                                     categorizer,
+                                    editing_strategy,
                                     level='subcategory',
                                     length_ranges=None,
                                     x_lims=None,
@@ -15,29 +16,29 @@ def plot_outcome_stratified_lengths(outcome_stratified_lengths,
                                     smooth_window=0,
                                     title=None,
                                     x_tick_multiple=100,
-                                    expected_lengths=None,
                                     draw_instructions=False,
+                                    only_relevant=False,
+                                    truncate_to_max_observed_length=False,
                                    ):
     '''
     outcome_stratified_lengths: knock_knock.lengths.OutcomeStratifiedLengths
     categorizer: knock_knock.architecture.Categorizer
     '''
-    if expected_lengths is None:
-        expected_lengths = {}
 
-    lengths_df = outcome_stratified_lengths.lengths_df(level=level)
+    if truncate_to_max_observed_length:
+        outcome_stratified_lengths = outcome_stratified_lengths.truncate_to_max_observed_length(only_relevant=only_relevant)
 
-    total_reads = outcome_stratified_lengths.total_reads
-    highest_points = outcome_stratified_lengths.highest_points(level=level, smooth_window=smooth_window)
-    outcome_to_color = outcome_stratified_lengths.outcome_to_color(smooth_window=smooth_window)
+    lengths_df = outcome_stratified_lengths.lengths_df(level=level, only_relevant=only_relevant)
+
+    total_reads = outcome_stratified_lengths.total_reads(only_relevant=only_relevant)
+    highest_points = outcome_stratified_lengths.highest_points(level=level, smooth_window=smooth_window, only_relevant=only_relevant)
+    outcome_to_color = outcome_stratified_lengths.outcome_to_color(smooth_window=smooth_window, only_relevant=only_relevant)
 
     if total_reads == 0:
         return
 
     if x_lims is None:
-        ys = lengths_df.columns
-        x_max = int(len(ys) * 1.005)
-        x_lims = (0, x_max)
+        x_lims = (min(lengths_df.columns), max(lengths_df.columns))
 
     panel_groups = []
 
@@ -155,7 +156,7 @@ def plot_outcome_stratified_lengths(outcome_stratified_lengths,
         y_maxes.append(y_max)
 
     for panel_i, ax in enumerate(axs):
-        main_ticks = list(range(0, outcome_stratified_lengths.max_relevant_length, x_tick_multiple))
+        main_ticks = list(range(outcome_stratified_lengths.min_relevant_length, outcome_stratified_lengths.max_relevant_length, x_tick_multiple))
         main_tick_labels = [str(x) for x in main_ticks]
 
         extra_ticks = [
@@ -167,15 +168,20 @@ def plot_outcome_stratified_lengths(outcome_stratified_lengths,
             '?',
         ]
 
-        ax.set_xticks(main_ticks + extra_ticks)
-        ax.set_xticklabels(main_tick_labels + extra_tick_labels)
+        ax.set_xticks(main_ticks + extra_ticks, labels=main_tick_labels + extra_tick_labels)
 
         ax.set_xlim(*x_lims)
         ax.set_ylabel('Percentage of reads', size=12)
-        ax.set_xlabel('amplicon length', size=12)
+
+        if len(editing_strategy.primers) == 0:
+            x_label = 'Read length change from unedited'
+        else:
+            x_label = 'Amplicon length'
+
+        ax.set_xlabel(x_label, size=12)
 
         if panel_i == 0:
-            for i, (name, length) in enumerate(expected_lengths.items()):
+            for i, (name, length) in enumerate(editing_strategy.expected_lengths.items()):
                 ax.axvline(length, color='black', alpha=0.2)
 
                 y = 1 + 0.05 * i

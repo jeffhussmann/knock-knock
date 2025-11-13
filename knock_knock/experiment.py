@@ -326,6 +326,7 @@ class Experiment:
 
     def generate_outcome_stratified_lengths(self):
         lengths = knock_knock.lengths.OutcomeStratifiedLengths(self.outcome_iter(),
+                                                               -self.max_relevant_length,
                                                                self.max_relevant_length,
                                                                self.length_to_store_unknown,
                                                                self.categorizer.non_relevant_categories,
@@ -350,7 +351,7 @@ class Experiment:
             for length in range(start, end + 1):
                 length_to_length_range[length] = length_range
 
-        length_to_length_range[-1] = (self.length_to_store_unknown, self.length_to_store_unknown)
+        length_to_length_range[None] = (self.length_to_store_unknown, self.length_to_store_unknown)
                 
         return length_to_length_range
     
@@ -1081,28 +1082,19 @@ class Experiment:
     def outcome_highest_points(self):
         return self.outcome_stratified_lengths.outcome_highest_points(smooth_window=self.length_plot_smooth_window)
 
-    @memoized_property
-    def expected_lengths(self):
-        strat = self.editing_strategy
-
-        expected_lengths = {}
-
-        if not knock_knock.utilities.is_one_sided(self.description.get('experiment_type')):
-            expected_lengths['WT'] = strat.amplicon_length
-
-        if strat.clean_HDR_length is not None:
-            expected_lengths['intended\nedit'] = strat.clean_HDR_length
-
-        return expected_lengths
-
     def plot_outcome_stratified_lengths(self, **kwargs):
         kwargs = kwargs.copy()
         kwargs.setdefault('smooth_window', self.length_plot_smooth_window)
 
-        return knock_knock.visualize.lengths.plot_outcome_stratified_lengths(self.outcome_stratified_lengths,
+        outcome_stratified_lengths = self.outcome_stratified_lengths
+
+        if kwargs.get('truncate_to_max_observed_length', False):
+            outcome_stratified_lengths = outcome_stratified_lengths.truncate_to_max_observed_length()
+
+        return knock_knock.visualize.lengths.plot_outcome_stratified_lengths(outcome_stratified_lengths,
                                                                              self.categorizer,
+                                                                             self.editing_strategy,
                                                                              length_ranges=self.length_ranges,
-                                                                             expected_lengths=self.expected_lengths,
                                                                              x_tick_multiple=self.x_tick_multiple,
                                                                              **kwargs,
                                                                             )
@@ -1177,13 +1169,14 @@ class Experiment:
             im.save(fn)
 
     def generate_all_outcome_length_range_figures(self):
-        categories = sorted(self.categories_by_frequency)
         description = 'Generating outcome-specific length range diagrams'
-        for category in self.progress(categories, desc=description):
-            self.generate_length_range_figures(specific_outcome=category)
 
-    def generate_outcome_browser(self, min_total_to_label=0.01):
-        svg.decorate_outcome_browser(self, min_total_to_label=min_total_to_label)
+        outcomes = self.categories_by_frequency + self.subcategories_by_frequency
+        for outcome in self.progress(outcomes, desc=description):
+            self.generate_length_range_figures(specific_outcome=outcome)
+
+    def generate_outcome_browser(self, **kwargs):
+        svg.decorate_outcome_browser(self, **kwargs)
 
     def generate_example_diagrams(self):
         self.generate_all_outcome_length_range_figures()

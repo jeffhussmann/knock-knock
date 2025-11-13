@@ -17,8 +17,9 @@ license-files = ["LICENSE"]
 dynamic = ["version"]
 requires-python = ">= 3.8"
 dependencies = [
-    "bokeh>=2.4.2",
     "biopython>=1.81",
+    "bokeh>=2.4.2",
+    "hits>=0.4.3",
     "h5py>=3.1.0",
     "ipywidgets>=7.1.2",
     "matplotlib>=2.1.2",
@@ -29,7 +30,7 @@ dependencies = [
     "Pillow>=5.0.0",
     "pysam>=0.14",
     "PyYAML>=3.12",
-    "hits>=0.4.3",
+    "tables",
     "tqdm>=4.31.1",
     "viennarna>=2.6.4",
 ]
