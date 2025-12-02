@@ -513,8 +513,6 @@ class Categorizer:
         ''' How far apart are the outside edges of target flanking alignments on the read
         compared to the target? 
         Note: doesn't account for primer indels.
-
-        TODO: this should use inner edges so that it isn't accumulating indels.
         '''
 
         if self.has_target_flanking_alignments_on_both_sides:

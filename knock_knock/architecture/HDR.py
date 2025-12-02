@@ -1277,6 +1277,19 @@ class Architecture(knock_knock.architecture.Categorizer):
 
         return MH_nts
 
+
+    @memoized_property
+    def query_interval_to_plot(self):
+        if self.has_target_flanking_alignments_on_both_sides:
+            left, right = self.target_flanking_intervals['read']['left'].start, self.target_flanking_intervals['read']['right'].end
+
+            query_interval = (left, right)
+
+        else:
+            query_interval = None
+
+        return query_interval
+
     def plot(self, relevant=True, manual_alignments=None, **manual_diagram_kwargs):
         label_overrides = {}
         label_offsets = {}
@@ -1329,15 +1342,6 @@ class Architecture(knock_knock.architecture.Categorizer):
         else:
             als_to_plot = self.target_and_donor_alignments
 
-        if self.has_target_flanking_alignments_on_both_sides:
-            left, right = self.target_flanking_intervals['read']['left'].start, self.target_flanking_intervals['read']['right'].end
-            manual_x_lims = (left - 0.02 * (right - left), right + 0.02 * (right - left))
-
-            als_to_plot = [sam.crop_al_to_query_int(al, left, right) for al in als_to_plot]
-
-        else:
-            manual_x_lims = None
-
         diagram_kwargs = dict(
             draw_sequence=(self.read_length < 1000),
             split_at_indels=False,
@@ -1353,7 +1357,7 @@ class Architecture(knock_knock.architecture.Categorizer):
             platform=self.platform,
             high_resolution_parallelograms=(self.read_length < 1000),
             manual_anchors=manual_anchors,
-            manual_x_lims=manual_x_lims,
+            query_interval=self.query_interval_to_plot,
         )
 
         for k, v in diagram_kwargs.items():
