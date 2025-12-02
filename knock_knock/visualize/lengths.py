@@ -42,7 +42,10 @@ def plot_outcome_stratified_lengths(outcome_stratified_lengths,
 
     panel_groups = []
 
-    remaining_outcomes = sorted(highest_points)
+    remaining_outcomes = sorted(
+        outcome for outcome in highest_points
+        if lengths_df.loc[outcome].sum() / total_reads * 100 > min_total_to_label
+    )
 
     while len(remaining_outcomes) > 0:
         panel_max = max(highest_points[outcome] for outcome in remaining_outcomes)
