@@ -1,9 +1,9 @@
-from collections import Counter, defaultdict
+from collections import Counter
 
 import numpy as np
 
 from hits import interval, sam, sw, utilities
-from hits.utilities import memoized_property, memoized_with_kwargs
+from hits.utilities import memoized_property
 import hits.visualize
 
 import knock_knock.architecture
@@ -174,15 +174,6 @@ class Architecture(knock_knock.architecture.Categorizer):
             edit_type = self.editing_strategy.pegRNAs[0].edit_type
 
         return edit_type
-
-    @property
-    def sequencing_direction(self):
-        sequencing_direction = self.editing_strategy.sequencing_direction
-
-        if self.flipped:
-            sequencing_direction = sam.opposite_strand[sequencing_direction]
-
-        return sequencing_direction
 
     @memoized_property
     def pegRNA_side(self):
@@ -390,8 +381,8 @@ class Architecture(knock_knock.architecture.Categorizer):
 
             # Supplement with manually-generated extensions of target edge alignments.
             for side in ['left', 'right']:
-                if self.pegRNA_names_by_side_of_read.get(side) is not None and self.target_edge_alignments.get(side) is not None:
-                    al = self.generate_extended_pegRNA_PBS_alignment(self.target_edge_alignments[side], side)
+                if self.pegRNA_names_by_side_of_read.get(side) is not None and self.target_flanking_alignments.get(side) is not None:
+                    al = self.generate_extended_pegRNA_PBS_alignment(self.target_flanking_alignments[side], side)
                     if al is not None:
                         all_als.append(al)
 
@@ -424,20 +415,17 @@ class Architecture(knock_knock.architecture.Categorizer):
     
     @memoized_property
     def extension_chain(self):
-        return self.extension_chains_by_side[self.pegRNA_side]
+        return self.reconciled_extension_chains()['prime_editing'][self.pegRNA_side]
 
     @memoized_property
     def possible_extension_chain(self):
-        return self.possible_extension_chains_by_side[self.pegRNA_side]
+        return self.reconciled_extension_chains(require_definite=False)['prime_editing'][self.pegRNA_side]
 
     def get_extension_chain_junction_microhomology(self, require_definite=True):
         last_als = {}
 
         for side in ['left', 'right']:
-            if require_definite:
-                chain = self.extension_chains_by_side[side]
-            else:
-                chain = self.possible_extension_chains_by_side[side]
+            chain = self.reconciled_extension_chains(require_definite=require_definite)['prime_editing'][side]
 
             if chain.description in ['not seen', 'no target']:
                 last_al = None
@@ -487,10 +475,7 @@ class Architecture(knock_knock.architecture.Categorizer):
         target_PBS_name = strat.PBS_names_by_side_of_read[self.pegRNA_side]
         target_PBS = strat.features[strat.target, target_PBS_name]
 
-        if require_definite:
-            chain = self.extension_chains_by_side[side]
-        else:
-            chain = self.possible_extension_chains_by_side[side]
+        chain = self.reconciled_extension_chains(require_definite=require_definite)['prime_editing'][side]
 
         if chain.description in ['not seen', 'no target']:
             relevant_edge = None
@@ -559,16 +544,8 @@ class Architecture(knock_knock.architecture.Categorizer):
     def pegRNA_extension_als_list(self):
         extension_als = []
 
-        if len(self.editing_strategy.pegRNA_names) == 1:
-            if 'pegRNA' in self.extension_chain.alignments:
-                extension_als.append(self.extension_chain.alignments['pegRNA'])
-
-        elif len(self.editing_strategy.pegRNA_names) == 2:
-            for side, extension_chain in self.extension_chains_by_side.items():
-                if 'first pegRNA' in extension_chain.alignments:
-                    extension_als.append(extension_chain.alignments['first pegRNA'])
-                if 'second pegRNA' in extension_chain.alignments:
-                    extension_als.append(extension_chain.alignments['second pegRNA'])
+        if 'pegRNA' in self.extension_chain.alignments:
+            extension_als.append(self.extension_chain.alignments['pegRNA'])
 
         extension_als = sam.make_nonredundant(extension_als)
 
@@ -582,8 +559,8 @@ class Architecture(knock_knock.architecture.Categorizer):
         '''
         pegRNA_als = []
         for side in ['left', 'right']:
-            for key in ['pegRNA', 'first pegRNA', 'second pegRNA']:
-                if (pegRNA_al := self.extension_chains_by_side[side].alignments.get(key)) is not None:
+            for key in ['pegRNA']:
+                if (pegRNA_al := self.reconciled_extension_chains()['prime_editing'][side].alignments.get(key)) is not None:
                     pegRNA_als.append(pegRNA_al)
 
         return pegRNA_als
@@ -658,7 +635,7 @@ class Architecture(knock_knock.architecture.Categorizer):
 
             # Note: can't use parsimonious here.
             pegRNA_als = self.pegRNA_alignments_by_pegRNA_name[pegRNA_name]
-            target_al = self.target_edge_alignments[side]
+            target_al = self.target_flanking_alignments[side]
 
             ps_name = knock_knock.pegRNAs.protospacer_name(pegRNA_name)
 
@@ -734,9 +711,8 @@ class Architecture(knock_knock.architecture.Categorizer):
 
     @memoized_property
     def starts_at_expected_location(self):
-        edge_al = self.target_edge_alignments['left']
+        edge_al = self.target_flanking_alignments['left']
         return edge_al is not None and self.overlaps_primer(edge_al, 'left')
-
 
     @memoized_property
     def mismatches_summary(self):
@@ -971,12 +947,6 @@ class Architecture(knock_knock.architecture.Categorizer):
         return self.whole_read - covered
 
     @memoized_property
-    def not_covered_by_target_edge_alignments(self):
-        als = self.target_edge_alignments_list
-        uncovered = self.between_primers - interval.get_disjoint_covered(als)
-        return uncovered
-
-    @memoized_property
     def not_covered_by_donor_alignments(self):
         als = self.donor_alignments
         uncovered = self.between_primers - interval.get_disjoint_covered(als)
@@ -1010,118 +980,6 @@ class Architecture(knock_knock.architecture.Categorizer):
         return nonredundant
 
     @memoized_property
-    def non_primer_nts(self):
-        return self.between_primers.total_length
-
-    @memoized_property
-    def target_nts_past_primer(self):
-        target_nts_past_primer = {}
-
-        for side in ['left', 'right']:
-            target_past_primer = interval.get_covered(self.target_edge_alignments[side]) - interval.get_covered(self.cropped_primer_alignments[side])
-            target_nts_past_primer[side] = target_past_primer.total_length 
-
-        return target_nts_past_primer
-
-    @memoized_property
-    def nonspecific_amplification(self):
-        ''' Nonspecific amplification if any of following apply:
-         
-         - read is empty after adapter trimming
-         
-         - read is short after adapter trimming, in which case inference of
-            nonspecific amplification per se is less clear but
-            sequence is unlikely to be informative of any other process
-         
-         - read starts with an alignment to the expected primer, but
-            this alignment does not extend substantially past the primer, and
-            the rest of the read is covered by a single alignment to some other
-            source that either reaches the end of the read or reaches an
-            an alignment to the other primer that does not extend 
-            substantially past the primer.
-         
-         - read starts with an alignment to the expected primer, but all
-            alignments to the target collectively leave a substantial part
-            of the read uncovered, and a single alignment to some other
-            source covers the entire read with minimal edit distance.
-         
-         - read starts and ends with alignments to the expected primers, these
-           alignments are spanned by a single alignment to some other source, and
-           the inferred amplicon length is more than 20 nts different from the expected
-           WT amplicon. This covers the case where an amplififcation product has enough
-           homology around the primer for additional sequence to align to the target. 
-        
-        '''
-        results = {}
-
-        valid = False
-
-        min_relevant_length = self.editing_strategy.min_relevant_length
-
-        if min_relevant_length is None:
-            if self.editing_strategy.combined_primer_length is not None:
-                min_relevant_length = self.editing_strategy.combined_primer_length + 10
-            else:
-                min_relevant_length = 0
-
-        need_to_cover = self.whole_read_minus_edges(2) & self.between_primers
-
-        results['covering_als'] = []
-
-        if len(self.seq) <= min_relevant_length or self.non_primer_nts <= 10:
-            valid = True
-
-        if need_to_cover.total_length > 0 and self.cropped_primer_alignments['left'] is not None:
-
-            if self.target_nts_past_primer['left'] <= 10 and self.target_nts_past_primer['right'] <= 10:
-                # Exclude phiX reads, which can rarely have spurious alignments to the forward primer
-                # close to the start of the read that overlap the forward primer.
-                relevant_alignments = self.supplemental_alignments + self.split_pegRNA_alignments + self.extra_alignments
-                relevant_alignments = [al for al in relevant_alignments if 'phiX' not in al.reference_name]
-
-                for al in relevant_alignments:
-                    covered_by_al = interval.get_covered(al)
-                    if (need_to_cover - covered_by_al).total_length == 0:
-                        results['covering_als'].append(al)
-
-            else:
-                target_als = [al for al in self.primary_alignments if al.reference_name == self.editing_strategy.target]
-                not_covered_by_any_target_als = need_to_cover - interval.get_disjoint_covered(target_als)
-
-                has_substantial_uncovered = not_covered_by_any_target_als.total_length >= 100
-                has_substantial_length_discrepancy = (
-                    abs(self.inferred_amplicon_length - self.editing_strategy.amplicon_length) >= 20 and
-                    self.cropped_primer_alignments['right'] is not None
-                )
-
-                if has_substantial_uncovered or has_substantial_length_discrepancy:
-                    ref_seqs = {**self.editing_strategy.reference_sequences}
-
-                    # Exclude phiX reads, which can rarely have spurious alignments to the forward primer
-                    # close to the start of the read that overlap the forward primer.
-                    relevant_alignments = self.supplemental_alignments
-                    relevant_alignments = [al for al in relevant_alignments if 'phiX' not in al.reference_name]
-
-                    for al in relevant_alignments:
-                        covered_by_al = interval.get_covered(al)
-                        if (need_to_cover - covered_by_al).total_length == 0:
-                            cropped_al = sam.crop_al_to_query_int(al, self.between_primers.start, self.between_primers.end)
-                            total_edits = sum(knock_knock.architecture.edit_positions(cropped_al, ref_seqs, use_deletion_length=True))
-                            if total_edits <= 5:
-                                results['covering_als'].append(al)
-
-            if len(results['covering_als']) > 0:
-                if not any('phiX' in al.reference_name for al in results['covering_als']):
-                    valid = True
-
-        if valid:
-            results['target_edge_als'] = self.target_edge_alignments_list
-        else:
-            results = None
-
-        return results
-
-    @memoized_property
     def extension_chain_covers_both_HAs(self):
         strat = self.editing_strategy
 
@@ -1143,7 +1001,7 @@ class Architecture(knock_knock.architecture.Categorizer):
 
             need_to_cover = interval.DisjointIntervals(intervals)
 
-            chain_als = self.extension_chains_by_side['left']['alignments']
+            chain_als = self.reconciled_extension_chains()['prime_editing']['left']['alignments']
             chain_target_als = [chain_als[key] for key in ['first target', 'second target'] if key in chain_als]
             covered = interval.get_disjoint_covered_on_ref(chain_target_als)
 
@@ -1242,7 +1100,7 @@ class Architecture(knock_knock.architecture.Categorizer):
         else:
             _, mismatches = self.summarize_mismatches_in_alignments(self.relevant_alignments)
 
-        self.Details = Details(programmed_substitution_read_bases=self.pegRNA_substitution_string,
+        self.details = Details(programmed_substitution_read_bases=self.pegRNA_substitution_string,
                                mismatches=mismatches,
                                non_programmed_edit_mismatches=self.non_programmed_edit_mismatches,
                                deletions=deletions,
@@ -1257,7 +1115,7 @@ class Architecture(knock_knock.architecture.Categorizer):
         deletions = [indel for indel in relevant_indels if indel.kind == 'D']
         insertions = [indel for indel in relevant_indels if indel.kind == 'I']
 
-        self.Details = Details(deletions=deletions, insertions=insertions, mismatches=mismatches)
+        self.details = Details(deletions=deletions, insertions=insertions, mismatches=mismatches)
 
         if len(relevant_indels) == 1:
             indel = relevant_indels[0]
@@ -1301,46 +1159,6 @@ class Architecture(knock_knock.architecture.Categorizer):
 
             self.relevant_alignments = [self.original_target_covering_alignment]
 
-    def register_nonspecific_amplification(self):
-        results = self.nonspecific_amplification
-
-        self.category = 'nonspecific amplification'
-
-        if self.non_primer_nts <= 2:
-            self.subcategory = 'primer dimer'
-            self.relevant_alignments = self.target_edge_alignments_list
-
-        elif len(results['covering_als']) == 0:
-            self.subcategory = 'short unknown'
-            self.relevant_alignments = sam.make_noncontained(self.uncategorized_relevant_alignments)
-
-        else:
-            if self.editing_strategy.pegRNA_names is None:
-                pegRNA_names = []
-            else:
-                pegRNA_names = self.editing_strategy.pegRNA_names
-
-            if any(al.reference_name in pegRNA_names for al in results['covering_als']):
-                # amplification off of pegRNA-expressing plasmid
-                self.subcategory = 'extra sequence'
-
-            elif any(al in self.extra_alignments for al in results['covering_als']):
-                self.subcategory = 'extra sequence'
-            
-            elif any(al.reference_name not in self.primary_ref_names for al in results['covering_als']):
-                organisms = {self.editing_strategy.remove_organism_from_alignment(al)[0] for al in results['covering_als'] if al.reference_name not in self.primary_ref_names}
-                organism = sorted(organisms)[0]
-                self.subcategory = organism
-
-            elif any(al.reference_name == self.editing_strategy.target for al in results['covering_als']) and self.editing_strategy.genome_source is not None:
-                # reference name of supplemental al has been replaced
-                self.subcategory = self.editing_strategy.genome_source
-
-            else:
-                raise ValueError
-
-            self.relevant_alignments = results['target_edge_als'] + results['covering_als']
-
     def register_edit_plus_indel(self, subcategory, indels):
         self.category = 'edit + indel'
         self.subcategory = subcategory
@@ -1361,7 +1179,7 @@ class Architecture(knock_knock.architecture.Categorizer):
         elif self.intended_edit_type == 'deletion':
             deletions.append(self.editing_strategy.pegRNA_programmed_deletion)
 
-        self.Details = Details(programmed_substitution_read_bases=self.pegRNA_substitution_string,
+        self.details = Details(programmed_substitution_read_bases=self.pegRNA_substitution_string,
                                mismatches=self.non_pegRNA_mismatches,
                                non_programmed_edit_mismatches=self.non_programmed_edit_mismatches,
                                deletions=deletions,
@@ -1388,22 +1206,22 @@ class Architecture(knock_knock.architecture.Categorizer):
 
     @memoized_property
     def is_unintended_rejoining(self):
-        return self.is_valid_unintended_rejoining(self.extension_chains_by_side)
+        return self.is_valid_unintended_rejoining(self.reconciled_extension_chains()['prime_editing'])
 
     @memoized_property
     def is_possible_unintended_rejoining(self):
-        return self.is_valid_unintended_rejoining(self.possible_extension_chains_by_side)
+        return self.is_valid_unintended_rejoining(self.reconciled_extension_chains(require_definite=False)['prime_editing'])
 
     def register_unintended_rejoining(self):
         if self.is_unintended_rejoining:
             chain = self.extension_chain
-            chains = self.extension_chains_by_side
+            chains = self.reconciled_extension_chains()['prime_editing']
             chain_edges = self.extension_chain_edges
             chain_junction_MH = self.extension_chain_junction_microhomology
 
         elif self.is_possible_unintended_rejoining:
             chain = self.possible_extension_chain
-            chains = self.possible_extension_chains_by_side
+            chains = self.reconciled_extension_chains(require_definite=False)['prime_editing']
             chain_edges = self.possible_extension_chain_edges
             chain_junction_MH = self.possible_extension_chain_junction_microhomology
 
@@ -1447,7 +1265,7 @@ class Architecture(knock_knock.architecture.Categorizer):
         if chain_junction_MH is not None:
             details_kwargs['junction_microhomology_length'] = chain_junction_MH
 
-        self.Details = Details(**details_kwargs)
+        self.details = Details(**details_kwargs)
 
         self.relevant_alignments = []
 
@@ -1462,7 +1280,7 @@ class Architecture(knock_knock.architecture.Categorizer):
     def register_incorporation_of_extra_sequence(self):
         self.category = 'incorporation of extra sequence'
 
-        if any(self.extension_chains_by_side[side]['description'].startswith('RT') for side in ['left', 'right']):
+        if any(self.reconciled_extension_chains()[side]['description'].startswith('RT') for side in ['left', 'right']):
             self.subcategory = 'has RT\'ed extension'
         else:
             self.subcategory = 'no RT\'ed extension'
@@ -1501,7 +1319,7 @@ class Architecture(knock_knock.architecture.Categorizer):
     def pegRNA_alignments_cover_target_gap(self):
         meaningful_gap_covers = []
         
-        gap = self.not_covered_by_target_edge_alignments
+        gap = self.not_covered_by_target_flanking_alignments
 
         if gap.total_length > 0:
             if self.editing_strategy.pegRNA_side == 'left':
@@ -1532,7 +1350,7 @@ class Architecture(knock_knock.architecture.Categorizer):
         else:
             _, mismatches = self.summarize_mismatches_in_alignments([target_alignment])
 
-        self.Details = Details(
+        self.details = Details(
             deletions=deletions,
             insertions=insertions,
             mismatches=mismatches,
@@ -1587,7 +1405,7 @@ class Architecture(knock_knock.architecture.Categorizer):
 
                 if indel.kind == 'D':
                     self.category = 'deletion'
-                    self.relevant_alignments = self.target_edge_alignments_list
+                    self.relevant_alignments = self.target_flanking_alignments_list
 
                 elif indel.kind == 'I':
                     self.category = 'insertion'
@@ -1618,33 +1436,34 @@ class Architecture(knock_knock.architecture.Categorizer):
 
     @memoized_property
     def no_alignments_detected(self):
-        return all(al.is_unmapped for al in self.alignments)
+        return len(self.alignments) == 0
 
     @memoized_property
-    def HA_names_by_side_of_read(self):
+    def HA_names_by_side_of_target(self):
         pegRNA_name = self.editing_strategy.pegRNA.name
         HA_PBS = knock_knock.pegRNAs.make_HA_PBS_name(pegRNA_name)
         HA_RT = knock_knock.pegRNAs.make_HA_RT_name(pegRNA_name)
 
-        if self.pegRNA_side == 'left':
-            HA_names_by_side_of_read = {
-                'left': HA_PBS,
-                'right': HA_RT,
+        if self.editing_strategy.pegRNA.strand == '+':
+            HA_names_by_side_of_target = {
+                5: HA_PBS,
+                3: HA_RT,
             }
         else:
-            HA_names_by_side_of_read = {
-                'left': HA_RT,
-                'right': HA_PBS,
+            HA_names_by_side_of_target = {
+                5: HA_RT,
+                3: HA_PBS,
             }
         
-        return HA_names_by_side_of_read
+        return HA_names_by_side_of_target
 
+    @memoized_property
     def extension_chain_link_specifications(self):
         links = [
             (self.target_alignments, ('first target', 'second target')),
-                self.HA_names_by_side_of_read['left'],
+                self.HA_names_by_side_of_target[5],
             (self.pegRNA_alignments, ('pegRNA', 'pegRNA')),
-                self.HA_names_by_side_of_read['right'],
+                self.HA_names_by_side_of_target[3],
             (self.target_alignments, ('second target', 'first target')),
         ]
 
@@ -1655,7 +1474,11 @@ class Architecture(knock_knock.architecture.Categorizer):
             'second target': 'RT\'ed + annealing-extended',
         }
 
-        return links, last_al_to_description
+        specs = {
+            'prime_editing': (links, last_al_to_description)
+        }
+
+        return specs
 
     def categorize(self):
         if self.nonspecific_amplification:
@@ -1686,8 +1509,8 @@ class Architecture(knock_knock.architecture.Categorizer):
             self.category = 'complex incorporation of RT\'ed sequence'
             self.subcategory = 'n/a'
             strat = self.editing_strategy
-            PBS_al = self.generate_extended_pegRNA_PBS_alignment(self.target_edge_alignments[self.pegRNA_side], self.pegRNA_side)
-            als = self.target_edge_alignments_list + interval.make_parsimonious(self.pegRNA_alignments_cover_target_gap)
+            PBS_al = self.generate_extended_pegRNA_PBS_alignment(self.target_flanking_alignments[self.pegRNA_side], self.pegRNA_side)
+            als = self.target_flanking_alignments_list + interval.make_parsimonious(self.pegRNA_alignments_cover_target_gap)
             if PBS_al is not None:
                 als.append(PBS_al)
 
@@ -1696,7 +1519,7 @@ class Architecture(knock_knock.architecture.Categorizer):
 
         elif self.duplication_covers_whole_read:
             subcategory, ref_junctions, indels, als_with_pegRNA_substitutions, merged_als = self.duplication
-            self.Details = Details(duplication_junctions=ref_junctions)
+            self.details = Details(duplication_junctions=ref_junctions)
 
             if als_with_pegRNA_substitutions == 0:
                 self.category = 'duplication'
@@ -1711,7 +1534,7 @@ class Architecture(knock_knock.architecture.Categorizer):
             self.category = 'inversion'
             self.subcategory = 'inversion'
 
-            self.relevant_alignments = self.target_edge_alignments_list + self.inversion
+            self.relevant_alignments = self.target_flanking_alignments_list + self.inversion
 
         elif self.nonredundant_extra_alignments:
             self.register_incorporation_of_extra_sequence()
@@ -1720,7 +1543,7 @@ class Architecture(knock_knock.architecture.Categorizer):
             self.category = 'wild type'
             # Assume clean would have been caught before.
             self.subcategory = 'mismatches'
-            self.Details = Details(deletions=[], insertions=[], mismatches=self.mismatches_in_original_target_covering_alignment)
+            self.details = Details(deletions=[], insertions=[], mismatches=self.mismatches_in_original_target_covering_alignment)
             self.relevant_alignments = [self.original_target_covering_alignment]
 
         elif self.duplication is not None:
@@ -1737,7 +1560,7 @@ class Architecture(knock_knock.architecture.Categorizer):
 
                 self.relevant_alignments = self.pegRNA_extension_als_from_either_side_list + merged_als
 
-                self.Details = Details(duplication_junctions=ref_junctions)
+                self.details = Details(duplication_junctions=ref_junctions)
 
             elif len(indels) == 1 and indels[0].kind == 'D':
                 indel = indels[0]
@@ -1749,7 +1572,7 @@ class Architecture(knock_knock.architecture.Categorizer):
                     self.category = 'multiple indels'
                     self.subcategory = 'duplication + deletion'
 
-                self.Details = Details(deletions=indels, duplication_junctions=ref_junctions)
+                self.details = Details(deletions=indels, duplication_junctions=ref_junctions)
 
                 self.relevant_alignments = self.pegRNA_extension_als_from_either_side_list + merged_als
 
@@ -1783,7 +1606,7 @@ class Architecture(knock_knock.architecture.Categorizer):
 
         self.categorized = True
 
-        return self.category, self.subcategory, self.details, self.Details
+        return self.category, self.subcategory, self.details
 
     @memoized_property
     def nonredundant_extra_alignments(self):
@@ -1792,7 +1615,7 @@ class Architecture(knock_knock.architecture.Categorizer):
         '''
         relevant_extra_als = []
 
-        need_to_cover = self.not_covered_by_split_target_or_pegRNA_alignments & self.not_covered_by_target_edge_alignments
+        need_to_cover = self.not_covered_by_split_target_or_pegRNA_alignments & self.not_covered_by_target_flanking_alignments
 
         potentially_relevant_als = [
             al for al in self.extra_alignments
@@ -1896,11 +1719,11 @@ class Architecture(knock_knock.architecture.Categorizer):
         '''
         deletion = None
 
-        other_chain = self.extension_chains_by_side[self.non_pegRNA_side]
+        other_chain = self.reconciled_extension_chains()['prime_editing'][self.non_pegRNA_side]
 
         if (self.contains_intended_edit and
             other_chain.description == "not RT'ed" and
-            self.uncovered_by_extension_chains.is_empty
+            self.uncovered_by_extension_chains['prime_editing'].is_empty
         ):
 
             als_to_merge = [
@@ -2007,7 +1830,7 @@ class Architecture(knock_knock.architecture.Categorizer):
 
     @memoized_property
     def inversion(self):
-        need_to_cover = self.not_covered_by_target_edge_alignments
+        need_to_cover = self.not_covered_by_target_flanking_alignments
         inversion_als = []
         
         if need_to_cover.total_length >= 5:
@@ -2152,7 +1975,7 @@ class Architecture(knock_knock.architecture.Categorizer):
                 anchor_offset = sorted(PBS_offset_to_qs)[0]
                 q = PBS_offset_to_qs[anchor_offset]
 
-                ref_p = strat.feature_offset_to_ref_p(pegRNA_name, 'PBS')[anchor_offset]
+                ref_p = strat.features[pegRNA_name, 'PBS'].offset_to_ref_p[anchor_offset]
 
                 manual_anchors[pegRNA_name] = (q, ref_p)
                 

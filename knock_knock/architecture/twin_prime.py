@@ -192,17 +192,18 @@ class Architecture(prime_editing.Architecture):
         other_pegRNA_name = self.other_pegRNA_name(pegRNA_al_to_extend.reference_name)
         return self.extend_alignment_from_shared_feature(pegRNA_al_to_extend, 'overlap', other_pegRNA_name, 'overlap')
 
+    @memoized_property
     def extension_chain_link_specifications(self):
-        left_pegRNA_name = self.editing_strategy.pegRNA_names_by_side_of_read['left']
-        right_pegRNA_name = self.editing_strategy.pegRNA_names_by_side_of_read['right']
+        pegRNA_name_5 = self.editing_strategy.pegRNA_names_by_side_of_target[5]
+        pegRNA_name_3 = self.editing_strategy.pegRNA_names_by_side_of_target[3]
 
         links = [
             (self.target_alignments, ('first target', 'second target')),
-                knock_knock.pegRNAs.make_HA_PBS_name(left_pegRNA_name),
-            (self.pegRNA_alignments_by_pegRNA_name[left_pegRNA_name], ('first pegRNA', 'second pegRNA')),
+                knock_knock.pegRNAs.make_HA_PBS_name(pegRNA_name_5),
+            (self.pegRNA_alignments_by_pegRNA_name[pegRNA_name_5], ('first pegRNA', 'second pegRNA')),
                 'overlap',
-            (self.pegRNA_alignments_by_pegRNA_name[right_pegRNA_name], ('second pegRNA', 'first pegRNA')),
-                knock_knock.pegRNAs.make_HA_PBS_name(right_pegRNA_name),
+            (self.pegRNA_alignments_by_pegRNA_name[pegRNA_name_3], ('second pegRNA', 'first pegRNA')),
+                knock_knock.pegRNAs.make_HA_PBS_name(pegRNA_name_3),
             (self.target_alignments, ('second target', 'first target')),
         ]
 
@@ -214,26 +215,48 @@ class Architecture(prime_editing.Architecture):
             'second target': 'RT\'ed + overlap-extended',
         }
 
-        return links, last_al_to_description
+        specs = {'twin_prime': (links, last_al_to_description)}
+
+        return specs
 
     @property
     def reconcile_function(self):
         return min
 
     @memoized_property
-    def extension_chains_by_side(self):
-        return self.reconcile_extension_chains(require_definite=True)
+    def pegRNA_extension_als_list(self):
+        extension_als = []
+
+        for side, extension_chain in self.reconciled_extension_chains()['twin_prime'].items():
+            if 'first pegRNA' in extension_chain.alignments:
+                extension_als.append(extension_chain.alignments['first pegRNA'])
+            if 'second pegRNA' in extension_chain.alignments:
+                extension_als.append(extension_chain.alignments['second pegRNA'])
+
+        extension_als = sam.make_nonredundant(extension_als)
+
+        return extension_als
 
     @memoized_property
-    def possible_extension_chains_by_side(self):
-        return self.reconcile_extension_chains(require_definite=False)
+    def pegRNA_extension_als_from_either_side_list(self):
+        ''' For when an extension al might not get called on both sides
+        because of e.g. an indel disrupting the target edge alignment
+        it would need to extend.
+        '''
+        pegRNA_als = []
+        for side in ['left', 'right']:
+            for key in ['first pegRNA', 'second pegRNA']:
+                if (pegRNA_al := self.reconciled_extension_chains()['twin_prime'][side].alignments.get(key)) is not None:
+                    pegRNA_als.append(pegRNA_al)
+
+        return pegRNA_als
 
     @memoized_property
     def extension_chain_junction_microhomology(self):
         last_als = {}
 
         for side in ['left', 'right']:
-            chain = self.extension_chains_by_side[side]
+            chain = self.reconciled_extension_chains()['twin_prime'][side]
 
             if chain.description in ['not seen', 'no target']:
                 last_al = None
@@ -267,7 +290,7 @@ class Architecture(prime_editing.Architecture):
 
         PBS_end = strat.features[this_side_pegRNA_name, 'PBS'].end
 
-        chain = self.extension_chains_by_side[side]
+        chain = self.reconciled_extension_chains()['twin_prime'][side]
 
         if chain.description in ['not seen', 'no target']:
             relevant_edge = None
@@ -327,7 +350,7 @@ class Architecture(prime_editing.Architecture):
 
     @memoized_property
     def has_intended_pegRNA_overlap(self):
-        chains = self.extension_chains_by_side
+        chains = self.reconciled_extension_chains()['twin_prime']
 
         return (
             chains['left'].description == 'RT\'ed + overlap-extended' and
@@ -337,7 +360,7 @@ class Architecture(prime_editing.Architecture):
 
     @memoized_property
     def has_possible_intended_pegRNA_overlap(self):
-        chains = self.possible_extension_chains_by_side
+        chains = self.reconciled_extension_chains(require_definite=False)['twin_prime']
 
         return (
             chains['left'].description == 'RT\'ed + overlap-extended' and
@@ -406,7 +429,7 @@ class Architecture(prime_editing.Architecture):
         else:
             mismatches = self.non_pegRNA_mismatches
 
-        self.Details = Details(programmed_substitution_read_bases=self.pegRNA_substitution_string,
+        self.details = Details(programmed_substitution_read_bases=self.pegRNA_substitution_string,
                                mismatches=mismatches,
                                non_programmed_edit_mismatches=self.non_programmed_edit_mismatches,
                                deletions=[],
@@ -418,11 +441,11 @@ class Architecture(prime_editing.Architecture):
 
     @memoized_property
     def intended_edit_relevant_alignments(self):
-        return self.target_edge_alignments_list + self.pegRNA_extension_als_list
+        return self.target_flanking_alignments_list + self.pegRNA_extension_als_list
 
     @memoized_property
     def contains_RTed_sequence(self):
-        chains = self.extension_chains_by_side
+        chains = self.reconciled_extension_chains()['twin_prime']
 
         contains_RTed_sequence = {
             side for side in ['left', 'right']
@@ -436,12 +459,12 @@ class Architecture(prime_editing.Architecture):
         ''' At least one side has RT'ed sequence, and together the extension
         chains cover the whole read.
         '''
-        return self.contains_RTed_sequence and self.uncovered_by_extension_chains.total_length == 0
+        return self.contains_RTed_sequence and self.uncovered_by_extension_chains['twin_prime'].total_length == 0
 
     @memoized_property
     def integrase_sites_in_chains(self):
         pegRNA_pair = self.editing_strategy.pegRNA_pair
-        chains = self.extension_chains_by_side
+        chains = self.reconciled_extension_chains()['twin_prime']
 
         edges = {side: self.get_extension_chain_edge(side) for side in ['left', 'right']}
 
@@ -471,7 +494,7 @@ class Architecture(prime_editing.Architecture):
         return integrase_sites
 
     def register_unintended_rejoining(self):
-        chains = self.extension_chains_by_side
+        chains = self.reconciled_extension_chains()['twin_prime']
 
         edges = {side: self.get_extension_chain_edge(side) for side in ['left', 'right']}
 
@@ -507,7 +530,7 @@ class Architecture(prime_editing.Architecture):
         if edges[possibly_flipped_side['right']] is not None:
             details_kwargs['right_rejoining_edge'] = edges[possibly_flipped_side['right']]
 
-        self.Details = Details(**details_kwargs)
+        self.details = Details(**details_kwargs)
 
         als_by_ref = defaultdict(list)
         for al in list(chains['left'].alignments.values()) + list(chains['right'].alignments.values()):
@@ -520,7 +543,7 @@ class Architecture(prime_editing.Architecture):
     @memoized_property
     def extension_chain_gap_covers(self):
         def covers_all_uncovered(al):
-            not_covered_by_al = self.uncovered_by_extension_chains - interval.get_covered(al)
+            not_covered_by_al = self.uncovered_by_extension_chains['twin_prime'] - interval.get_covered(al)
             return not_covered_by_al.total_length == 0
 
         covers = [al for al in self.target_alignments if covers_all_uncovered(al)]
@@ -529,7 +552,7 @@ class Architecture(prime_editing.Architecture):
 
     @memoized_property
     def is_multistep_unintended_rejoining(self):
-        return self.contains_RTed_sequence and self.uncovered_by_extension_chains.total_length > 0 and len(self.extension_chain_gap_covers) > 0
+        return self.contains_RTed_sequence and self.uncovered_by_extension_chains['twin_prime'].total_length > 0 and len(self.extension_chain_gap_covers) > 0
 
     def register_multistep_unintended_rejoining(self):
         self.category = 'multistep unintended rejoining of RT\'ed sequence'
@@ -543,8 +566,8 @@ class Architecture(prime_editing.Architecture):
         else:
             raise ValueError
 
-        self.relevant_alignments = self.extension_chains_by_side['left'].parsimonious_alignments + \
-                                   self.extension_chains_by_side['right'].parsimonious_alignments + \
+        self.relevant_alignments = self.reconciled_extension_chains()['twin_prime']['left'].parsimonious_alignments + \
+                                   self.reconciled_extension_chains()['twin_prime']['right'].parsimonious_alignments + \
                                    self.extension_chain_gap_covers
 
     @memoized_property
@@ -586,7 +609,7 @@ class Architecture(prime_editing.Architecture):
         elif self.is_intended_deletion:
             self.category = 'intended edit'
             self.subcategory = 'deletion'
-            self.Details = Details(programmed_substitution_read_bases=self.pegRNA_substitution_string,
+            self.details = Details(programmed_substitution_read_bases=self.pegRNA_substitution_string,
                                    mismatches=self.non_pegRNA_mismatches,
                                    non_programmed_edit_mismatches=self.non_programmed_edit_mismatches,
                                    deletions=[self.editing_strategy.pegRNA_programmed_deletion],
@@ -602,7 +625,7 @@ class Architecture(prime_editing.Architecture):
 
         elif self.duplication_covers_whole_read:
             subcategory, ref_junctions, indels, als_with_donor_substitutions, merged_als = self.duplication
-            self.Details = Details(duplication_junctions=ref_junctions)
+            self.details = Details(duplication_junctions=ref_junctions)
 
             self.category = 'duplication'
 
@@ -613,7 +636,7 @@ class Architecture(prime_editing.Architecture):
             self.category = 'inversion'
             self.subcategory = 'inversion'
 
-            self.relevant_alignments = self.target_edge_alignments_list + self.inversion
+            self.relevant_alignments = self.target_flanking_alignments_list + self.inversion
 
         elif self.is_multistep_unintended_rejoining:
             self.register_multistep_unintended_rejoining()
@@ -646,7 +669,7 @@ class Architecture(prime_editing.Architecture):
 
         self.categorized = True
 
-        return self.category, self.subcategory, self.details, self.Details
+        return self.category, self.subcategory, self.details
 
     def manual_anchors(self, alignments_to_plot):
         ''' Anchors for drawing knock-knock ref-centric diagrams with overlap in pegRNA aligned.
@@ -673,8 +696,8 @@ class Architecture(prime_editing.Architecture):
                     continue
 
                 def priority_key(al):
-                    is_extension_al = (al == self.extension_chains_by_side['left'].alignments.get('first pegRNA')) or \
-                                      (al == self.extension_chains_by_side['right'].alignments.get('first pegRNA'))
+                    is_extension_al = (al == self.reconciled_extension_chains()['twin_prime']['left'].alignments.get('first pegRNA')) or \
+                                      (al == self.reconciled_extension_chains()['twin_prime']['right'].alignments.get('first pegRNA'))
 
                     overlap_length = sam.feature_overlap_length(al, self.editing_strategy.features[pegRNA_name, 'overlap'])
                     return is_extension_al, overlap_length

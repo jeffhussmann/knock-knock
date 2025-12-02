@@ -15,6 +15,7 @@ import knock_knock.outcome
 
 memoized_property = utilities.memoized_property
 memoized_with_args = utilities.memoized_with_args
+memoized_with_kwargs = utilities.memoized_with_kwargs
 idx = pd.IndexSlice
 
 def opposite_side(side):
@@ -28,6 +29,8 @@ def opposite_side(side):
     return opposite
 
 class Categorizer:
+    non_relevant_categories = []
+
     def __init__(self, alignments, editing_strategy, platform='illumina', flipped=False, **kwargs):
         self.alignments = [al for al in alignments if not al.is_unmapped]
 
@@ -57,13 +60,9 @@ class Categorizer:
 
         self.categorized = False
 
-        self.Details = knock_knock.outcome.Details()
+        self.details = knock_knock.outcome.Details()
 
         self.flipped = flipped
-
-    @property
-    def details(self):
-        return str(self.Details)
 
     @memoized_property
     def Q30_fractions(self):
@@ -145,8 +144,8 @@ class Categorizer:
         # Non-specific amplification can produce short primer alignments that may not
         # be picked up by initial alignment. Realign each edge to primers to check for this.
 
-        for side in [5, 3]:
-            primer_al = self.realign_edges_to_primers(side)
+        for side in ['left', 'right']:
+            primer_al = self.realign_edge_to_primer(side)
             if primer_al is not None:
                 refined_als.append(primer_al)
 
@@ -160,6 +159,20 @@ class Categorizer:
                                                   )
 
         refined_als = interval.make_parsimonious(refined_als)
+
+        # Crop to a window +/- relevant_window_size on both sides
+
+        cuts_interval = self.editing_strategy.around_or_between_cuts(0)
+
+        relevant_window_size = 5000 # ideally a parameter
+
+        relevant_interval = interval.Interval(cuts_interval.start - relevant_window_size, cuts_interval.end + relevant_window_size)
+
+        refined_als = [
+            cropped_al
+            for al in refined_als
+            if (cropped_al := sam.crop_al_to_ref_int(al, relevant_interval.start, relevant_interval.end)) is not None
+        ] 
 
         return refined_als
 
@@ -253,18 +266,45 @@ class Categorizer:
         return {}
 
     @memoized_property
+    def sequencing_direction(self):
+        ''' If editing strategy provides a sequencing direction, use that.
+        Otherwise, return the strand with more aligned length
+        across parsimonious target alignments.
+        '''
+
+        if self.editing_strategy.sequencing_direction is not None:
+            sequencing_direction = self.editing_strategy.sequencing_direction
+
+            if self.flipped:
+                sequencing_direction = sam.opposite_strand[sequencing_direction]
+
+        else:
+            target_als = interval.make_parsimonious(self.initial_target_alignments)
+            grouped = utilities.group_by(target_als, key=lambda al: sam.get_strand(al), sort=True)
+
+            total_length_by_strand = {strand: sum(al.query_alignment_length for al in als) for strand, als in grouped}
+
+            sequencing_direction = max(total_length_by_strand, key=total_length_by_strand.get)
+
+        return sequencing_direction
+
+    @memoized_property
     def target_side_to_read_side(self):
-        if self.sequencing_direction == '+':
+        if self.sequencing_direction == '+' or self.sequencing_direction is None:
             target_to_read = {
                 5: 'left',
                 3: 'right',
             }
-        else:
+
+        elif self.sequencing_direction == '-':
             target_to_read = {
                 5: 'right',
                 3: 'left',
             }
-            
+
+        else:
+            raise ValueError(self.sequencing_direction)
+        
         return target_to_read
 
     @memoized_property
@@ -308,6 +348,37 @@ class Categorizer:
         return overlaps and satisifes_orientation_requirement
 
     @memoized_property
+    def all_primer_alignments(self):
+        ''' Dictionary of 
+        {
+            side_of_target: all target alignments that overlap the primer on that side
+            for side_of_target in [5, 3]
+        }
+
+        If multiple alignments share the feature, take the longest.
+        '''
+
+        als = {}
+
+        for side_of_target in [5, 3]:
+            side_als = [al for al in self.target_alignments if self.overlaps_primer(al, side_of_target, by='target')]
+
+            if len(side_als) > 0:
+                # Partition into equivalence classes of shared feature.
+                primer_name = self.editing_strategy.primers_by_side_of_target[side_of_target].ID
+
+                def relation(first_al, second_al):
+                    return self.share_feature(first_al, primer_name, second_al, primer_name)
+
+                eq_classes = utilities.equivalence_classes(side_als, relation)
+
+                side_als = [max(als, key=lambda al: al.query_alignment_length) for als in eq_classes]
+
+            als[side_of_target] = side_als
+
+        return als
+
+    @memoized_property
     def extra_alignments(self):
         # Any alignments not to the target, pegRNAs, or donor.
 
@@ -340,8 +411,8 @@ class Categorizer:
             ref_edges = sam.reference_edges(al)
             query_interval = interval.get_covered(al)
             query_edges = {
-                5: query_interval.start,
-                3: query_interval.end,
+                'left': query_interval.start,
+                'right': query_interval.end,
             }
 
             interior = self.whole_read_minus_edges(1)
@@ -362,82 +433,332 @@ class Categorizer:
         return al
 
     @memoized_property
-    def target_edge_alignments(self):
-        ''' Target alignments in the expected orientation closest to each edge of the read.
-        Taken as the flanking context between which any editing happened.
+    def target_flanking_alignments(self):
+        ''' Target alignments that flank the region of the read containing
+        any potential editing.
+
         Dependencies:
             refined_target_alignments: split at indels, then extended 
             sequencing_direction: predefined for Illumina, inferred for long read.
         '''
 
-        edge_alignments = {
+        flanking_alignments = {
             'left': [],
             'right': [],
         }
 
-        # Note: previously re-merged here.
+        relevant_als = [al for al in self.refined_target_alignments if sam.get_strand(al) == self.sequencing_direction]
 
-        for al in self.refined_target_alignments:
-            if sam.get_strand(al) != self.sequencing_direction:
-                continue
+        if len(self.editing_strategy.primers) == 2:
+            for al in relevant_als:
+                covered = interval.get_covered(al)
 
-            covered = interval.get_covered(al)
+                if covered.total_length >= 10:
+                    if covered.start <= 5 or (self.overlaps_primer(al, 'left') and covered.start < 25):
+                        flanking_alignments['left'].append((al.query_alignment_length, al))
+                    
+                    if covered.end >= len(self.seq) - 1 - 5 or self.overlaps_primer(al, 'right'):
+                        flanking_alignments['right'].append((al.query_alignment_length, al))
 
-            if covered.total_length >= 10:
-                if covered.start <= 5 or (self.overlaps_primer(al, 'left') and covered.start < 25):
-                    edge_alignments['left'].append(al)
-                
-                if covered.end >= len(self.seq) - 1 - 5 or self.overlaps_primer(al, 'right'):
-                    edge_alignments['right'].append(al)
-
-        for edge in ['left', 'right']:
-            if len(edge_alignments[edge]) == 0:
-                edge_alignments[edge] = None
+        else:
+            if self.platform in {'nanopore', 'pacbio'}:
+                min_relevant_length = 500
             else:
-                edge_alignments[edge] = max(edge_alignments[edge], key=lambda al: al.query_alignment_length)
+                min_relevant_length = 0
 
-        return edge_alignments
+            # Note: refined_target_alignments is already cropped to a relevant_window on both sides
+            # For each side, annotate each al with the length of its overlap with that side. 
+
+            cuts_interval = self.editing_strategy.around_or_between_cuts(0)
+
+            flanking_intervals = {
+                self.target_side_to_read_side[5]: interval.Interval(0, cuts_interval.start),
+                self.target_side_to_read_side[3]: interval.Interval(cuts_interval.end + 1, len(self.editing_strategy.target_sequence))
+            }
+
+            for side, flanking_interval in flanking_intervals.items():
+                for al in relevant_als:
+                    cropped_al = sam.crop_al_to_ref_int(al, flanking_interval.start, flanking_interval.end)
+                    if cropped_al is not None and cropped_al.query_alignment_length >= min_relevant_length:
+                        flanking_alignments[side].append((cropped_al.query_alignment_length, al))
+
+        # TODO: require these to be concordantly placed on the read. If they aren't, only keep the longest one.
+        for side in flanking_alignments:
+            if len(flanking_alignments[side]) == 0:
+                flanking_alignments[side] = None
+
+            else:
+                _, al = max(flanking_alignments[side], key=lambda t: t[0])
+                flanking_alignments[side] = al
+
+        return flanking_alignments
 
     @memoized_property
-    def cropped_primer_alignments(self):
+    def target_flanking_intervals(self):
+        edges = {
+            'read': {
+                side: interval.get_covered(self.target_flanking_alignments[side])
+                for side in ['left', 'right']
+            },
+            'ref': {
+                side: interval.get_covered_on_ref(self.target_flanking_alignments[side])
+                for side in ['left', 'right']
+            },
+        }
+
+        return edges
+
+    @memoized_property
+    def length_change(self):
+        ''' How far apart are the outside edges of target flanking alignments on the read
+        compared to the target? 
+        Note: doesn't account for primer indels.
+
+        TODO: this should use inner edges so that it isn't accumulating indels.
+        '''
+
+        if self.has_target_flanking_alignments_on_both_sides:
+            read_distance = self.target_flanking_intervals['read']['right'].start - self.target_flanking_intervals['read']['left'].end + 1
+            if self.sequencing_direction == '+':
+                ref_distance = self.target_flanking_intervals['ref']['right'].start - self.target_flanking_intervals['ref']['left'].end + 1
+            else:
+                ref_distance = self.target_flanking_intervals['ref']['left'].start - self.target_flanking_intervals['ref']['right'].end + 1
+
+            length_change = read_distance - ref_distance
+
+        else:
+            length_change = None
+
+        return length_change
+
+    @memoized_property
+    def target_flanking_alignments_by_target_side(self):
+        by_target_side = {
+            target_side: self.target_flanking_alignments[self.target_side_to_read_side[target_side]]
+            for target_side in [5, 3]
+        }
+
+        return by_target_side
+
+    @memoized_property
+    def target_flanking_alignments_list(self):
+        return [al for al in self.target_flanking_alignments.values() if al is not None]
+
+    @memoized_property
+    def has_any_target_flanking_alignment(self):
+        return len(self.target_flanking_alignments_list) > 0
+
+    @memoized_property
+    def has_target_flanking_alignments_on_both_sides(self):
+        return len(self.target_flanking_alignments_list) == 2
+
+    @memoized_property
+    def cropped_flanking_primer_alignments(self):
         primer_alignments = {}
 
         for side, primer in self.primers_by_side_of_read.items():
-            al = self.target_edge_alignments[side]
+            al = self.target_flanking_alignments[side]
             primer_alignments[side] = sam.crop_al_to_feature(al, primer)
 
         return primer_alignments
 
     @memoized_property
     def covered_by_primers(self):
-        return interval.get_disjoint_covered(self.cropped_primer_alignments.values())
+        return interval.get_disjoint_covered(self.cropped_flanking_primer_alignments.values())
 
     @memoized_property
     def between_primers(self):
         ''' More complicated than function name suggests. If there are primer
         alignments, returns the query interval between but not covered by them to enable ignoring
         the region outside of them, which is likely to be the result of incorrect trimming.
+
+        If there are no primers, uses target flanking alignments.
         '''
-        if self.covered_by_primers.is_empty:
-            between_primers = self.whole_read
+        if len(self.editing_strategy.primers) == 2:
+            primer_als = self.cropped_flanking_primer_alignments
 
-        elif self.cropped_primer_alignments['left'] and not self.cropped_primer_alignments['right']:
-            between_primers = interval.Interval(self.covered_by_primers.end + 1, self.whole_read.end)
+            if self.covered_by_primers.is_empty:
+                between_primers = self.whole_read
 
-        elif self.cropped_primer_alignments['right'] and not self.cropped_primer_alignments['left']:
-            between_primers = interval.Interval(self.whole_read.start, self.covered_by_primers.start - 1)
+            elif primer_als['left'] and not primer_als['right']:
+                between_primers = interval.Interval(self.covered_by_primers.end + 1, self.whole_read.end)
+
+            elif primer_als['right'] and not primer_als['left']:
+                between_primers = interval.Interval(self.whole_read.start, self.covered_by_primers.start - 1)
+
+            else:
+                between_primers = interval.Interval(self.covered_by_primers.start, self.covered_by_primers.end) - self.covered_by_primers 
+
+            if between_primers.is_empty:
+                between_primers = interval.Interval.empty()
 
         else:
-            between_primers = interval.Interval(self.covered_by_primers.start, self.covered_by_primers.end) - self.covered_by_primers 
-
-        if between_primers.is_empty:
-            between_primers = interval.Interval.empty()
+            if self.has_target_flanking_alignments_on_both_sides:
+                between_primers = interval.Interval(self.target_flanking_intervals['read']['left'].start, self.target_flanking_intervals['read']['right'].end)
+            else:
+                between_primers = interval.Interval.empty()
 
         return between_primers
 
     @memoized_property
     def between_primers_inclusive(self):
         return self.covered_by_primers | self.between_primers
+
+    @memoized_property
+    def not_covered_by_target_flanking_alignments(self):
+        als = self.target_flanking_alignments_list
+        uncovered = self.between_primers - interval.get_disjoint_covered(als)
+        return uncovered
+
+    @memoized_property
+    def non_primer_nts(self):
+        return self.between_primers.total_length
+
+    @memoized_property
+    def target_nts_past_primer(self):
+        target_nts_past_primer = {}
+
+        for side in ['left', 'right']:
+            target_past_primer = interval.get_covered(self.target_flanking_alignments[side]) - interval.get_covered(self.cropped_flanking_primer_alignments[side])
+            target_nts_past_primer[side] = target_past_primer.total_length 
+
+        return target_nts_past_primer
+    
+    @memoized_property
+    def min_relevant_length(self):
+        min_relevant_length = self.editing_strategy.min_relevant_length
+
+        if min_relevant_length is None:
+            if self.editing_strategy.combined_primer_length is not None:
+                min_relevant_length = self.editing_strategy.combined_primer_length + 10
+            else:
+                min_relevant_length = 0
+
+        return min_relevant_length
+
+    @memoized_property
+    def nonspecific_amplification(self):
+        ''' Nonspecific amplification if any of following apply:
+         
+         - read is empty after adapter trimming
+         
+         - read is short after adapter trimming, in which case inference of
+            nonspecific amplification per se is less clear but
+            sequence is unlikely to be informative of any other process
+         
+         - read starts with an alignment to the expected primer, but
+            this alignment does not extend substantially past the primer, and
+            the rest of the read is covered by a single alignment to some other
+            source that either reaches the end of the read or reaches an
+            an alignment to the other primer that does not extend 
+            substantially past the primer.
+         
+         - read starts with an alignment to the expected primer, but all
+            alignments to the target collectively leave a substantial part
+            of the read uncovered, and a single alignment to some other
+            source covers the entire read with minimal edit distance.
+         
+         - read starts and ends with alignments to the expected primers, these
+           alignments are spanned by a single alignment to some other source, and
+           the inferred amplicon length is more than 20 nts different from the expected
+           WT amplicon. This covers the case where an amplififcation product has enough
+           homology around the primer for additional sequence to align to the target. 
+        
+        '''
+        results = {}
+
+        valid = False
+
+        need_to_cover = self.whole_read_minus_edges(2) & self.between_primers
+
+        results['covering_als'] = []
+
+        if len(self.seq) <= self.min_relevant_length or self.non_primer_nts <= 10:
+            valid = True
+
+        if need_to_cover.total_length > 0 and self.cropped_flanking_primer_alignments.get('left') is not None:
+
+            if self.target_nts_past_primer['left'] <= 10 and self.target_nts_past_primer['right'] <= 10:
+                # Exclude phiX reads, which can rarely have spurious alignments to the forward primer
+                # close to the start of the read that overlap the forward primer.
+                relevant_alignments = self.supplemental_alignments + self.extra_alignments
+                relevant_alignments = [al for al in relevant_alignments if 'phiX' not in al.reference_name]
+
+                for al in relevant_alignments:
+                    covered_by_al = interval.get_covered(al)
+                    if (need_to_cover - covered_by_al).total_length == 0:
+                        results['covering_als'].append(al)
+
+            else:
+                target_als = [al for al in self.primary_alignments if al.reference_name == self.editing_strategy.target]
+                not_covered_by_any_target_als = need_to_cover - interval.get_disjoint_covered(target_als)
+
+                has_substantial_uncovered = not_covered_by_any_target_als.total_length >= 100
+                has_substantial_length_discrepancy = (
+                    self.inferred_amplicon_length is not None and 
+                    abs(self.inferred_amplicon_length - self.editing_strategy.amplicon_length) >= 20 and
+                    self.cropped_flanking_primer_alignments.get('right') is not None
+                )
+
+                if has_substantial_uncovered or has_substantial_length_discrepancy:
+                    ref_seqs = {**self.editing_strategy.reference_sequences}
+
+                    # Exclude phiX reads, which can rarely have spurious alignments to the forward primer
+                    # close to the start of the read that overlap the forward primer.
+                    relevant_alignments = self.supplemental_alignments
+                    relevant_alignments = [al for al in relevant_alignments if 'phiX' not in al.reference_name]
+
+                    for al in relevant_alignments:
+                        covered_by_al = interval.get_covered(al)
+                        if (need_to_cover - covered_by_al).total_length == 0:
+                            cropped_al = sam.crop_al_to_query_int(al, self.between_primers.start, self.between_primers.end)
+                            total_edits = sum(knock_knock.architecture.edit_positions(cropped_al, ref_seqs, use_deletion_length=True))
+                            if total_edits <= 5:
+                                results['covering_als'].append(al)
+
+            if len(results['covering_als']) > 0:
+                if not any('phiX' in al.reference_name for al in results['covering_als']):
+                    valid = True
+
+        if not valid:
+            results = None
+
+        return results
+
+    def register_nonspecific_amplification(self):
+        results = self.nonspecific_amplification
+
+        self.category = 'nonspecific amplification'
+
+        if self.non_primer_nts <= 2:
+            self.subcategory = 'primer dimer'
+            self.relevant_alignments = self.target_flanking_alignments_list
+
+        elif len(results['covering_als']) == 0:
+            self.subcategory = 'short unknown'
+            self.relevant_alignments = sam.make_noncontained(self.uncategorized_relevant_alignments)
+
+        else:
+            if any(al.reference_name in self.editing_strategy.pegRNA_names for al in results['covering_als']):
+                # amplification off of pegRNA-expressing plasmid
+                self.subcategory = 'extra sequence'
+
+            elif any(al in self.extra_alignments for al in results['covering_als']):
+                self.subcategory = 'extra sequence'
+            
+            elif any(al.reference_name not in self.primary_ref_names for al in results['covering_als']):
+                organisms = {self.editing_strategy.remove_organism_from_alignment(al)[0] for al in results['covering_als'] if al.reference_name not in self.primary_ref_names}
+                organism = sorted(organisms)[0]
+                self.subcategory = organism
+
+            elif any(al.reference_name == self.editing_strategy.target for al in results['covering_als']) and self.editing_strategy.genome_source is not None:
+                # reference name of supplemental al has been replaced
+                self.subcategory = self.editing_strategy.genome_source
+
+            else:
+                raise ValueError
+
+            self.relevant_alignments = results['target_edge_als'] + results['covering_als']
 
     @memoized_property
     def single_read_covering_target_alignment(self):
@@ -457,10 +778,6 @@ class Categorizer:
             covering_al = None
             
         return covering_al
-
-    @memoized_property
-    def target_edge_alignments_list(self):
-        return [al for al in self.target_edge_alignments.values() if al is not None]
 
     def extract_indels_from_alignments(self, als):
         strat = self.editing_strategy
@@ -621,7 +938,7 @@ class Categorizer:
             return 0
 
         elif len(self.editing_strategy.primers) == 0:
-            return len(self.seq)
+            return self.length_change
 
         elif (self.whole_read - self.covered_by_primers).total_length == 0:
             return len(self.seq)
@@ -629,8 +946,8 @@ class Categorizer:
         elif len(self.seq) <= 50:
             return len(self.seq)
 
-        left_al = self.target_edge_alignments['left']
-        right_al = self.target_edge_alignments['right']
+        left_al = self.target_flanking_alignments['left']
+        right_al = self.target_flanking_alignments['right']
 
         left_primer = self.primers_by_side_of_read['left']
         right_primer = self.primers_by_side_of_read['right']
@@ -662,7 +979,7 @@ class Categorizer:
             # have boundaries of region between them.
             length_seen_between_primers = (right_inner_edge_q - 1) - (left_inner_edge_q + 1) + 1
 
-            right_al_edge_in_target = sam.reference_edges(right_al)[3]
+            right_al_edge_in_target = sam.reference_edges(right_al)['right']
 
             # Calculated inferred unseen length.
             if self.sequencing_direction == '+':
@@ -677,7 +994,7 @@ class Categorizer:
             inferred_length = length_seen_between_primers + inferred_extra_at_end + len(left_primer) + len(right_primer)
 
         else:
-            inferred_length = -1
+            inferred_length = None
 
         return inferred_length
 
@@ -950,7 +1267,7 @@ class Categorizer:
             eligible.extend(by_status['possible'])
 
         if len(eligible) > 0:
-            best_results = max(eligible, key=lambda d: d['alignments'][extension_side].query_alignment_length)
+            best_results = max(eligible, key=lambda d: self.length_minus_edits(d['alignments'][extension_side]))
             
             extension_al = best_results['alignments'][extension_side]
             cropped_extension_al = best_results['cropped_alignments'][extension_side]
@@ -962,38 +1279,49 @@ class Categorizer:
 
         return extension_al, cropped_extension_al, croppped_original_al
 
-    def build_extension_chain_on_side(self, side, require_definite=True):
-        link_specifications, last_al_to_description = self.extension_chain_link_specifications()
+    @memoized_with_kwargs
+    def extension_chains(self, *, require_definite=True):
+        extension_chains = {}
 
-        if side == 'left':
-            order = 'forward'
-        else:
-            order = 'reverse'
+        for kind, (link_specifications, last_al_to_description) in self.extension_chain_link_specifications.items():
+            extension_chains[kind] = {}
 
-        chain = ExtensionChain(link_specifications,
-                               last_al_to_description,
-                               order,
-                               side,
-                               require_definite=require_definite,
-                              ) 
+            for side in ['left', 'right']:
+                if (side == 'left' and self.sequencing_direction == '+') or (side == 'right' and self.sequencing_direction == '-'):
+                    order = 'forward'
+                else:
+                    order = 'reverse'
 
-        chain.build(self.target_edge_alignments[side], 'first target', self)
-                
-        return chain
+                chain = ExtensionChain(link_specifications,
+                                    last_al_to_description,
+                                    order,
+                                    side,
+                                    require_definite=require_definite,
+                                    ) 
 
-    def reconcile_extension_chains(self, require_definite=True):
-        chains = {side: self.build_extension_chain_on_side(side, require_definite=require_definite) for side in ['left', 'right']}
+                chain.build(self.target_flanking_alignments[side], 'first target', self)
+                    
+                extension_chains[kind][side] = chain
 
-        # Check whether any members of an extension chain on one side are not
-        # necessary to make it to the other chain. (Warning: could imagine a
-        # scenario in which it would be possible to remove from either the
-        # left or right chain.)
+        return extension_chains
 
-        name_order = ['none'] + chains['left'].name_order
+    @memoized_with_kwargs
+    def extension_chain_possible_covers(self, *, require_definite=True):
+        all_possible_covers = {}
 
-        possible_covers = set()
+        for kind, chains in self.extension_chains(require_definite=require_definite).items():
+            chains = self.extension_chains(require_definite=require_definite)[kind]
 
-        if chains['left'].query_covered != chains['right'].query_covered:
+            possible_covers = set()
+
+            # Check whether any members of an extension chain on one side are not
+            # necessary to make it to the other chain. (Warning: could imagine a
+            # scenario in which it would be possible to remove from either the
+            # left or right chain.)
+
+            name_order = ['none'] + chains['left'].name_order
+
+            #if chains['left'].query_covered != chains['right'].query_covered:
             for left_key in name_order:
                 if left_key in chains['left'].alignments:
                     left_al = chains['left'].alignments[left_key]
@@ -1013,7 +1341,7 @@ class Categorizer:
                                                                             right_al,
                                                                             self.editing_strategy.reference_sequences,
                                                                             include_overlap=False,
-                                                                           )
+                                                                        )
 
                                 cropped_mismatches = {
                                     side: chains[side].mismatches.copy()
@@ -1023,91 +1351,150 @@ class Categorizer:
                                 total_mismatches = {}
 
                                 for side, last_key in [('left', left_key), ('right', right_key)]:
-                                    cropped_mismatches[side][last_key] = len(get_mismatch_info(cropped_als[side], self.editing_strategy.reference_sequences, self.programmed_substitutions))
+                                    cropped_mismatches[side][last_key] = self.edits(cropped_als[side])
 
                                     last_key_i = name_order.index(last_key)
                                     total_mismatches[side] = sum(cropped_mismatches[side].get(key, 0) for key in name_order[:last_key_i + 1])
                                 
-                                possible_covers.add((left_key, right_key, total_mismatches['left'] + total_mismatches['right']))
+                                possible_covers.add(('two chains', left_key, right_key, total_mismatches['left'] + total_mismatches['right']))
+            
+            #else: # query_covereds are the same
+            if chains['left'].query_covered == chains['right'].query_covered:
+                last_parsimonious_key = {}
+                total_mismatches = {}
 
-        last_parsimonious_key = {}
+                for side, chain in chains.items():
+                    maximal_covers = [k for k, covered in chain.query_covered_incremental.items() if covered == chain.query_covered]
+                    last_key = min(maximal_covers, key=name_order.index, default='none')
+                    last_key_i = name_order.index(last_key)
+                    last_parsimonious_key[side] = last_key
+                    total_mismatches[side] = sum(chain.mismatches.get(key, 0) for key in name_order[:last_key_i + 1])
 
-        if possible_covers:
-            min_mismatches = min(mismatches for _, _, mismatches in possible_covers)
-            possible_covers = {(left_key, right_key) for left_key, right_key, mismatches in possible_covers if mismatches == min_mismatches}
+                possible_covers.add(('single chain', last_parsimonious_key['left'], last_parsimonious_key['right'], total_mismatches['left']))
 
-            last_parsimonious_key['left'], last_parsimonious_key['right'] = self.reconcile_function(possible_covers, key=lambda pair: (name_order.index(pair[0]), name_order.index(pair[1])))
-        else:
-            for side, chain in chains.items():
-                maximal_covers = [k for k, covered in chain.query_covered_incremental.items() if covered == chain.query_covered]
-                last_parsimonious_key[side] = min(maximal_covers, key=name_order.index, default='none')
+            if possible_covers:
+                single_exists = any(chain_number == 'single chain' for chain_number, *rest in possible_covers)
 
-        for side in ['left', 'right']:
-            key = last_parsimonious_key[side]
+                if single_exists:
+                    best_chain_number = 'single chain'
+                else:
+                    best_chain_number = 'two chains'
 
-            chains[side].description = chains[side].last_al_to_description[key]
+                min_mismatches = min(mismatches for chain_number, _, _, mismatches in possible_covers if chain_number == best_chain_number)
 
-            last_index = name_order.index(key)
-            chains[side].parsimonious_alignments = [al for key, al in chains[side].alignments.items() if name_order.index(key) <= last_index]
+                min_mismatch_covers = {
+                    (chain_number, left_key, right_key, mismatches)
+                    for chain_number, left_key, right_key, mismatches in possible_covers
+                    if chain_number == best_chain_number and mismatches == min_mismatches
+                }
 
-            chains[side].query_covered = chains[side].query_covered_incremental[key]
+                best_cover = self.reconcile_function(min_mismatch_covers, key=lambda tuple_: (name_order.index(tuple_[1]), name_order.index(tuple_[2])))
+                rejected_covers = {cover for cover in possible_covers if cover != best_cover}
 
-        last_als = {
-            side: chains[side].alignments[last_parsimonious_key[side]]
-            if last_parsimonious_key[side] != 'none' else None
-            for side in ['left', 'right']
-        }
+                all_possible_covers[kind] = (best_cover, rejected_covers)
 
-        cropped_als = sam.crop_to_best_switch_point(last_als['left'], last_als['right'], self.editing_strategy.reference_sequences)
+        # TODO: register reject covers to prevent them from being taken by a different type that has less information
 
-        for side in ['left', 'right']:
-            chains[side].cropped_last_al = cropped_als[side]
+        return all_possible_covers
 
-        # If one chain is absent and the other chain covers the whole read
-        # (except possibly 2 nts at either edge), classify the missing side
-        # as 'not seen'.
+    @memoized_with_kwargs
+    def reconciled_extension_chains(self, *, require_definite=True):
+        ''' Note: reconciling modifies chains in place. '''
 
-        between_primers_minus_edges = self.between_primers & self.whole_read_minus_edges(2)
+        possible_covers = self.extension_chain_possible_covers(require_definite=require_definite)
 
-        if between_primers_minus_edges in chains['left'].query_covered:
-            if chains['right'].description == 'no target':
-                chains['right'].description = 'not seen'
+        for kind in self.extension_chain_link_specifications:
+            chains = self.extension_chains(require_definite=require_definite)[kind]
 
-        if between_primers_minus_edges in chains['right'].query_covered:
-            if chains['left'].description == 'no target':
-                chains['left'].description = 'not seen'
+            name_order = ['none'] + chains['left'].name_order
 
-        return chains
+            last_parsimonious_key = {}
+
+            if kind in possible_covers:
+                (_, last_parsimonious_key['left'], last_parsimonious_key['right'], _), _ = possible_covers[kind]
+            else:
+                for side, chain in chains.items():
+                    maximal_covers = [k for k, covered in chain.query_covered_incremental.items() if covered == chain.query_covered]
+                    last_parsimonious_key[side] = min(maximal_covers, key=name_order.index, default='none')
+
+            for side in ['left', 'right']:
+                key = last_parsimonious_key[side]
+
+                chains[side].description = chains[side].last_al_to_description[key]
+
+                last_index = name_order.index(key)
+                chains[side].parsimonious_alignments = [al for key, al in chains[side].alignments.items() if name_order.index(key) <= last_index]
+
+                chains[side].query_covered = chains[side].query_covered_incremental[key]
+
+            last_als = {
+                side: chains[side].alignments[last_parsimonious_key[side]]
+                if last_parsimonious_key[side] != 'none' else None
+                for side in ['left', 'right']
+            }
+
+            cropped_als = sam.crop_to_best_switch_point(last_als['left'], last_als['right'], self.editing_strategy.reference_sequences)
+
+            for side in ['left', 'right']:
+                chains[side].cropped_last_al = cropped_als[side]
+
+            # If one chain is absent and the other chain covers the whole read
+            # (except possibly 2 nts at either edge), classify the missing side
+            # as 'not seen'.
+
+            between_primers_minus_edges = self.between_primers & self.whole_read_minus_edges(2)
+
+            if between_primers_minus_edges in chains['left'].query_covered:
+                if chains['right'].description == 'no target':
+                    chains['right'].description = 'not seen'
+
+            if between_primers_minus_edges in chains['right'].query_covered:
+                if chains['left'].description == 'no target':
+                    chains['left'].description = 'not seen'
+
+        return self.extension_chains(require_definite=require_definite)
 
     @property
     def reconcile_function(self):
         return min
 
     @memoized_property
-    def extension_chains_by_side(self):
-        return self.reconcile_extension_chains(require_definite=True)
-
-    @memoized_property
-    def possible_extension_chains_by_side(self):
-        return self.reconcile_extension_chains(require_definite=False)
+    def extension_chain_alignments(self):
+        return {
+            kind: self.reconciled_extension_chains()[kind]['left'].alignments_list + self.reconciled_extension_chains()[kind]['right'].alignments_list
+            for kind in self.extension_chain_link_specifications
+        }
 
     @memoized_property
     def uncovered_by_extension_chains(self):
-        chains = self.extension_chains_by_side
+        uncovered_by_extension_chains = {}
 
-        left_covered = chains['left'].query_covered
-        right_covered = chains['right'].query_covered
+        for kind in self.extension_chain_link_specifications:
+            chains = self.reconciled_extension_chains()[kind]
 
-        combined_covered = left_covered | right_covered
-        uncovered = self.between_primers - combined_covered
+            left_covered = chains['left'].query_covered
+            right_covered = chains['right'].query_covered
 
-        # Allow failure to explain the last few nts of the read.
-        uncovered = uncovered & self.whole_read_minus_edges(2)
+            combined_covered = left_covered | right_covered
+            uncovered = self.between_primers - combined_covered
 
-        return uncovered
+            # Allow failure to explain the last few nts of the read.
+            uncovered = uncovered & self.whole_read_minus_edges(2)
+
+            uncovered_by_extension_chains[kind] = uncovered
+
+        return uncovered_by_extension_chains
 
     def edits(self, al):
-        return edit_positions(al, self.editing_strategy.reference_sequences).sum()
+        if al is None:
+            edits = 0
+        else:
+            edits = edit_positions(al, self.editing_strategy.reference_sequences, programmed_substitutions=self.programmed_substitutions).sum()
+
+        return edits
+
+    def length_minus_edits(self, al):
+        return al.query_alignment_length - self.edits(al)
 
     def als_with_min_edits(self, als):
         decorated_als = sorted([(self.edits(al), al) for al in als], key=lambda t: t[0])
@@ -1130,7 +1517,7 @@ class Categorizer:
         return [al for length, al in decorated_als if length == max_length]
 
     def als_with_max_length_minus_edits(self, als):
-        decorated_als = sorted([(al.query_alignment_length - self.edits(al), al) for al in als], key=lambda t: t[0], reverse=True)
+        decorated_als = sorted([(self.length_minus_edits(al), al) for al in als], key=lambda t: t[0], reverse=True)
         
         if len(decorated_als) > 0:
             max_length_minus_edits, _ = decorated_als[0]
@@ -1158,64 +1545,60 @@ class Categorizer:
         
         return sam.make_nonredundant(all_split_als)
 
-    def realign_edges_to_primers(self, read_side):
-        if self.seq is None:
-            return []
-
+    def realign_edge_to_primer(self, read_side):
         strat = self.editing_strategy
+
+        target_side = self.read_side_to_target_side[read_side]
+
+        primer = self.editing_strategy.primers_by_side_of_target.get(target_side)
+
+        if self.seq is None or primer is None:
+            return None
 
         buffer_length = 5
 
-        edge_als = []
-
-        for amplicon_side in [5, 3]:
-            primer = self.editing_strategy.primers_by_side_of_target.get(amplicon_side)
-
-            if primer is None:
-                continue
-
-            if amplicon_side == 5:
-                target_interval = interval.Interval(primer.start, primer.end + buffer_length)
-            else:
-                target_interval = interval.Interval(primer.start - buffer_length, primer.end)
-
-            if read_side == 5:
-                read_interval = interval.Interval(0, len(primer) + buffer_length)
-            else:
-                read_interval = interval.Interval(len(self.seq) - len(primer) - buffer_length, len(self.seq))
-
-            ref_intervals = {strat.target: target_interval}
-
-            als = sw.align_read(self.read,
-                                [(strat.target, strat.target_sequence)],
-                                5,
-                                strat.header,
-                                max_alignments_per_target=1,
-                                min_score_ratio=0,
-                                read_interval=read_interval,
-                                ref_intervals=ref_intervals,
-                               )
-
-            if len(als) > 0:
-                al = als[0]
-
-                if read_side == 5:
-                    primer_query_interval = interval.Interval(0, len(primer) - 1)
-                elif read_side == 3:
-                    # can't just use buffer_length as start in case read is shorter than primer + buffer_length
-                    primer_query_interval = interval.Interval(len(self.seq) - len(primer), np.inf)
-
-                edits_in_primer = sam.edit_distance_in_query_interval(al, primer_query_interval, ref_seq=strat.target_sequence)
-
-                if edits_in_primer <= 5:
-                    edge_als.append((edits_in_primer, al))
-
-        edge_als = sorted(edge_als, key=lambda t: t[0])
-
-        if len(edge_als) == 0:
-            edge_al = None
+        if target_side == 5:
+            target_interval = interval.Interval(primer.start, primer.end + buffer_length)
+        elif target_side == 3:
+            target_interval = interval.Interval(primer.start - buffer_length, primer.end)
         else:
-            edge_al = edge_als[0][1]
+            raise ValueError
+
+        if read_side == 'left':
+            read_interval = interval.Interval(0, len(primer) + buffer_length)
+        elif read_side == 'right':
+            read_interval = interval.Interval(len(self.seq) - len(primer) - buffer_length, len(self.seq))
+        else:
+            raise ValueError
+
+        ref_intervals = {strat.target: target_interval}
+
+        als = sw.align_read(self.read,
+                            [(strat.target, strat.target_sequence)],
+                            5,
+                            strat.header,
+                            max_alignments_per_target=1,
+                            min_score_ratio=0,
+                            read_interval=read_interval,
+                            ref_intervals=ref_intervals,
+                            )
+
+        edge_al = None
+
+        if len(als) > 0:
+            al = als[0]
+
+            if read_side == 'left':
+                primer_query_interval = interval.Interval(0, len(primer) - 1)
+            elif read_side == 'right':
+                primer_query_interval = interval.Interval(len(self.seq) - len(primer), np.inf)
+            else:
+                raise ValueError
+
+            edits_in_primer = sam.edit_distance_in_query_interval(al, primer_query_interval, ref_seq=strat.target_sequence)
+
+            if edits_in_primer <= 5:
+                edge_al = al
 
         if edge_al is not None:
             seq_bytes = strat.reference_sequence_bytes[edge_al.reference_name]
@@ -1246,15 +1629,19 @@ class Categorizer:
             # for number of edits within a window that doesn't produce a lot
             # of false positive splits, so don't try to split at edit clusters.
 
+            indel_length_near_cuts = 3
+            indel_length_far_from_cuts = 12
+
             if al.reference_name == strat.target:
                 # First split at short indels close to expected cuts.
                 exempt = strat.not_around_cuts(20)
-                for split_1 in sam.split_at_deletions(al, 3, exempt_if_overlaps=exempt):
-                    for split_2 in sam.split_at_large_insertions(split_1, 3, exempt_if_overlaps=exempt):
+                for split_1 in sam.split_at_deletions(al, indel_length_near_cuts, exempt_if_overlaps=exempt):
+                    for split_2 in sam.split_at_large_insertions(split_1, indel_length_near_cuts, exempt_if_overlaps=exempt):
                         # Then at longer indels anywhere.
-                        for split_3 in sam.split_at_deletions(split_2, 10):
-                            for split_4 in sam.split_at_large_insertions(split_3, 10):
+                        for split_3 in sam.split_at_deletions(split_2, indel_length_far_from_cuts):
+                            for split_4 in sam.split_at_large_insertions(split_3, indel_length_far_from_cuts):
                                 split_als.append(split_4)
+
             else:
                 for split_1 in sam.split_at_deletions(al, 10):
                     for split_2 in sam.split_at_large_insertions(split_1, 10):
@@ -1354,7 +1741,7 @@ class NoOverlapPairCategorizer(Categorizer):
 
         self._inferred_amplicon_length = -1
 
-        self.Details = knock_knock.outcome.Details()
+        self.details = knock_knock.outcome.Details()
 
 def max_del_nearby(alignment, ref_pos, window):
     ref_pos_to_block = sam.get_ref_pos_to_block(alignment)
@@ -1463,6 +1850,7 @@ def edit_positions(al, reference_sequences, use_deletion_length=False, programme
                 else:
                     to_add = 1
                 bad_read_ps[int(centered_at + offset)] += to_add
+
         elif indel_type == 'insertion':
             starts_at, ends_at = indel_info
             # TODO: double-check possible off by one in ends_at
@@ -1804,7 +2192,7 @@ class ExtensionChain:
             )
 
             if extension_al is not None:
-                current_link.next_link.alignment = extension_al
+                current_link.next_link.alignment = cropped_extension_al
                 current_link.alignment = cropped_original_al
 
             current_link = current_link.next_link
@@ -1818,11 +2206,13 @@ class ExtensionChain:
 
         self.alignments = {name: self.links_by_name[name].alignment for name in self.name_order if self.links_by_name[name].alignment is not None}
 
+        self.alignments_list = list(self.alignments.values())
+
         for name_order_i in range(entry_point_i, len(self.name_order)):
             name = self.name_order[name_order_i]
 
             if name in self.alignments:
-                self.mismatches[name] = len(get_mismatch_info(self.alignments[name], architecture.editing_strategy.reference_sequences, architecture.programmed_substitutions))
+                self.mismatches[name] = architecture.edits(self.alignments[name])
                 als_up_to = [self.alignments[other_name] for other_name in self.name_order[entry_point_i:name_order_i + 1]]
                 self.query_covered = interval.get_disjoint_covered(als_up_to)
                 self.query_covered_incremental[name] = self.query_covered

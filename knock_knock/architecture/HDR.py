@@ -6,8 +6,8 @@ import knock_knock.architecture
 import knock_knock.outcome
 import knock_knock.visualize.architecture
 
-from hits import interval, sam, sw, utilities
-from hits.utilities import memoized_property, memoized_with_kwargs
+from hits import interval, sam, sw
+from hits.utilities import memoized_property
 
 from knock_knock.outcome import Details
 
@@ -97,6 +97,12 @@ class Architecture(knock_knock.architecture.Categorizer):
             ),
         ),
         (
+            'uninformative',
+            (
+                'uninformative',
+            ),
+        ),
+        (
             'uncategorized',
             (
                 'uncategorized',
@@ -146,6 +152,8 @@ class Architecture(knock_knock.architecture.Categorizer):
         'phiX',
         'nonspecific amplification',
         'minimal alignment to intended target',
+        'malformed layout',
+        'uninformative',
     ]
 
     def __init__(self, alignments, editing_strategy, error_corrected=False, platform='illumina'):
@@ -211,21 +219,29 @@ class Architecture(knock_knock.architecture.Categorizer):
         return self.target_alignments + self.donor_alignments
 
     @memoized_property
+    def HA_names_by_side_of_target(self):
+        HA_names = {
+            target_side: self.editing_strategy.homology_arms[target_side]['target'].ID
+            for target_side in [5, 3]
+        }
+        return HA_names
+
+    @memoized_property
     def HA_names_by_side_of_read(self):
         read_side_to_HA_name = {}
         
         for read_side, target_side in self.read_side_to_target_side.items():
-            HA_name = self.editing_strategy.homology_arms[target_side]['target'].ID
-            read_side_to_HA_name[read_side] = HA_name
+            read_side_to_HA_name[read_side] = self.HA_names_by_side_of_target[target_side]
             
         return read_side_to_HA_name
 
+    @memoized_property
     def extension_chain_link_specifications(self):
         links = [
             (self.target_alignments, ('first target', 'second target')),
-                self.HA_names_by_side_of_read['left'],
+                self.HA_names_by_side_of_target[5],
             (self.donor_alignments, ('donor', 'donor')),
-                self.HA_names_by_side_of_read['right'],
+                self.HA_names_by_side_of_target[3],
             (self.target_alignments, ('second target', 'first target')),
         ]
 
@@ -236,78 +252,19 @@ class Architecture(knock_knock.architecture.Categorizer):
             'second target': 'HDR',
         }
 
-        return links, last_al_to_description 
+        specs = {'HDR': (links, last_al_to_description)}
+
+        return specs
     
-    def register_integration_details(self):
-        strat = self.editing_strategy
-        donor_al = self.donor_specific_integration_alignments[0]
+    @memoized_property
+    def is_intended_edit(self):
+        chains = self.reconciled_extension_chains()['HDR']
 
-        if self.sequencing_direction == '+':
-            left_target_al = self.primer_alignments[5]
-            right_target_al = self.primer_alignments[3]
-
-            left_junction = sam.find_best_query_switch_after(left_target_al, donor_al, strat.target_sequence, strat.donor_sequence, min)
-            right_junction = sam.find_best_query_switch_after(donor_al, right_target_al, strat.donor_sequence, strat.target_sequence, max)
-
-            left_target_al_cropped = sam.crop_al_to_query_int(left_target_al, 0, left_junction['switch_after'])
-            if left_target_al_cropped is not None:
-                target_edge_before = left_target_al_cropped.reference_end - 1
-            else:
-                # This is an error condition.
-                target_edge_before = -1
-
-            right_target_al_cropped = sam.crop_al_to_query_int(right_target_al, right_junction['switch_after'] + 1, np.inf)
-            if right_target_al_cropped is not None:
-                target_edge_after = right_target_al_cropped.reference_start
-            else:
-                target_edge_after = -1
-
-            donor_strand = sam.get_strand(donor_al)
-        else:
-            right_target_al = self.primer_alignments[5]
-            left_target_al = self.primer_alignments[3]
-
-            left_junction = sam.find_best_query_switch_after(left_target_al, donor_al, strat.target_sequence, strat.donor_sequence, min)
-            right_junction = sam.find_best_query_switch_after(donor_al, right_target_al, strat.donor_sequence, strat.target_sequence, max)
-
-            left_target_al_cropped = sam.crop_al_to_query_int(left_target_al, 0, left_junction['switch_after'])
-            if left_target_al_cropped is not None:
-                target_edge_after = left_target_al_cropped.reference_start
-            else:
-                target_edge_after = -1
-
-            right_target_al_cropped = sam.crop_al_to_query_int(right_target_al, right_junction['switch_after'] + 1, np.inf)
-            if right_target_al_cropped is not None:
-                target_edge_before = right_target_al_cropped.reference_end - 1
-            else:
-                target_edge_before = -1
-
-            # Unclear what the right approach to recording strand is here.
-            donor_strand = sam.get_opposite_strand(donor_al)
-
-        donor_al_cropped = sam.crop_al_to_query_int(donor_al, left_junction['switch_after'] + 1, right_junction['switch_after'])
-
-        donor_start = donor_al_cropped.reference_start
-        donor_end = donor_al_cropped.reference_end - 1
-
-        mh_lengths = self.donor_microhomology
-
-        integration = Integration(target_edge_before, target_edge_after, donor_strand, donor_start, donor_end, mh_lengths[5], mh_lengths[3])
-
-        return str(integration)
-
-    def register_nonspecific_amplification(self):
-        als = self.nonspecific_amplification
-
-        al = als[0]
-
-        organism, original_al = self.editing_strategy.remove_organism_from_alignment(al)
-
-        self.category = 'nonspecific amplification'
-        self.subcategory = organism
-        self.details = 'n/a'
-
-        self.relevant_alignments = interval.make_parsimonious(self.parsimonious_target_alignments + self.nonspecific_amplification)
+        return (
+            chains['left'].description == 'HDR' and
+            chains['right'].description == 'HDR' and 
+            chains['left'].query_covered == chains['right'].query_covered
+        )
 
     def register_single_read_covering_target_alignment(self):
         target_alignment = self.single_read_covering_target_alignment
@@ -325,7 +282,7 @@ class Architecture(knock_knock.architecture.Categorizer):
 
             _, mismatches = self.summarize_mismatches_in_alignments([target_alignment])
 
-        self.Details = Details(
+        self.details = Details(
             deletions=deletions,
             insertions=insertions,
             mismatches=mismatches,
@@ -359,8 +316,23 @@ class Architecture(knock_knock.architecture.Categorizer):
             self.category = 'uncategorized'
             self.subcategory = 'multiple indels near cut'
 
+    @memoized_property
+    def is_uniformative(self):
+        ''' For non-amplicon strategies, reads may not span the edited region. '''
+        num_valid_flanking_alignments = sum(al is not None for al in self.target_flanking_alignments.values())
+        return (len(self.editing_strategy.primers) == 0) and (num_valid_flanking_alignments != 2)
+
+    def register_uniformative(self):
+        self.category = 'uninformative'
+        self.subcategory = 'uninformative'
+
+        self.relevant_alignments = self.parsimonious_and_gap_alignments
+
     def categorize(self):
-        if self.seq is None or len(self.seq) <= self.editing_strategy.combined_primer_length + 10:
+        if self.nonspecific_amplification:
+            self.register_nonspecific_amplification()
+
+        if self.seq is None or len(self.seq) <= self.min_relevant_length:
             self.category = 'malformed layout'
             self.subcategory = 'too short'
             self.relevant_alignments = self.uncategorized_relevant_alignments
@@ -375,33 +347,21 @@ class Architecture(knock_knock.architecture.Categorizer):
             self.subcategory = 'extra copy of primer'
             self.relevant_alignments = self.uncategorized_relevant_alignments
 
-        elif self.missing_a_primer:
-            self.category = 'malformed layout'
-            self.subcategory = 'missing a primer'
-            self.relevant_alignments = self.uncategorized_relevant_alignments
-
-        elif self.primer_strands[5] != self.primer_strands[3]:
-            self.category = 'malformed layout'
-            self.subcategory = 'primers not in same orientation'
-            self.relevant_alignments = self.uncategorized_relevant_alignments
-        
-        elif not self.primer_alignments_reach_edges:
-            self.category = 'malformed layout'
-            self.subcategory = 'primer far from read edge'
-            self.relevant_alignments = self.uncategorized_relevant_alignments
+        elif self.is_uniformative:
+            self.register_uniformative()
 
         elif self.single_read_covering_target_alignment:
             self.register_single_read_covering_target_alignment()
 
+        elif self.is_intended_edit:
+            self.category = 'HDR'
+            self.subcategory = 'HDR'
+            self.relevant_alignments = self.parsimonious_and_gap_alignments
+
         elif self.integration_summary == 'donor':
             junctions = set(self.junction_summary_per_side.values())
 
-            if junctions == set(['HDR']):
-                self.category = 'HDR'
-                self.subcategory = 'HDR'
-                self.relevant_alignments = self.parsimonious_and_gap_alignments
-
-            elif self.gap_covered_by_target_alignment:
+            if self.gap_covered_by_target_alignment:
                 self.category = 'complex indel'
                 self.subcategory = 'complex indel'
                 self.relevant_alignments = self.parsimonious_and_gap_alignments
@@ -413,7 +373,6 @@ class Architecture(knock_knock.architecture.Categorizer):
                 else:
                     self.category = 'donor fragment'
                     self.subcategory = f'5\' {self.junction_summary_per_side[5]}, 3\' {self.junction_summary_per_side[3]}'
-                    #self.details = self.register_integration_details()
 
                 self.relevant_alignments = self.parsimonious_and_gap_alignments
 
@@ -422,16 +381,14 @@ class Architecture(knock_knock.architecture.Categorizer):
 
                 if 'blunt' in junctions:
                     self.category = 'blunt misintegration'
-                    #self.details = self.register_integration_details()
 
                 elif junctions == set(['imperfect', 'HDR']):
-                    if self.not_covered_by_refined_alignments.total_length >= 2:
+                    if self.not_covered_by_simple_integration.total_length >= 2:
                         self.category = 'complex misintegration'
                         self.subcategory = 'complex misintegration'
                     else:
                         self.category = 'incomplete HDR'
 
-                    #self.details = self.register_integration_details()
                 else:
                     self.category = 'complex misintegration'
                     self.subcategory = 'complex misintegration'
@@ -462,7 +419,6 @@ class Architecture(knock_knock.architecture.Categorizer):
             else:
                 self.category = 'concatenated misintegration'
                 self.subcategory = self.junction_summary
-                #self.details = self.register_integration_details()
 
             self.relevant_alignments = self.parsimonious_and_gap_alignments
 
@@ -473,7 +429,6 @@ class Architecture(knock_knock.architecture.Categorizer):
             NH_al = self.nonhomologous_donor_alignments[0]
             NH_strand = sam.get_strand(NH_al)
             MH_nts = self.NH_donor_microhomology
-            #self.details = f'{NH_strand},{MH_nts[5]},{MH_nts[3]}'
             
             self.relevant_alignments = self.parsimonious_target_alignments + self.nonhomologous_donor_alignments
 
@@ -503,7 +458,7 @@ class Architecture(knock_knock.architecture.Categorizer):
         else:
             print(self.integration_summary)
 
-        return self.category, self.subcategory, self.details, self.Details
+        return self.category, self.subcategory, self.details
     
     @memoized_property
     def gap_alignments(self):
@@ -518,7 +473,7 @@ class Architecture(knock_knock.architecture.Categorizer):
                 als = sorted(als, key=lambda al: al.query_alignment_length, reverse=True)
                 # For same reasoning as in target_alignments, only consider als that overlap the amplicon interval.
                 if on == 'target':
-                    als = [al for al in als if (self.editing_strategy.amplicon_interval & sam.reference_interval(al))]
+                    als = [al for al in als if (self.editing_strategy.amplicon_interval & interval.get_covered_on_ref(al))]
 
                 gap_als.extend(als[:10])
 
@@ -526,72 +481,79 @@ class Architecture(knock_knock.architecture.Categorizer):
 
     @memoized_property
     def not_covered_by_initial_alignments(self):
-        uncovered = self.whole_read - interval.get_disjoint_covered(self.target_and_donor_alignments)
+        uncovered = self.between_primers - interval.get_disjoint_covered(self.target_and_donor_alignments)
         return uncovered
 
     @memoized_property
     def not_covered_by_refined_alignments(self):
-        uncovered = self.whole_read - interval.get_disjoint_covered(self.parsimonious_and_gap_alignments)
+        uncovered = self.between_primers - interval.get_disjoint_covered(self.parsimonious_and_gap_alignments)
         return uncovered
 
     @memoized_property
     def not_covered_by_simple_integration(self):
-        ''' Length of read not covered by primer edge alignments and the
+        ''' Length of read not covered by target flanking alignments and the
         longest parsimonious donor integration alignment.
         '''
 
-        donor_al = self.donor_specific_integration_alignments[0]
-        als = [donor_al, self.primer_alignments[5], self.primer_alignments[3]]
-        uncovered = self.whole_read - interval.get_disjoint_covered(als)
+        als = [
+            self.donor_specific_integration_alignments[0],
+            self.target_flanking_alignments['left'],
+            self.target_flanking_alignments['right'],
+        ]
+
+        uncovered = self.between_primers - interval.get_disjoint_covered(als)
+
         return uncovered
 
     @memoized_property
     def sw_gap_alignments(self):
-        strat = self.editing_strategy
-
         gap_covers = []
-        
-        target_interval = strat.amplicon_interval
-        
-        for gap in self.not_covered_by_initial_alignments:
-            if gap.total_length == 1:
-                continue
 
-            start = max(0, gap.start - 5)
-            end = min(len(self.seq) - 1, gap.end + 5)
-            extended_gap = interval.Interval(start, end)
+        if self.platform == 'illumina':
+            strat = self.editing_strategy
 
-            als = sw.align_read(self.read,
-                                [(strat.target, strat.target_sequence),
-                                ],
-                                4,
-                                strat.header,
-                                N_matches=False,
-                                max_alignments_per_target=5,
-                                read_interval=extended_gap,
-                                ref_intervals={strat.target: target_interval},
-                                mismatch_penalty=-2,
-                               )
-
-            als = [sw.extend_alignment(al, strat.reference_sequence_bytes[strat.target]) for al in als]
             
-            gap_covers.extend(als)
+            target_interval = strat.amplicon_interval
+            
+            for gap in self.not_covered_by_initial_alignments:
+                if gap.total_length == 1:
+                    continue
 
-            if strat.donor is not None:
+                start = max(0, gap.start - 5)
+                end = min(len(self.seq) - 1, gap.end + 5)
+                extended_gap = interval.Interval(start, end)
+
                 als = sw.align_read(self.read,
-                                    [(strat.donor, strat.donor_sequence),
+                                    [(strat.target, strat.target_sequence),
                                     ],
                                     4,
                                     strat.header,
                                     N_matches=False,
                                     max_alignments_per_target=5,
                                     read_interval=extended_gap,
+                                    ref_intervals={strat.target: target_interval},
                                     mismatch_penalty=-2,
                                 )
 
-                als = [sw.extend_alignment(al, strat.reference_sequence_bytes[strat.donor]) for al in als]
+                als = [sw.extend_alignment(al, strat.reference_sequence_bytes[strat.target]) for al in als]
                 
                 gap_covers.extend(als)
+
+                if strat.donor is not None:
+                    als = sw.align_read(self.read,
+                                        [(strat.donor, strat.donor_sequence),
+                                        ],
+                                        4,
+                                        strat.header,
+                                        N_matches=False,
+                                        max_alignments_per_target=5,
+                                        read_interval=extended_gap,
+                                        mismatch_penalty=-2,
+                                    )
+
+                    als = [sw.extend_alignment(al, strat.reference_sequence_bytes[strat.donor]) for al in als]
+                    
+                    gap_covers.extend(als)
 
         return gap_covers
 
@@ -614,40 +576,6 @@ class Architecture(knock_knock.architecture.Categorizer):
     def gap_covered_by_target_alignment(self):
         return len(self.all_target_gap_alignments) > 0
 
-    # To identify sequencing orientation for sequencing platforms for which
-    # orientation isn't fixed, find long primer-containing alignments.
-
-    @memoized_property
-    def all_primer_alignments(self):
-        ''' Dictionary of 
-        {
-            side_of_target: all target alignments that overlap the primer on that side
-            for side_of_target in [5, 3]
-        }
-
-        If multiple alignments share the feature, take the longest.
-        '''
-
-        als = {}
-
-        for side_of_target in [5, 3]:
-            side_als = [al for al in self.target_alignments if self.overlaps_primer(al, side_of_target, by='target')]
-
-            if len(side_als) > 0:
-                # Partition into equivalence classes of shared feature.
-                primer_name = self.editing_strategy.primers_by_side_of_target[side_of_target].ID
-
-                def relation(first_al, second_al):
-                    return self.share_feature(first_al, primer_name, second_al, primer_name)
-
-                eq_classes = utilities.equivalence_classes(side_als, relation)
-
-                side_als = [max(als, key=lambda al: al.query_alignment_length) for als in eq_classes]
-
-            als[side_of_target] = side_als
-
-        return als
-
     @memoized_property
     def extra_copy_of_primer(self):
         ''' Check if more than one alignment containing either primer were found. '''
@@ -657,67 +585,33 @@ class Architecture(knock_knock.architecture.Categorizer):
     def missing_a_primer(self):
         ''' Check if either primer was not found in any alignment. '''
         return any(len(als) == 0 for als in self.all_primer_alignments.values())
+
+    @memoized_property
+    def target_flanking_alignments(self):
+        target_flanking_alignments = super().target_flanking_alignments
+
+        # To unambiguously be from the target, require extending outside of the homology arms.
+        for target_side in [5, 3]:
+            HA = self.editing_strategy.homology_arms[target_side]['target']
+
+            if target_side == 5:
+                crop_start = 0
+                crop_end = HA.start - 1
+            else:
+                crop_start = HA.end + 1
+                crop_end = len(self.editing_strategy.target_sequence)
+
+            read_side = self.target_side_to_read_side[target_side]
+            cropped_al = sam.crop_al_to_ref_int(target_flanking_alignments[read_side], crop_start, crop_end)
+
+            if cropped_al is None:
+                target_flanking_alignments[read_side] = None
+
+        return target_flanking_alignments
         
     @memoized_property
-    def primer_alignments(self):
-        ''' The single alignment containing each primer. '''
-
-        primer_als = {5: None, 3: None}
-
-        for side in [5, 3]:
-            if len(self.all_primer_alignments[side]) == 1:
-                primer_als[side] = self.all_primer_alignments[side][0]
-
-        return primer_als
-        
-    @memoized_property
-    def primer_strands(self):
-        ''' Which strand each primer-containing alignment mapped to. '''
-
-        strands = {5: None, 3: None}
-
-        for side in [5, 3]:
-            al = self.primer_alignments[side]
-            if al is not None:
-                strands[side] = sam.get_strand(al)
-
-        return strands
-    
-    @memoized_property
-    def sequencing_direction(self):
-        ''' Get the single strand any primer-containing alignments mapped to. '''
-        strands = set(self.primer_strands.values())
-
-        if None in strands:
-            strands.remove(None)
-
-        if len(strands) != 1:
-            return None
-        else:
-            return strands.pop()
-
-    @memoized_property
-    def covered_by_primers_alignments(self):
-        ''' How much of the read is covered by alignments containing the primers? '''
-
-        if self.sequencing_direction is None:
-            # primer-containing alignments mapped to opposite strands
-            return None
-
-        elif self.primer_alignments is None:
-            return None
-
-        else:
-            return interval.get_disjoint_covered([self.primer_alignments[5], self.primer_alignments[3]])
-
-    @memoized_property
-    def primer_alignments_reach_edges(self):
-        if self.covered_by_primers_alignments is None:
-            return False
-        else:
-            return (self.covered_by_primers_alignments.start <= 10 and
-                    len(self.seq) - self.covered_by_primers_alignments.end <= 10
-                   )
+    def covered_by_target_flanking_alignments(self):
+        return interval.get_disjoint_covered(self.target_flanking_alignments_list)
 
     def overlaps_donor_specific(self, al):
         strat = self.editing_strategy
@@ -737,17 +631,7 @@ class Architecture(knock_knock.architecture.Categorizer):
 
     @memoized_property
     def has_integration(self):
-        covered = self.covered_by_primers_alignments
-        start_covered = covered is not None and covered.start <= 10
-
-        if not start_covered:
-            return False
-
-        else:
-            if self.single_read_covering_target_alignment is None:
-                return True
-            else:
-                return False
+        return (self.single_read_covering_target_alignment is None) and (self.not_covered_by_target_flanking_alignments.total_length > 0)
 
     @memoized_property
     def mismatches_near_cut(self):
@@ -807,122 +691,16 @@ class Architecture(knock_knock.architecture.Categorizer):
     @memoized_property
     def clean_handoff(self):
         ''' Check if target sequence cleanly transitions to donor sequence at
-        each junction between the two, with one full length copy of the relevant
-        homology arm and no large indels (i.e. not from sequencing errors) near
-        the internal edge.
+        each junction between the two.
         '''
-        if len(self.donor_alignments) == 0 or self.primer_alignments is None:
-            return {5: False, 3: False}
 
-        from_primer = self.primer_alignments
-        HAs = self.editing_strategy.homology_arms
-        closest_donor = self.closest_donor_alignment_to_edge
-
-        if closest_donor[5] is None and closest_donor[3] is None:
-            return {5: False, 3: False}
-
-        if 'donor' not in HAs[5] or 'donor' not in HAs[3]:
-            # The donor doesn't share homology arms with the target.
-            return {5: False, 3: False}
-
-        target_contains_full_arm = {
-            5: (HAs[5]['target'].end - from_primer[5].reference_end <= 10
-                if from_primer[5] is not None else False),
-            3: (from_primer[3].reference_start - HAs[3]['target'].start <= 10
-                if from_primer[3] is not None else False),
+        clean_handoff = {
+            target_side: 'donor' in self.reconciled_extension_chains()['HDR'][self.target_side_to_read_side[target_side]].alignments
+            for target_side in [5, 3]
         }
-
-        donor_contains_arm_external = {
-            5: closest_donor[5].reference_start - HAs[5]['donor'].start <= 10,
-            3: HAs[3]['donor'].end - (closest_donor[3].reference_end - 1) <= 10,
-        }
-
-        donor_contains_arm_internal = {
-            5: closest_donor[5].reference_end - 1 - HAs[5]['donor'].end >= 0,
-            3: HAs[3]['donor'].start - closest_donor[3].reference_start >= 0,
-        }
-
-        donor_past_HA = {
-            5: sam.crop_al_to_ref_int(closest_donor[5], HAs[5]['donor'].end + 1, np.inf),
-            3: sam.crop_al_to_ref_int(closest_donor[3], 0, HAs[3]['donor'].start - 1),
-        }
-        
-        donor_past_HA_length = {
-            side: donor_past_HA[side].query_alignment_length if donor_past_HA[side] is not None else 0
-            for side in [5, 3]
-        }
-        
-        donor_past_HA_edit_distance = {
-            side: sam.total_edit_distance(donor_past_HA[side], self.editing_strategy.donor_sequence)
-            for side in [5, 3]
-        }
-
-        donor_matches_past_HA = {
-            side: donor_past_HA_length[side] - donor_past_HA_edit_distance[side]
-            for side in [5, 3]
-        }
-
-        donor_contains_full_arm = {
-            side: donor_contains_arm_external[side] and \
-                  donor_contains_arm_internal[side] and \
-                  (donor_matches_past_HA[side] >= 5 or (donor_past_HA_length[side] >= 2 and donor_past_HA_edit_distance[side] == 0))
-            for side in [5, 3]
-        }
-            
-        target_external_edge_query = {
-            5: (sam.closest_query_position(HAs[5]['target'].start, from_primer[5])
-                if from_primer[5] is not None else None),
-            3: (sam.closest_query_position(HAs[3]['target'].end, from_primer[3])
-                if from_primer[3] is not None else None),
-        }
-        
-        donor_external_edge_query = {
-            5: sam.closest_query_position(HAs[5]['donor'].start, closest_donor[5]),
-            3: sam.closest_query_position(HAs[3]['donor'].end, closest_donor[3]),
-        }
-
-        arm_overlaps = {
-            side: (abs(target_external_edge_query[side] - donor_external_edge_query[side]) <= 10
-                   if target_external_edge_query[side] is not None else False)
-            for side in [5, 3]
-        }
-
-        junction = {
-            5: HAs[5]['donor'].end,
-            3: HAs[3]['donor'].start,
-        }
-
-        max_indel_near_junction = {
-            side: knock_knock.architecture.max_indel_nearby(closest_donor[side], junction[side], 10)
-            for side in [5, 3]
-        }
-
-        clean_handoff = {}
-        for side in [5, 3]:
-            clean_handoff[side] = (
-                target_contains_full_arm[side] and
-                donor_contains_full_arm[side] and
-                arm_overlaps[side] and
-                max_indel_near_junction[side] <= 2
-            )
 
         return clean_handoff
     
-    @memoized_property
-    def edge_q(self):
-        ''' Where in the query are the edges of the integration? '''
-        if self.sequencing_direction == '+':
-            edge_q = {
-                5: self.integration_interval.start,
-                3: self.integration_interval.end,
-            }
-        else:
-            edge_q = {
-                5: self.integration_interval.end,
-                3: self.integration_interval.start,
-            }
-        return edge_q
-
     @memoized_property
     def edge_r(self):
         ''' Where in the donor are the edges of the integration? '''
@@ -955,56 +733,6 @@ class Architecture(knock_knock.architecture.Categorizer):
         return edge_r
 
     @memoized_property
-    def donor_relative_to_arm(self):
-        ''' How much of the donor is integrated relative to the edges of the HAs? '''
-        HAs = self.editing_strategy.homology_arms
-
-        # convention: positive if there is extra in the integration, negative if truncated
-        relative_to_arm = {
-            'internal': {
-                5: ((HAs[5]['donor'].end + 1) - self.edge_r[5]
-                    if self.edge_r[5] is not None else None),
-                3: (self.edge_r[3] - (HAs[3]['donor'].start - 1)
-                    if self.edge_r[3] is not None else None),
-            },
-            'external': {
-                5: (HAs[5]['donor'].start - self.edge_r[5]
-                    if self.edge_r[5] is not None else None),
-                3: (self.edge_r[3] - HAs[3]['donor'].end
-                    if self.edge_r[3] is not None else None),
-            },
-        }
-
-        return relative_to_arm
-    
-    @memoized_property
-    def donor_relative_to_cut(self):
-        ''' Distance on query between base aligned to donor before/after cut
-        and start of target alignment.
-        This doesn't appear to be used.
-        '''
-        to_cut = {
-            5: None,
-            3: None,
-        }
-
-        strat = self.editing_strategy
-
-        try:
-            donor_edge = {
-                5: strat.features[strat.donor, "5' edge"].start,
-                3: strat.features[strat.donor, "3' edge"].start,
-            }
-        except KeyError:
-            return to_cut
-
-        for side in [5, 3]:
-            if self.edge_r[side] is not None:
-                to_cut[side] = self.edge_r[side] - donor_edge[side]
-
-        return to_cut
-
-    @memoized_property
     def donor_integration_is_blunt(self):
         donor_length = len(self.editing_strategy.donor_sequence)
 
@@ -1015,9 +743,12 @@ class Architecture(knock_knock.architecture.Categorizer):
 
         short_gap = {}
         for side in [5, 3]:
-            primer_al = self.primer_alignments[side]
+            read_side = self.target_side_to_read_side[side]
+
+            primer_al = self.target_flanking_alignments[read_side]
             donor_al = self.closest_donor_alignment_to_edge[side]
             overlap = knock_knock.architecture.junction_microhomology(self.editing_strategy.reference_sequences, primer_al, donor_al)
+
             short_gap[side] = overlap > -10
 
         is_blunt = {side: reaches_end[side] and short_gap[side] for side in [5, 3]}
@@ -1025,28 +756,13 @@ class Architecture(knock_knock.architecture.Categorizer):
         return is_blunt
 
     @memoized_property
-    def donor_integration_contains_full_HA(self):
-        HAs = self.editing_strategy.homology_arms
-        if 'donor' not in HAs[5] or 'donor' not in HAs[3]:
-            return {5: False, 3: False}
-        if not self.has_integration:
-            return {5: False, 3: False}
-
-        full_HA = {}
-        for side in [5, 3]:
-            offset = self.donor_relative_to_arm['external'][side]
-            
-            full_HA[side] = offset is not None and offset >= 0
-
-        return full_HA
-
-    @memoized_property
     def integration_interval(self):
         ''' because cut site might not exactly coincide with boundary between
         HAs, the relevant part of query to call integration depends on whether
         a clean HDR handoff is detected at each edge '''
+
         if not self.has_integration:
-            return None
+            return interval.Interval.empty()
 
         HAs = self.editing_strategy.homology_arms
         cut_after = self.editing_strategy.cut_after
@@ -1058,7 +774,7 @@ class Architecture(knock_knock.architecture.Categorizer):
             if self.clean_handoff[side]:
                 flanking_al[side] = self.closest_donor_alignment_to_edge[side]
             else:
-                flanking_al[side] = self.primer_alignments[side]
+                flanking_al[side] = self.target_flanking_alignments[self.target_side_to_read_side[side]]
 
         if self.clean_handoff[5] or cut_after is None:
             mask_end[5] = HAs[5]['donor'].end
@@ -1103,17 +819,13 @@ class Architecture(knock_knock.architecture.Categorizer):
 
     @memoized_property
     def gap_between_primer_alignments(self):
-        if self.primer_alignments[5] is None or self.primer_alignments[3] is None or self.sequencing_direction is None:
+        if self.target_flanking_alignments['left'] is None or self.target_flanking_alignments['right'] is None:
             return interval.Interval.empty()
 
-        left_covered = interval.get_covered(self.primer_alignments[5])
-        right_covered = interval.get_covered(self.primer_alignments[3])
-        if self.sequencing_direction == '+':
-            between_primers = interval.Interval(left_covered.start, right_covered.end)
-        elif self.sequencing_direction == '-':
-            between_primers = interval.Interval(right_covered.start, left_covered.end)
-        else:
-            raise ValueError
+        left_covered = interval.get_covered(self.target_flanking_alignments['left'])
+        right_covered = interval.get_covered(self.target_flanking_alignments['right'])
+
+        between_primers = interval.Interval(left_covered.start, right_covered.end)
 
         gap = between_primers - left_covered - right_covered
         
@@ -1122,11 +834,10 @@ class Architecture(knock_knock.architecture.Categorizer):
     @memoized_property
     def target_to_at_least_cut(self):
         cut_after = self.editing_strategy.cut_after
-        primer_als = self.primer_alignments
 
         target_to_at_least_cut = {
-            5: primer_als[5].reference_end - 1 >= cut_after,
-            3: primer_als[3].reference_start <= (cut_after + 1),
+            5: (al := self.target_flanking_alignments_by_target_side[5]) is not None and al.reference_end - 1 >= cut_after,
+            3: (al := self.target_flanking_alignments_by_target_side[3]) is not None and al.reference_start <= (cut_after + 1),
         }
 
         return target_to_at_least_cut
@@ -1306,7 +1017,7 @@ class Architecture(knock_knock.architecture.Categorizer):
         min_gap_length = 20
         
         covered_by_normal = interval.get_disjoint_covered(self.target_and_donor_alignments)
-        unexplained_gaps = self.whole_read - covered_by_normal
+        unexplained_gaps = self.between_primers - covered_by_normal
 
         long_unexplained_gaps = [gap for gap in unexplained_gaps if len(gap) >= min_gap_length]
 
@@ -1337,21 +1048,6 @@ class Architecture(knock_knock.architecture.Categorizer):
 
         organism, original_al = self.editing_strategy.remove_organism_from_alignment(insertion_al)
 
-        # TODO: these need to be cropped.
-
-        target_ref_bounds = {
-            'left': sam.reference_edges(self.primer_alignments[5])[3],
-            'right': sam.reference_edges(self.primer_alignments[3])[5],
-        }
-
-        insertion_ref_bounds = {
-            'left': sam.reference_edges(insertion_al)[5],
-            'right': sam.reference_edges(insertion_al)[3],
-        }
-
-        insertion_query_bounds = {}
-        insertion_query_bounds['left'], insertion_query_bounds['right'] = sam.query_interval(insertion_al)
-
         self.category = 'genomic insertion'
         self.subcategory = organism
 
@@ -1368,9 +1064,9 @@ class Architecture(knock_knock.architecture.Categorizer):
         }
         
         if self.sequencing_direction == '+':
-            primer_al = self.primer_alignments[5]
+            primer_al = self.target_flanking_alignments[5]
         elif self.sequencing_direction == '-':
-            primer_al = self.primer_alignments[3]
+            primer_al = self.target_flanking_alignments[3]
         else:
             return all_covering_als
 
@@ -1490,7 +1186,7 @@ class Architecture(knock_knock.architecture.Categorizer):
             elif (target_side == 3 and self.sequencing_direction == '+') or (target_side == 5 and self.sequencing_direction == '-'):
                 read_side = 'right'
 
-            al = self.primer_alignments[target_side]
+            al = self.target_flanking_alignments[target_side]
             if al is None:
                 not_primer_length[read_side] = 0
                 continue
@@ -1517,7 +1213,7 @@ class Architecture(knock_knock.architecture.Categorizer):
             elif (target_side == 3 and self.sequencing_direction == '+') or (target_side == 5 and self.sequencing_direction == '-'):
                 read_side = 'right'
 
-            al = self.primer_alignments[target_side]
+            al = self.target_flanking_alignments[target_side]
             if al is None:
                 primer_interval[read_side] = None
                 continue
@@ -1531,35 +1227,6 @@ class Architecture(knock_knock.architecture.Categorizer):
                 primer_interval[read_side] = interval.Interval(start, len(self.seq) - 1)
 
         return primer_interval
-
-    @memoized_property
-    def nonspecific_amplification(self):
-        if not self.primer_alignments_reach_edges:
-            return None
-
-        not_primer_length = self.extra_query_in_primer_als
-        primer_interval = self.just_primer_interval
-
-        # If alignments from the primers extend substantially into the read,
-        # don't consider this nonspecific amplification. 
-
-        if not_primer_length['left'] >= 20 or not_primer_length['right'] >= 20:
-            return None
-
-        need_to_cover = self.whole_read - primer_interval['left'] - primer_interval['right']
-
-        covering_als = []
-        for al in self.supplemental_alignments:
-            covered = interval.get_covered(al)
-            if len(need_to_cover - covered) < 10:
-                covering_als.append(al)
-                
-        if len(covering_als) == 0:
-            covering_als = None
-        else:
-            covering_als = interval.make_parsimonious(covering_als)
-            
-        return covering_als
 
     @memoized_property
     def uncategorized_relevant_alignments(self):
@@ -1595,7 +1262,7 @@ class Architecture(knock_knock.architecture.Categorizer):
         else:
             donor_al = None
             
-        MH_nts = {side: knock_knock.architecture.junction_microhomology(self.editing_strategy.reference_sequences, self.primer_alignments[side], donor_al) for side in [5, 3]}
+        MH_nts = {side: knock_knock.architecture.junction_microhomology(self.editing_strategy.reference_sequences, self.target_flanking_alignments[side], donor_al) for side in [5, 3]}
 
         return MH_nts
 
@@ -1606,7 +1273,7 @@ class Architecture(knock_knock.architecture.Categorizer):
         else:
             nh_al = None
 
-        MH_nts = {side: knock_knock.architecture.junction_microhomology(self.editing_strategy.reference_sequences, self.primer_alignments[side], nh_al) for side in [5, 3]}
+        MH_nts = {side: knock_knock.architecture.junction_microhomology(self.editing_strategy.reference_sequences, self.target_flanking_alignments[side], nh_al) for side in [5, 3]}
 
         return MH_nts
 
@@ -1621,35 +1288,39 @@ class Architecture(knock_knock.architecture.Categorizer):
         strat = self.editing_strategy
         features_to_show = {*strat.features_to_show}
 
-        flip_target = self.sequencing_direction == '-'
-        flip_donor = self.sequencing_direction == '-'
-
         for name in strat.protospacer_names:
             label_overrides[name] = 'protospacer'
             label_offsets[name] = 1
+
+        refs_to_flip = set()
+        refs_to_draw = {strat.target}
+
+        if strat.donor is not None:
+            refs_to_draw.add(strat.donor)
+
+        flip_target = (self.sequencing_direction == '-')
+
+        if flip_target:
+            refs_to_flip.add(strat.target)
+
+        if len(strat.homology_arms) > 0:
+            HAs = strat.homology_arms[5]
+            opposite_of_target = (HAs['target'].strand != HAs['donor'].strand)
+
+            if ((not flip_target) and opposite_of_target) or (flip_target and (not opposite_of_target)):
+                refs_to_flip.add(strat.donor)
+
+        refs_to_label = refs_to_draw
 
         label_overrides.update({feature_name: None for feature_name in strat.PAM_features})
 
         features_to_show.update({(strat.target, name) for name in strat.protospacer_names})
         features_to_show.update({(strat.target, name) for name in strat.PAM_features})
 
-        diagram_kwargs = dict(
-            draw_sequence=(self.read_length < 1000),
-            flip_target=flip_target,
-            flip_donor=flip_donor,
-            split_at_indels=True,
-            features_to_show=features_to_show,
-            label_offsets=label_offsets,
-            label_overrides=label_overrides,
-            inferred_amplicon_length=self.inferred_amplicon_length,
-            highlight_programmed_substitutions=True,
-            feature_heights=feature_heights,
-            platform=self.platform,
-            high_resolution_parallelograms=(self.read_length < 1000),
-        )
-
-        for k, v in diagram_kwargs.items():
-            manual_diagram_kwargs.setdefault(k, v)
+        if self.has_any_target_flanking_alignment > 0:
+            manual_anchors = {self.editing_strategy.target: self.target_flanking_alignments_list}
+        else:
+            manual_anchors = {}
 
         if manual_alignments is not None:
             als_to_plot = manual_alignments
@@ -1657,6 +1328,36 @@ class Architecture(knock_knock.architecture.Categorizer):
             als_to_plot = self.relevant_alignments
         else:
             als_to_plot = self.target_and_donor_alignments
+
+        if self.has_target_flanking_alignments_on_both_sides:
+            left, right = self.target_flanking_intervals['read']['left'].start, self.target_flanking_intervals['read']['right'].end
+            manual_x_lims = (left - 0.02 * (right - left), right + 0.02 * (right - left))
+
+            als_to_plot = [sam.crop_al_to_query_int(al, left, right) for al in als_to_plot]
+
+        else:
+            manual_x_lims = None
+
+        diagram_kwargs = dict(
+            draw_sequence=(self.read_length < 1000),
+            split_at_indels=False,
+            features_to_show=features_to_show,
+            label_offsets=label_offsets,
+            label_overrides=label_overrides,
+            refs_to_draw=refs_to_draw,
+            refs_to_flip=refs_to_flip,
+            refs_to_label=refs_to_label,
+            inferred_amplicon_length=self.inferred_amplicon_length,
+            highlight_programmed_substitutions=True,
+            feature_heights=feature_heights,
+            platform=self.platform,
+            high_resolution_parallelograms=(self.read_length < 1000),
+            manual_anchors=manual_anchors,
+            manual_x_lims=manual_x_lims,
+        )
+
+        for k, v in diagram_kwargs.items():
+            manual_diagram_kwargs.setdefault(k, v)
 
         diagram = knock_knock.visualize.architecture.ReadDiagram(als_to_plot,
                                                                  strat,
@@ -1702,7 +1403,7 @@ class NonoverlappingPairArchitecture:
         target_sides = {}
 
         for which in ['R1', 'R2']:
-            primer_als = self.layouts[which].primer_alignments
+            primer_als = self.layouts[which].target_flanking_alignments
             sides = set(s for s, al in primer_als.items() if al is not None)
             if len(sides) == 1:
                 side = sides.pop()
@@ -1775,8 +1476,8 @@ class NonoverlappingPairArchitecture:
         # TODO: these need to be cropped.
 
         target_ref_bounds = {
-            'left': sam.reference_edges(self.layouts['R1'].primer_alignments[5])[3],
-            'right': sam.reference_edges(self.layouts['R2'].primer_alignments[3])[3],
+            'left': sam.reference_edges(self.layouts['R1'].target_flanking_alignments[5])[3],
+            'right': sam.reference_edges(self.layouts['R2'].target_flanking_alignments[3])[3],
         }
 
         insertion_ref_bounds = {
@@ -1809,7 +1510,6 @@ class NonoverlappingPairArchitecture:
 
         self.category = 'genomic insertion'
         self.subcategory = organism
-        self.details = str(outcome)
 
     def register_nonspecific_amplification(self):
         als = self.best_genomic_al_pairs['nonspecific_amplification']
@@ -1820,7 +1520,6 @@ class NonoverlappingPairArchitecture:
 
         self.category = 'nonspecific amplification'
         self.subcategory = organism
-        self.details = 'n/a'
 
     @memoized_property
     def bridging_als_missing_from_end(self):
@@ -1945,21 +1644,19 @@ class NonoverlappingPairArchitecture:
             if 'blunt' in junctions and 'uncategorized' not in junctions:
                 self.category = 'blunt misintegration'
                 self.subcategory = f'5\' {self.junctions[5]}, 3\' {self.junctions[3]}'
-                self.details = 'n/a'
+
             elif junctions == set(['imperfect', 'HDR']):
                 self.category = 'incomplete HDR'
                 self.subcategory = f'5\' {self.junctions[5]}, 3\' {self.junctions[3]}'
-                self.details = 'n/a'
+
             elif junctions == set(['imperfect']):
                 self.category = 'complex misintegration'
                 self.subcategory = 'complex misintegration'
-                self.details = 'n/a'
 
             else:
                 self.inferred_amplicon_length = -1
                 self.category = 'bad sequence'
                 self.subcategory = 'non-overlapping'
-                self.details = 'n/a'
                 self.relevant_alignments = self.uncategorized_relevant_alignments
 
         elif kind == 'nh' and self.possible_inferred_amplicon_length > 0:
@@ -1967,15 +1664,14 @@ class NonoverlappingPairArchitecture:
 
             self.category = 'non-homologous donor'
             self.subcategory = 'simple'
-            self.details = 'n/a'
             self.relevant_alignments = {
                 'R1': self.layouts['R1'].parsimonious_target_alignments + self.layouts['R1'].nonhomologous_donor_alignments,
                 'R2': self.layouts['R2'].parsimonious_target_alignments + self.layouts['R2'].nonhomologous_donor_alignments,
             }
             
         elif kind == 'nonspecific_amplification' and self.possible_inferred_amplicon_length > 0:
-            R1_primer = self.layouts['R1'].primer_alignments[5]
-            R2_primer = self.layouts['R2'].primer_alignments[3]
+            R1_primer = self.layouts['R1'].target_flanking_alignments[5]
+            R2_primer = self.layouts['R2'].target_flanking_alignments[3]
 
             if R1_primer is not None and R2_primer is not None:
                 self.inferred_amplicon_length = self.possible_inferred_amplicon_length
@@ -1992,12 +1688,11 @@ class NonoverlappingPairArchitecture:
                 self.inferred_amplicon_length = -1
                 self.category = 'bad sequence'
                 self.subcategory = 'non-overlapping'
-                self.details = 'n/a'
                 self.relevant_alignments = self.uncategorized_relevant_alignments
         
         elif kind == 'genomic_insertion' and self.possible_inferred_amplicon_length > 0:
-            R1_primer = self.layouts['R1'].primer_alignments[5]
-            R2_primer = self.layouts['R2'].primer_alignments[3]
+            R1_primer = self.layouts['R1'].target_flanking_alignments[5]
+            R2_primer = self.layouts['R2'].target_flanking_alignments[3]
 
             if R1_primer is not None and R2_primer is not None:
                 self.inferred_amplicon_length = self.possible_inferred_amplicon_length
@@ -2013,14 +1708,12 @@ class NonoverlappingPairArchitecture:
                 self.inferred_amplicon_length = -1
                 self.category = 'bad sequence'
                 self.subcategory = 'non-overlapping'
-                self.details = 'n/a'
                 self.relevant_alignments = self.uncategorized_relevant_alignments
             
         else:
             self.inferred_amplicon_length = -1
             self.category = 'bad sequence'
             self.subcategory = 'non-overlapping'
-            self.details = 'n/a'
             self.relevant_alignments = self.uncategorized_relevant_alignments
         
         #if self.strand == '-':
