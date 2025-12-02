@@ -125,9 +125,11 @@ class OutcomeStratifiedLengths:
                        non_relevant_categories,
                       )
 
-        combined_df = sum(osl.subcategory_lengths_df for osl in osl_list).fillna(0).astype(int)
+        concatenated = pd.concat({i: osl.subcategory_lengths_df for i, osl in enumerate(osl_list)}, axis=0, names=['sample'])
+        levels_to_keep = [level for level in concatenated.index.names if level != 'sample']
+        summed = concatenated.groupby(levels_to_keep).sum()
 
-        combined.subcategory_lengths_df = combined_df
+        combined.subcategory_lengths_df = summed
 
         return combined
 
