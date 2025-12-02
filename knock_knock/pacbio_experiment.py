@@ -1,6 +1,7 @@
 import gzip
 
 import numpy as np
+import scipy.signal
 
 import hits.fastq
 import hits.utilities
@@ -44,15 +45,53 @@ class PacbioExperiment(Experiment):
 
     @memoized_with_kwargs
     def length_ranges(self, *, outcome=None):
-        interval_length = self.max_relevant_length // 50
-        starts = np.arange(0, self.max_relevant_length + interval_length, interval_length)
+        outcome_stratified_lengths = self.outcome_stratified_lengths.truncate_to_max_observed_length()
 
-        lengths = self.outcome_stratified_lengths.by_outcome(outcome)
+        max_window_size = outcome_stratified_lengths.max_relevant_length // 50
+
+        lengths = outcome_stratified_lengths.by_outcome(outcome=outcome)
+        smoothed = lengths.rolling(window=2 * self.length_plot_smooth_window + 1, center=True, min_periods=1).sum()
+        centers, _ = scipy.signal.find_peaks(smoothed, distance=25)
+
+        edges = [0, outcome_stratified_lengths.max_relevant_length + 1]
+
+        for i in range(len(centers)):
+            if i < len(centers) - 1:
+                gap = centers[i + 1] - centers[i]
+            else:
+                gap = outcome_stratified_lengths.max_relevant_length + 1 - centers[i]
+
+            offset = min(gap, max_window_size) // 2
+
+            edges.append(centers[i] + offset)
+
+        for i in range(len(centers)):
+            if i == 0:
+                gap = centers[i]
+            else:
+                gap = centers[i] - centers[i - 1]
+
+            offset = min(gap, max_window_size) // 2
+
+            edges.append(centers[i] - offset)
+
+        edges = sorted(edges)
+
+        for i in range(len(edges) - 1):
+            gap = edges[i + 1] - edges[i]
+            if gap > max_window_size:
+                chunks = int(np.ceil(gap / max_window_size))
+                for chunk_i in range(1, chunks):
+                    edges.append(edges[i] + chunk_i * gap // chunks)
+
+        edges = sorted(edges)
 
         ranges = []
-        for start in starts:
-            if sum(lengths[start:start + interval_length]) > 0:
-                ranges.append((start, start + interval_length - 1))
+        for i in range(len(edges) - 1):
+            start = edges[i]
+            end = edges[i + 1]
+            if sum(lengths[start:end]) > 0:
+                ranges.append((start, end - 1))
 
         return ranges
 
