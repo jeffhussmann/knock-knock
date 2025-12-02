@@ -409,10 +409,10 @@ class ArrayedExperiment:
         return self.experiment_group.results_dir / sanitized_sample_name
 
 class ArrayedIlluminaExperiment(ArrayedExperiment, knock_knock.illumina_experiment.IlluminaExperiment):
-    pass
+    Identifier = ExperimentIdentifier
 
 class ArrayedPacbioExperiment(ArrayedExperiment, knock_knock.pacbio_experiment.PacbioExperiment):
-    pass
+    Identifier = ExperimentIdentifier
 
 class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
     def __init__(self,
@@ -424,15 +424,7 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
 
         self.identifier = identifier
 
-        if progress is None or getattr(progress, '_silent', False):
-            def ignore_kwargs(x, **kwargs):
-                return x
-
-            progress = ignore_kwargs
-
-        self.silent = True
-
-        self.progress = progress
+        self.progress = knock_knock.utilities.possibly_default_progress(progress)
 
         if batch is None:
             batch = Batch(self.identifier.batch_id)
@@ -694,12 +686,6 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
             kwargs = dict(level=self.condition_keys)
 
         return df.T.groupby(**kwargs)
-
-    @memoized_with_kwargs
-    def total_reads(self, *, only_relevant=True):
-        total_reads = self.outcome_counts(only_relevant=only_relevant).sum()
-        total_reads.name = 'reads'
-        return total_reads
 
     @memoized_with_kwargs
     def outcome_fractions(self, *, level='details', only_relevant=True):
@@ -1124,7 +1110,8 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         if len(fs) > 0:
             fs_df = pd.DataFrame.from_dict(fs, orient='index')
 
-            fs_df.columns.names = self.full_condition_keys
+            # TODO: add condition annotations from identifiers
+            #fs_df.columns.names = self.full_condition_keys
             fs_df.index.name = 'edit_name'
 
         else:

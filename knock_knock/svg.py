@@ -155,10 +155,10 @@ javascript:(function(){
     });
 } )();'''
 
-def decorate_outcome_browser(exp, min_total_to_label=0.1):
+def decorate_outcome_browser(exp, **kwargs):
     import knock_knock.table
 
-    fig = exp.plot_outcome_stratified_lengths(min_total_to_label=min_total_to_label)
+    fig = exp.plot_outcome_stratified_lengths(**kwargs)
 
     if fig is None:
         return 

@@ -160,7 +160,8 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
     @memoized_with_args
     def original_read_length_by_key(self, key):
-        return max(len(read) for read in islice(self.original_reads_by_key(key), 5000))
+        initial_reads = islice(self.original_reads_by_key(key), 5000)
+        return max((len(read) for read in initial_reads), default=0)
 
     @memoized_property
     def R1_read_length(self):
@@ -179,7 +180,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
         if self.paired_end and not knock_knock.utilities.is_one_sided(self.description.get('experiment_type')):
             combined_read_length = self.R1_read_length + self.R2_read_length
             if combined_read_length < self.editing_strategy.amplicon_length:
-                logger.warning(f'Warning: {self.batch_name} {self.sample_name} combined read length ({combined_read_length}) less than expected amplicon length ({self.editing_strategy.amplicon_length:,}).')
+                logger.warning(f'Warning: {self.identifier.summary} combined read length ({combined_read_length}) less than expected amplicon length ({self.editing_strategy.amplicon_length:,}).')
 
     @memoized_property
     def max_relevant_length(self):
@@ -282,7 +283,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
                     pair_architecture = self.no_overlap_pair_categorizer(als, self.editing_strategy)
                     pair_architecture.categorize()
                 except:
-                    print(self.sample_name, name)
+                    print(self.identifier.summary, name)
                     raise
                 
                 outcomes[pair_architecture.category, pair_architecture.subcategory].append(name)
@@ -431,7 +432,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
         for R1, R2 in self.progress(self.read_pairs, desc='Stitching read pairs'):
             if R1.name != R2.name:
-                print(f'Error: read pairs are out of sync in {self.batch_name} {self.sample_name}.')
+                print(f'Error: read pairs are out of sync in {self.identifier.summary}.')
                 R1_fns = ','.join(str(fn) for fn in self.fns['R1'])
                 R2_fns = ','.join(str(fn) for fn in self.fns['R2'])
                 print(f'R1 file name: {R1_fns}')

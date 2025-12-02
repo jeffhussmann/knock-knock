@@ -785,7 +785,7 @@ class EditingStrategy:
     @memoized_property
     def sequencing_direction(self):
         if self.sequencing_start is None:
-            return '+'
+            return None
         else:
             return self.sequencing_start.strand
 
@@ -953,41 +953,6 @@ class EditingStrategy:
             return has_shared_arms
 
     @memoized_property
-    def HA_ref_p_to_offset(self):
-        ''' register which positions in target and donor sequences correspond
-        to the same offset in each homology arm
-        '''
-        if self.homology_arms is None:
-            return None
-
-        ref_p_to_offset = {}
-
-        for PAM_side in self.homology_arms:
-            for name in self.homology_arms[PAM_side]:
-                feature = self.homology_arms[PAM_side][name]
-            
-                if feature.strand == '+':
-                    order = range(feature.start, feature.end + 1)
-                else:
-                    order = range(feature.end, feature.start - 1, -1)
-                    
-                ref_p_to_offset[name, PAM_side] = {ref_p: offset for offset, ref_p in enumerate(order)}  
-
-        for name in ['target', 'donor']:
-            for side in ['left', 'right']:
-                ref_p_to_offset[name, side] = ref_p_to_offset[name, self.read_side_to_PAM_side[side]]
-
-        return ref_p_to_offset
-
-    @memoized_property
-    def offset_to_HA_ref_ps(self):
-        offset_to_HA_ref_ps = defaultdict(dict)
-        for (name, HA_label), p_to_offset in self.HA_ref_p_to_offset.items():
-            for p, offset in p_to_offset.items():
-                offset_to_HA_ref_ps[offset][name, HA_label] = p
-        return offset_to_HA_ref_ps
-
-    @memoized_property
     def past_HA_in_sequencing_read_interval(self):
         right_HA = self.homology_arms['right']['target']
 
@@ -1012,7 +977,7 @@ class EditingStrategy:
     def amplicon_interval(self):
         primers = self.primers_by_side_of_target
 
-        if len(primers) == 0:
+        if len(primers) < 2:
             amplicon_interval = interval.Interval.empty()
         else:
             amplicon_interval = interval.Interval(primers[5].start, primers[3].end)
@@ -1042,12 +1007,28 @@ class EditingStrategy:
             def gap_between_HAs(HA_1, HA_2):
                 HA_1, HA_2 = sorted([HA_1, HA_2], key=lambda f: f.start)
                 return HA_2.start - HA_1.end - 1
+
             HAs = self.homology_arms
             added_by_donor = gap_between_HAs(HAs[5]['donor'], HAs[3]['donor'])
             removed_by_HAs = gap_between_HAs(HAs[5]['target'], HAs[3]['target'])
+
             return self.amplicon_length + added_by_donor - removed_by_HAs
+
         else:
             return None
+
+    @memoized_property
+    def expected_lengths(self):
+
+        expected_lengths = {}
+
+        if len(self.primers) == 2:
+            expected_lengths['WT'] = self.amplicon_length
+
+        if self.clean_HDR_length is not None:
+            expected_lengths['intended\nedit'] = self.clean_HDR_length
+
+        return expected_lengths
 
     @memoized_property
     def fingerprints(self):
@@ -1285,7 +1266,7 @@ class EditingStrategy:
 
         for target_strand in ['+', '-']:
             if target_strand == '-':
-                possibly_reversed_target_seq = hits.utilities.reverse_complement(self.target_sequence)
+                possibly_reversed_target_seq = utilities.reverse_complement(self.target_sequence)
                 # Flipping cut after is weird since the definition means that we don't want 
                 # just the mirrored index of cut after - think about it as mirroring cut_after + 0.5
                 # and then rounding down.
@@ -1374,8 +1355,8 @@ class EditingStrategy:
     def donor_SNVs(self):
         if self.donor is None:
             donor_SNVs = self.donor_SNVs_manual
-        elif self.infer_homology_arms:
-            donor_SNVs, HAs = self.inferred_donor_SNVs_and_HAs
+        #elif self.infer_homology_arms:
+        #    donor_SNVs, HAs = self.inferred_donor_SNVs_and_HAs
         else:
             donor_SNVs = self.donor_SNVs_manual
 

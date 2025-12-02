@@ -151,6 +151,7 @@ class ExperimentGroup:
         var = pd.DataFrame(all_identifiers,
                            columns=self.column_names,
                           )
+        var.index = var.index.astype(str) # To avoid anndata warning
                           
         columns = ['category', 'subcategory', 'details']
         columns = columns[:columns.index(level) + 1]
@@ -158,6 +159,7 @@ class ExperimentGroup:
         obs = pd.DataFrame(outcome_order,
                            columns=columns,
                           )
+        obs.index = obs.index.astype(str) # To avoid anndata warning
 
         # Is CSC or CSR better here?
         adata = anndata.AnnData(X=sparse_counts.tocsc(),
@@ -189,7 +191,7 @@ class ExperimentGroup:
                 outcome_counts = outcome_counts.drop(self.categorizer.non_relevant_categories, errors='ignore')
 
             # Sort columns to avoid annoying pandas PerformanceWarnings.
-            outcome_counts = outcome_counts.sort_index(axis='columns')
+            outcome_counts.sort_index(axis='columns', inplace=True)
 
             if level == 'details':
                 pass
@@ -197,6 +199,25 @@ class ExperimentGroup:
                 keys = ['category', 'subcategory', 'details']
                 keys = keys[:keys.index(level) + 1]
 
-                outcome_counts = outcome_counts.groupby(keys).sum()
+                outcome_counts = outcome_counts.groupby(keys, observed=True).sum()
 
         return outcome_counts
+
+    @memoized_with_kwargs
+    def total_reads(self, *, only_relevant=True):
+        total_reads = self.outcome_counts(only_relevant=only_relevant).sum()
+        total_reads.name = 'reads'
+        return total_reads
+
+    @memoized_with_kwargs
+    def outcome_fractions(self, *, level='details', only_relevant=True):
+        counts = self.outcome_counts(level=level, only_relevant=only_relevant)
+
+        if counts is not None:
+            denominator = self.total_reads(only_relevant=only_relevant)
+            fractions = counts / denominator
+        
+        else:
+            fractions = None
+
+        return fractions

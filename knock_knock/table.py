@@ -45,10 +45,10 @@ def load_counts(base_dir,
     no_outcomes = []
 
     for name_tuple, exp in exps.items():
-        if exp.category_counts is None:
+        if exp.outcome_counts(level='subcategory') is None:
             no_outcomes.append(name_tuple)
         else:
-            counts[name_tuple] = exp.category_counts
+            counts[name_tuple] = exp.outcome_counts(level='subcategory')
 
     if no_outcomes:
         no_outcomes_string = '\n'.join(f'\t{": ".join(name_tuple)}' for name_tuple in no_outcomes)
@@ -67,7 +67,6 @@ def load_counts(base_dir,
 
     df = df.reindex(full_index, fill_value=0)
 
-    
     if exclude_non_relevant:
         all_non_relevant_categories = {tuple(sorted(exp.categorizer.non_relevant_categories)) for exp in exps.values()}
 
@@ -686,8 +685,8 @@ def make_self_contained_zip(base_dir,
             add_fn(exp.fns['outcome_browser'])
             add_fn(exp.fns['lengths_figure'])
 
-            if exp.categories_by_frequency is not None:
-                for outcome in exp.categories_by_frequency:
+            if exp.subcategories_by_frequency is not None:
+                for outcome in exp.subcategories_by_frequency:
                     outcome_fns = exp.outcome_fns(outcome)
 
                     if include_details:
@@ -696,7 +695,7 @@ def make_self_contained_zip(base_dir,
 
                     add_fn(outcome_fns['length_ranges_dir'])
 
-                categories = set(c for c, s in exp.categories_by_frequency)
+                categories = set(c for c, s in exp.subcategories_by_frequency)
                 for category in categories:
                     outcome_fns = exp.outcome_fns(category)
 

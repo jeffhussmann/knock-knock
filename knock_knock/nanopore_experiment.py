@@ -179,7 +179,7 @@ class Experiment(knock_knock.experiment.Experiment):
         all_donor_als = []
     
         for qname, als in self.progress(self.alignment_groups()):
-            architecture = self.categorizer(als, self.editing_strategy, mode='nanopore')
+            architecture = self.categorizer(als, self.editing_strategy, platform='nanopore')
 
             if not architecture.is_malformed:
                 donor_als = architecture.nonredundant_donor_alignments

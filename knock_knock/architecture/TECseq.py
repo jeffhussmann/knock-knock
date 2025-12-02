@@ -156,7 +156,7 @@ class Architecture(prime_editing.Architecture):
             if self.minimal_cover == 'first target':
                 self.category = 'targeted genomic sequence'
                 self.subcategory = 'unedited'
-                edge = hits.sam.reference_edges(self.extension_chains_by_side['left']['alignments']['first target'])[3]
+                edge = hits.sam.reference_edges(self.extension_chains_by_side['left']['alignments']['first target'])['right']
                 self.Details = Details(target_edge=edge, mismatches=self.non_pegRNA_mismatches)
 
             elif self.minimal_cover in ['pegRNA', 'first pegRNA']:
@@ -168,7 +168,7 @@ class Architecture(prime_editing.Architecture):
             elif self.minimal_cover == 'second target':
                 self.category = 'targeted genomic sequence'
                 self.subcategory = 'edited'
-                edge = hits.sam.reference_edges(self.extension_chains_by_side['left']['alignments']['second target'])[3]
+                edge = hits.sam.reference_edges(self.extension_chains_by_side['left']['alignments']['second target'])['right']
                 self.Details = Details(target_edge=edge, mismatches=self.non_pegRNA_mismatches)
             
             else:
@@ -187,7 +187,7 @@ class Architecture(prime_editing.Architecture):
 
         self.categorized = True
 
-        return self.category, self.subcategory, self.details, self.Details
+        return self.category, self.subcategory, self.details
 
     def plot_parameters(self):
         strat = self.editing_strategy
@@ -332,7 +332,7 @@ class NoOverlapPairArchitecture(Architecture, knock_knock.architecture.NoOverlap
         R2 = self.architectures['R2']
 
         R2_al = R2.extension_chains_by_side['left']['alignments']['first target']
-        edge = hits.sam.reference_edges(R2_al)[5]
+        edge = hits.sam.reference_edges(R2_al)['left']
 
         self.category = self.concordant_nonoverlapping['category']
         self.subcategory = self.concordant_nonoverlapping['subcategory']

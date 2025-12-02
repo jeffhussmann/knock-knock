@@ -482,8 +482,6 @@ class Architecture(twin_prime.Architecture):
             side_to_side = {'left': 'right', 'right': 'left'} 
             strand_to_sign = {'+': -1, '-': 1}
             
-        side_to_key = {'left': 5, 'right': 3}
-        
         for read_side, al in farthest.items():
             if al is None or al.reference_name != self.editing_strategy.donor:
                 if self.editing_strategy.donor_sequence is None:
@@ -506,7 +504,7 @@ class Architecture(twin_prime.Architecture):
                 else:
                     relevant_al = cropped_als['left']
 
-                edge = hits.sam.reference_edges(relevant_al)[side_to_key[read_side]]
+                edge = hits.sam.reference_edges(relevant_al)[read_side]
                 
                 sign = strand_to_sign[hits.sam.get_strand(al)]
 
@@ -664,7 +662,6 @@ class Architecture(twin_prime.Architecture):
         elif self.inversion:
             self.category = 'inversion'
             self.subcategory = 'inversion'
-            self.details = 'n/a'
 
             self.relevant_alignments = self.target_edge_alignments_list + self.inversion
 
@@ -692,11 +689,9 @@ class Architecture(twin_prime.Architecture):
         else:
             self.register_uncategorized()
 
-        self.details = str(self.Details)
-
         self.categorized = True
 
-        return self.category, self.subcategory, self.details, self.Details
+        return self.category, self.subcategory, self.details
 
     def plot(self, **kwargs):
         diagram = super().plot(alignment_registration='centered on primers',

@@ -49,7 +49,7 @@ class Architecture(prime_editing.Architecture):
             self.category = 'unknown editing status'
             self.subcategory = 'unknown editing status'
 
-        return self.category, self.subcategory, self.details, self.outcome
+        return self.category, self.subcategory, self.details
 
 class DualFlapArchitecture(twin_prime.Architecture):
     @property
@@ -123,7 +123,6 @@ class NoOverlapPairArchitecture(Architecture):
         self.category = R1.category
         self.subcategory = R1.subcategory
         self.details = R1.details
-        self.outcome = R1.outcome
 
         self.relevant_alignments = {
             'R1': R1.relevant_alignments,
@@ -135,7 +134,7 @@ class NoOverlapPairArchitecture(Architecture):
             self.relevant_alignments['R2'] = [R2 for R1, R2 in results['pairs']]
             self._inferred_amplicon_length = results['amplicon_length']
 
-        return self.category, self.subcategory, self.details, self.outcome
+        return self.category, self.subcategory, self.details
 
     def plot(self,
              relevant=True,

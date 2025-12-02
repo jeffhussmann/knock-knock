@@ -87,6 +87,8 @@ class ExperimentIdentifier(Identifier):
         return f'{self.batch_name}, {self.sample_name}'
 
 class Experiment:
+    Identifier = ExperimentIdentifier
+
     def __init__(self, identifier, description=None, experiment_group=None, progress=None):
         self.identifier = identifier
 
@@ -98,8 +100,6 @@ class Experiment:
             description = self.load_description()
 
         self.description = description
-
-        self.max_insertion_length = 20
 
         self.sgRNAs = self.description.get('sgRNAs')
         self.donor = self.description.get('donor')
@@ -135,7 +135,7 @@ class Experiment:
 
         self.fns['length_range_figure'] = make_length_range_fig_fn
         
-        self.color = extract_color(self.description)
+        self.color = knock_knock.visualize.extract_color(self.description)
         self.max_qual = 93
         
         index_names = self.description.get('supplemental_indices')
@@ -161,6 +161,10 @@ class Experiment:
 
     def __repr__(self):
         return f'{self.__class__.__name__}: {self.identifier}'
+
+    @classmethod
+    def from_identifier_fields(cls, fields, **kwargs):
+        return cls(cls.Identifier(**fields), **kwargs)
 
     @memoized_property
     def length_to_store_unknown(self):
@@ -385,7 +389,7 @@ class Experiment:
             elif isinstance(outcome, str):
                 # outcome is a single category, so need to chain together all relevant
                 # (category, subcategory) pairs.
-                pairs = [(c, s) for c, s in self.categories_by_frequency if c == outcome]
+                pairs = [(c, s) for c, s in self.subcategories_by_frequency if c == outcome]
                 pair_groups = [self.alignment_groups(fn_key=fn_key, outcome=pair, read_type=read_type) for pair in pairs]
                 yield from heapq.merge(*pair_groups)
 
@@ -452,7 +456,6 @@ class Experiment:
             knock_knock.blast.blast(ref_seqs,
                                     chunk,
                                     bam_by_name_fn=bam_by_name_fn,
-                                    max_insertion_length=self.max_insertion_length,
                                     ref_name_prefix_to_append=supplemental_index_name,
                                     filter_to_discard=filter_to_discard,
                                    )
@@ -621,6 +624,10 @@ class Experiment:
                 # nonspecific amplification products, or cross-contamination
                 # from other samples) and therefore are not relevant to the 
                 # performance of the editing strategy.
+
+                # Sort index first to avoid annoying pandas PerformanceWarnings.
+                counts.sort_index(inplace=True)
+
                 counts = counts.drop(self.categorizer.non_relevant_categories, errors='ignore')
 
             if level == 'details':
@@ -667,18 +674,22 @@ class Experiment:
         return {}
 
     @memoized_property
-    def category_counts(self):
-        if self.outcome_counts is None:
-            return None
-        else:
-            return self.outcome_counts.groupby(level=['category', 'subcategory']).sum()
-
-    @memoized_property
     def categories_by_frequency(self):
-        if self.category_counts is None:
+        counts = self.outcome_counts(level='category')
+
+        if counts is None:
             return []
         else:
-            return list(self.category_counts.sort_values(ascending=False).index)
+            return list(counts.sort_values(ascending=False).index)
+
+    @memoized_property
+    def subcategories_by_frequency(self):
+        counts = self.outcome_counts(level='subcategory')
+
+        if counts is None:
+            return []
+        else:
+            return list(counts.sort_values(ascending=False).index)
 
     def outcome_query_names(self, outcome):
         fns = self.outcome_fns(outcome)
@@ -988,7 +999,7 @@ class Experiment:
             # No need to draw legend if only showing all reads
             ax.legend(framealpha=0.5)
         
-        for i, (name, length) in enumerate(self.expected_lengths.items()):
+        for i, (name, length) in enumerate(self.editing_strategy.expected_lengths.items()):
             y = 1 + 0.02  + 0.04 * i
             ax.axvline(length, ymin=0, ymax=y, color='black', alpha=0.4, clip_on=False)
 
@@ -1069,6 +1080,7 @@ class Experiment:
     @memoized_property
     def qname_to_inferred_length(self):
         qname_to_inferred_length = {}
+
         for outcome in self.outcome_iter():
             qname_to_inferred_length[outcome.query_name] = outcome.inferred_amplicon_length
 
@@ -1114,7 +1126,7 @@ class Experiment:
                 kwargs['read_label'] = 'sequencing read pair'
                 architecture = knock_knock.architecture.architecture.NonoverlappingPairArchitecture(als['R1'], als['R2'], self.editing_strategy)
             else:
-                architecture = self.categorizer(als, self.editing_strategy, mode=self.platform)
+                architecture = self.categorizer(als, self.editing_strategy, platform=self.platform)
 
             try:
                 diagram = architecture.plot(title='', **kwargs)
@@ -1136,7 +1148,8 @@ class Experiment:
         for name, als in al_groups:
             length = self.qname_to_inferred_length[name]
 
-            length = min(length, self.max_relevant_length)
+            if length is not None:
+                length = min(length, self.max_relevant_length)
 
             length_range = length_to_length_range[length]
             by_length_range[length_range].add((name, als))
@@ -1155,7 +1168,10 @@ class Experiment:
         fig_dir.mkdir(parents=True)
 
         if specific_outcome is not None:
-            description = ': '.join(specific_outcome)
+            if isinstance(specific_outcome, tuple):
+                description = ': '.join(specific_outcome)
+            else:
+                description = specific_outcome
         else:
             description = 'Generating length-specific diagrams'
 
@@ -1260,14 +1276,11 @@ class Experiment:
                 fh.write(f'{tag}\n')
 
     def generate_all_outcome_example_figures(self, num_examples=10, **kwargs):
-        categories = sorted(set(c for c, s in self.categories_by_frequency))
-        for outcome in self.progress(categories, desc='Making diagrams for grouped categories'):
+        outcomes = self.categories_by_frequency + self.subcategories_by_frequency
+
+        for outcome in self.progress(outcomes, desc='Making outcome example diagrams'):
             self.generate_outcome_example_figures(outcome=outcome, num_examples=num_examples, **kwargs)
 
-        subcategories = sorted(self.categories_by_frequency)
-        for outcome in self.progress(subcategories, desc='Making diagrams for detailed subcategories'):
-            self.generate_outcome_example_figures(outcome=outcome, num_examples=num_examples, **kwargs)
-        
     def explore(self, by_outcome=True, **kwargs):
         explorer = explore.SingleExperimentExplorer(self, by_outcome, **kwargs)
         return explorer.layout
