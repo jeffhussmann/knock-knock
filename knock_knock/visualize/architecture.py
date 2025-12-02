@@ -143,11 +143,8 @@ class ReadDiagram:
 
                 for al in als:
                     if al.reference_name in refs_to_split:
-                        split_als = self.architecture.comprehensively_split_alignment(al)
-
-                        seq_bytes = self.editing_strategy.reference_sequence_bytes[al.reference_name]
-                        extended = [sw.extend_alignment(al, seq_bytes) for al in split_als]
-                        all_split_als.extend(extended)
+                        split_als = self.architecture.split_and_extend_alignments(al)
+                        all_split_als.extend(split_als)
 
                     else:
                         all_split_als.append(al)
@@ -350,17 +347,12 @@ class ReadDiagram:
         if self.features_to_show is not None:
             features_to_show = self.features_to_show
         else:
-            features_to_show = [
-                (r_name, f_name) for r_name, f_name in all_features
-                if 'edge' not in f_name and 'SNP' not in f_name and all_features[r_name, f_name].feature != 'sgRNA'
-            ]
-
-            features_to_show.extend([(self.editing_strategy.target, f_name) for f_name in self.editing_strategy.protospacer_names])
+            features_to_show = all_features
 
         features = {
-            k: v for k, v in all_features.items()
-            if k in features_to_show
-            and k not in self.features_to_hide
+            (ref_name, feature_name): v for (ref_name, feature_name), v in all_features.items()
+            if ((ref_name, feature_name) in features_to_show or feature_name in features_to_show)
+            and ((ref_name, feature_name) not in self.features_to_hide and feature_name not in self.features_to_hide)
         }
 
         return features
@@ -925,9 +917,6 @@ class ReadDiagram:
                     if ref_name != feature_reference:
                         continue
 
-                    if feature_name in self.features_to_hide:
-                        continue
-
                     feature = self.features[feature_reference, feature_name]
                     feature_color = self.get_feature_color(feature_reference, feature_name)
                     
@@ -1013,7 +1002,7 @@ class ReadDiagram:
         if self.manual_x_lims is not None:
             self.min_x, self.max_x = self.manual_x_lims
         else:
-            buffer = max(20, 0.05 * self.total_query_length)
+            buffer = max(20, 0.05 * self.query_length)
             self.min_x = self.query_interval[0] - buffer
             self.max_x = self.query_interval[1] + buffer
             
@@ -1142,7 +1131,13 @@ class ReadDiagram:
         # To establish a mapping between reference position and x coordinate,
         # pick anchor points on the ref and read that will line up with each other. 
         if ref_name in self.manual_anchors:
-            anchor_read, anchor_ref = self.manual_anchors[ref_name]
+            if isinstance(self.manual_anchors[ref_name], list):
+                als = self.manual_anchors[ref_name]
+                # Average of anchors for each alignment.
+                anchor_read = np.mean([hits.sam.query_interval(al)[0] for al in als])
+                anchor_ref = np.mean([hits.sam.reference_edges(al)['left'] for al in als])
+            else:
+                anchor_read, anchor_ref = self.manual_anchors[ref_name]
 
         # Default to lining up the left edge vertically with the reference position
         # it is mapped to if there is only one alignment to this reference, or
@@ -1262,7 +1257,7 @@ class ReadDiagram:
             features = {
                 feature
                 for (feature_ref_name, feature_name), feature in strat.features.items()
-                if (feature_ref_name, feature_name) in self.features_to_show
+                if (feature_ref_name, feature_name) in self.features
                 and feature_ref_name == ref_name
              }
 
@@ -1480,7 +1475,10 @@ class ReadDiagram:
                                  visible=visible,
                                 )
 
-                    color = strat.PAM_features[f'{name}_PAM'].attribute['color']
+                    if (PAM_feature := strat.PAM_features.get(f'{name}_PAM')) is not None:
+                        color = PAM_feature.attribute.get('color', 'grey')
+                    else:
+                        color = 'grey'
 
                     if self.label_cut:
                         label = self.label_overrides.get(f'{name}_cut', f'{name}_cut')
