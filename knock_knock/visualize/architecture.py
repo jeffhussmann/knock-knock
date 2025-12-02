@@ -704,6 +704,9 @@ class ReadDiagram:
 
                 indels = sorted(knock_knock.architecture.get_indel_info(alignment), key=lambda t: t[1][0])
 
+                up_offset_index = 0
+                down_offset_index = 0
+
                 for kind, info in indels:
                     if kind == 'deletion' or kind == 'splicing':
                         centered_at, length = info
@@ -740,16 +743,19 @@ class ReadDiagram:
 
                         indel_ys = [y, y + self.dimple_height, y + self.dimple_height, y]
 
-                        if self.label_dimples:
+                        if self.label_dimples and length > 1:
+                            print(label)
                             ax.annotate(label,
                                         xy=(middle_offset(centered_at), y + self.dimple_height),
-                                        xytext=(0, 1),
+                                        xytext=(0, 1 + up_offset_index % 2),
                                         textcoords='offset points',
                                         ha='center',
                                         va='bottom',
                                         size=6,
                                         alpha=1 * alpha_multiplier,
-                                    )
+                                       )
+
+                            up_offset_index += 1
 
                     elif kind == 'insertion':
                         starts_at, ends_at = info
@@ -759,16 +765,18 @@ class ReadDiagram:
                         min_height = 0.0015
                         height = min_height * min(length**0.5, 3)
 
-                        if self.label_dimples:
+                        if self.label_dimples and length > 1:
                             ax.annotate(str(length),
                                         xy=(middle_offset(centered_at), y - height),
-                                        xytext=(0, -1),
+                                        xytext=(0, -1 - down_offset_index % 2),
                                         textcoords='offset points',
                                         ha='center',
                                         va='top',
                                         size=6,
                                         alpha=1 * alpha_multiplier,
-                                    )
+                                       )
+
+                            down_offset_index += 1
 
                         indel_xs = [starts_at - 0.5, centered_at, ends_at + 0.5]
                         alignment_edge_xs.extend([starts_at - 1, ends_at + 1])
