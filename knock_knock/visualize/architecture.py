@@ -98,7 +98,7 @@ class ReadDiagram:
     draw_cut_afters: bool = True
     draw_arrowheads: bool = True
     ref_line_width: float = 0.001
-    cross_x: float = 0.6
+    cross_x: float | None = None
     target_and_donor_y_gap: float = 0.03
     initial_alignment_y_offset: float = 5
     feature_line_width: float = 0.005
@@ -231,17 +231,31 @@ class ReadDiagram:
 
         self.query_length = self.query_interval[1] - self.query_interval[0] + 1
 
+        if self.query_length < 750:
+            width_per_unit = 0.04
+            cross_x = 0.6
+            arrow_width = 10
+
+        elif 750 <= self.query_length < 2000:
+            width_per_unit = 0.01
+            cross_x = 2
+            arrow_width = 20
+
+        elif 2000 <= self.query_length < 5000:
+            width_per_unit = 0.003
+            cross_x = 4
+            arrow_width = 40
+
+        elif 5000 <= self.query_length:
+            width_per_unit = 0.0015
+            cross_x = 10
+            arrow_width = 60
+
         if self.width_per_unit is None:
-            if self.query_length < 750:
-                self.width_per_unit = 0.04
-            elif 750 <= self.query_length < 2000:
-                self.width_per_unit = 0.01
-            elif 2000 <= self.query_length < 5000:
-                self.width_per_unit = 0.005
-            elif 5000 <= self.query_length < 10000:
-                self.width_per_unit = 0.003
-            else:
-                self.width_per_unit = 0.0015
+            self.width_per_unit = width_per_unit
+
+        if self.cross_x is None:
+            self.cross_x = cross_x
 
         self.height_per_unit = 40
 
@@ -256,7 +270,7 @@ class ReadDiagram:
             self.arrow_linewidth = 2
 
         if self.arrow_width is None:
-            self.arrow_width = min(20, self.query_length * 0.012)
+            self.arrow_width = arrow_width
 
         self.arrow_height_over_width = self.width_per_unit / self.height_per_unit
 
