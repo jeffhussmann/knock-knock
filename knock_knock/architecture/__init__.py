@@ -2081,18 +2081,18 @@ def experiment_type_to_categorizer(experiment_type):
     from . import prime_editing
     from . import twin_prime
     from . import integrase
-    from . import TECseq
-    from . import seeseq
+    from . import ENDseq
+    from . import uditas
     from . import HDR
 
     experiment_type_to_categorizer = {
         'prime_editing': prime_editing.Architecture,
         'twin_prime': twin_prime.Architecture,
         'Bxb1_twin_prime': integrase.Architecture,
-        'TECseq': TECseq.Architecture,
-        'TECseq_dual_flap': TECseq.TwinPrimeArchitecture,
-        'seeseq': seeseq.Architecture,
-        'seeseq_dual_flap': seeseq.DualFlapArchitecture,
+        'ENDseq': ENDseq.Architecture,
+        'ENDseq_dual_flap': ENDseq.TwinPrimeArchitecture,
+        'uditas': uditas.Architecture,
+        'uditas_dual_flap': uditas.DualFlapArchitecture,
         'HDR': HDR.Architecture,
     }
 
@@ -2108,13 +2108,13 @@ def experiment_type_to_categorizer(experiment_type):
     return experiment_type_to_categorizer[experiment_type]
 
 def experiment_type_to_no_overlap_pair_categorizer(experiment_type):
-    from . import TECseq
-    from . import seeseq
+    from . import ENDseq
+    from . import uditas
 
     experiment_type_to_categorizer = {
-        'TECseq': TECseq.NoOverlapPairArchitecture,
-        'TECseq_dual_flap': TECseq.NoOverlapPairTwinPrimeArchitecture,
-        'seeseq': seeseq.NoOverlapPairArchitecture,
+        'ENDseq': ENDseq.NoOverlapPairArchitecture,
+        'ENDseq_dual_flap': ENDseq.NoOverlapPairTwinPrimeArchitecture,
+        'uditas': uditas.NoOverlapPairArchitecture,
     }
 
     return experiment_type_to_categorizer(experiment_type)

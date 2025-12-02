@@ -78,7 +78,7 @@ class FileLoggingContext:
         self.file_handler.close()
 
 def is_one_sided(experiment_type):
-    return experiment_type is not None and any(experiment_type.startswith(name) for name in ['TECseq', 'seeseq']) 
+    return experiment_type is not None and any(experiment_type.startswith(name) for name in ['ENDseq', 'uditas']) 
 
 def adata_to_df(adata):
     df = pd.DataFrame(data=adata.to_df().values,

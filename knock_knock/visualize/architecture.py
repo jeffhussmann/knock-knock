@@ -683,7 +683,13 @@ class ReadDiagram:
                         else:
                             alpha = 0.85
 
-                        cross_kwargs = dict(zorder=10, linewidth=self.size_multiple, color='black', alpha=alpha * alpha_multiplier)
+                        cross_kwargs = dict(
+                            zorder=10,
+                            linewidth=self.size_multiple,
+                            color='black',
+                            alpha=alpha * alpha_multiplier,
+                        )
+
                         cross_ys = [y - self.cross_y, y + self.cross_y]
 
                         read_x = middle_offset(read_p)
@@ -758,7 +764,6 @@ class ReadDiagram:
                         indel_ys = [y, y + self.dimple_height, y + self.dimple_height, y]
 
                         if self.label_dimples and length > 1:
-                            print(label)
                             ax.annotate(label,
                                         xy=(middle_offset(centered_at), y + self.dimple_height),
                                         xytext=(0, 1 + up_offset_index % 2),
