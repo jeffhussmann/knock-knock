@@ -241,8 +241,10 @@ class ReadDiagram:
                 self.width_per_unit = 0.01
             elif 2000 <= self.query_length < 5000:
                 self.width_per_unit = 0.005
-            else:
+            elif 5000 <= self.query_length < 10000:
                 self.width_per_unit = 0.003
+            else:
+                self.width_per_unit = 0.0015
 
         self.height_per_unit = 40
 

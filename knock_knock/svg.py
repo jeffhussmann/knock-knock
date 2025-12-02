@@ -249,6 +249,12 @@ def decorate_outcome_browser(exp, min_total_to_label=0.1):
             width = width * 0.75
             height = height * 0.75
 
+            max_size = 1500
+            if width > max_size or height > max_size:
+                scale_by = min(max_size / width, max_size / height)
+                width *= scale_by
+                height *= scale_by
+            
             attrib = {
                 'data-toggle': 'popover',
                 'data-container': container_selector,
