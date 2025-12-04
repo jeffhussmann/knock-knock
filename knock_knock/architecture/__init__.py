@@ -1308,8 +1308,6 @@ class Categorizer:
         all_possible_covers = {}
 
         for kind, chains in self.extension_chains(require_definite=require_definite).items():
-            chains = self.extension_chains(require_definite=require_definite)[kind]
-
             possible_covers = set()
 
             # Check whether any members of an extension chain on one side are not
@@ -1317,13 +1315,13 @@ class Categorizer:
             # scenario in which it would be possible to remove from either the
             # left or right chain.)
 
-            name_order = ['none'] + chains['left'].name_order
+            name_orders = {side: ['none'] + chains[side].name_order for side in ['left', 'right']}
 
-            for left_key in name_order:
+            for left_key in name_orders['left']:
                 if left_key in chains['left'].alignments:
                     left_al = chains['left'].alignments[left_key]
 
-                    for right_key in name_order:
+                    for right_key in name_orders['right']:
                         if right_key in chains['right'].alignments:
                             right_al = chains['right'].alignments[right_key]
 
@@ -1338,7 +1336,7 @@ class Categorizer:
                                                                             right_al,
                                                                             self.editing_strategy.reference_sequences,
                                                                             include_overlap=False,
-                                                                        )
+                                                                           )
                             else:
                                 cropped_als = {'left': left_al, 'right': right_al}
 
@@ -1352,8 +1350,8 @@ class Categorizer:
                             for side, last_key in [('left', left_key), ('right', right_key)]:
                                 cropped_mismatches[side][last_key] = self.edits(cropped_als[side])
 
-                                last_key_i = name_order.index(last_key)
-                                total_mismatches[side] = sum(cropped_mismatches[side].get(key, 0) for key in name_order[:last_key_i + 1])
+                                last_key_i = name_orders[side].index(last_key)
+                                total_mismatches[side] = sum(cropped_mismatches[side][key] for key in name_orders[side][:last_key_i + 1])
 
                             gap = max(0, covered_right.start - covered_left.end - 1)
                             mismatches_and_gap = total_mismatches['left'] + total_mismatches['right'] + gap
@@ -1366,10 +1364,10 @@ class Categorizer:
 
                 for side, chain in chains.items():
                     maximal_covers = [k for k, covered in chain.query_covered_incremental.items() if covered == chain.query_covered]
-                    last_key = min(maximal_covers, key=name_order.index, default='none')
-                    last_key_i = name_order.index(last_key)
+                    last_key = min(maximal_covers, key=name_orders[side].index, default='none')
+                    last_key_i = name_orders[side].index(last_key)
                     last_parsimonious_key[side] = last_key
-                    total_mismatches[side] = sum(chain.mismatches.get(key, 0) for key in name_order[:last_key_i + 1])
+                    total_mismatches[side] = sum(chain.mismatches[key] for key in name_orders[side][:last_key_i + 1])
 
                 possible_covers.add(('single chain', last_parsimonious_key['left'], last_parsimonious_key['right'], total_mismatches['left']))
 
@@ -1389,12 +1387,10 @@ class Categorizer:
                     if chain_number == best_chain_number and mismatches == min_mismatches
                 }
 
-                best_cover = self.reconcile_function(min_mismatch_covers, key=lambda tuple_: (name_order.index(tuple_[1]), name_order.index(tuple_[2])))
+                best_cover = self.reconcile_function(min_mismatch_covers, key=lambda tuple_: (name_orders['left'].index(tuple_[1]), name_orders['right'].index(tuple_[2])))
                 rejected_covers = {cover for cover in possible_covers if cover != best_cover}
 
                 all_possible_covers[kind] = (best_cover, rejected_covers)
-
-        # TODO: register reject covers to prevent them from being taken by a different type that has less information
 
         return all_possible_covers
 
@@ -1407,7 +1403,7 @@ class Categorizer:
         for kind in self.extension_chain_link_specifications:
             chains = self.extension_chains(require_definite=require_definite)[kind]
 
-            name_order = ['none'] + chains['left'].name_order
+            name_orders = {side: ['none'] + chains[side].name_order for side in ['left', 'right']}
 
             last_parsimonious_key = {}
 
@@ -1416,15 +1412,15 @@ class Categorizer:
             else:
                 for side, chain in chains.items():
                     maximal_covers = [k for k, covered in chain.query_covered_incremental.items() if covered == chain.query_covered]
-                    last_parsimonious_key[side] = min(maximal_covers, key=name_order.index, default='none')
+                    last_parsimonious_key[side] = min(maximal_covers, key=name_orders[side].index, default='none')
 
             for side in ['left', 'right']:
                 key = last_parsimonious_key[side]
 
                 chains[side].description = chains[side].last_al_to_description[key]
 
-                last_index = name_order.index(key)
-                chains[side].parsimonious_alignments = [al for key, al in chains[side].alignments.items() if name_order.index(key) <= last_index]
+                last_index = name_orders[side].index(key)
+                chains[side].parsimonious_alignments = [al for key, al in chains[side].alignments.items() if name_orders[side].index(key) <= last_index]
 
                 chains[side].query_covered = chains[side].query_covered_incremental[key]
 
@@ -2201,7 +2197,9 @@ class ExtensionChain:
         self.query_covered = interval.DisjointIntervals([])
         self.query_covered_incremental = {'none': self.query_covered}
 
-        self.mismatches = {}
+        self.mismatches = {
+            'none': 0,
+        }
 
         entry_point_i = self.name_order.index(entry_point)
 
