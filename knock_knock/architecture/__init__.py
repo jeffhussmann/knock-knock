@@ -605,8 +605,8 @@ class Categorizer:
     @memoized_property
     def not_covered_by_target_flanking_alignments(self):
         als = self.target_flanking_alignments_list
-        uncovered = self.between_primers - interval.get_disjoint_covered(als)
-        return uncovered
+        not_covered = self.between_primers - interval.get_disjoint_covered(als)
+        return not_covered
 
     @memoized_property
     def non_primer_nts(self):
@@ -653,7 +653,7 @@ class Categorizer:
          
          - read starts with an alignment to the expected primer, but all
             alignments to the target collectively leave a substantial part
-            of the read uncovered, and a single alignment to some other
+            of the read not covered, and a single alignment to some other
             source covers the entire read with minimal edit distance.
          
          - read starts and ends with alignments to the expected primers, these
@@ -691,14 +691,14 @@ class Categorizer:
                 target_als = [al for al in self.primary_alignments if al.reference_name == self.editing_strategy.target]
                 not_covered_by_any_target_als = need_to_cover - interval.get_disjoint_covered(target_als)
 
-                has_substantial_uncovered = not_covered_by_any_target_als.total_length >= 100
+                has_substantial_not_covered = not_covered_by_any_target_als.total_length >= 100
                 has_substantial_length_discrepancy = (
                     self.inferred_amplicon_length is not None and 
                     abs(self.inferred_amplicon_length - self.editing_strategy.amplicon_length) >= 20 and
                     self.cropped_flanking_primer_alignments.get('right') is not None
                 )
 
-                if has_substantial_uncovered or has_substantial_length_discrepancy:
+                if has_substantial_not_covered or has_substantial_length_discrepancy:
                     ref_seqs = {**self.editing_strategy.reference_sequences}
 
                     # Exclude phiX reads, which can rarely have spurious alignments to the forward primer
@@ -1319,7 +1319,6 @@ class Categorizer:
 
             name_order = ['none'] + chains['left'].name_order
 
-            #if chains['left'].query_covered != chains['right'].query_covered:
             for left_key in name_order:
                 if left_key in chains['left'].alignments:
                     left_al = chains['left'].alignments[left_key]
@@ -1340,23 +1339,27 @@ class Categorizer:
                                                                             self.editing_strategy.reference_sequences,
                                                                             include_overlap=False,
                                                                         )
+                            else:
+                                cropped_als = {'left': left_al, 'right': right_al}
 
-                                cropped_mismatches = {
-                                    side: chains[side].mismatches.copy()
-                                    for side in ['left', 'right']
-                                }
+                            cropped_mismatches = {
+                                side: chains[side].mismatches.copy()
+                                for side in ['left', 'right']
+                            }
 
-                                total_mismatches = {}
+                            total_mismatches = {}
 
-                                for side, last_key in [('left', left_key), ('right', right_key)]:
-                                    cropped_mismatches[side][last_key] = self.edits(cropped_als[side])
+                            for side, last_key in [('left', left_key), ('right', right_key)]:
+                                cropped_mismatches[side][last_key] = self.edits(cropped_als[side])
 
-                                    last_key_i = name_order.index(last_key)
-                                    total_mismatches[side] = sum(cropped_mismatches[side].get(key, 0) for key in name_order[:last_key_i + 1])
-                                
-                                possible_covers.add(('two chains', left_key, right_key, total_mismatches['left'] + total_mismatches['right']))
+                                last_key_i = name_order.index(last_key)
+                                total_mismatches[side] = sum(cropped_mismatches[side].get(key, 0) for key in name_order[:last_key_i + 1])
+
+                            gap = max(0, covered_right.start - covered_left.end - 1)
+                            mismatches_and_gap = total_mismatches['left'] + total_mismatches['right'] + gap
+                            
+                            possible_covers.add(('two chains', left_key, right_key, mismatches_and_gap))
             
-            #else: # query_covereds are the same
             if chains['left'].query_covered == chains['right'].query_covered:
                 last_parsimonious_key = {}
                 total_mismatches = {}
@@ -1464,8 +1467,8 @@ class Categorizer:
         }
 
     @memoized_property
-    def uncovered_by_extension_chains(self):
-        uncovered_by_extension_chains = {}
+    def not_covered_by_extension_chains(self):
+        not_covered_by_extension_chains = {}
 
         for kind in self.extension_chain_link_specifications:
             chains = self.reconciled_extension_chains()[kind]
@@ -1474,14 +1477,14 @@ class Categorizer:
             right_covered = chains['right'].query_covered
 
             combined_covered = left_covered | right_covered
-            uncovered = self.between_primers - combined_covered
+            not_covered = self.between_primers - combined_covered
 
             # Allow failure to explain the last few nts of the read.
-            uncovered = uncovered & self.whole_read_minus_edges(2)
+            not_covered = not_covered & self.whole_read_minus_edges(2)
 
-            uncovered_by_extension_chains[kind] = uncovered
+            not_covered_by_extension_chains[kind] = not_covered
 
-        return uncovered_by_extension_chains
+        return not_covered_by_extension_chains
 
     def edits(self, al):
         if al is None:

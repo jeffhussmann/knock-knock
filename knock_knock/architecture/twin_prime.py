@@ -459,7 +459,7 @@ class Architecture(prime_editing.Architecture):
         ''' At least one side has RT'ed sequence, and together the extension
         chains cover the whole read.
         '''
-        return self.contains_RTed_sequence and self.uncovered_by_extension_chains['twin_prime'].total_length == 0
+        return self.contains_RTed_sequence and self.not_covered_by_extension_chains['twin_prime'].total_length == 0
 
     @memoized_property
     def integrase_sites_in_chains(self):
@@ -542,17 +542,17 @@ class Architecture(prime_editing.Architecture):
 
     @memoized_property
     def extension_chain_gap_covers(self):
-        def covers_all_uncovered(al):
-            not_covered_by_al = self.uncovered_by_extension_chains['twin_prime'] - interval.get_covered(al)
+        def covers_all(al):
+            not_covered_by_al = self.not_covered_by_extension_chains['twin_prime'] - interval.get_covered(al)
             return not_covered_by_al.total_length == 0
 
-        covers = [al for al in self.target_alignments if covers_all_uncovered(al)]
+        covers = [al for al in self.target_alignments if covers_all(al)]
 
         return covers
 
     @memoized_property
     def is_multistep_unintended_rejoining(self):
-        return self.contains_RTed_sequence and self.uncovered_by_extension_chains['twin_prime'].total_length > 0 and len(self.extension_chain_gap_covers) > 0
+        return self.contains_RTed_sequence and self.not_covered_by_extension_chains['twin_prime'].total_length > 0 and len(self.extension_chain_gap_covers) > 0
 
     def register_multistep_unintended_rejoining(self):
         self.category = 'multistep unintended rejoining of RT\'ed sequence'

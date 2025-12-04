@@ -481,13 +481,13 @@ class Architecture(knock_knock.architecture.Categorizer):
 
     @memoized_property
     def not_covered_by_initial_alignments(self):
-        uncovered = self.between_primers - interval.get_disjoint_covered(self.target_and_donor_alignments)
-        return uncovered
+        not_covered = self.between_primers - interval.get_disjoint_covered(self.target_and_donor_alignments)
+        return not_covered
 
     @memoized_property
     def not_covered_by_refined_alignments(self):
-        uncovered = self.between_primers - interval.get_disjoint_covered(self.parsimonious_and_gap_alignments)
-        return uncovered
+        not_covered = self.between_primers - interval.get_disjoint_covered(self.parsimonious_and_gap_alignments)
+        return not_covered
 
     @memoized_property
     def not_covered_by_simple_integration(self):
@@ -501,9 +501,9 @@ class Architecture(knock_knock.architecture.Categorizer):
             self.target_flanking_alignments['right'],
         ]
 
-        uncovered = self.between_primers - interval.get_disjoint_covered(als)
+        not_covered = self.between_primers - interval.get_disjoint_covered(als)
 
-        return uncovered
+        return not_covered
 
     @memoized_property
     def sw_gap_alignments(self):
@@ -917,9 +917,9 @@ class Architecture(knock_knock.architecture.Categorizer):
         elif len(self.donor_specific_integration_alignments) == 1:
             donor_al = self.donor_specific_integration_alignments[0]
             covered_by_donor = interval.get_covered(donor_al)
-            uncovered_length = (self.integration_interval - covered_by_donor).total_length
+            not_covered_length = (self.integration_interval - covered_by_donor).total_length
 
-            if uncovered_length > 10:
+            if not_covered_length > 10:
                 summary = 'other'
             else:
                 max_indel_length = sam.max_block_length(donor_al, {sam.BAM_CDEL, sam.BAM_CINS})

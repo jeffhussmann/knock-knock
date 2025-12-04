@@ -609,18 +609,18 @@ class Architecture(knock_knock.architecture.Categorizer):
             return full_chain and (self.has_pegRNA_substitution or self.matches_any_programmed_insertion_features)
 
     @memoized_property
-    def uncovered_by_extension_chain(self):
+    def not_covered_by_extension_chain(self):
         covered = self.extension_chain.query_covered
 
         # Allow failure to explain the last few nts of the read.
         need_to_cover = self.whole_read_minus_edges(2) & self.between_primers_inclusive
-        uncovered = need_to_cover - covered
+        not_covered = need_to_cover - covered
 
-        return uncovered
+        return not_covered
 
     @memoized_property
     def is_intended_edit(self):
-        return self.is_intended_deletion or (self.contains_intended_edit and self.uncovered_by_extension_chain.is_empty)
+        return self.is_intended_deletion or (self.contains_intended_edit and self.not_covered_by_extension_chain.is_empty)
 
     @memoized_property
     def flipped_pegRNA_als(self):
@@ -949,8 +949,8 @@ class Architecture(knock_knock.architecture.Categorizer):
     @memoized_property
     def not_covered_by_donor_alignments(self):
         als = self.donor_alignments
-        uncovered = self.between_primers - interval.get_disjoint_covered(als)
-        return uncovered
+        not_covered = self.between_primers - interval.get_disjoint_covered(als)
+        return not_covered
 
     @memoized_property
     def query_length_covered_by_on_target_alignments(self):
@@ -1197,12 +1197,12 @@ class Architecture(knock_knock.architecture.Categorizer):
         non_pegRNA_side_covered = chains[self.non_pegRNA_side].query_covered_incremental.get('first target', empty)
 
         combined_covered = pegRNA_side_covered | non_pegRNA_side_covered
-        uncovered = self.between_primers - combined_covered
+        not_covered = self.between_primers - combined_covered
 
         # Allow failure to explain the last few nts of the read.
-        uncovered = uncovered & self.whole_read_minus_edges(2)
+        not_covered = not_covered & self.whole_read_minus_edges(2)
 
-        return contains_RTed_sequence and uncovered.total_length == 0
+        return contains_RTed_sequence and not_covered.total_length == 0
 
     @memoized_property
     def is_unintended_rejoining(self):
@@ -1699,9 +1699,9 @@ class Architecture(knock_knock.architecture.Categorizer):
                     combined_covered = self.extension_chain.query_covered | covered_by_duplication
 
                     if self.matches_any_programmed_insertion_features:
-                        uncovered = self.whole_read_minus_edges(2) - combined_covered
+                        not_covered = self.whole_read_minus_edges(2) - combined_covered
                     
-                        if uncovered.total_length == 0:
+                        if not_covered.total_length == 0:
                             alignments = list(chain_als.values()) + duplication_als
 
         if alignments is not None:
@@ -1723,7 +1723,7 @@ class Architecture(knock_knock.architecture.Categorizer):
 
         if (self.contains_intended_edit and
             other_chain.description == "not RT'ed" and
-            self.uncovered_by_extension_chains['prime_editing'].is_empty
+            self.not_covered_by_extension_chains['prime_editing'].is_empty
         ):
 
             als_to_merge = [
@@ -1772,9 +1772,9 @@ class Architecture(knock_knock.architecture.Categorizer):
     
         covered = interval.make_disjoint(covereds)
 
-        uncovered = self.whole_read_minus_edges(2) - covered
+        not_covered = self.whole_read_minus_edges(2) - covered
         
-        if len(relevant_als) == 1 or uncovered.total_length > 0:
+        if len(relevant_als) == 1 or not_covered.total_length > 0:
             return None
         
         ref_junctions = []

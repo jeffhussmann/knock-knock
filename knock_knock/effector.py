@@ -113,30 +113,14 @@ class Effector:
 effector_details = {
     'SpCas9': ('NGG', 3, (-4, -4)), 
     'SpCas9H840A': ('NGG', 3, (-4, None)),
-    'SpCas9N863A': ('NGG', 3, (-4, None)),
 
     'SpCas9_VRQR': ('NGA', 3, (-4, -4)),
     'SpCas9H840A_VRQR': ('NGA', 3, (-4, None)),
-
-    'SpCas9_NRRH': ('NRRH', 3, (-4, -4)),
-    'SpCas9H840A_NRRH': ('NRRH', 3, (-4, None)),
-
-    'SpCas9_NRTH': ('NRYH', 3, (-4, -4)),
-    'SpCas9H840A_NRTH': ('NRYH', 3, (-4, None)),
-
-    'SpCas9_NRCH': ('NRYH', 3, (-4, -4)),
-    'SpCas9H840A_NRCH': ('NRYH', 3, (-4, None)),
 
     'SaCas9': ('NNGRRT', 3, (-4, -4)),
     'SaCas9H840A': ('NNGRRT', 3, (-4, None)),
 
     'AsCas12a': ('TTTN', 5, (20, 25)),
-
-    'sRGN3.1': ('NNGG', 3, (-4, -4)),
-    'evoCjCas9': ('NNNNNNN', 3, (-4, -4)),
-
-    'SpCas9_RY': ('NNN', 3, (-4, -4)),
-    'SpCas9H840A_RY': ('NNN', 3, (-4, None)),
 }
 
 effectors = {
