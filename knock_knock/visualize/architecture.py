@@ -229,22 +229,24 @@ class ReadDiagram:
             # TODO: -1 confuses me.
             self.query_interval = (0, self.total_query_length - 1)
 
+        self.query_interval = (max(0, self.query_interval[0]), min(self.query_length, self.query_interval[1]))
+
         self.query_length = self.query_interval[1] - self.query_interval[0] + 1
 
         if self.query_length < 750:
             width_per_unit = 0.04
             cross_x = 0.6
-            arrow_width = 10
+            arrow_width = 5
 
         elif 750 <= self.query_length < 2000:
             width_per_unit = 0.01
             cross_x = 2
-            arrow_width = 20
+            arrow_width = 15
 
         elif 2000 <= self.query_length < 5000:
             width_per_unit = 0.003
             cross_x = 4
-            arrow_width = 40
+            arrow_width = 30
 
         elif 5000 <= self.query_length:
             width_per_unit = 0.0015
@@ -257,12 +259,7 @@ class ReadDiagram:
         if self.cross_x is None:
             self.cross_x = cross_x
 
-        self.height_per_unit = 40
-
-        if self.platform == 'illumina':
-            self.dimple_height = 0.003
-        else:
-            self.dimple_height = 0.001
+        self.height_per_unit = 48
 
         if self.ref_centric:
             self.arrow_linewidth = 3
@@ -278,6 +275,8 @@ class ReadDiagram:
         # (i.e. half the width of the whole X)
 
         self.cross_y = self.cross_x * self.width_per_unit / self.height_per_unit
+
+        self.dimple_height = self.cross_y * 3
 
         if self.ax is None:
             self.fig, self.ax = plt.subplots()
@@ -766,7 +765,7 @@ class ReadDiagram:
                         if self.label_dimples and length > 1:
                             ax.annotate(label,
                                         xy=(middle_offset(centered_at), y + self.dimple_height),
-                                        xytext=(0, 1 + up_offset_index % 2),
+                                        xytext=(0, 1 + 0.5 * (up_offset_index % 2)),
                                         textcoords='offset points',
                                         ha='center',
                                         va='bottom',
@@ -781,13 +780,12 @@ class ReadDiagram:
                         centered_at = np.mean([starts_at, ends_at])
                         length = ends_at - starts_at + 1
 
-                        min_height = 0.0015
-                        height = min_height * min(length**0.5, 3)
+                        height = self.dimple_height * min(length**0.5, 3)
 
                         if self.label_dimples and length > 1:
                             ax.annotate(str(length),
                                         xy=(middle_offset(centered_at), y - height),
-                                        xytext=(0, -1 - down_offset_index % 2),
+                                        xytext=(0, -1 - 0.5 * (down_offset_index % 2)),
                                         textcoords='offset points',
                                         ha='center',
                                         va='top',
@@ -1029,7 +1027,7 @@ class ReadDiagram:
         if self.manual_x_lims is not None:
             self.min_x, self.max_x = self.manual_x_lims
         else:
-            buffer = max(20, 0.05 * self.query_length)
+            buffer = max(20, 0.01 * self.query_length)
             self.min_x = self.query_interval[0] - buffer
             self.max_x = self.query_interval[1] + buffer
             
@@ -1573,6 +1571,107 @@ class ReadDiagram:
 
     def update_size(self):
         fig_width = self.width_per_unit * max(self.width, 50) * self.size_multiple
-        fig_height = self.height_per_unit * 1.2 * self.height * self.size_multiple
+        fig_height = self.height_per_unit * self.height * self.size_multiple
 
         self.fig.set_size_inches((fig_width, fig_height))
+
+    def annotate_recombination(self,
+                               highlight_minimums=True,
+                               shade_segments=True,
+                               draw_quality_panel=True,
+                               line_width=1,
+                               line_alpha=0.5,
+                               al_idxs_to_draw_lines=None,
+                              ):
+
+        arch = self.architecture
+
+        ax_p = self.ax.get_position()
+
+        height = 1.3  / self.fig.get_figheight()
+        gap = 0.5  / self.fig.get_figheight()
+
+        ax = self.fig.add_axes([ax_p.x0, ax_p.y1 + gap, ax_p.width, height], sharex=self.ax)
+
+        if al_idxs_to_draw_lines is None:
+            al_idxs_to_draw_lines = set(range(len(arch.refined_alignments)))
+
+        for al_i, al in enumerate(arch.refined_alignments):
+            if al_i in al_idxs_to_draw_lines:
+                color = self.ref_name_to_color[al.reference_name]
+
+                ax.plot(arch.edits_in_window[al_i],
+                        linewidth=line_width,
+                        color=color,
+                        alpha=line_alpha,
+                       )
+
+        if highlight_minimums:
+            for al_i, interval in arch.stretches:
+                color = self.ref_name_to_color[arch.refined_alignments[al_i].reference_name]
+                ax.plot(arch.edits_in_window[al_i].loc[interval.start:interval.end],
+                        linewidth=3,
+                        color=color,
+                       )
+            
+        if shade_segments:
+            segments = arch.segments
+
+            for left_segment_i in range(len(segments) - 1):
+                right_segment_i = left_segment_i + 1
+
+                min_x = segments[right_segment_i]['first_query_position_interval'].start
+                max_x = segments[left_segment_i]['last_query_position_interval'].end
+
+                handoff_length = max_x - min_x + 1
+
+                if handoff_length >= 0:
+                    if max_x >= self.query_interval[0] and min_x <= self.query_interval[1]:
+                        for segment_i in [left_segment_i, right_segment_i]:
+                            al = segments[segment_i]['cropped_alignment']
+                            if al is not None:
+                                color = self.ref_name_to_color[al.reference_name]
+                                self.ax.axvspan(min_x - 0.5, max_x + 0.5, color=color, alpha=0.1)
+
+                        self.ax.annotate(f'{handoff_length}-nt',
+                                         xy=(np.mean([min_x, max_x]), 1),
+                                         xycoords=('data', 'axes fraction'),
+                                         xytext=(0, 5),
+                                         textcoords='offset points',
+                                         ha='center',
+                                         size=8,
+                                        )
+                
+            for segment in segments:
+                al = segment['cropped_alignment']
+                if al is not None:
+                    start, end = hits.sam.query_interval(segment['cropped_alignment'])
+
+                    color = self.ref_name_to_color[segment['cropped_alignment'].reference_name]
+                    ax.axvspan(start - 0.5, end + 0.5,
+                               color=color,
+                               alpha=0.15,
+                              )
+
+        ax.spines[['bottom', 'top', 'right']].set_visible(False)
+        for label in ax.get_xticklabels():
+            label.set_visible(False)
+
+        ax.set_ylabel(f'Edits in rolling\n{arch.recombination_window_size}-nt window', size=12)
+        ax.set_ylim(-0.5)
+
+        if draw_quality_panel:
+            ax_p = ax.get_position()
+
+            height = 1  / self.fig.get_figheight()
+            gap = 0.5  / self.fig.get_figheight()
+
+            ax = self.fig.add_axes([ax_p.x0, ax_p.y1 + gap, ax_p.width, height], sharex=self.ax)
+            ax.plot(arch.qual, color='black', alpha=0.5)
+            ax.set_ylabel('Quality')
+
+            ax.spines[['top', 'right']].set_visible(False)
+            for label in ax.get_xticklabels():
+                label.set_visible(False)
+
+            ax.set_ylim(0)
