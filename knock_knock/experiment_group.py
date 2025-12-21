@@ -4,7 +4,6 @@ import logging
 import anndata
 import pandas as pd
 import scipy.sparse
-import tqdm
 
 from hits import utilities
 memoized_property = utilities.memoized_property

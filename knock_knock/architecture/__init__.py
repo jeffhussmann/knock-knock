@@ -1291,11 +1291,11 @@ class Categorizer:
                     order = 'reverse'
 
                 chain = ExtensionChain(link_specifications,
-                                    last_al_to_description,
-                                    order,
-                                    side,
-                                    require_definite=require_definite,
-                                    ) 
+                                       last_al_to_description,
+                                       order,
+                                       side,
+                                       require_definite=require_definite,
+                                      ) 
 
                 chain.build(self.target_flanking_alignments[side], 'first target', self)
                     
@@ -1811,6 +1811,7 @@ def get_mismatch_info(alignment, reference_sequences, programmed_substitutions=N
 
 def get_indel_info(alignment):
     indels = []
+
     for i, (kind, length) in enumerate(alignment.cigar):
         if kind == sam.BAM_CDEL or kind == sam.BAM_CREF_SKIP:
             if kind == sam.BAM_CDEL:
@@ -1833,6 +1834,10 @@ def get_indel_info(alignment):
     return indels
 
 def edit_positions(al, reference_sequences, use_deletion_length=False, programmed_substitutions=None):
+    ''' Returns an array of length equal to the query that marks all positions
+    at which the query doesn't match the reference.
+    ''' 
+
     bad_read_ps = np.zeros(al.query_length)
     
     for read_p, *rest in get_mismatch_info(al, reference_sequences, programmed_substitutions=programmed_substitutions):
@@ -1850,7 +1855,6 @@ def edit_positions(al, reference_sequences, use_deletion_length=False, programme
 
         elif indel_type == 'insertion':
             starts_at, ends_at = indel_info
-            # TODO: double-check possible off by one in ends_at
             for read_p in range(starts_at, ends_at + 1):
                 bad_read_ps[read_p] += 1
                

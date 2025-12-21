@@ -552,8 +552,10 @@ class EditingStrategy:
     @memoized_property
     def sequencing_start(self):
         feature_name = self.sequencing_start_feature_name
+
         if feature_name is None:
             feature_name = 'sequencing_start'
+
         return self.features.get((self.target, feature_name))
 
     @memoized_property

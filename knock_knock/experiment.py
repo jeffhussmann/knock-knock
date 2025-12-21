@@ -15,7 +15,6 @@ from itertools import chain
 from pathlib import Path
 from textwrap import dedent
 
-import bokeh.palettes
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd

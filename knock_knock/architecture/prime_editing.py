@@ -672,43 +672,6 @@ class Architecture(knock_knock.architecture.Categorizer):
 
         return target_covering_alignment
 
-    def query_missing_from_alignment(self, al):
-        if al is None:
-            return None
-        else:
-            split_als = sam.split_at_large_insertions(al, 5)
-            covered = interval.get_disjoint_covered(split_als)
-            ignoring_edges = interval.Interval(covered.start, covered.end)
-
-            missing_from = {
-                'start': covered.start,
-                'end': len(self.seq) - covered.end - 1,
-                'middle': (ignoring_edges - covered).total_length,
-            }
-
-            return missing_from
-
-    def alignment_covers_read(self, al):
-        missing_from = self.query_missing_from_alignment(al)
-
-        # Non-indel-containing alignments can more safely be considered to have truly
-        # reached an edge if they make it to a primer since the primer-overlapping part
-        # of the alignment is less likely to be noise.
-        no_indels = len(self.extract_indels_from_alignments([al])) == 0
-
-        if missing_from is None:
-            return False
-        else:
-            not_too_much = {
-                'start': (missing_from['start'] <= 5) or (no_indels and self.overlaps_primer(al, 'left')),
-                'end': (missing_from['end'] <= 5) or (no_indels and self.overlaps_primer(al, 'right')),
-                'middle': (missing_from['middle'] <= 5),
-            }
-
-            starts_at_expected_location = self.overlaps_primer(al, 'left')
-
-            return all(not_too_much.values()) and starts_at_expected_location
-
     @memoized_property
     def starts_at_expected_location(self):
         edge_al = self.target_flanking_alignments['left']
