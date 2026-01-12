@@ -23,8 +23,7 @@ import knock_knock.integrases
 from knock_knock.effector import effectors
 from knock_knock.outcome import DegenerateDeletion, DegenerateInsertion
 
-memoized_property = utilities.memoized_property
-memoized_with_args = utilities.memoized_with_args
+from hits.utilities import memoized_property, memoized_with_args, memoized_with_kwargs
 
 logger = logging.getLogger(__name__)
 
@@ -611,15 +610,17 @@ class EditingStrategy:
         features = {}
         if self.sgRNA_components is not None:
             for name, components in self.sgRNA_components.items():
+                effector = effectors[components['effector']]
+
                 try:
-                    effector = effectors[components['effector']]
                     feature = effector.identify_protospacer_in_target(self.target_sequence, components['protospacer'])
-                    feature.seqname = self.target
-                    ps_name = knock_knock.pegRNAs.protospacer_name(name)
-                    feature.attribute['ID'] = ps_name
-                    features[ps_name] = feature
                 except ValueError:
-                    logger.warning(f'No valid location for {name} {components["effector"]} protospacer: {components["protospacer"]}')
+                    continue
+
+                feature.seqname = self.target
+                ps_name = knock_knock.pegRNAs.protospacer_name(name)
+                feature.attribute['ID'] = ps_name
+                features[ps_name] = feature
                                                                         
         return features
     
@@ -2028,7 +2029,6 @@ class EditingStrategy:
             edited_target = target_before + from_pegRNA + target_after
 
         else:
-            logger.warning('intended edit not implemented')
             edited_target = self.target_sequence
 
         return edited_target
