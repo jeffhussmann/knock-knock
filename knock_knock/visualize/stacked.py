@@ -1152,10 +1152,10 @@ class StackedDiagrams:
                 background_color = 'black'
                 
             if (category == 'deletion') or \
+               (category == 'multiple indels' and subcategory == 'multiple indels') or \
                (category == 'simple indel' and subcategory.startswith('deletion')) or \
-               (category == 'wild type' and subcategory == 'short indel far from cut' and len(details['deletions']) == 1):
+               (category == 'wild type' and subcategory == 'short indel far from cut'):
 
-                deletion = details['deletions'][0]
                 deletions = [strat.expand_degenerate_indel(deletion) for deletion in details['deletions']]
 
                 xs_to_skip = self.draw_deletions(y, deletions, source_name, background_color=background_color)
@@ -2069,6 +2069,7 @@ def make_deletion_boundaries_figure(editing_strategy,
                                     condition_colors=None,
                                     condition_labels=None,
                                     include_simple_deletions=True,
+                                    include_multiple_indels=True,
                                     include_edit_plus_deletions=True,
                                     include_insertions=False,
                                     include_wild_type=False,
@@ -2148,6 +2149,11 @@ def make_deletion_boundaries_figure(editing_strategy,
         if c == 'insertion'
     ] 
 
+    multiple_indels = [
+        (c, s, d) for c, s, d in outcome_fractions.index
+        if (c, s) == ('multiple indels', 'multiple indels')
+    ] 
+
     edit_plus_deletions = [
         (c, s, d) for c, s, d in outcome_fractions.index
         if (c, s) == ('edit + indel', 'deletion')
@@ -2163,11 +2169,14 @@ def make_deletion_boundaries_figure(editing_strategy,
     if include_simple_deletions:
         to_concat.append(outcome_fractions.loc[deletions])
 
-    if include_edit_plus_deletions:
-        to_concat.append(outcome_fractions.loc[edit_plus_deletions])
-
     if include_insertions:
         to_concat.append(outcome_fractions.loc[insertions])
+
+    if include_multiple_indels:
+        to_concat.append(outcome_fractions.loc[multiple_indels])
+
+    if include_edit_plus_deletions:
+        to_concat.append(outcome_fractions.loc[edit_plus_deletions])
 
     if include_wild_type:
         to_concat.append(outcome_fractions.loc[wild_type])

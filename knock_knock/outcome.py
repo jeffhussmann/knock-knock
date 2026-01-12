@@ -5,11 +5,12 @@ import urllib.parse
 
 from collections import OrderedDict
 
-
 import numpy as np
 import pandas as pd
 
 import hits.interval
+
+import knock_knock.effector
 
 class Detail:
     def perform_anchor_shift(self, anchor):
@@ -570,6 +571,7 @@ def add_directionalities_to_deletions(outcomes, editing_strategy):
 def extract_deletion_boundaries(editing_strategy,
                                 outcome_fractions,
                                 include_simple_deletions=True,
+                                include_multiple_indels=True,
                                 include_edit_plus_deletions=False,
                                ):
 
@@ -579,6 +581,7 @@ def extract_deletion_boundaries(editing_strategy,
     deletions = [
         (c, s, d) for c, s, d in outcome_fractions.index
         if (include_simple_deletions and c == 'deletion')
+        or (include_multiple_indels and (c, s) == ('multiple indels', 'multiple indels'))
         or (include_edit_plus_deletions and (c, s) == ('edit + indel', 'deletion'))
     ]
 
@@ -593,9 +596,7 @@ def extract_deletion_boundaries(editing_strategy,
     for (c, s, d), row in deletion_fractions.iterrows():
         details = Details.from_string(d)
 
-        deletions = details['deletions']
-
-        for deletion in deletions:
+        for deletion in details['deletions']:
             per_possible_start = row.values / len(deletion.starts_ats)
             
             for start, stop in zip(deletion.starts_ats, deletion.ends_ats):
@@ -667,3 +668,26 @@ def outcomes_containing_pegRNA_programmed_edits(editing_strategy,
                     outcomes_containing_pegRNA_programmed_edits[str(deletion)].append((c, s, d))
 
     return outcomes_containing_pegRNA_programmed_edits
+
+def outcomes_with_deletion_overlapping_cuts(editing_strategy, sgRNA_name, outcome_fractions, buffer=0):
+    components = editing_strategy.sgRNA_components[sgRNA_name]
+    effector = knock_knock.effector.effectors[components['effector']]
+    protospacer_feature = effector.identify_protospacer_in_target(editing_strategy.target_sequence, components['protospacer'])
+    cut_afters = effector.cut_afters(protospacer_feature).values()
+    cut_interval = hits.interval.Interval(min(cut_afters) - buffer, max(cut_afters) + 1 + buffer)
+
+    outcomes = []
+
+    for c, s, d in outcome_fractions.index:
+        overlaps = False
+
+        details = knock_knock.outcome.Details.from_string(d)
+
+        for deletion in details['deletions']:
+            if hits.interval.are_overlapping(cut_interval, deletion.possibly_involved_interval):
+                overlaps = True
+
+        if overlaps:
+            outcomes.append((c, s, d))
+
+    return outcomes

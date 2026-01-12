@@ -81,6 +81,7 @@ class Architecture(knock_knock.architecture.Categorizer):
             (
                 'deletion',
                 'insertion',
+                'multiple indels',
                 'duplication',
             ),
         ),
@@ -1376,28 +1377,29 @@ class Architecture(knock_knock.architecture.Categorizer):
                     self.category = 'insertion'
                     self.relevant_alignments = [target_alignment]
 
-        else: # more than one indel
-            if len(self.indels) == 2:
+        else: # more than one interesting indel
+            all_indels = interesting_indels + uninteresting_indels
 
-                indels = [indel for indel, near_cut in self.indels]
+            if self.editing_strategy.pegRNA_programmed_deletion in all_indels:
+                non_programmed_indels = [indel for indel in all_indels if indel != self.editing_strategy.pegRNA_programmed_deletion]
 
-                if self.editing_strategy.pegRNA_programmed_deletion in indels:
-                    indel = [indel for indel in indels if indel != self.editing_strategy.pegRNA_programmed_deletion][0]
-
-                    if indel.kind  == 'D':
-                        self.register_edit_plus_indel('deletion', [indel])
-
+                if len(non_programmed_indels) == 1:
+                    if non_programmed_indels[0].kind == 'D':
+                        subcategory = 'deletion'
+                    elif non_programmed_indels[0].kind == 'I':
+                        subcategory = 'insertion'
                     else:
-                        self.register_uncategorized()
-
+                        raise ValueError
                 else:
-                    self.category = 'multiple indels'
-                    self.subcategory = 'multiple indels'
+                    subcategory = 'multiple indels'
 
-                    self.relevant_alignments = [target_alignment]
+                self.register_edit_plus_indel(subcategory, non_programmed_indels)
 
             else:
-                self.register_uncategorized()
+                self.category = 'multiple indels'
+                self.subcategory = 'multiple indels'
+
+                self.relevant_alignments = [target_alignment]
 
     @memoized_property
     def no_alignments_detected(self):
