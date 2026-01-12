@@ -659,7 +659,7 @@ class Experiment:
     @memoized_with_kwargs
     def deletion_boundaries(self, *, include_simple_deletions=True, include_edit_plus_deletions=False):
         return knock_knock.outcome.extract_deletion_boundaries(self.editing_strategy,
-                                                               self.outcome_fractions,
+                                                               self.outcome_fractions(),
                                                                include_simple_deletions=include_simple_deletions,
                                                                include_edit_plus_deletions=include_edit_plus_deletions,
                                                               )
