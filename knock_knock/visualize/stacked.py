@@ -49,6 +49,7 @@ class StackedDiagrams:
     num_outcomes: int | None = None
     color_overrides: dict = field(default_factory=dict)
     label_overrides: dict = field(default_factory=dict)
+    label_protospacers: bool = False
     preserve_x_lims: bool = False
     replacement_text_for_complex: dict = field(default_factory=dict)
     shift_x: float = 0
@@ -453,8 +454,18 @@ class StackedDiagrams:
                     self.draw_rect(source_name, guide_start, guide_end, bottom, top, None, color=protospacer_color)
                     self.draw_rect(source_name, PAM_start, PAM_end, bottom, top, None, color=PAM_color)
 
-                    if not on_top:
-                        # Draw PAMs.
+                    if on_top:
+                        if self.label_protospacers:
+                            self.ax.annotate(guide_name,
+                                            xy=(np.mean([guide_start, guide_end]), top),
+                                            xytext=(0, 5),
+                                            textcoords='offset points',
+                                            color=PAM_color,
+                                            annotation_clip=False,
+                                            ha='center',
+                                            va='bottom',
+                                            )
+                    else:
                         self.draw_rect(source_name, window_left - 0.5, min(PAM_start, guide_start), bottom, top, self.block_alpha)
                         self.draw_rect(source_name, max(PAM_end, guide_end), window_right + 0.5, bottom, top, self.block_alpha)
 
