@@ -143,7 +143,7 @@ class ReadDiagram:
 
                 for al in als:
                     if al.reference_name in refs_to_split:
-                        split_als = self.architecture.split_and_extend_alignments(al)
+                        split_als = self.architecture.split_and_extend_alignments([al])
                         all_split_als.extend(split_als)
 
                     else:
