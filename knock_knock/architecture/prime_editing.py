@@ -3,7 +3,7 @@ from collections import Counter
 import numpy as np
 
 from hits import interval, sam, sw, utilities
-from hits.utilities import memoized_property
+from hits.utilities import memoized_property, memoized_with_kwargs
 import hits.visualize
 
 import knock_knock.architecture
@@ -544,10 +544,11 @@ class Architecture(knock_knock.architecture.Categorizer):
     def pegRNA_extension_als_list(self):
         extension_als = []
 
-        if 'pegRNA' in self.extension_chain.alignments:
-            extension_als.append(self.extension_chain.alignments['pegRNA'])
+        if len(self.editing_strategy.pegRNA_names) > 0:
+            if 'pegRNA' in self.extension_chain.alignments:
+                extension_als.append(self.extension_chain.alignments['pegRNA'])
 
-        extension_als = sam.make_nonredundant(extension_als)
+            extension_als = sam.make_nonredundant(extension_als)
 
         return extension_als
 
@@ -558,10 +559,12 @@ class Architecture(knock_knock.architecture.Categorizer):
         it would need to extend.
         '''
         pegRNA_als = []
-        for side in ['left', 'right']:
-            for key in ['pegRNA']:
-                if (pegRNA_al := self.reconciled_extension_chains()['prime_editing'][side].alignments.get(key)) is not None:
-                    pegRNA_als.append(pegRNA_al)
+
+        if len(self.editing_strategy.pegRNA_names) > 0:
+            for side in ['left', 'right']:
+                for key in ['pegRNA']:
+                    if (pegRNA_al := self.reconciled_extension_chains()['prime_editing'][side].alignments.get(key)) is not None:
+                        pegRNA_als.append(pegRNA_al)
 
         return pegRNA_als
 
@@ -889,12 +892,6 @@ class Architecture(knock_knock.architecture.Categorizer):
         return self.editing_strategy.features.get((pegRNA_name, knock_knock.pegRNAs.make_HA_RT_name(pegRNA_name)))
 
     @memoized_property
-    def indels_string(self):
-        reps = [str(indel) for indel in self.indels]
-        string = ' '.join(reps)
-        return string
-
-    @memoized_property
     def covered_by_split_target_or_pegRNA_alignments(self):
         relevant_als = self.split_target_alignments + self.split_pegRNA_alignments
         covered = interval.get_disjoint_covered(relevant_als)
@@ -1167,22 +1164,27 @@ class Architecture(knock_knock.architecture.Categorizer):
 
         return contains_RTed_sequence and not_covered.total_length == 0
 
-    @memoized_property
-    def is_unintended_rejoining(self):
-        return self.is_valid_unintended_rejoining(self.reconciled_extension_chains()['prime_editing'])
+    @memoized_with_kwargs
+    def is_unintended_rejoining(self, *, require_definite=True):
+        if len(self.editing_strategy.pegRNA_names) == 0:
+            valid = False
+        else:
+            valid = self.is_valid_unintended_rejoining(self.reconciled_extension_chains(require_definite=require_definite)['prime_editing'])
+
+        return valid
 
     @memoized_property
     def is_possible_unintended_rejoining(self):
         return self.is_valid_unintended_rejoining(self.reconciled_extension_chains(require_definite=False)['prime_editing'])
 
     def register_unintended_rejoining(self):
-        if self.is_unintended_rejoining:
+        if self.is_unintended_rejoining():
             chain = self.extension_chain
             chains = self.reconciled_extension_chains()['prime_editing']
             chain_edges = self.extension_chain_edges
             chain_junction_MH = self.extension_chain_junction_microhomology
 
-        elif self.is_possible_unintended_rejoining:
+        elif self.is_unintended_rejoining(require_definite=False):
             chain = self.possible_extension_chain
             chains = self.reconciled_extension_chains(require_definite=False)['prime_editing']
             chain_edges = self.possible_extension_chain_edges
@@ -1344,7 +1346,7 @@ class Architecture(knock_knock.architecture.Categorizer):
             else:
                 self.register_uncategorized()
 
-        elif self.max_scaffold_overlap >= 2 and self.is_unintended_rejoining:
+        elif self.max_scaffold_overlap >= 2 and self.is_unintended_rejoining():
             self.register_unintended_rejoining()
 
         elif len(interesting_indels) == 1:
@@ -1352,7 +1354,7 @@ class Architecture(knock_knock.architecture.Categorizer):
 
             if self.has_pegRNA_substitution:
                 if indel.kind == 'D':
-                    if self.is_unintended_rejoining:
+                    if self.is_unintended_rejoining():
                         self.register_unintended_rejoining()
                     else:
                         self.register_edit_plus_indel('deletion', [indel])
@@ -1462,20 +1464,22 @@ class Architecture(knock_knock.architecture.Categorizer):
         elif self.single_read_covering_target_alignment:
             self.register_single_read_covering_target_alignment()
 
-        elif self.is_unintended_rejoining:
+        elif self.is_unintended_rejoining():
             self.register_unintended_rejoining()
 
-        elif self.is_possible_unintended_rejoining:
+        elif self.is_unintended_rejoining(require_definite=False):
             self.register_unintended_rejoining()
 
         elif self.pegRNA_alignments_cover_target_gap:
             self.category = 'complex incorporation of RT\'ed sequence'
             self.subcategory = 'n/a'
             strat = self.editing_strategy
-            PBS_al = self.generate_extended_pegRNA_PBS_alignment(self.target_flanking_alignments[self.pegRNA_side], self.pegRNA_side)
             als = self.target_flanking_alignments_list + interval.make_parsimonious(self.pegRNA_alignments_cover_target_gap)
-            if PBS_al is not None:
-                als.append(PBS_al)
+
+            if self.target_flanking_alignments[self.pegRNA_side] is not None:
+                PBS_al = self.generate_extended_pegRNA_PBS_alignment(self.target_flanking_alignments[self.pegRNA_side], self.pegRNA_side)
+                if PBS_al is not None:
+                    als.append(PBS_al)
 
             als = sam.merge_any_adjacent_pairs(als, strat.reference_sequences, max_deletion_length=2, max_insertion_length=2)
             self.relevant_alignments = als
@@ -1682,26 +1686,27 @@ class Architecture(knock_knock.architecture.Categorizer):
         '''
         deletion = None
 
-        other_chain = self.reconciled_extension_chains()['prime_editing'][self.non_pegRNA_side]
+        if len(self.editing_strategy.pegRNA_names) > 0:
+            other_chain = self.reconciled_extension_chains()['prime_editing'][self.non_pegRNA_side]
 
-        if (self.contains_intended_edit and
-            other_chain.description == "not RT'ed" and
-            self.not_covered_by_extension_chains['prime_editing'].is_empty
-        ):
+            if (self.contains_intended_edit and
+                other_chain.description == "not RT'ed" and
+                self.not_covered_by_extension_chains['prime_editing'].is_empty
+            ):
 
-            als_to_merge = [
-                self.extension_chain.alignments['second target'],
-                other_chain.alignments['first target'],
-            ]
+                als_to_merge = [
+                    self.extension_chain.alignments['second target'],
+                    other_chain.alignments['first target'],
+                ]
 
-            target_als = sam.merge_any_adjacent_pairs(als_to_merge, self.editing_strategy.reference_sequences)
+                target_als = sam.merge_any_adjacent_pairs(als_to_merge, self.editing_strategy.reference_sequences)
 
-            not_programmed_indels = [indel for indel, _ in self.extract_indels_from_alignments(target_als) if indel != self.editing_strategy.pegRNA_programmed_deletion]
-                
-            not_programmed_deletions = [indel for indel in not_programmed_indels if indel.kind == 'D']
-                
-            if len(not_programmed_indels) == 1 and len(not_programmed_deletions) == 1:
-                deletion = not_programmed_deletions[0]                        
+                not_programmed_indels = [indel for indel, _ in self.extract_indels_from_alignments(target_als) if indel != self.editing_strategy.pegRNA_programmed_deletion]
+                    
+                not_programmed_deletions = [indel for indel in not_programmed_indels if indel.kind == 'D']
+                    
+                if len(not_programmed_indels) == 1 and len(not_programmed_deletions) == 1:
+                    deletion = not_programmed_deletions[0]                        
 
         return deletion
 
@@ -1993,7 +1998,8 @@ class Architecture(knock_knock.architecture.Categorizer):
                 label_overrides[name] = new_name
 
         else:
-            refs_to_flip.add(self.pegRNA_names_by_side_of_read['left'])
+            if 'left' in self.pegRNA_names_by_side_of_read:
+                refs_to_flip.add(self.pegRNA_names_by_side_of_read['left'])
 
             for pegRNA_name in strat.pegRNA_names:
                 color = strat.pegRNA_name_to_color[pegRNA_name]
