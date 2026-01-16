@@ -27,18 +27,17 @@ def read_and_sanitize_csv(csv_fn, index_col=None):
 
     df.columns = df.columns.str.strip()
 
-    if 'sgRNAs' in df.columns:
-        df['sgRNAs'] = df['sgRNAs'].fillna('')
-
-    df = df.dropna(axis='index', how='all')
+    df.dropna(axis='index', how='all', inplace=True)
     
-    if not df.empty:
-        df = df.dropna(axis='columns', how='all')
+    # Only drop empty colunmns that don't have a name.
+    empty_cols = df.isna().all(axis='rows')
+    unnamed_cols = df.columns.str.startswith('Unnamed: ')
+    df.drop(columns=df.columns[empty_cols & unnamed_cols], inplace=True)
         
-    df = df.fillna('')
+    df.fillna('', inplace=True)
 
     if index_col is not None:
-        df = df.set_index(index_col)
+        df.set_index(index_col, inplace=True)
 
     possibly_series = df.squeeze(axis='columns')
 
