@@ -91,8 +91,8 @@ def get_RTT_aligner(match_score=2,
     # query.  
 
     aligner.mode = 'global'
-    aligner.target_right_open_gap_score = 0
-    aligner.target_right_extend_gap_score = 0
+    aligner.open_right_insertion_score = 0
+    aligner.extend_right_insertion_score = 0
 
     return aligner
 
@@ -343,9 +343,7 @@ class pegRNA:
 
         best_alignment = alignments[0]
 
-        gaps, identities, mismatches = best_alignment.counts()
-
-        if identities + mismatches < min_aligned_nts:
+        if best_alignment.counts().aligned < min_aligned_nts:
             sequences = [self.intended_flap_sequence, self.target_downstream_of_nick]
             coordinates = np.array([[0, len(self.intended_flap_sequence), len(self.intended_flap_sequence)],
                                     [0, 0, len(self.target_downstream_of_nick)]
@@ -937,8 +935,8 @@ class pegRNA_pair:
             mode='global',
             query_left_open_gap_score=0,
             query_left_extend_gap_score=0,
-            target_right_open_gap_score=0,
-            target_right_extend_gap_score=0,
+            open_right_insertion_score=0,
+            extend_right_insertion_score=0,
         )
 
         alignments = flap_aligner.align(self.RT_extended_target_sequence['+'],
@@ -1438,8 +1436,8 @@ class PE3b_spacer:
                                             mismatch_score=-3,
                                             open_gap_score=-4,
                                             extend_gap_score=-0.1,
-                                            target_right_open_gap_score=0,
-                                            target_right_extend_gap_score=0,
+                                            open_right_insertion_score=0,
+                                            extend_right_insertion_score=0,
                                             target_left_extend_gap_score=0,
                                             target_left_open_gap_score=0,
                                            )
