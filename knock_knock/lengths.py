@@ -1,6 +1,5 @@
 from collections import Counter, defaultdict
 
-import h5py
 import numpy as np
 import pandas as pd
 
@@ -53,7 +52,7 @@ class OutcomeStratifiedLengths:
                 self.subcategory_lengths_df.loc[(cat, subcat), length] += value
 
     def to_file(self, fn):
-        with pd.HDFStore(fn) as store:
+        with pd.HDFStore(fn, mode='w') as store:
             store['subcategory_lengths_df'] = self.subcategory_lengths_df
 
             attrs = store.get_storer('subcategory_lengths_df').attrs
@@ -61,16 +60,6 @@ class OutcomeStratifiedLengths:
             attrs.max_relevant_length = self.max_relevant_length
             attrs.length_to_store_unknown = self.length_to_store_unknown
             attrs.non_relevant_categories = sorted(self.non_relevant_categories)
-
-        #with h5py.File(fn, 'w') as fh:
-        #    fh.attrs['max_relevant_length'] = self.max_relevant_length
-        #    fh.attrs['length_to_store_unknown'] = self.length_to_store_unknown
-        #    fh.attrs['non_relevant_categories'] = self.non_relevant_categories
-
-        #    for (cat, subcat), counts in self.subcategory_length_arrays.items():
-        #        # object names can't have '/' characters in them.
-        #        subcat = subcat.replace('/', 'SANITIZED_SLASH')
-        #        fh.create_dataset(f'{cat}/{subcat}', data=counts)
 
     @classmethod
     def from_file(cls, fn):
@@ -84,13 +73,6 @@ class OutcomeStratifiedLengths:
                          )
 
             lengths.subcategory_lengths_df = store.subcategory_lengths_df
-
-            #with h5py.File(fn, 'r') as fh:
-            #    for cat, group in fh.items():
-            #        for subcat, dataset in group.items():
-            #            # Undo the sanitization of '/' characters.
-            #            subcat = subcat.replace('SANITIZED_SLASH', '/')
-            #            lengths.subcategory_length_arrays[cat, subcat] = dataset[()]
 
         return lengths
 
