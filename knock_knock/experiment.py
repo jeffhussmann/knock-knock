@@ -961,8 +961,8 @@ class Experiment:
 
             ax.plot(ys, color=color, alpha=alpha, linewidth=line_width, label=label)
             
-            nonzero_xs = ys.to_numpy().nonzero()[0]
-            nonzero_ys = ys[nonzero_xs]
+            nonzero_ys = ys[ys > 0]
+            nonzero_xs = nonzero_ys.index.values
             
             # Don't mark nonzero points if any smoothing was done.
             if self.length_plot_smooth_window == 0 and label != 'all other reads':
