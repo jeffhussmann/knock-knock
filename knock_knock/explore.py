@@ -138,7 +138,7 @@ class Explorer:
 
             previous_value = self.widgets['category'].value
 
-            categories = exp.outcome_counts(level='category').sort_values(ascending=False).index.values
+            categories = exp.outcome_counts(level='category', only_relevant=False).sort_values(ascending=False).index.values
             self.widgets['category'].options = categories
 
             if len(categories) > 0:
@@ -160,7 +160,8 @@ class Explorer:
 
             category = self.widgets['category'].value
 
-            subcategories = [subcat for cat, subcat in exp.subcategories_by_frequency if cat == category]
+            subcategories = exp.outcome_counts(level='subcategory', only_relevant=False).sort_values(ascending=False).index.values
+            subcategories = [subcat for cat, subcat in subcategories if cat == category]
             self.widgets['subcategory'].options = subcategories
 
             if len(subcategories) > 0:
