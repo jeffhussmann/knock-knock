@@ -614,13 +614,17 @@ class Architecture(knock_knock.architecture.Categorizer):
 
     def overlaps_donor_specific(self, al):
         strat = self.editing_strategy
+
         if strat.donor is None:
             return False
+
         elif al.reference_name != strat.donor:
             return False
+
         else:
             covered = interval.get_covered_on_ref(al)
             overlap = covered & strat.donor_specific_intervals
+
             return overlap.total_length > 0
 
     @memoized_property
@@ -666,24 +670,18 @@ class Architecture(knock_knock.architecture.Categorizer):
 
     @memoized_property
     def closest_donor_alignment_to_edge(self):
-        ''' Identify the alignments to the donor closest to edge of the read
-        that has the PAM-proximal and PAM-distal amplicon primer. '''
         donor_als = self.parsimonious_donor_alignments
 
         if self.sequencing_direction is None or len(donor_als) == 0:
             closest = {5: None, 3: None}
         else:
-            closest = {}
+            closest = {
+                'left': min(donor_als, key=lambda al: interval.get_covered(al).start),
+                'right': max(donor_als, key=lambda al: interval.get_covered(al).end),
+            }
 
-            left_most = min(donor_als, key=lambda al: interval.get_covered(al).start)
-            right_most = max(donor_als, key=lambda al: interval.get_covered(al).end)
-
-            if self.sequencing_direction == '+':
-                closest[5] = left_most
-                closest[3] = right_most
-            else:
-                closest[5] = right_most
-                closest[3] = left_most
+            for read_side, al in sorted(closest.items()):
+                closest[self.read_side_to_target_side[read_side]] = al
 
         return closest
 
@@ -766,51 +764,45 @@ class Architecture(knock_knock.architecture.Categorizer):
         HAs = self.editing_strategy.homology_arms
         cut_after = self.editing_strategy.cut_after
 
-        flanking_al = {}
         mask_start = {5: -np.inf}
         mask_end = {3: np.inf}
-        for side in [5, 3]:
-            if self.clean_handoff[side]:
-                flanking_al[side] = self.closest_donor_alignment_to_edge[side]
-            else:
-                flanking_al[side] = self.target_flanking_alignments[self.target_side_to_read_side[side]]
-
+        
         if self.clean_handoff[5] or cut_after is None:
-            mask_end[5] = HAs[5]['donor'].end
+            mask_end[5] = HAs[5]['target'].end
         else:
             mask_end[5] = cut_after
 
         if self.clean_handoff[3] or cut_after is None:
-            mask_start[3] = HAs[3]['donor'].start
+            mask_start[3] = HAs[3]['target'].start
         else:
             mask_start[3] = cut_after + 1
 
-        covered = {
-            side: (sam.crop_al_to_ref_int(flanking_al[side], mask_start[side], mask_end[side])
-                   if flanking_al[side] is not None else None
-                  )
-            for side in [5, 3]
-        }
+        covered = {}
+
+        for side in [5, 3]:
+            flanking_al = self.target_flanking_alignments_by_target_side[side]
+            cropped_al = sam.crop_al_to_ref_int(flanking_al, mask_start[side], mask_end[side])
+            covered[side] = interval.get_covered(cropped_al)
 
         if self.sequencing_direction == '+':
-            if covered[5] is not None:
-                start = interval.get_covered(covered[5]).end + 1
+            if not covered[5].is_empty:
+                start = covered[5].end + 1
             else:
                 start = 0
 
-            if covered[3] is not None:
-                end = interval.get_covered(covered[3]).start - 1
+            if not covered[3].is_empty:
+                end = covered[3].start - 1
             else:
                 end = len(self.seq) - 1
 
         elif self.sequencing_direction == '-':
-            if covered[5] is not None:
-                end = interval.get_covered(covered[5]).start - 1
+            if not covered[5].is_empty:
+                end = covered[5].start - 1
             else:
                 end = len(self.seq) - 1
 
-            if covered[3] is not None:
-                start = interval.get_covered(covered[3]).end + 1
+            if not covered[3].is_empty:
+                start = covered[3].end + 1
             else:
                 start = 0
 
@@ -896,10 +888,12 @@ class Architecture(knock_knock.architecture.Categorizer):
         for al in self.parsimonious_donor_alignments:
             if self.overlaps_donor_specific(al):
                 covered = interval.get_covered(al)
+
                 if (self.integration_interval.total_length > 0) and ((self.integration_interval - covered).total_length == 0):
                     # If a single donor al covers the whole integration, use just it.
                     integration_donor_als = [al]
                     break
+
                 else:
                     covered_integration = self.integration_interval & interval.get_covered(al)
                     # Ignore als that barely extend past the homology arms.
