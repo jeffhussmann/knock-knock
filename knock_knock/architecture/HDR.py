@@ -317,12 +317,11 @@ class Architecture(knock_knock.architecture.Categorizer):
             self.subcategory = 'multiple indels near cut'
 
     @memoized_property
-    def is_uniformative(self):
+    def is_uninformative(self):
         ''' For non-amplicon strategies, reads may not span the edited region. '''
-        num_valid_flanking_alignments = sum(al is not None for al in self.target_flanking_alignments.values())
-        return (len(self.editing_strategy.primers) == 0) and (num_valid_flanking_alignments != 2)
+        return (len(self.editing_strategy.primers) == 0) and (not self.has_target_flanking_alignments_on_both_sides)
 
-    def register_uniformative(self):
+    def register_uninformative(self):
         self.category = 'uninformative'
         self.subcategory = 'uninformative'
 
@@ -347,8 +346,8 @@ class Architecture(knock_knock.architecture.Categorizer):
             self.subcategory = 'extra copy of primer'
             self.relevant_alignments = self.uncategorized_relevant_alignments
 
-        elif self.is_uniformative:
-            self.register_uniformative()
+        elif self.is_uninformative:
+            self.register_uninformative()
 
         elif self.single_read_covering_target_alignment:
             self.register_single_read_covering_target_alignment()
