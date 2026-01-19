@@ -933,8 +933,8 @@ class pegRNA_pair:
             open_gap_score=-200,
             extend_gap_score=-0.1,
             mode='global',
-            query_left_open_gap_score=0,
-            query_left_extend_gap_score=0,
+            open_left_deletion_score=0,
+            extend_left_deletion_score=0,
             open_right_insertion_score=0,
             extend_right_insertion_score=0,
         )
