@@ -67,15 +67,21 @@ class Extractor:
     def copy_editing_strategy(self, editing_strategy):
         strat = editing_strategy
 
+        if strat.donor is not None:
+            strat.parameters['donor'] = strat.donor
+
         self.strategy_dir.mkdir(exist_ok=True, parents=True)
 
-        manifest_fn = self.strategy_dir / 'manifest.yaml'
+        parameters_fn = self.strategy_dir / 'parameters.yaml'
 
-        manifest_fn.write_text(yaml.safe_dump(strat.manifest))
+        parameters_fn.write_text(yaml.safe_dump(strat.parameters))
 
-        for source in strat.sources:
-            shutil.copy(strat.dir / (source + '.gb'), self.strategy_dir / (source + '.gb'))
+        fns_to_copy = {strat.reference_name_to_file_name[ref_name] for ref_name in strat.references_to_load}
+        for fn in fns_to_copy:
+            shutil.copy(fn, self.strategy_dir / fn.name)
 
-        sgRNAs = knock_knock.pegRNAs.read_csv(strat.fns['sgRNAs'], process=False).loc[strat.sgRNAs]
+        sgRNAs = pd.DataFrame(strat.sgRNA_components).T
+        sgRNAs.drop(columns=['full_sequence'], errors='ignore')
+        sgRNAs.index.name = 'name'
 
         sgRNAs.to_csv(self.strategy_dir / 'sgRNAs.csv')

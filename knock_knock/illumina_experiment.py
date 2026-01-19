@@ -330,7 +330,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
             pysam.set_verbosity(saved_verbosity)
 
     def trim_reads(self):
-        ''' Trim a (potentially variable-length) barcode from the beginning of a read
+        ''' Trim a (potentially variable-length) UMI from the beginning of a read
         by searching for the expected sequence that the amplicon should begin with.
 
         Sort reads by name.

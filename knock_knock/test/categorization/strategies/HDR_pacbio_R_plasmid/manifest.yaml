@@ -1,9 +1,0 @@
-donor: pML217_RAB11A-150HA
-genome_source: RAB11A
-primer_names:
-- RAB11A_PAC_0
-- RAB11A_PAC_1
-sources:
-- RAB11A_PAC
-- pML217_RAB11A-150HA
-target: RAB11A_PAC

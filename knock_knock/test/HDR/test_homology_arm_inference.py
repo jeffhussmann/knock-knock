@@ -27,7 +27,8 @@ def test_same_orientation():
 
 def flip_donor(strat):
     ''' Return a new EditingStrategy with a reverse-complemented donor. '''
-    records = {record.name: record for record in strat.gb_records}
+    gb_records, _ = strat.all_gb_records
+    records = {record.name: record for record in gb_records}
 
     flipped_donor = records[strat.donor].reverse_complement()
 
@@ -35,8 +36,7 @@ def flip_donor(strat):
 
     strat_with_flipped_donor = knock_knock.editing_strategy.EditingStrategy(base_dir,
                                                                             'HDR_pacbio_R_PCR',
-                                                                            gb_records=[
-                                                                                records[strat.target],
+                                                                            manual_gb_records=[
                                                                                 flipped_donor,
                                                                             ],
                                                                             donor=flipped_donor.name,

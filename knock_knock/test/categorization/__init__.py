@@ -38,6 +38,12 @@ class ReadSet(knock_knock.test.Extractor):
 
         self.expected_categorizations_fn = self.data_dir / 'expected_categorizations.yaml'
 
+    def create(self):
+        self.data_dir.mkdir(exist_ok=True)
+
+        if not self.expected_categorizations_fn.exists():
+            self.expected_categorizations_fn.touch()
+
     def __str__(self):
         return self.name
 

@@ -1,0 +1,29 @@
+m84251R1_250517_054455_s4/000003541828/ccs:
+  category: HDR
+  subcategory: HDR
+  note: reverse orientation
+
+m84251R1_250517_054455_s4/000117115335/ccs:
+  category: HDR
+  subcategory: HDR
+  note: forward orientation 
+
+m84251R1_250517_054455_s4/000032376704/ccs:
+  category: incomplete HDR
+  subcategory: 5' imperfect, 3' HDR
+  note: reverse orientation
+
+m84251R1_250517_054455_s4/000099160878/ccs:
+  category: incomplete HDR
+  subcategory: 5' imperfect, 3' HDR
+  note: forward orientation
+
+m84251R1_250517_054455_s4/000068424864/ccs:
+  category: uninformative
+  subcategory: uninformative
+  note: read starts in middle of HA_3
+
+m84251R1_250517_054455_s4/000069867060/ccs:
+  category: uninformative
+  subcategory: uninformative
+  note: read doesn't make it to cut

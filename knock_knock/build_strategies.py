@@ -2,26 +2,23 @@ import logging
 import shutil
 import subprocess
 import sys
-import warnings
 
 from urllib.parse import urlparse
 from pathlib import Path
-from collections import defaultdict
+from collections import Counter, defaultdict
 
-import pandas as pd
-import numpy as np
 import pysam
 import yaml
 
 import Bio.SeqIO
-from Bio import BiopythonWarning
 from Bio.SeqFeature import SeqFeature, FeatureLocation
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
-from hits import fasta, fastq, genomes, interval, mapping_tools, sam, sw, utilities
+from hits import fastq, genomes, interval, mapping_tools, sam, sw, utilities
 import knock_knock.editing_strategy
 import knock_knock.effector
+import knock_knock.experiment
 import knock_knock.pegRNAs
 
 import knock_knock.utilities
@@ -50,64 +47,104 @@ class EditingStrategyBuilder:
     Attempts to identify the genomic location where an sgRNA sequence
     is flanked by amplicon primers.
     
-    info should have keys:
-        name
-        genome
-        amplicon_primers
-        sgRNAs
-    optional keys:
-        donor
-        nonhomologous_donor_sequence
-        extra_sequences
     '''
 
     def __init__(self,
                  base_dir,
-                 info,
-                 defer_HA_identification=False,
+                 name,
+                 genome,
+                 amplicon_primer_names,
+                 sgRNA_names,
+                 genomes=None,
                 ):
 
         self.base_dir = Path(base_dir)
-        self.info = info
+        self.strategies_dir = knock_knock.editing_strategy.get_strategies_dir(self.base_dir)
+
+        self.name = name
+        self.dir = self.strategies_dir / self.name
+
+        self.genome = genome
+
+        def ensure_list(possible_string):
+            converted = possible_string
+
+            if isinstance(converted, str):
+                if converted == '':
+                    converted = []
+                else:
+                    converted = converted.split(';')
+            
+            return converted
+
+        self.amplicon_primer_names = ensure_list(amplicon_primer_names)
+        self.sgRNA_names = ensure_list(sgRNA_names)
+
         self.index_locations = knock_knock.editing_strategy.locate_supplemental_indices(self.base_dir)
 
-        self.extra_sequences = load_extra_sequences(self.base_dir)
+        if genomes is None:
+            genomes = knock_knock.editing_strategy.Genomes(self.base_dir)
 
-        self.extra_genbank_records = load_extra_genbank_records(self.base_dir)
+        self.genomes = genomes
 
-        self.defer_HA_identification = defer_HA_identification
+        self.dir = knock_knock.editing_strategy.get_strategies_dir(self.base_dir) / self.name
 
-        self.name = self.info['name']
+    @utilities.memoized_property
+    def extra_sequences(self):
+        fasta_records, _ = knock_knock.editing_strategy.load_all_fasta_records(self.strategies_dir)
+        genbank_records, _ = knock_knock.editing_strategy.load_all_genbank_records(self.strategies_dir)
 
-        self.target_dir = knock_knock.editing_strategy.get_strategies_dir(self.base_dir) / self.name
-        self.target_dir.mkdir(parents=True, exist_ok=True)
+        all_records = fasta_records + genbank_records
+
+        name_counts = Counter(record.name for record in all_records)
+
+        duplicates = {name for name, count in name_counts.items() if count > 1} 
+
+        if len(duplicates) > 0:
+            raise ValueError('multiple records for names {duplicates}')
+
+        extra_sequences = {record.name: str(record.seq).upper() for record in all_records}
+
+        return extra_sequences
+
+    @utilities.memoized_property
+    def sgRNAs(self):
+        csv_fn = self.strategies_dir / 'sgRNAs.csv'
+
+        if csv_fn.exists():
+            all_sgRNAs = knock_knock.pegRNAs.read_csv(csv_fn)
+        else:
+            all_sgRNAs = {}
+
+        missing_names = set(self.sgRNA_names) - set(all_sgRNAs)
+
+        if len(missing_names) > 0:
+            raise ValueError(f'no entry for sgRNAs {missing_names}')
+
+        sgRNAs = {name: components for name, components in all_sgRNAs.items() if name in self.sgRNA_names}
+
+        return sgRNAs
+
+    @utilities.memoized_property
+    def primers(self):
+        amplicon_primers_fn = self.strategies_dir / 'amplicon_primers.csv'
+
+        if amplicon_primers_fn.exists():
+            all_primers = knock_knock.utilities.read_and_sanitize_csv(amplicon_primers_fn, index_col='name').to_dict()
+        else:
+            all_primers = {}
+
+        missing_names = set(self.amplicon_primer_names) - set(all_primers)
+
+        if len(missing_names) > 0:
+            raise ValueError(f'no entry for primers {missing_names}')
+
+        full_primers = {name: seq for name, seq in all_primers.items() if name in self.amplicon_primer_names}
 
         # Only align primer sequence downstream of any N's.
-        self.primers_name, primers = self.info['amplicon_primers']
+        primers = {name: seq.upper().split('N')[-1] for name, seq in full_primers.items()}
 
-        self.primers = {}
-
-        primers = [primer.upper().split('N')[-1] for primer in primers.split(';')]
-
-        if len(primers) == 1:
-            self.primers[self.primers_name] = primers[0]
-        else:
-            for primer_i, primer in enumerate(primers):
-                self.primers[f'{self.primers_name}_{primer_i}'] = primer
-
-        self.genome = self.info['genome']
-
-        if self.primers_name is None:
-            self.target_name = self.name
-        else:
-            self.target_name = self.primers_name
-
-        # self.target_name will used as a path component, so can't have a forward slash.
-        self.target_name = self.target_name.replace('/', '_SLASH_')
-
-        self.sgRNAs = self.info['sgRNAs']
-        if self.sgRNAs is None:
-            self.sgRNAs = []
+        return primers
 
     def identify_protospacer_features_in_amplicon(self,
                                                   amplicon_sequence,
@@ -116,7 +153,7 @@ class EditingStrategyBuilder:
 
         protospacer_features_in_amplicon = {}
 
-        for sgRNA_name, components in sorted(self.sgRNAs):
+        for sgRNA_name, components in sorted(self.sgRNAs.items()):
             try:
                 effector = knock_knock.effector.effectors[components['effector']]
                 protospacer_feature = effector.identify_protospacer_in_target(amplicon_sequence, components['protospacer'])
@@ -124,7 +161,7 @@ class EditingStrategyBuilder:
 
             except ValueError:
                 if amplicon_description is not None:
-                    sgRNA_description = f'{sgRNA_name} {components["effector"]} protospacer: {components["protospacer"]}'
+                    sgRNA_description = f'{sgRNA_name} {components['effector']} protospacer: {components['protospacer']}'
                     logger.warning(f'A protospacer sequence adjacent to an appropriate PAM could not be located for {sgRNA_description} in target {amplicon_description}')
 
                 if components['extension'] != '':
@@ -133,290 +170,95 @@ class EditingStrategyBuilder:
 
         return protospacer_features_in_amplicon
 
-    def build(self, generate_pegRNA_genbanks=False):
-        donor_info = self.info.get('donor')
+    @utilities.memoized_property
+    def extracted_target_sequence(self):
+        if len(self.primers) > 0:
+            left_primer_al, right_primer_al = self.concordant_primer_alignments_to_genome
 
-        if donor_info is None:
-            donor_name = None
-            donor_seq = None
+            ref_name = left_primer_al.reference_name
+            region_start = left_primer_al.reference_start
+            region_end = right_primer_al.reference_end
+
+            buffer = 200
+
         else:
-            donor_name, donor_seq = donor_info
-            if donor_name is None:
-                donor_name = f'{self.name}_donor'
+            ref_name = self.protospacer_alignment.reference_name
+            region_start = self.protospacer_alignment.reference_start
+            region_end = self.protospacer_alignment.reference_end
 
-        if donor_seq is None:
-            has_donor = False
-        else:
-            has_donor = True
+            buffer = 6000
 
-        if self.info.get('donor_type') is None:
-            donor_type = None
-        else:
-            _, donor_type = self.info['donor_type']
+        target_start = max(0, region_start - buffer)
+        target_end = min(self.reference_length(ref_name), region_end + buffer)
 
-        nh_donor_info = self.info.get('nonhomologous_donor_sequence')
+        target_sequence = self.region_fetcher(ref_name, target_start, target_end).upper()
 
-        if nh_donor_info is None:
-            nh_donor_name = None
-            nh_donor_seq = None
-        else:
-            nh_donor_name, nh_donor_seq = nh_donor_info
-            if nh_donor_name is None:
-                nh_donor_name = f'{self.name}_NH_donor'
+        return target_sequence
 
-        if nh_donor_seq is None:
-            has_nh_donor = False
-        else:
-            has_nh_donor = True
-
-        left_primer_al, right_primer_al = self.align_primers()
-
-        ref_name = left_primer_al.reference_name
-        amplicon_start = left_primer_al.reference_start
-        amplicon_end = right_primer_al.reference_end
-        amplicon_sequence = self.region_fetcher(ref_name, amplicon_start, amplicon_end).upper()
-
-        amplicon_description = f'{left_primer_al.reference_name}:{left_primer_al.reference_start:,}-{right_primer_al.reference_end:,}'
-        protospacer_features_in_amplicon = self.identify_protospacer_features_in_amplicon(amplicon_sequence, amplicon_description=amplicon_description)
-
-        final_window_around = min(500, amplicon_start)
-
-        def amplicon_coords_to_target_coords(p):
-            return p + final_window_around
-
-        def genomic_coords_to_target_coords(p):
-            return p - amplicon_start + final_window_around
+    def build(self):
+        self.dir.mkdir(exist_ok=True)
 
         convert_strand = {
             '+': 1,
             '-': -1,
         }
 
-        target_sequence = self.region_fetcher(ref_name, amplicon_start - final_window_around, amplicon_end + final_window_around).upper()
-        
-        left_primer_location = FeatureLocation(genomic_coords_to_target_coords(left_primer_al.reference_start),
-                                               genomic_coords_to_target_coords(left_primer_al.reference_end),
-                                               strand=convert_strand['+'],
-                                              )
-
-        right_primer_location = FeatureLocation(genomic_coords_to_target_coords(right_primer_al.reference_start),
-                                                genomic_coords_to_target_coords(right_primer_al.reference_end),
-                                                strand=convert_strand['-'],
-                                               )
+        primer_als = self.concordant_primer_alignments_to_target
 
         target_features = [
-            SeqFeature(location=left_primer_location,
-                       id=left_primer_al.query_name,
+            SeqFeature(location=FeatureLocation(al.reference_start,
+                                                al.reference_end,
+                                                strand=convert_strand[sam.get_strand(al)],
+                                               ),
+                       id=al.query_name,
                        type='misc_feature',
                        qualifiers={
-                           'label': left_primer_al.query_name,
+                           'label': al.query_name,
                            'ApEinfo_fwdcolor': feature_colors['forward_primer'],
                        },
-                      ),
-            SeqFeature(location=right_primer_location,
-                       id=right_primer_al.query_name,
-                       type='misc_feature',
-                       qualifiers={
-                           'label': right_primer_al.query_name,
-                           'ApEinfo_fwdcolor': feature_colors['reverse_primer'],
-                       },
-                      ),
-            SeqFeature(location=left_primer_location,
-                       id='anchor',
-                       type='misc_feature',
-                       qualifiers={
-                           'label': 'anchor',
-                       },
-                      ),
+                      )
+            for al in primer_als
         ]
 
-        protospacer_features = []
-        for sgRNA_name, feature in protospacer_features_in_amplicon.items():
-            location = FeatureLocation(amplicon_coords_to_target_coords(feature.start),
-                                       amplicon_coords_to_target_coords(feature.end), 
-                                       strand=convert_strand[feature.strand],
-                                      )
-            protospacer_feature = SeqFeature(location=location,
-                                             id=sgRNA_name,
-                                             type=f'protospacer',
-                                             qualifiers={
-                                                 'label': sgRNA_name,
-                                                 'ApEinfo_fwdcolor': feature_colors['sgRNA'],
-                                             },
-                                            )
-            protospacer_features.append(protospacer_feature)
-
-        gb_records = {}
-
-        if has_donor:
-            donor_Seq = Seq(donor_seq)
-            donor_features = []
-
-            donor_record = SeqRecord(donor_Seq,
-                                     name=donor_name,
-                                     features=donor_features,
-                                     annotations={
-                                         'molecule_type': 'DNA',
-                                     },
-                                    )
-
-            gb_records[donor_name] = donor_record
-
-        sgRNAs_with_extensions = [(name, components) for name, components in self.sgRNAs if components['extension'] != '']
-
-        if len(sgRNAs_with_extensions) > 0:
-
-            bad_pegRNAs = []
-
-            for name, components in sgRNAs_with_extensions:
-                try:
-                    pegRNA = knock_knock.pegRNAs.pegRNA(name, components, self.target_name, target_sequence)
-                except Exception as err:
-                    bad_pegRNAs.append((name, str(err)))
-                    continue
-
-                pegRNA_SeqFeatures = [
-                    SeqFeature(id=feature_name,
-                               location=FeatureLocation(feature.start, feature.end + 1, strand=convert_strand[feature.strand]),
-                               type='misc_feature',
-                               qualifiers={
-                                   'label': feature_name,
-                                   'ApEinfo_fwdcolor': feature.attribute['color'],
-                               },
-                              )
-                    for (seq_name, feature_name), feature in pegRNA.features.items() if seq_name == name
-                ]
-
-                pegRNA_Seq = Seq(components['full_sequence'])
-                pegRNA_record = SeqRecord(pegRNA_Seq,
-                                          name=name,
-                                          features=pegRNA_SeqFeatures,
-                                          annotations={
-                                              'molecule_type': 'DNA',
-                                          },
-                                         )
-
-                gb_records[name] = pegRNA_record
-
-            if len(bad_pegRNAs) > 0:
-                full_error_message = ['Error identifying valid protospacer/PBS for pegRNA(s):']
-                for name, error_message in bad_pegRNAs:
-                    full_error_message.append(f'{name}: {error_message}')
-
-                full_error_message = '\n'.join(full_error_message)
-
-                raise ValueError(full_error_message)
-            
-        if has_nh_donor:
-            nh_donor_Seq = Seq(nh_donor_seq)
-            nh_donor_record = SeqRecord(nh_donor_Seq, name=nh_donor_name, annotations={'molecule_type': 'DNA'})
-            gb_records[nh_donor_name] = nh_donor_record
-
-        target_Seq = Seq(target_sequence)
+        target_name = 'target'
+        target_Seq = Seq(self.extracted_target_sequence)
         target_record = SeqRecord(target_Seq,
-                                  name=self.target_name,
+                                  name=target_name,
                                   features=target_features,
                                   annotations={
                                       'molecule_type': 'DNA',
                                   },
                                  )
-        gb_records[self.target_name] = target_record
 
-        if self.info.get('extra_sequences') is not None:
-            for extra_seq_name, extra_seq in self.info['extra_sequences']:
-                if extra_seq_name in self.extra_genbank_records:
-                    record = self.extra_genbank_records[extra_seq_name]
-                else:
-                    record = SeqRecord(Seq(extra_seq), name=extra_seq_name, annotations={'molecule_type': 'DNA'})
+        gb_fn = self.dir / f'{target_name}.gb'
 
-                gb_records[extra_seq_name] = record
+        Bio.SeqIO.write(target_record, gb_fn, 'genbank')
 
-        if self.info.get('donor') is not None:
-            donor_name, donor_sequence = self.info['donor']
-            if donor_name in self.extra_genbank_records:
-                record = self.extra_genbank_records[donor_name]
+        parameters_fn = self.dir / 'parameters.yaml'
 
-                gb_records[donor_name] = record
-
-        # Note: for debugging convenience, genbank files can be written for pegRNAs,
-        # but these are NOT supplied as genbank records to make the final EditingStrategy,
-        # since relevant features are either represented by the intial decomposition into
-        # components or inferred on instantiation of the EditingStrategy.
-        pegRNA_names = [name for name, components in sgRNAs_with_extensions]
-        non_pegRNA_records = {name: record for name, record in gb_records.items() if name not in pegRNA_names}
-        gb_records_for_manifest = non_pegRNA_records
-
-        truncated_name_i = 0
-        with warnings.catch_warnings():
-            warnings.filterwarnings('ignore', category=BiopythonWarning)
-
-            for which_seq, record in gb_records.items(): 
-
-                if which_seq not in pegRNA_names or generate_pegRNA_genbanks:
-                    gb_fn = self.target_dir / f'{which_seq}.gb'
-                    try:
-                        Bio.SeqIO.write(record, gb_fn, 'genbank')
-                    except ValueError:
-                        # locus line too long, can't write genbank file with BioPython
-                        old_name = record.name
-
-                        truncated_name = f'{record.name[:11]}_{truncated_name_i}'
-                        record.name = truncated_name
-                        Bio.SeqIO.write(record, gb_fn, 'genbank')
-
-                        record.name = old_name
-
-                        truncated_name_i += 1
-
-        manifest_fn = self.target_dir / 'manifest.yaml'
-
-        sources = sorted(gb_records_for_manifest)
-            
-        manifest = {
-            'sources': sources,
-            'target': self.target_name,
+        parameters = {
+            'target': target_name,
         }
 
-        if self.info.get('donor') is not None:
-            donor_name, donor_sequence = self.info['donor']
-            manifest['donor'] = donor_name
+        #manifest['genome_source'] = self.info.get('genome_source', self.genome)
 
-        if has_donor:
-            manifest['donor'] = donor_name
-            manifest['donor_specific'] = 'donor_specific'
-            if donor_type is not None:
-                manifest['donor_type'] = donor_type
+        parameters['primer_names'] = self.amplicon_primer_names
 
-        if has_nh_donor:
-            manifest['nonhomologous_donor'] = nh_donor_name
+        parameters_fn.write_text(yaml.dump(parameters, default_flow_style=False))
 
-        manifest['features_to_show'] = [
-            [self.target_name, left_primer_al.query_name],
-            [self.target_name, right_primer_al.query_name],
-        ]
+        #gb_records = list(gb_records.values())
 
-        manifest['genome_source'] = self.info.get('genome_source', self.genome)
+        #strat = knock_knock.editing_strategy.EditingStrategy(self.base_dir, self.name, gb_records=gb_records)
 
-        manifest['primer_names'] = [left_primer_al.query_name, right_primer_al.query_name]
-
-        manifest_fn.write_text(yaml.dump(manifest, default_flow_style=False))
-
-        gb_records = list(gb_records_for_manifest.values())
-
-        strat = knock_knock.editing_strategy.EditingStrategy(self.base_dir, self.name, gb_records=gb_records)
-
-        sgRNAs_df = load_sgRNAs(self.base_dir, process=False)
-        sgRNA_names = sorted([name for name, _ in self.sgRNAs])
-        sgRNAs_df.loc[sgRNA_names].to_csv(strat.fns['sgRNAs'])
-
-        strat.make_protospacer_fastas()
-        if strat.genome_source in self.index_locations:
-            strat.map_protospacers(strat.genome_source)
+        #strat.make_protospacer_fastas()
+        #if strat.genome_source in self.index_locations:
+        #    strat.map_protospacers(strat.genome_source)
 
     @utilities.memoized_property
     def region_fetcher(self):
         if self.genome in self.index_locations:
-            region_fetcher = genomes.build_region_fetcher(self.index_locations[self.genome]['fasta'])
+            region_fetcher = self.genomes.region_fetcher(self.genome)
+
         else:
             if self.genome not in self.extra_sequences:
                 raise ValueError(f'no sequence record found for "{self.genome}"')
@@ -428,7 +270,7 @@ class EditingStrategyBuilder:
 
     def reference_length(self, reference_name):
         if self.genome in self.index_locations:
-            genome_index = genomes.get_genome_index(self.index_locations[self.genome]['fasta'])
+            genome_index = self.genomes.fasta_index(self.genome)
             length = genome_index[reference_name].length
         else:
             length = len(self.extra_sequences[reference_name])
@@ -458,7 +300,10 @@ class EditingStrategyBuilder:
             strand = sam.get_strand(primer_al)
 
             ref_name = primer_al.reference_name
-            ref_length = self.reference_length(ref_name)
+            if ref_name == 'target':
+                ref_length = len(self.extracted_target_sequence)
+            else:
+                ref_length = self.reference_length(ref_name)
 
             header = pysam.AlignmentHeader.from_references([ref_name], [ref_length])
 
@@ -488,12 +333,16 @@ class EditingStrategyBuilder:
 
                 virtual_al.reference_start = virtual_primer_start
                     
-                amplicon_sequence = self.region_fetcher(primer_al.reference_name, left_al.reference_start, right_al.reference_end).upper()
+                if ref_name == 'target':
+                    amplicon_sequence = self.extracted_target_sequence[left_al.reference_start:right_al.reference_end].upper()
+                else:
+                    amplicon_sequence = self.region_fetcher(ref_name, left_al.reference_start, right_al.reference_end).upper()
                 
                 try:
                     self.identify_protospacer_features_in_amplicon(amplicon_sequence)
                     found_all_protospacers = True
                     break
+
                 except:
                     continue
 
@@ -510,18 +359,23 @@ class EditingStrategyBuilder:
 
         return valids[0]
 
-    def align_primers(self):
+    @utilities.memoized_property
+    def concordant_primer_alignments_to_genome(self):
         if len(self.primers) == 2:
-            alignment_tester = self.identify_concordant_primer_alignment_pair
+            alignment_tester = sw.identify_concordant_primer_alignment_pair
+
         elif len(self.primers) == 1:
             alignment_tester = self.identify_virtual_primer
+
+        else:
+            raise ValueError
 
         if self.genome in self.index_locations:
             try:
                 primer_alignments = self.align_primers_to_reference_genome_with_STAR()
                 concordant_primer_alignments = alignment_tester(primer_alignments)
 
-            except ValueError:
+            except:
                 logger.warning('Failed to find concordant primer alignments with STAR, falling back to manual search.')
                 primer_alignments = self.align_primers_to_reference_genome_manually()
                 concordant_primer_alignments = alignment_tester(primer_alignments)
@@ -532,11 +386,31 @@ class EditingStrategyBuilder:
 
         return concordant_primer_alignments
 
+    @utilities.memoized_property
+    def concordant_primer_alignments_to_target(self):
+        if len(self.primers) == 0:
+            concordant_primer_alignments = []
+
+        else:
+            if len(self.primers) == 2:
+                alignment_tester = sw.identify_concordant_primer_alignment_pair
+
+            elif len(self.primers) == 1:
+                alignment_tester = self.identify_virtual_primer
+
+            else:
+                raise ValueError
+
+            primer_alignments = sw.align_primers_to_sequence(self.primers, 'target', self.extracted_target_sequence)
+            concordant_primer_alignments = alignment_tester(primer_alignments)
+
+        return concordant_primer_alignments
+
     def align_primers_to_reference_genome_with_STAR(self):
         if self.genome not in self.index_locations:
             raise ValueError(f'Can\'t locate indices for {self.genome}')
 
-        primers_dir = self.target_dir / 'primer_alignment'
+        primers_dir = self.dir / 'primer_alignment'
         primers_dir.mkdir(exist_ok=True)
 
         fastq_fn = primers_dir / 'primers.fastq'
@@ -575,9 +449,9 @@ class EditingStrategyBuilder:
         if self.genome not in self.index_locations:
             raise ValueError(f'Can\'t locate indices for {self.genome}')
 
-        genome_dictionary = genomes.load_entire_genome(self.index_locations[self.genome]['fasta'])
+        loaded_genome = self.genomes.loaded(self.genome)
 
-        primer_alignments = sw.align_primers_to_genome(self.primers, genome_dictionary, suffix_length=18)
+        primer_alignments = sw.align_primers_to_genome(self.primers, loaded_genome, suffix_length=18)
 
         return primer_alignments
 
@@ -588,251 +462,62 @@ class EditingStrategyBuilder:
 
         return primer_alignments
 
-    def identify_concordant_primer_alignment_pair(self, primer_alignments, max_length=10000):
-        ''' Find pairs of alignments that are on the same chromosome and point towards each other. '''
+    @utilities.memoized_property
+    def protospacer_alignment(self):
+        if len(self.sgRNAs) != 1:
+            raise ValueError('WGS mode requires exactly one sgRNA')
 
-        def same_reference_name(first_al, second_al):
-            return first_al.reference_name == second_al.reference_name
+        protospacer_name = list(self.sgRNAs)[0]
+        components = self.sgRNAs[protospacer_name]
 
-        def in_correct_orientation(first_al, second_al):
-            ''' Check if first_al and second_al point towards each other on the same chromosome. '''
-            
-            if not same_reference_name(first_al, second_al):
-                return None
-            
-            first_interval = interval.get_covered_on_ref(first_al)
-            second_interval = interval.get_covered_on_ref(second_al)
-            if interval.are_overlapping(first_interval, second_interval):
-                return None
-            
-            left_al, right_al = sorted([first_al, second_al], key=lambda al: al.reference_start)
+        protospacer_alignemnts = self.genomes.align_protospacer_to_genome(protospacer_name,
+                                                                          components['protospacer'],
+                                                                          components['effector'],
+                                                                          self.genome,
+                                                                         )
 
-            if sam.get_strand(left_al) != '+' or sam.get_strand(right_al) != '-':
-                return None
-            else:
-                return left_al, right_al
+        if len(protospacer_alignemnts) == 0:
+            raise ValueError('failed to align {protospacer_name} to {self.genome}')
 
-        def reference_extent(first_al, second_al):
-            if not same_reference_name(first_al, second_al):
-                return np.inf
-            else:
-                start = min(first_al.reference_start, second_al.reference_start)
-                end = max(first_al.reference_end, second_al.reference_end)
+        elif len(protospacer_alignemnts) > 1:
+            raise ValueError('multiple alignments of {protospacer_name} to {self.genome}')
+        
+        protospacer_alignemnt = protospacer_alignemnts[0]
 
-                return end - start
+        return protospacer_alignemnt
 
-        correct_orientation_pairs = []
-        not_correct_orientation_pairs = []
+def build_strategies(base_dir, batch_name, ignore_existing=False):
+    data_dir = Path(base_dir) / 'data' / batch_name
 
-        first_name, second_name = sorted(primer_alignments)
+    sample_sheet_fn = data_dir / 'sample_sheet.csv'
 
-        for first_al in primer_alignments[first_name]:
-            for second_al in primer_alignments[second_name]:
-                if (oriented_pair := in_correct_orientation(first_al, second_al)) is not None:
-                    correct_orientation_pairs.append(oriented_pair)
-
-                elif reference_extent(first_al, second_al) < max_length:
-                    not_correct_orientation_pairs.append((first_al, second_al))
-                    
-        if len(correct_orientation_pairs) == 0:
-            if len(not_correct_orientation_pairs) > 0:
-                for first_al, second_al in not_correct_orientation_pairs:
-                    logger.warning(f'Found nearby primer alignments that don\'t point towards each other: {first_al.reference_name} {sam.get_strand(first_al)} {first_al.reference_start:,}-{first_al.reference_end:,}, {sam.get_strand(second_al)} {second_al.reference_start:,}-{second_al.reference_end:,}')
-
-            raise ValueError(f'Could not identify primer binding sites in {self.genome} that point towards each other.')
-
-        # Rank pairs in the correct orientation by (shortest) amplicon length.
-
-        correct_orientation_pairs = sorted(correct_orientation_pairs, key=lambda pair: reference_extent(*pair))
-
-        if len(correct_orientation_pairs) > 1:
-            logger.warning(f'{len(correct_orientation_pairs)} concordant primer alignments found.')
-            for left_al, right_al in correct_orientation_pairs[:10]:
-                logger.warning(f'Found {reference_extent(left_al, right_al):,} nt amplicon on {left_al.reference_name} from {left_al.reference_start:,} to {right_al.reference_end - 1:,}')
-
-            if len(correct_orientation_pairs) > 10:
-                logger.warning(f'... and {len(correct_orientation_pairs) - 10} more')
-
-        short_amplicons = [pair for pair in correct_orientation_pairs if reference_extent(*pair) <= 1000]
-        if len(short_amplicons) > 1:
-            logger.warning(f'{len(short_amplicons)} potential amplicons <= 1kb found. There is a risk the shortest amplicon may not be the intended target.')
-            
-        left_al, right_al = correct_orientation_pairs[0]
-
-        if reference_extent(left_al, right_al) > max_length:
-            logger.warning(f'Found {reference_extent(left_al, right_al):,} nt amplicon on {left_al.reference_name} from {left_al.reference_start:,} to {right_al.reference_end - 1:,}')
-            raise ValueError(f'Could not identify an amplicon shorter than {max_length} in {self.genome}')
-
-        return left_al, right_al
-
-def load_sgRNAs(base_dir, process=True):
-    '''
-    If process == False, just pass along the DataFrame for subsetting.
-    '''
-    csv_fn = knock_knock.editing_strategy.get_strategies_dir(base_dir) / 'sgRNAs.csv'
-
-    if not csv_fn.exists():
-        return None
-    else:
-        return knock_knock.pegRNAs.read_csv(csv_fn, process=process)
-
-def load_extra_sequences(base_dir):
-    strategies_dir = knock_knock.editing_strategy.get_strategies_dir(base_dir)
-
-    extra_sequences = {}
-
-    fasta_extensions = {
-        '.fasta',
-        '.fa',
-    }
-
-    fasta_fns = sorted(fn for fn in strategies_dir.iterdir() if fn.suffix in fasta_extensions)
-
-    for fasta_fn in fasta_fns:
-        records = fasta.to_dict(fasta_fn)
-        records = {name: seq.upper() for name, seq in records.items()}
-        duplicates = set(extra_sequences) & set(records)
-        if len(duplicates) > 0:
-            raise ValueError(f'multiple records for {duplicates}')
-
-        extra_sequences.update(records)
-
-    extra_genbank_records = load_extra_genbank_records(base_dir)
-    duplicates = set(extra_sequences) & set(extra_genbank_records)
-    if len(duplicates) > 0:
-        raise ValueError(f'multiple records for {duplicates}')
-
-    extra_sequences.update({name: str(record.seq).upper() for name, record in extra_genbank_records.items()})
-
-    return extra_sequences
-
-def load_extra_genbank_records(base_dir):
-    strategies_dir = knock_knock.editing_strategy.get_strategies_dir(base_dir)
-
-    records = {}
-
-    with warnings.catch_warnings():
-        warnings.filterwarnings('ignore', category=BiopythonWarning)
-
-        genbank_fns = sorted(strategies_dir.glob('*.gb'))
-        for genbank_fn in genbank_fns:
-            for record in Bio.SeqIO.parse(genbank_fn, 'gb'):
-                if record.name in records:
-                    raise ValueError(f'multiple records for {record.name}')
-
-                records[record.name] = record
-
-    return records
-
-def build_component_registry(base_dir):
-    base_dir = Path(base_dir)
+    sample_sheet = knock_knock.utilities.read_and_sanitize_csv(sample_sheet_fn, index_col='sample_name')
 
     strategies_dir = knock_knock.editing_strategy.get_strategies_dir(base_dir)
 
-    registry = {}
+    genomes = knock_knock.editing_strategy.Genomes(base_dir)
 
-    registry['sgRNAs'] = load_sgRNAs(base_dir)
+    for _, row in sample_sheet.iterrows():
+        editing_strategy_name = knock_knock.experiment.sample_sheet_row_to_editing_strategy_name(row)
+        strategy_dir = strategies_dir / editing_strategy_name
 
-    amplicon_primers_fn = strategies_dir / 'amplicon_primers.csv'
+        parameters_fn = strategy_dir / 'parameters.yaml'
 
-    if amplicon_primers_fn.exists():
-        registry['amplicon_primers'] = knock_knock.utilities.read_and_sanitize_csv(amplicon_primers_fn, index_col='name')
-    else:
-        registry['amplicon_primers'] = {}
+        # Checking for existence of strategy_dir can be wrong
+        # if there was an earlier failed attempt. Instead, check for
+        # parameters since it is the last file written. 
+        if not parameters_fn.exists() or ignore_existing:
+            logger.info(f'Building {editing_strategy_name}')
 
-    registry['extra_sequence'] = load_extra_sequences(base_dir)
+            builder = EditingStrategyBuilder(base_dir,
+                                             editing_strategy_name,
+                                             row['genome'],
+                                             row['amplicon_primers'],
+                                             row['sgRNAs'],
+                                             genomes=genomes,
+                                            )
 
-    donors_fn = strategies_dir / 'donors.csv'
-
-    if donors_fn.exists():
-        donors = pd.read_csv(donors_fn, index_col='name')
-        registry['donor_sequence'] = donors['donor_sequence']
-        registry['donor_type'] = donors['donor_type']
-    else:
-        registry['donor_sequence'] = {}
-        registry['donor_type'] = {}
-
-    return registry
-
-def build_editing_strategies_from_csv(base_dir, defer_HA_identification=False):
-    base_dir = Path(base_dir)
-
-    strategies_dir = knock_knock.editing_strategy.get_strategies_dir(base_dir)
-
-    csv_fn = strategies_dir / 'strategies.csv'
-
-    strategies_df = pd.read_csv(csv_fn, comment='#', index_col='name').replace({np.nan: None})
-
-    registry = build_component_registry(base_dir)
-
-    def lookup(row, column_to_lookup, registry_column, validate_sequence=True, multiple_lookups=False):
-        value_to_lookup = row.get(column_to_lookup)
-        if value_to_lookup is None:
-            return None
-
-        if multiple_lookups:
-            values_to_lookup = value_to_lookup.split(';')
-        else:
-            values_to_lookup = [value_to_lookup]
-
-        registered_values = registry[registry_column]
-        valid_chars = set('TCAGN;')
-
-        looked_up = []
-        for value_to_lookup in values_to_lookup:
-            value_to_lookup = value_to_lookup.strip()
-
-            if value_to_lookup in registered_values:
-                value_name = value_to_lookup
-                seq = registered_values[value_to_lookup]
-                possible_error_message = f'invalid char in {row.name} {column_to_lookup} registry entry {value_to_lookup}\n{seq}'
-            else:
-                raise ValueError(value_to_lookup)
-
-            if seq is not None and validate_sequence:
-                seq = seq.upper()
-                invalid_chars = set(seq) - valid_chars
-                if invalid_chars:
-                    print(possible_error_message)
-                    print(f'Valid sequence characters are {valid_chars}; {seq} contains {invalid_chars}')
-                    sys.exit(1)
-
-            looked_up.append((value_name, seq))
-
-        if not multiple_lookups:
-            looked_up = looked_up[0]
-            
-        return looked_up
-
-    for target_name, row in strategies_df.iterrows():
-        if '/' in target_name:
-            raise ValueError(f'target names cannot contain a forward slash: {target_name}')
-
-        info = {
-            'name': target_name,
-            'genome': row['genome'],
-            'genome_source': row['genome_source'],
-            'amplicon_primers': lookup(row, 'amplicon_primers', 'amplicon_primers'),
-            'sgRNAs': lookup(row, 'sgRNAs', 'sgRNAs', multiple_lookups=True, validate_sequence=False),
-            'donor': lookup(row, 'donor', 'extra_sequence'),
-            'extra_sequences': lookup(row, 'extra_sequences', 'extra_sequence', multiple_lookups=True),
-            'nonhomologous_donor_sequence': lookup(row, 'nonhomologous_donor_sequence', 'donor_sequence'),
-        }
-
-        if info['sgRNAs'] is not None:
-            for sgRNA_name, sgRNA_components in info['sgRNAs']:
-                if sgRNA_name is None:
-                    # Because of how lookup works, sgRNA_components will hold value of 
-                    # name that wasn't found.
-                    raise ValueError(f'{sgRNA_components} not found')
-
-        logger.info(f'Building {target_name}...')
-
-        builder = EditingStrategyBuilder(base_dir,
-                                         info,
-                                         defer_HA_identification=defer_HA_identification,
-                                        )
-        builder.build(generate_pegRNA_genbanks=False)
+            builder.build()
 
 def build_indices(base_dir, name, num_threads=1, RAM_limit=int(60e9), **STAR_index_kwargs):
     base_dir = Path(base_dir)

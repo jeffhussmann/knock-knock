@@ -1,9 +1,0 @@
-donor: RAB11A-150HA_PCR_donor
-genome_source: RAB11A
-primer_names:
-- RAB11A_PAC_0
-- RAB11A_PAC_1
-sources:
-- RAB11A-150HA_PCR_donor
-- RAB11A_PAC
-target: RAB11A_PAC

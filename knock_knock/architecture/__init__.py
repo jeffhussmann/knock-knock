@@ -1640,8 +1640,8 @@ class Categorizer:
                                 split_als.append(split_4)
 
             else:
-                for split_1 in sam.split_at_deletions(al, 10):
-                    for split_2 in sam.split_at_large_insertions(split_1, 10):
+                for split_1 in sam.split_at_deletions(al, indel_length_far_from_cuts):
+                    for split_2 in sam.split_at_large_insertions(split_1, indel_length_far_from_cuts):
                         split_als.append(split_2)
 
         else:

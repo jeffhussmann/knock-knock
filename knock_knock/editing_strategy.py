@@ -1,10 +1,10 @@
-import copy
 import functools
 import logging
 import operator
 import textwrap
+import warnings
 from pathlib import Path
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 import yaml
 import pysam
@@ -12,6 +12,8 @@ import numpy as np
 
 import Bio.Align
 import Bio.SeqIO
+import Bio.SeqRecord
+from Bio import BiopythonWarning
 
 import hits.restriction
 import hits.visualize
@@ -23,7 +25,7 @@ import knock_knock.integrases
 from knock_knock.effector import effectors
 from knock_knock.outcome import DegenerateDeletion, DegenerateInsertion
 
-from hits.utilities import memoized_property, memoized_with_args, memoized_with_kwargs
+from hits.utilities import memoized_property, memoized_with_args
 
 logger = logging.getLogger(__name__)
 
@@ -45,22 +47,43 @@ class EditingStrategy:
                  nonhomologous_donor=None,
                  sequencing_start_feature_name=None,
                  supplemental_indices=None,
-                 gb_records=None,
+                 additional_sequence_names=None,
+                 manual_gb_records=None,
                  infer_homology_arms=True,
                  min_relevant_length=None,
                  feature_to_replace=None,
-                 manifest=None,
+                 parameters=None,
                  manual_sgRNA_components=None,
                  max_programmed_deletion_length=None,
-                 additional_attributes=None,
                  restriction_enzymes=None,
+                 additional_attributes=None,
                 ):
 
         self.name = name
 
-        self.base_dir = Path(base_dir)
-        self.strategies_dir = get_strategies_dir(self.base_dir)
-        self.dir = self.strategies_dir / name
+        if base_dir is None:
+            # Some strategies (e.g. for pooled screens) do not load anything
+            # from disk.
+            self.base_dir = None
+            self.additional_sequences_dir = None
+            self.dir = None
+
+            self.fns = {}
+        
+        else:
+            self.base_dir = Path(base_dir)
+            strategies_dir = get_strategies_dir(self.base_dir)
+            self.dir = strategies_dir / name
+            self.additional_sequences_dir = strategies_dir / 'additional_sequences'
+
+            self.fns = {
+                'sgRNAs': self.dir / 'sgRNAs.csv',
+                'global_sgRNAs': strategies_dir / 'sgRNAs.csv',
+
+                'protospacer_fasta': self.dir / 'protospacers.fasta',
+                'protospacer_STAR_prefix_template': self.dir / 'protospacers_{}.',
+                'protospacer_bam_template': self.dir / 'protospacers_{}.bam',
+            }
 
         # If not None, feature_to_replace is a tuple (ref_name, feature_name, sequence)
         # for which the region of ref_name covered by feature_name
@@ -68,28 +91,23 @@ class EditingStrategy:
         # one of a library of elements that was cloned into that site).
         self.feature_to_replace = feature_to_replace
 
-        self.fns = {
-            'sgRNAs': self.dir / 'sgRNAs.csv',
+        if parameters is None:
+            parameters_fn = self.dir / 'parameters.yaml'
+            parameters = yaml.safe_load(parameters_fn.read_text())
 
-            'protospacer_fasta': self.dir / 'protospacers.fasta',
-            'protospacer_STAR_prefix_template': self.dir / 'protospacers_{}.',
-            'protospacer_bam_template': self.dir / 'protospacers_{}.bam',
-        }
-        
-        if manifest is None:
-            manifest_fn = self.dir / 'manifest.yaml'
-            manifest = yaml.safe_load(manifest_fn.read_text())
+        self.parameters = parameters
 
-        self.manifest = manifest
+        self.target = self.parameters['target']
 
-        self.target = self.manifest['target']
+        if additional_sequence_names is None:
+            additional_sequence_names = []
 
-        self.sources = [s[:-len('.gb')] if s.endswith('.gb') else s for s in self.manifest.get('sources', [])]
+        self.additional_sequence_names = additional_sequence_names
 
-        if gb_records is None:
-            gb_records = self.load_gb_records()
+        if manual_gb_records is None:
+            manual_gb_records = []
 
-        self.gb_records = gb_records
+        self.manual_gb_records = manual_gb_records
 
         self.manual_sgRNA_components = manual_sgRNA_components
 
@@ -104,7 +122,7 @@ class EditingStrategy:
 
         def populate_attribute(attribute_name, value, force_list=False, default_value=None):
             if value is None:
-                value = self.manifest.get(attribute_name, default_value)
+                value = self.parameters.get(attribute_name, default_value)
                 
             if force_list:
                 if isinstance(value, str):
@@ -124,11 +142,11 @@ class EditingStrategy:
         populate_attribute('sequencing_start_feature_name', sequencing_start_feature_name)
         populate_attribute('restriction_enzymes', restriction_enzymes, default_value=[])
 
-        self.donor_type = self.manifest.get('donor_type')
-        self.donor_specific = self.manifest.get('donor_specific', 'GFP11') 
-        self.default_HAs = self.manifest.get('default_HAs')
-        self.manual_features_to_show = self.manifest.get('features_to_show')
-        self.genome_source = self.manifest.get('genome_source')
+        self.donor_type = self.parameters.get('donor_type')
+        self.donor_specific = self.parameters.get('donor_specific', 'GFP11') 
+        self.default_HAs = self.parameters.get('default_HAs')
+        self.manual_features_to_show = self.parameters.get('features_to_show')
+        self.genome_source = self.parameters.get('genome_source')
 
         if supplemental_indices is None:
             supplemental_indices = {}
@@ -152,8 +170,9 @@ class EditingStrategy:
                     base_dir = {self.base_dir}
                     target = {self.target}
                     pegRNAs = [{','.join(self.pegRNA_names)}]
-                    sgRNAs = [{','.join(self.sgRNA_names) if self.sgRNA_names is not None else ''}]
+                    sgRNAs = [{','.join(self.sgRNA_names)}]
             '''
+
         else:
             representation = f'''\
                 TargetInfo:
@@ -177,12 +196,14 @@ class EditingStrategy:
 
     @memoized_property
     def primary_protospacer(self):
-        primary_protospacer = self.manifest.get('primary_protospacer')
+        primary_protospacer = self.parameters.get('primary_protospacer')
+
         if primary_protospacer is None and len(self.protospacer_names) > 0:
             if len(self.pegRNA_names) > 0:
                 primary_protospacer = knock_knock.pegRNAs.protospacer_name(self.pegRNA_names[0])
             else:
                 primary_protospacer = self.protospacer_names[0]
+
         return primary_protospacer
 
     @memoized_property
@@ -215,23 +236,47 @@ class EditingStrategy:
     @memoized_property
     def protospacer_names(self):
         ''' Names of all features representing protospacers at which cutting was expected to occur '''
+
         if self.sgRNA_components is None:
             fs = []
         else:
             fs = [knock_knock.pegRNAs.protospacer_name(gRNA_name) for gRNA_name in self.sgRNA_components]
+
         return fs
+
+    @memoized_property
+    def all_sgRNA_components(self):
+        ''' All sgRNAs that the strategy has access to.
+        If manual_sgRNA_components were provided, returns those.
+        Otherwise, attempts to load an sgRNAs file specific to this strategy dir.
+        If this doesn't exist, then attempts to load a global (base_dir) file.
+        '''
+
+        if self.manual_sgRNA_components is not None:
+            all_components = self.manual_sgRNA_components
+        
+        else:
+            if self.fns['sgRNAs'].exists():
+                fn = self.fns['sgRNAs']
+
+            elif self.fns['global_sgRNAs'].exists():
+                fn = self.fns['global_sgRNAs']
+
+            else:
+                fn = None
+                all_components = {}
+            
+            if fn is not None:
+                all_components = knock_knock.pegRNAs.read_csv(fn)
+
+        return all_components
 
     @memoized_property
     def sgRNA_components(self):
         if self.sgRNAs is None:
             sgRNA_components = None
         else:
-            if self.manual_sgRNA_components is None:
-                all_components = knock_knock.pegRNAs.read_csv(self.fns['sgRNAs'])
-            else:
-                all_components = self.manual_sgRNA_components
-
-            sgRNA_components = {name: all_components[name] for name in self.sgRNAs}
+            sgRNA_components = {name: self.all_sgRNA_components[name] for name in self.sgRNAs}
 
         return sgRNA_components
 
@@ -256,32 +301,80 @@ class EditingStrategy:
 
         return names
 
-    def load_gb_records(self):
-        gb_fns = [self.dir / (source + '.gb') for source in self.sources]
+    @memoized_property
+    def all_gb_records(self):
+        gb_records = self.manual_gb_records
 
-        for fn in gb_fns:
-            if not fn.exists() and not fn.with_suffix('.fasta').exists():
-                logger.warning(f'{self.name}: {fn} does not exist')
+        name_to_fn = {}
 
-        gb_fns = [fn for fn in gb_fns if fn.exists()]
+        for d in [self.additional_sequences_dir, self.dir]:
+            records, d_name_to_fn = load_all_genbank_records(d)
+            gb_records.extend(records)
+            name_to_fn.update(d_name_to_fn)
 
-        gb_records = []
-        for gb_fn in gb_fns:
-            for record in Bio.SeqIO.parse(gb_fn, 'genbank'):
-                gb_records.append(record)
+        return gb_records, name_to_fn
 
-        return gb_records
-    
+    @memoized_property
+    def all_fasta_records(self):
+        fasta_records = []
+
+        name_to_fn = {}
+
+        for d in [self.additional_sequences_dir, self.dir]:
+            records, d_name_to_fn = load_all_fasta_records(d)
+            fasta_records.extend(records)
+            name_to_fn.update(d_name_to_fn)
+
+        return fasta_records, name_to_fn
+
+    @memoized_property
+    def references_to_load(self):
+        names = {self.target}
+
+        if self.donor is not None:
+            names.add(self.donor)
+
+        names.update(self.additional_sequence_names)
+
+        return names
+
+    @memoized_property
+    def reference_name_to_file_name(self):
+        _, name_to_gb_fn = self.all_gb_records
+        _, name_to_fasta_fn = self.all_fasta_records
+
+        return {**name_to_gb_fn, **name_to_fasta_fn}
+        
     @memoized_property
     def fasta_records_and_gff_features(self):
-        fasta_fns = [self.dir / (source + '.fasta') for source in self.sources]
-        fasta_fns = [fn for fn in fasta_fns if fn.exists()]
-        
-        fasta_records = []
-        all_gff_features = []
+        gb_records, _ = self.all_gb_records
+        fasta_records, _ = self.all_fasta_records
+        all_records = gb_records + fasta_records
+
+        name_counts = Counter(record.name for record in all_records)
+
+        duplicates = {name for name, count in name_counts.items() if count > 1} 
+
+        if len(duplicates) > 0:
+            raise ValueError(f'multiple records for names {duplicates}')
+
+        missing_names = set(self.references_to_load) - set(name_counts)
+
+        if len(missing_names) > 0:
+            raise ValueError(f'no entry for names {missing_names}')
+
+        relevant_fasta_records = []
+        relevant_gff_features = []
             
-        for gb_record in self.gb_records:
-            fasta_record, gff_features = parse_benchling_genbank(gb_record)
+        for record in all_records:
+            if record.name not in self.references_to_load:
+                continue
+
+            if isinstance(record, Bio.SeqRecord.SeqRecord):
+                fasta_record, gff_features = parse_genbank_record(record)
+            else:
+                fasta_record = record
+                gff_features = []
 
             if fasta_record.name == self.target and self.feature_to_replace is not None:
                 feature_name, new_sequence = self.feature_to_replace
@@ -315,14 +408,10 @@ class EditingStrategy:
                         if feature.start > existing_start:
                             feature.start += change_in_length
 
-            fasta_records.append(fasta_record)
-            all_gff_features.extend(gff_features)
+            relevant_fasta_records.append(fasta_record)
+            relevant_gff_features.extend(gff_features)
 
-        for fasta_fn in fasta_fns:
-            for fasta_record in fasta.records(fasta_fn):
-                fasta_records.append(fasta_record)
-
-        return fasta_records, all_gff_features
+        return relevant_fasta_records, relevant_gff_features
 
     def make_protospacer_fastas(self):
         ''' Protospacer locations will be used to determine if genomic alignments
@@ -426,6 +515,7 @@ class EditingStrategy:
     @memoized_property
     def pegRNAs(self):
         pegRNAs = []
+
         for pegRNA_name in self.pegRNA_names:
             pegRNA = knock_knock.pegRNAs.pegRNA(pegRNA_name,
                                                 self.sgRNA_components[pegRNA_name],
@@ -477,33 +567,6 @@ class EditingStrategy:
             features[self.target, name] = feature
 
         features.update(self.inferred_HA_features)
-
-        # Override colors of protospacers in pooled screening vector
-        # to ensure consistency.
-
-        override_colors = {
-            ('pooled_vector', 'sgRNA-5'): 'tab:green',
-            ('pAX198', 'SpCas9 target 1'): 'tab:green',
-
-            ('pooled_vector', 'sgRNA-3'): 'tab:orange',
-            ('pAX198', 'SpCas9 target 2'): 'tab:orange',
-
-            ('pooled_vector', 'sgRNA-2'): 'tab:blue',
-            ('pAX198', 'SpCas9 target 3'): 'tab:blue',
-
-            ('pooled_vector', 'sgRNA-7'): 'tab:red',
-            ('pAX198', 'SpCas9 target 4'): 'tab:red',
-
-            ('pooled_vector', 'sgRNA-Cpf1'): 'tab:brown',
-            ('pAX198', 'AsCas12a target'): 'tab:brown',
-        }
-
-        for name, color in override_colors.items():
-            override_colors[name] = hits.visualize.apply_alpha(color, 0.5)
-
-        for name, feature in features.items():
-            if name in override_colors:
-                feature.attribute['color'] = override_colors[name]
 
         return features
 
@@ -608,6 +671,7 @@ class EditingStrategy:
     @memoized_property
     def protospacer_features(self):
         features = {}
+
         if self.sgRNA_components is not None:
             for name, components in self.sgRNA_components.items():
                 effector = effectors[components['effector']]
@@ -936,8 +1000,6 @@ class EditingStrategy:
 
             for key in [target_side, PAM_side]:
                 if key is not None:
-                    if key in HAs:
-                        raise ValueError(key)
                     HAs[key] = HAs[name]
 
         return HAs
@@ -1233,6 +1295,8 @@ class EditingStrategy:
         Donors will frequently have PAM disrupting substitutions. Since this
         will be close to the edge of the target subsequence, the edge may not
         be included in the alignment.
+
+        _5 and _3 refer to side of donor.
         '''
 
         if self.donor is None or not self.infer_homology_arms:
@@ -2033,7 +2097,7 @@ class EditingStrategy:
 
         return edited_target
 
-def parse_benchling_genbank(gb_record):
+def parse_genbank_record(gb_record):
     convert_strand = {
         -1: '-',
         1: '+',
@@ -2052,7 +2116,9 @@ def parse_benchling_genbank(gb_record):
             end=gb_feature.location.end - 1,
             strand=convert_strand[gb_feature.location.strand],
         )
+
         attribute = {}
+
         for k, v in gb_feature.qualifiers.items():
             if isinstance(v, list):
                 v = v[0]
@@ -2101,3 +2167,107 @@ def locate_supplemental_indices(base_dir):
                     }
 
     return locations
+
+class Genomes:
+    def __init__(self, base_dir):
+        self.locations = locate_supplemental_indices(base_dir)
+
+    @memoized_with_args
+    def loaded(self, name):
+        logger.info(f'Loading {name}')
+        entire_genome = genomes.load_entire_genome(self.locations[name]['fasta'])
+        return entire_genome
+
+    @memoized_with_args
+    def region_fetcher(self, name):
+        return genomes.build_region_fetcher(self.locations[name]['fasta'])
+
+    @memoized_with_args
+    def header(self, name):
+        return genomes.get_header(self.locations[name]['fasta'])
+
+    @memoized_with_args
+    def fasta_index(self, name):
+        return genomes.get_genome_index(self.locations[name]['fasta'])
+
+    def align_protospacer_to_genome(self, protospacer_name, protospacer_sequence, effector, genome_name):   
+        ''' Finds exact matches of protospacer in genomes with appropriately positioned PAM.
+        Note: does not tolerate a mismatched initial G (e.g. from a U6 expression casette).
+        '''
+
+        genome = self.loaded(genome_name)
+
+        matches = sw.find_all_matches_in_genome(protospacer_sequence, genome, verbose=False)
+        effector = effectors[effector]
+
+        valid_matches = []
+        
+        for ref_name, strand, position in matches:
+            if effector.protospacer_has_PAM(protospacer_sequence, position, strand, genome[ref_name]):
+            
+                al = pysam.AlignedSegment(self.header(genome_name))
+                
+                al.query_name = protospacer_name
+                al.reference_name = ref_name
+                al.reference_start = position
+                al.is_reverse = (strand == '-')
+                
+                possibly_RCed_seq = protospacer_sequence
+                if al.is_reverse:
+                    possibly_RCed_seq = hits.utilities.reverse_complement(protospacer_sequence)
+                
+                al.query_sequence = possibly_RCed_seq
+                al.query_qualities = [41] * len(possibly_RCed_seq)
+                al.cigar = [(hits.sam.BAM_CMATCH, len(possibly_RCed_seq))]
+                
+                valid_matches.append(al)
+
+        return valid_matches
+
+def load_all_fasta_records(dir_to_search):
+    if dir_to_search is None or not dir_to_search.is_dir():
+        return [], {}
+
+    fasta_extensions = {
+        '.fasta',
+        '.fa',
+    }
+
+    fasta_fns = sorted(fn for fn in Path(dir_to_search).iterdir() if fn.suffix in fasta_extensions)
+
+    fasta_records = []
+
+    name_to_fn = {}
+
+    for fasta_fn in fasta_fns:
+        for fasta_record in fasta.records(fasta_fn):
+            fasta_records.append(fasta_record)
+            name_to_fn[fasta_record.name] = fasta_fn
+
+    return fasta_records, name_to_fn
+
+def load_all_genbank_records(dir_to_search):
+    if dir_to_search is None or not dir_to_search.is_dir():
+        return [], {}
+
+    genbank_extensions = {
+        '.gb',
+        '.gbk',
+    }
+
+    genbank_fns = sorted(fn for fn in Path(dir_to_search).iterdir() if fn.suffix in genbank_extensions)
+
+    genbank_records = []
+
+    name_to_fn = {}
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore', category=BiopythonWarning)
+
+        for genbank_fn in genbank_fns:
+            for record in Bio.SeqIO.parse(genbank_fn, 'gb'):
+                genbank_records.append(record)
+
+                name_to_fn[record.name] = genbank_fn
+
+    return genbank_records, name_to_fn

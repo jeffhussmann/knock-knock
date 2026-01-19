@@ -1,0 +1,9 @@
+features_to_show:
+- - EMX1
+  - forward_primer
+- - EMX1
+  - reverse_primer
+genome_source: hg38
+sources:
+- EMX1
+target: EMX1

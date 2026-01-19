@@ -33,6 +33,26 @@ class Effector:
 
         return 0 in matches
 
+    def protospacer_feature(self, protospacer_sequence, protospacer_start, strand):
+        protospacer_end = protospacer_start + len(protospacer_sequence) - 1
+
+        feature = gff.Feature.from_fields(start=protospacer_start,
+                                          end=protospacer_end,
+                                          strand=strand,
+                                          feature='sgRNA', 
+                                          attribute_string=gff.make_attribute_string({
+                                              'color': 'lightgrey',
+                                              'effector': self.name,
+                                          }),
+                                         )
+
+        return feature
+
+    def protospacer_has_PAM(self, protospacer_sequence, protospacer_start, strand, target_sequence):
+        feature = self.protospacer_feature(protospacer_sequence, protospacer_start, strand)
+        
+        return self.PAM_matches_pattern(feature, target_sequence)
+
     def cut_afters(self, protospacer_feature):
         ''' Returns a dictionary of {strand: position after which nick is made} '''
 
@@ -75,23 +95,15 @@ class Effector:
         '''
         def find(protospacer_suffix):
             valid_features = []
+
             for strand, ps_seq in [('+', protospacer_suffix),
                                    ('-', utilities.reverse_complement(protospacer_suffix)),
                                   ]:
 
                 protospacer_starts = utilities.find_all_substring_starts(target_sequence, ps_seq)
                 
-                for protospacer_start in protospacer_starts:
-                    protospacer_end = protospacer_start + len(ps_seq) - 1
-                    target_protospacer_feature = gff.Feature.from_fields(start=protospacer_start,
-                                                                         end=protospacer_end,
-                                                                         strand=strand,
-                                                                         feature='sgRNA', 
-                                                                         attribute_string=gff.make_attribute_string({
-                                                                             'color': 'lightgrey',
-                                                                             'effector': self.name,
-                                                                         }),
-                                                                        )
+                for ps_start in protospacer_starts:
+                    target_protospacer_feature = self.protospacer_feature(ps_seq, ps_start, strand)
                     
                     if self.PAM_matches_pattern(target_protospacer_feature, target_sequence):
                         valid_features.append(target_protospacer_feature)
@@ -105,9 +117,10 @@ class Effector:
 
         if len(valid_features) != 1:
             raise ValueError(f'{len(valid_features)} valid locations for protospacer {protospacer} in target {target_sequence if len(target_sequence) < 1000 else ">1kb long"}')
-        else:
-            valid_feature = valid_features[0]
-            return valid_feature
+
+        valid_feature = valid_features[0]
+
+        return valid_feature
 
 # tuples are (PAM_pattern, PAM side, cut_after_offset)
 effector_details = {

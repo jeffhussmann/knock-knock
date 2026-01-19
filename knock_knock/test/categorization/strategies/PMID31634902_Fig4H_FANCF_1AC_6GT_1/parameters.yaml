@@ -1,0 +1,12 @@
+features_to_show:
+- - FANCF
+  - FANCF_1
+- - FANCF
+  - FANCF_0
+genome_source: FANCF
+primer_names:
+- FANCF_1
+- FANCF_0
+sources:
+- FANCF
+target: FANCF

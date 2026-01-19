@@ -407,6 +407,7 @@ tag_to_Detail = OrderedDict({
     'mismatches': Mismatches,
     'names': Strs,
     'num_edits': Int,
+    'num_segments': Int,
 })
 
 tag_order = {tag: i for i, tag in enumerate(tag_to_Detail)}.__getitem__

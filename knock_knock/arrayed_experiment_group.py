@@ -1364,11 +1364,11 @@ def detect_sequencing_start_feature_names(base_dir, batch_name, sample_sheet_df)
             reads = fastq.reads(R1_fn)
 
         strategy_name = make_default_strategy_name(row['amplicon_primers'],
-                                                         row['genome'],
-                                                         row['genome_source'],
-                                                         row['extra_sequences'],
-                                                         row['donor'],
-                                                        )
+                                                   row['genome'],
+                                                   row['genome_source'],
+                                                   row['extra_sequences'],
+                                                   row['donor'],
+                                                  )
         strat = knock_knock.editing_strategy.EditingStrategy(base_dir, strategy_name) 
 
         primer_sequences = {name: strat.feature_sequence(strat.target, name).upper() for name in strat.primers}
@@ -1392,7 +1392,7 @@ def detect_sequencing_start_feature_names(base_dir, batch_name, sample_sheet_df)
                 break
 
         if len(prefix_counts) == 0:
-            logger.warning(f"Unable to detect sequencing orientation for {row['sample_name']}")
+            logger.warning(f'Unable to detect sequencing orientation for {row['sample_name']}')
         else:
             feature_name, _ = prefix_counts.most_common()[0]
         

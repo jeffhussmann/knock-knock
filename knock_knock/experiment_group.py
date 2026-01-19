@@ -80,32 +80,31 @@ class ExperimentGroup:
                                              log_dir=self.results_dir,
                                             )
 
+        stages = [
+            'preprocess',
+            'align',
+            'categorize',
+        ]
+
+        if generate_example_diagrams:
+            stages.append('generate_example_diagrams')
+
+        if generate_summary_figures:
+            stages.append('generate_summary_figures')
+
+        all_experiment_ids = list(self.all_experiment_ids)
+        args = [
+            (
+                type(self),
+                identifier,
+                stages,
+                exp_i,
+                len(all_experiment_ids),
+            )
+            for exp_i, identifier in enumerate(all_experiment_ids)
+        ]
+
         with pool:
-
-            stages = [
-                'preprocess',
-                'align',
-                'categorize',
-            ]
-
-            if generate_example_diagrams:
-                stages.append('generate_example_diagrams')
-
-            if generate_summary_figures:
-                stages.append('generate_summary_figures')
-
-            all_experiment_ids = list(self.all_experiment_ids)
-            args = [
-                (
-                    type(self),
-                    identifier,
-                    stages,
-                    exp_i,
-                    len(all_experiment_ids),
-                )
-                for exp_i, identifier in enumerate(all_experiment_ids)
-            ]
-
             pool.starmap(process_experiment, args)
 
         self.postprocess(generate_summary_figures=generate_summary_figures)

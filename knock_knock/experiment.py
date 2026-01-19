@@ -230,8 +230,7 @@ class Experiment:
 
     @memoized_property
     def editing_strategy_name(self):
-        # Cast to str because yaml parsing produce a non-string.
-        return str(self.description['editing_strategy'])
+        return sample_sheet_row_to_editing_strategy_name(self.description)
 
     def check_combined_read_length(self):
         pass
@@ -308,7 +307,7 @@ class Experiment:
     
     @memoized_property
     def read_lengths(self):
-        return self.outcome_stratified_lengths.lengths_for_all_reads
+        return self.outcome_stratified_lengths.lengths_for_all_outcomes()
 
     def generate_outcome_counts(self):
         ''' Note that metadata lines start with '#' so category names can't. '''
@@ -442,9 +441,12 @@ class Experiment:
 
         if supplemental_index_name is None:
             base_bam_by_name_fn = self.fns_by_read_type['primary_bam_by_name'][read_type]
+
             ref_seqs = self.editing_strategy.reference_sequences
+
         else:
             base_bam_by_name_fn = self.fns_by_read_type['supplemental_bam_by_name'][read_type, supplemental_index_name]
+
             fasta_dir = self.supplemental_indices[supplemental_index_name]['fasta']
             ref_seqs = genomes.load_entire_genome(fasta_dir)
 
@@ -904,6 +906,7 @@ class Experiment:
                                    x_tick_multiple=None,
                                    max_relevant_length=None,
                                   ):
+
         if x_tick_multiple is None:
             x_tick_multiple = self.x_tick_multiple
 
@@ -925,6 +928,7 @@ class Experiment:
             ]
 
             ys_to_check = all_ys
+
         else:
             if isinstance(outcome, tuple):
                 label = ': '.join(outcome)
@@ -1296,6 +1300,19 @@ class Experiment:
 
         return architecture
 
+def sample_sheet_row_to_editing_strategy_name(row):
+    if row.get('editing_strategy', '') != '':
+        editing_strategy_name = str(row['editing_strategy'])
+
+    else:
+        if row['amplicon_primers'] == '':
+            editing_strategy_name = f'{row['genome']}_{row['sgRNAs']}'
+        else:
+            primers = '+'.join(row['amplicon_primers'].split(';'))
+            editing_strategy_name = f'{row['genome']}_{primers}'
+
+    return editing_strategy_name
+
 def load_sample_sheet_from_csv(csv_fn):
     # Note: can't include comment='#' because of '#' in hex color specifications.
     df = knock_knock.utilities.read_and_sanitize_csv(csv_fn, index_col='sample_name')
@@ -1365,34 +1382,51 @@ def get_combined_sample_sheet(base_dir):
 
     return combined
 
-def process_experiment_stage(identifier,
-                             stage,
-                             progress=None,
-                            ):
+def process_experiment(identifier,
+                       stages,
+                       progress=None,
+                       exp_i=None,
+                       num_exps=None,
+                      ):
 
     sample_sheet = load_sample_sheet(identifier.base_dir, identifier.batch_name)
 
     if sample_sheet is None:
         print(f'Error: {identifier.batch_name} not found in {identifier.base_dir}')
         sys.exit(1)
+
     elif identifier.sample_name not in sample_sheet:
         print(f'Error: {identifier.sample_name} not found in {identifier.batch_name} sample sheet')
         sys.exit(1)
+
     else:
         description = sample_sheet[identifier.sample_name]
 
     exp_class = get_exp_class(description.get('platform'))
     exp = exp_class(identifier, description=description, progress=progress)
 
-    exp.process(stage)
+    if exp_i is not None:
+        width = len(str(num_exps))
+        progress_string = f'({exp_i + 1: >{width},} / {num_exps: >{width},}) '
+    else:
+        progress_string = ''
+
+    for stage in stages:
+        logger.info(f'{progress_string}Starting ({identifier.summary}), stage {stage}')
+
+        exp.process(stage)
+
+        logger.info(f'{progress_string}Finished ({identifier.summary}), stage {stage}')
 
 def get_exp_class(platform):
     if platform == 'illumina':
         from knock_knock.illumina_experiment import IlluminaExperiment
         exp_class = IlluminaExperiment
+
     elif platform == 'pacbio':
         from knock_knock.pacbio_experiment import PacbioExperiment
         exp_class = PacbioExperiment
+
     else:
         exp_class = Experiment
 
@@ -1400,49 +1434,56 @@ def get_exp_class(platform):
 
 def get_all_experiments(base_dir,
                         conditions=None,
-                        as_dictionary=True,
                         progress=None,
-                        batch_names_to_exclude=None,
+                        batches_to_exclude=None,
                        ):
 
     if conditions is None:
         conditions = {}
 
-    if batch_names_to_exclude is None:
-        batch_names_to_exclude = set()
+    if batches_to_exclude is None:
+        batches_to_exclude = []
 
-    def check_conditions(exp):
-        for k, v in conditions.items():
-            if not isinstance(v, (list, tuple, set)):
-                vs = [v]
-            else:
-                vs = v
+    def meets_all_conditions(exp_description):
 
-            exp_value = exp.description.get(k)
+        meets_all = True
+
+        for key, values in conditions.items():
+            if not isinstance(values, (list, tuple, set)):
+                values = [values]
+
+            exp_value = exp_description.get(key)
+
             if exp_value is None:
                 exp_values = []
+
             else:
                 if isinstance(exp_value, str):
                     exp_values = exp_value.split(';')
                 else:
                     exp_values = [exp_value]
 
-            if not any(exp_value in vs for exp_value in exp_values):
-                return False
+            if not any(exp_value in values for exp_value in exp_values):
+                meets_all = False
 
-        return True
+        return meets_all
 
-    exps = []
+    exps = {}
     batch_names = get_all_batch_names(base_dir)
 
     if 'batch' in conditions:
-        v = conditions['batch']
-        if not isinstance(v, (list, tuple, set)):
-            vs = [v]
-        else:
-            vs = v
-        batch_names = (n for n in batch_names if n in vs)
-    
+        batches_to_include = conditions['batch']
+
+        if not isinstance(batches_to_include, (list, tuple, set)):
+            batches_to_include = [batches_to_include]
+
+        conditions.pop('batch')
+
+    else:
+        batches_to_include = batch_names
+
+    batch_names = set(batches_to_include) - set(batches_to_exclude)
+
     for batch_name in batch_names:
         sample_sheet = load_sample_sheet(base_dir, batch_name)
 
@@ -1451,24 +1492,12 @@ def get_all_experiments(base_dir,
             continue
 
         for sample_name, description in sample_sheet.items():
-            if isinstance(description, str):
-                continue
+            if meets_all_conditions(description):
+                exp_class = get_exp_class(description.get('platform'))
+                
+                identifier = ExperimentIdentifier(base_dir, batch_name, sample_name)
+                exp = exp_class(identifier, description=description, progress=progress)
 
-            exp_class = get_exp_class(description.get('platform'))
-            
-            identifier = ExperimentIdentifier(base_dir, batch_name, sample_name)
-            exp = exp_class(identifier, description=description, progress=progress)
-            exps.append(exp)
+                exps[batch_name, sample_name] = exp
 
-    filtered = [exp for exp in exps if check_conditions(exp) and exp.identifier.batch_name not in batch_names_to_exclude]
-    if len(filtered) == 0:
-        raise ValueError('No experiments met conditions')
-
-    if as_dictionary:
-        d = {}
-        for exp in filtered:
-            d[exp.identifier.batch_name, exp.identifier.sample_name] = exp
-        
-        filtered = d
-
-    return filtered
+    return exps

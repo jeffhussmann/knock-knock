@@ -1,0 +1,2 @@
+sample_name,experiment_type,editing_strategy,sequencing_start_feature_name,sgRNAs,platform,CCS_fastq_fn
+extracted,HDR,HDR_WGS_EEA1,,EEA1,pacbio,extracted_CCS.fastq
