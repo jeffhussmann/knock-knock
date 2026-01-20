@@ -2192,7 +2192,7 @@ class ExtensionChain:
                 require_definite=self.require_definite,
             )
 
-            if extension_al is not None:
+            if extension_al is not None and cropped_original_al is not None:
                 current_link.next_link.alignment = cropped_extension_al
                 current_link.alignment = cropped_original_al
 
