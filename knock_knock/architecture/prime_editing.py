@@ -757,6 +757,7 @@ class Architecture(knock_knock.architecture.Categorizer):
                         if b == pegRNA_base:
                             substitution_names_seen.add(substitution_name)
 
+            # Note sorting here.
             string_summary = ''.join(genotype[substitution_name] for substitution_name in sorted(substitutions[target]))
 
         has_pegRNA_substitution = len(substitution_names_seen) > 0

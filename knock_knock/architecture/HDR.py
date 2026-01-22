@@ -68,6 +68,7 @@ class Architecture(knock_knock.architecture.Categorizer):
             'complex misintegration',
             (
                 'complex misintegration',
+                'deletion in donor',
             ),
         ),
         (
@@ -266,6 +267,25 @@ class Architecture(knock_knock.architecture.Categorizer):
             chains['left'].query_covered == chains['right'].query_covered
         )
 
+    @memoized_property
+    def is_intended_edit_with_donor_deletion(self):
+        is_intended_edit_with_donor_deletion = False
+
+        chains = self.reconciled_extension_chains()['HDR']
+
+        if (chains['left'].description == 'incomplete HDR' and
+            chains['right'].description == 'incomplete HDR'):
+
+            merged_al = sam.merge_adjacent_alignments(chains['left'].alignments['donor'],
+                                                      chains['right'].alignments['donor'],
+                                                      self.editing_strategy.reference_sequences,
+                                                     )
+            
+            if merged_al is not None:
+                is_intended_edit_with_donor_deletion = True
+
+        return is_intended_edit_with_donor_deletion
+
     def register_single_read_covering_target_alignment(self):
         target_alignment = self.single_read_covering_target_alignment
 
@@ -355,7 +375,12 @@ class Architecture(knock_knock.architecture.Categorizer):
         elif self.is_intended_edit:
             self.category = 'HDR'
             self.subcategory = 'HDR'
-            self.relevant_alignments = self.parsimonious_and_gap_alignments
+            self.relevant_alignments = self.extension_chain_alignments['HDR']
+
+        elif self.is_intended_edit_with_donor_deletion:
+            self.category = 'complex misintegration'
+            self.subcategory = 'deletion in donor'
+            self.relevant_alignments = self.extension_chain_alignments['HDR']
 
         elif self.integration_summary == 'donor':
             junctions = set(self.junction_summary_per_side.values())
@@ -425,10 +450,6 @@ class Architecture(knock_knock.architecture.Categorizer):
             self.category = 'non-homologous donor'
             self.subcategory = 'simple'
 
-            NH_al = self.nonhomologous_donor_alignments[0]
-            NH_strand = sam.get_strand(NH_al)
-            MH_nts = self.NH_donor_microhomology
-            
             self.relevant_alignments = self.parsimonious_target_alignments + self.nonhomologous_donor_alignments
 
         elif self.nonspecific_amplification is not None:
@@ -935,38 +956,28 @@ class Architecture(knock_knock.architecture.Categorizer):
     def cleanly_concatanated_donors(self):
         strat = self.editing_strategy
 
-        HAs = strat.homology_arms
         p_donor_als = self.parsimonious_donor_alignments
 
         if len(p_donor_als) <= 1:
             return 0
 
-        # TEMPORARY
-        if 'donor' not in HAs[5] or 'donor' not in HAs[3]:
-            # The donor doesn't share homology arms with the target.
-            return 0
-
-        if self.sequencing_direction == '+':
-            key = lambda al: interval.get_covered(al).start
-            reverse = False
-        else:
-            key = lambda al: interval.get_covered(al).end
-            reverse = True
-
-        five_to_three = sorted(p_donor_als, key=key, reverse=reverse)
+        left_to_right = sorted(p_donor_als, key=interval.get_covered)
         junctions_clean = []
 
-        for before, after in zip(five_to_three[:-1], five_to_three[1:]):
-            before_int = interval.get_covered(before)
-            after_int = interval.get_covered(after)
+        def reaches_ref_edge(p):
+            return (p <= 1) or (p >= len(strat.donor_sequence) - 1 - 1)
 
-            adjacent = interval.are_adjacent(before_int, after_int)
-            overlap_slightly = len(before_int & after_int) <= 2
+        for left, right in zip(left_to_right[:-1], left_to_right[1:]):
+            left_int = interval.get_covered(left)
+            right_int = interval.get_covered(right)
 
-            missing_before = len(strat.donor_sequence) - before.reference_end
-            missing_after = after.reference_start 
+            adjacent = interval.are_adjacent(left_int, right_int)
+            overlap_slightly = len(left_int & right_int) <= 2
 
-            clean = (adjacent or overlap_slightly) and (missing_before <= 1) and (missing_after <= 1)
+            left_end = sam.reference_edges(left)['right']
+            right_end = sam.reference_edges(right)['left']
+
+            clean = (adjacent or overlap_slightly) and reaches_ref_edge(left_end) and reaches_ref_edge(right_end)
 
             junctions_clean.append(clean)
 
