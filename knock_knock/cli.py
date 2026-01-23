@@ -81,7 +81,6 @@ def parallel(args):
         pool.starmap(knock_knock.experiment.process_experiment, arg_tuples)
 
 def make_tables(args):
-    import knock_knock.arrayed_experiment_group
     import knock_knock.experiment
     import knock_knock.table
 
@@ -90,62 +89,40 @@ def make_tables(args):
     else:
         batches_to_include = None
 
-    if args.arrayed:
-        batches = knock_knock.arrayed_experiment_group.get_all_batches(args.base_dir)
+    # TODO: group by experiment_type
+    #    for experiment_type in experiment_types:
+    #        logger.info(f'Making {batch_name} {experiment_type}')
 
-        if batches_to_include is not None:
-            batches = {name: batch for name, batch in batches.items() if name in batches_to_include}
+    #        conditions = {
+    #            'batch': [batch_name],
+    #            'experiment_type': experiment_type,
+    #        }
+    if batches_to_include is not None:
 
-        for batch_name, batch in batches.items():
-            experiment_types = {group.experiment_type for group in batch.groups.values()}
-            for experiment_type in experiment_types:
-                logger.info(f'Making {batch_name} {experiment_type}')
+        conditions = {
+            'batch': batches_to_include,
+        }
 
-                conditions = {
-                    'batch': [batch_name],
-                    'experiment_type': experiment_type,
-                }
-
-                knock_knock.table.make_self_contained_zip(args.base_dir,
-                                                          conditions,
-                                                          f'{batch_name}_{experiment_type}',
-                                                          sort_samples=not args.unsorted,
-                                                          arrayed=True,
-                                                          vmax_multiple=args.vmax_multiple,
-                                                         )
-
+        knock_knock.table.make_self_contained_zip(args.base_dir,
+                                                  conditions,
+                                                  args.title,
+                                                  sort_samples=not args.unsorted,
+                                                  vmax_multiple=args.vmax_multiple,
+                                                 )
     else:
-        if batches_to_include is not None:
+        batches = knock_knock.experiment.get_all_batches(args.base_dir)
 
-            conditions = {
-                'batch': batches_to_include,
-            }
+        for batch_name in batches:
+            logger.info(f'Making {batch_name}')
 
-            if args.experiment_type is not None:
-                conditions['experiment_type'] = args.experiment_type
+            conditions = {'batch': batch_name}
 
             knock_knock.table.make_self_contained_zip(args.base_dir,
                                                       conditions,
-                                                      args.title,
+                                                      batch_name,
                                                       sort_samples=not args.unsorted,
-                                                      arrayed=args.arrayed,
                                                       vmax_multiple=args.vmax_multiple,
                                                      )
-        else:
-            batches = knock_knock.experiment.get_all_batches(args.base_dir)
-
-            for batch_name in batches:
-                logger.info(f'Making {batch_name}')
-
-                conditions = {'batch': batch_name}
-
-                knock_knock.table.make_self_contained_zip(args.base_dir,
-                                                          conditions,
-                                                          batch_name,
-                                                          sort_samples=not args.unsorted,
-                                                          arrayed=False,
-                                                          vmax_multiple=args.vmax_multiple,
-                                                         )
 
 def build_strategies(args):
     import knock_knock.build_strategies
@@ -224,7 +201,6 @@ def main():
     parser_table.add_argument('--batches', help='if specified, a comma-separated list of batches to include; if not specified, all batches in base_dir will be generated')
     parser_table.add_argument('--title', default='knock_knock_table', help='if specified, a title for output files')
     parser_table.add_argument('--unsorted', action='store_true', help='don\'t sort samples')
-    parser_table.add_argument('--arrayed', action='store_true', help='samples are organized as arrayed_experiment_groups')
     parser_table.add_argument('--vmax_multiple', type=float, default=1, help='fractional value that corresponds to full horizontal bar')
     parser_table.set_defaults(func=make_tables)
 

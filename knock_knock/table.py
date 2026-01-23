@@ -14,6 +14,7 @@ import nbformat.v4 as nbf
 import PIL
 import tqdm
 
+import knock_knock.experiment
 import knock_knock.svg
 
 logger = logging.getLogger(__name__)
@@ -23,38 +24,30 @@ totals_relevant_row_label = (' ', 'Total relevant reads')
 
 def load_counts(base_dir,
                 conditions=None,
-                exclude_non_relevant=False,
+                only_relevant=False,
                 exclude_empty=True,
                 sort_samples=True,
-                groups_to_exclude=None,
-                arrayed=False,
+                batches_to_exclude=None,
                ):
 
-    if groups_to_exclude is None:
-        groups_to_exclude = set()
+    exps = knock_knock.experiment.get_all_experiments(base_dir, conditions, batches_to_exclude=batches_to_exclude)
 
-    if arrayed:
-        import knock_knock.arrayed_experiment_group
-        exps = knock_knock.arrayed_experiment_group.get_all_experiments(base_dir, conditions=conditions) 
-
-    else:
-        import knock_knock.experiment
-        exps = knock_knock.experiment.get_all_experiments(base_dir, conditions, groups_to_exclude=groups_to_exclude)
-
-    counts = {}
+    all_counts = {}
     no_outcomes = []
 
     for name_tuple, exp in exps.items():
-        if exp.outcome_counts(level='subcategory') is None:
+        counts = exp.outcome_counts(level='subcategory', only_relevant=only_relevant)
+        
+        if counts is None:
             no_outcomes.append(name_tuple)
         else:
-            counts[name_tuple] = exp.outcome_counts(level='subcategory')
+            all_counts[name_tuple] = counts
 
     if no_outcomes:
-        no_outcomes_string = '\n'.join(f'\t{": ".join(name_tuple)}' for name_tuple in no_outcomes)
+        no_outcomes_string = '\n'.join(f'\t{': '.join(name_tuple)}' for name_tuple in no_outcomes)
         logger.warning(f'Warning: can\'t find outcome counts for\n{no_outcomes_string}') 
 
-    df = pd.DataFrame(counts).fillna(0)
+    df = pd.DataFrame(all_counts).fillna(0)
 
     # Sort order for outcomes is defined in the relevant architecture module.
     full_indexes = {tuple(exp.categorizer.full_index()) for exp in exps.values()}
@@ -67,25 +60,14 @@ def load_counts(base_dir,
 
     df = df.reindex(full_index, fill_value=0)
 
-    if exclude_non_relevant:
-        all_non_relevant_categories = {tuple(sorted(exp.categorizer.non_relevant_categories)) for exp in exps.values()}
-
-        if len(all_non_relevant_categories) > 1:
-            print(all_non_relevant_categories)
-            raise ValueError('Can\'t make table for experiments with inconsistent architecture modules.')
-
-        non_relevant_categories = list(all_non_relevant_categories.pop())
-
-        df = df.drop(non_relevant_categories, axis='index', level=0, errors='ignore')
-
+    if only_relevant:
         totals_row_label = totals_relevant_row_label
-
     else:
         totals_row_label = totals_all_row_label
 
     if exclude_empty:
         empty_rows = df.index[df.sum(axis=1) == 0].values
-        df = df.drop(empty_rows, axis='index', errors='ignore')
+        df.drop(empty_rows, axis='index', errors='ignore', inplace=True)
     
     totals = df.sum(axis=0)
     totals_row = pd.DataFrame.from_dict({totals_row_label: totals}, orient='index')
@@ -217,15 +199,13 @@ def make_table(base_dir,
                inline_images=False,
                show_details=True,
                sort_samples=True,
-               arrayed=False,
                vmax_multiple=1,
               ):
 
     df = load_counts(base_dir,
                      conditions=conditions,
-                     exclude_non_relevant=(not show_details),
+                     only_relevant=(not show_details),
                      sort_samples=sort_samples,
-                     arrayed=arrayed,
                     )
 
     if df.shape == (0, 0):
@@ -242,10 +222,7 @@ def make_table(base_dir,
 
     df = df.T
 
-    if arrayed:
-        df.index = pd.MultiIndex.from_tuples([(batch, (batch, group, sample)) for batch, group, sample in df.index.values])
-    else:
-        df.index = pd.MultiIndex.from_tuples([(g, f'{g}/{n}') for g, n in df.index.values])
+    df.index = pd.MultiIndex.from_tuples([(batch, (batch, sample)) for batch, sample in df.index.values])
     
     if not show_details:
         level_0 = list(df.columns.levels[0])
@@ -254,11 +231,7 @@ def make_table(base_dir,
 
         df = df.T.groupby(level=0, sort=False).sum().T
 
-    if arrayed:
-        import knock_knock.arrayed_experiment_group
-        exps = knock_knock.arrayed_experiment_group.get_all_experiments(base_dir, conditions=conditions)
-    else:
-        exps = knock_knock.experiment.get_all_experiments(base_dir, conditions=conditions, as_dictionary=True)
+    exps = knock_knock.experiment.get_all_experiments(base_dir, conditions=conditions)
 
     modal_maker = ModalMaker()
 
@@ -276,7 +249,7 @@ def make_table(base_dir,
                 if include_images:
                     hover_image_fn = exp.fns['lengths_figure']
 
-                    relative_path = hover_image_fn.relative_to(exp.base_dir / 'results')
+                    relative_path = hover_image_fn.relative_to(exp.identifier.base_dir / 'results')
 
                     hover_URI = str(relative_path)
                     if hover_image_fn.exists():
@@ -307,7 +280,7 @@ def make_table(base_dir,
                     if inline_images:
                         hover_URI, width, height = fn_to_URI(hover_image_fn)
                     else:
-                        relative_path = hover_image_fn.relative_to(exp.base_dir / 'results')
+                        relative_path = hover_image_fn.relative_to(exp.identifier.base_dir / 'results')
                         hover_URI = str(relative_path)
                         if hover_image_fn.exists():
                             with PIL.Image.open(hover_image_fn) as im:
@@ -317,7 +290,7 @@ def make_table(base_dir,
                         else:
                             width, height = 100, 100
 
-                    relative_path = click_html_fn.relative_to(exp.base_dir / 'results')
+                    relative_path = click_html_fn.relative_to(exp.identifier.base_dir / 'results')
 
                     modal_div, modal_id = modal_maker.make_outcome()
 
@@ -370,7 +343,7 @@ def make_table(base_dir,
 
         exp = exps[name_tuple]
         outcome_browser_fn = exp.fns['outcome_browser']
-        relative_path = outcome_browser_fn.relative_to(exp.base_dir / 'results')
+        relative_path = outcome_browser_fn.relative_to(exp.identifier.base_dir / 'results')
 
         return outcome_browser_link_template.format(URI=relative_path, sample_name=sample_name)
 
@@ -517,7 +490,6 @@ def generate_html(base_dir, fn,
                   include_images=True,
                   include_documentation=False,
                   sort_samples=True,
-                  arrayed=False,
                   vmax_multiple=1,
                  ):
 
@@ -544,7 +516,6 @@ knock-knock is a tool for exploring, categorizing, and quantifying the sequence 
                        show_details=show_details,
                        include_images=include_images,
                        sort_samples=sort_samples,
-                       arrayed=arrayed,
                        vmax_multiple=vmax_multiple,
                       )
 
@@ -578,7 +549,7 @@ knock-knock is a tool for exploring, categorizing, and quantifying the sequence 
     }
 
     # Note: with nbconvert==6.3.0, can't call the template file 'index.html.j2'
-    # or it will silently fail to use to the template, possible related to
+    # or it will silently fail to use the template, possible related to
     # https://github.com/jupyter/nbconvert/issues/1558.
     template_path = Path(os.path.realpath(__file__)).parent / 'table_template' / 'table.html.j2'
     exporter = nbconvert.HTMLExporter(exclude_input=True,
@@ -596,7 +567,6 @@ def make_self_contained_zip(base_dir,
                             include_images=True,
                             include_details=True,
                             sort_samples=True,
-                            arrayed=False,
                             vmax_multiple=1,
                             show_progress=False,
                            ):
@@ -618,7 +588,7 @@ def make_self_contained_zip(base_dir,
 
     logger.info('Generating csv table...')
     csv_fn = fn_prefix.with_suffix('.csv')
-    df = load_counts(base_dir, conditions, exclude_empty=False, arrayed=arrayed).T
+    df = load_counts(base_dir, conditions, exclude_empty=False).T
     df.to_csv(csv_fn)
     add_fn(csv_fn)
 
@@ -630,7 +600,6 @@ def make_self_contained_zip(base_dir,
                   show_details=False,
                   include_images=include_images,
                   sort_samples=sort_samples,
-                  arrayed=arrayed,
                   vmax_multiple=vmax_multiple,
                  )
     add_fn(html_fn)
@@ -644,16 +613,11 @@ def make_self_contained_zip(base_dir,
                       show_details=True,
                       include_images=include_images,
                       sort_samples=sort_samples,
-                      arrayed=arrayed,
                       vmax_multiple=vmax_multiple,
                      )
         add_fn(html_fn)
 
-    if arrayed:
-        import knock_knock.arrayed_experiment_group
-        exps = knock_knock.arrayed_experiment_group.get_all_experiments(base_dir, conditions=conditions)
-    else:
-        exps = knock_knock.experiment.get_all_experiments(base_dir, conditions)
+    exps = knock_knock.experiment.get_all_experiments(base_dir, conditions)
 
     missing_files = {
         'experiment': defaultdict(list),
@@ -668,7 +632,7 @@ def make_self_contained_zip(base_dir,
         for exp in exps.values():
             def add_fn(fn):
                 if not fn.exists():
-                    missing_files['experiment'][exp.group_name, exp.sample_name].append(fn)
+                    missing_files['experiment'][exp.identifier].append(fn)
                 else:
                     if fn.is_dir():
                         for child_fn in fn.iterdir():
@@ -676,69 +640,67 @@ def make_self_contained_zip(base_dir,
                     else:
                         fns_to_zip.add(fn)
 
-            group = exp.experiment_group
-            batch = group.batch
+            #group = exp.experiment_group
+            #batch = group.batch
 
-            batches[batch.batch_name] = batch
-            groups[batch.batch_name, group.group_name] = group
+            #batches[batch.batch_name] = batch
+            #groups[batch.batch_name, group.group_name] = group
 
             add_fn(exp.fns['outcome_browser'])
             add_fn(exp.fns['lengths_figure'])
 
-            if exp.subcategories_by_frequency is not None:
-                for outcome in exp.subcategories_by_frequency:
-                    outcome_fns = exp.outcome_fns(outcome)
+            for category in exp.categories_by_frequency():
+                outcome_fns = exp.outcome_fns(category)
 
-                    if include_details:
-                        add_fn(outcome_fns['diagrams_html'])
-                        add_fn(outcome_fns['first_example'])
+                add_fn(outcome_fns['diagrams_html'])
+                add_fn(outcome_fns['first_example'])
 
-                    add_fn(outcome_fns['length_ranges_dir'])
+            for subcategory in exp.categories_by_frequency(level='subcategory'):
+                outcome_fns = exp.outcome_fns(subcategory)
 
-                categories = set(c for c, s in exp.subcategories_by_frequency)
-                for category in categories:
-                    outcome_fns = exp.outcome_fns(category)
-
+                if include_details:
                     add_fn(outcome_fns['diagrams_html'])
                     add_fn(outcome_fns['first_example'])
 
-        for batch in batches.values():
-            def add_fn(fn):
-                if not fn.exists():
-                    missing_files['batch'][batch.batch_name].append(fn)
-                else:
-                    fns_to_zip.add(fn)
+                add_fn(outcome_fns['length_ranges_dir'])
 
-            add_fn(batch.fns['group_name_to_sanitized_group_name'])
-            add_fn(batch.fns['performance_metrics'])
+        #for batch in batches.values():
+        #    def add_fn(fn):
+        #        if not fn.exists():
+        #            missing_files['batch'][batch.batch_name].append(fn)
+        #        else:
+        #            fns_to_zip.add(fn)
 
-            for fn in batch.pegRNA_conversion_fractions_fns():
-                add_fn(fn)
+        #    add_fn(batch.fns['group_name_to_sanitized_group_name'])
+        #    add_fn(batch.fns['performance_metrics'])
 
-        for group in groups.values():
-            def add_fn(fn):
-                if not fn.exists():
-                    missing_files['group'][group.group_name].append(fn)
-                else:
-                    fns_to_zip.add(fn)
+        #    for fn in batch.pegRNA_conversion_fractions_fns():
+        #        add_fn(fn)
 
-            add_fn(group.fns['pegRNA_conversion_fractions'])
+        #for group in groups.values():
+        #    def add_fn(fn):
+        #        if not fn.exists():
+        #            missing_files['group'][group.group_name].append(fn)
+        #        else:
+        #            fns_to_zip.add(fn)
 
-            add_fn(group.fns['partial_incorporation_figure_high_threshold'])
-            add_fn(group.fns['partial_incorporation_figure_low_threshold'])
+        #    add_fn(group.fns['pegRNA_conversion_fractions'])
 
-            add_fn(group.fns['deletion_boundaries_figure'])
+        #    add_fn(group.fns['partial_incorporation_figure_high_threshold'])
+        #    add_fn(group.fns['partial_incorporation_figure_low_threshold'])
 
-            add_fn(group.fns['single_flap_rejoining_boundaries_figure'])
-            add_fn(group.fns['single_flap_rejoining_boundaries_figure_normalized'])
-            add_fn(group.fns['single_flap_rejoining_boundaries_figure_individual_samples'])
-            add_fn(group.fns['single_flap_rejoining_boundaries_figure_individual_samples_normalized'])
+        #    add_fn(group.fns['deletion_boundaries_figure'])
+
+        #    add_fn(group.fns['single_flap_rejoining_boundaries_figure'])
+        #    add_fn(group.fns['single_flap_rejoining_boundaries_figure_normalized'])
+        #    add_fn(group.fns['single_flap_rejoining_boundaries_figure_individual_samples'])
+        #    add_fn(group.fns['single_flap_rejoining_boundaries_figure_individual_samples_normalized'])
             
     for kind, missing_files_for_kind in missing_files.items():
         if len(missing_files_for_kind) > 0:
             list_sources = (len(missing_files_for_kind) <= 10)
 
-            logger.warning(f'{len(missing_files_for_kind)} {kind}{"s are" if len(missing_files_for_kind) > 1 else " is"} missing output files{":" if list_sources else "."}')
+            logger.warning(f'{len(missing_files_for_kind)} {kind}{'s are' if len(missing_files_for_kind) > 1 else ' is'} missing output files{":" if list_sources else "."}')
 
             if list_sources:
                 for key in sorted(missing_files_for_kind):
