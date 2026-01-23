@@ -225,22 +225,24 @@ class Explorer:
             if als is None:
                 return None
 
-            if isinstance(als, dict):
-                read_details = [
+            read_details = [
+                    f'base_dir: {exp.identifier.base_dir}',
                     f'exp: {exp.identifier}',
-                    f'{als["R1"][0].query_name}:',
-                    f'R1 sequence: {als["R1"][0].get_forward_sequence()}',
-                    f'R2 sequence: {als["R2"][0].get_forward_sequence()}',
-                ]
+            ]
+            if isinstance(als, dict):
+                read_details.extend([
+                    f'{als['R1'][0].query_name}:',
+                    f'R1 sequence: {als['R1'][0].get_forward_sequence()}',
+                    f'R2 sequence: {als['R2'][0].get_forward_sequence()}',
+                ])
 
                 if self.by_outcome:
                     architecture = exp.no_overlap_pair_categorizer(als, exp.editing_strategy)
             else:
-                read_details = [
-                    f'exp: {exp.identifier}',
-                    f'{als[0].query_name}{f" ({read_id})" if read_id != als[0].query_name else ""}:',
+                read_details.extend([
+                    f'{als[0].query_name}{f' ({read_id})' if read_id != als[0].query_name else ''}:',
                     f'sequence: {als[0].get_forward_sequence()}',
-                ]
+                ])
 
                 if self.by_outcome:
                     architecture = exp.categorizer(als,
@@ -254,12 +256,12 @@ class Explorer:
 
                 inferred_amplicon_length = architecture.inferred_amplicon_length
 
-                read_details = read_details[:2] + [
+                read_details = read_details[:3] + [
                     f'  category: {architecture.category}',
                     f'  subcategory: {architecture.subcategory}',
                     f'  details: {architecture.details}',
                     f'  inferred amplicon length: {inferred_amplicon_length}', 
-                ] + read_details[2:]
+                ] + read_details[3:]
 
                 if self.non_widgets['alignments_to_show'].value == 'relevant':
                     plot_kwargs['relevant'] = True
