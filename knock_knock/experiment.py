@@ -3,6 +3,7 @@ import matplotlib
 if 'inline' not in matplotlib.get_backend():
     matplotlib.use('Agg')
 
+import copy
 import dataclasses
 import heapq
 import logging
@@ -389,7 +390,7 @@ class Experiment:
             elif isinstance(outcome, str):
                 # outcome is a single category, so need to chain together all relevant
                 # (category, subcategory) pairs.
-                pairs = [(c, s) for c, s in self.subcategories_by_frequency if c == outcome]
+                pairs = [(c, s) for c, s in self.categories_by_frequency(level='subcategory') if c == outcome]
                 pair_groups = [self.alignment_groups(fn_key=fn_key, outcome=pair, read_type=read_type) for pair in pairs]
                 yield from heapq.merge(*pair_groups)
 
@@ -423,7 +424,7 @@ class Experiment:
     def query_names(self, read_type=None):
         for qname, als in self.alignment_groups(read_type=read_type):
             yield qname
-    
+
     def generate_alignments_with_blast(self,
                                        read_type=None,
                                        supplemental_index_name=None,
@@ -676,18 +677,9 @@ class Experiment:
     def common_sequence_to_alignments(self):
         return {}
 
-    @memoized_property
-    def categories_by_frequency(self):
-        counts = self.outcome_counts(level='category')
-
-        if counts is None:
-            return []
-        else:
-            return list(counts.sort_values(ascending=False).index)
-
-    @memoized_property
-    def subcategories_by_frequency(self):
-        counts = self.outcome_counts(level='subcategory')
+    @memoized_with_kwargs
+    def categories_by_frequency(self, *, level='category', only_relevant=False):
+        counts = self.outcome_counts(level=level, only_relevant=only_relevant)
 
         if counts is None:
             return []
@@ -1192,7 +1184,7 @@ class Experiment:
     def generate_all_outcome_length_range_figures(self):
         description = 'Generating outcome-specific length range diagrams'
 
-        outcomes = self.categories_by_frequency + self.subcategories_by_frequency
+        outcomes = self.categories_by_frequency() + self.categories_by_frequency(level='subcategory')
         for outcome in self.progress(outcomes, desc=description):
             self.generate_length_range_figures(specific_outcome=outcome)
 
@@ -1281,7 +1273,7 @@ class Experiment:
                 fh.write(f'{tag}\n')
 
     def generate_all_outcome_example_figures(self, num_examples=10, **kwargs):
-        outcomes = self.categories_by_frequency + self.subcategories_by_frequency
+        outcomes = self.categories_by_frequency() + self.categories_by_frequency(level='subcategory')
 
         for outcome in self.progress(outcomes, desc='Making outcome example diagrams'):
             self.generate_outcome_example_figures(outcome=outcome, num_examples=num_examples, **kwargs)
