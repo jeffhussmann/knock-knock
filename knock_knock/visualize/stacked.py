@@ -2371,6 +2371,7 @@ def make_partial_incorporation_figure(editing_strategy,
                                       pegRNA_conversion_fractions_y_ticks=None,
                                       pegRNA_conversion_fractions_height_multiple=10,
                                       manual_outcomes=None,
+                                      sort_by_frequency=True,
                                       perform_marginalization_over_mismatches_outside_window=True,
                                       difference_from_condition=None,
                                       difference_from_condition_label=None,
@@ -2474,6 +2475,7 @@ def make_partial_incorporation_figure(editing_strategy,
 
     if manual_outcomes is not None:
         outcomes = manual_outcomes
+
     else:
         def outcome_filter(c, s, d):
             return (
@@ -2494,7 +2496,9 @@ def make_partial_incorporation_figure(editing_strategy,
             (c, s, d) for c, s, d in outcome_fractions[above_threshold].index
             if outcome_filter(c, s, d)
         ]
-        outcomes = outcome_fractions.loc[outcomes].mean(axis=1).sort_values(ascending=False).index
+
+    if sort_by_frequency:
+        outcomes = outcome_fractions.reindex(outcomes).fillna(0).mean(axis=1).sort_values(ascending=False).index
 
     if len(outcomes) > 0:
         grid = DiagramGrid(outcomes, 
