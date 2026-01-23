@@ -284,7 +284,7 @@ class Categorizer:
 
             total_length_by_strand = {strand: sum(al.query_alignment_length for al in als) for strand, als in grouped}
 
-            sequencing_direction = max(total_length_by_strand, key=total_length_by_strand.get)
+            sequencing_direction = max(total_length_by_strand, key=total_length_by_strand.get, default=None)
 
         return sequencing_direction
 
@@ -361,7 +361,11 @@ class Categorizer:
         als = {}
 
         for side_of_target in [5, 3]:
-            side_als = [al for al in self.target_alignments if self.overlaps_primer(al, side_of_target, by='target')]
+            side_als = [
+                al for al in self.target_alignments
+                if self.overlaps_primer(al, side_of_target, by='target')
+                and sam.get_strand(al) == self.sequencing_direction
+            ]
 
             if len(side_als) > 0:
                 # Partition into equivalence classes of shared feature.

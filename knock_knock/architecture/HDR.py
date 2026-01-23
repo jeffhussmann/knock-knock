@@ -366,6 +366,11 @@ class Architecture(knock_knock.architecture.Categorizer):
             self.subcategory = 'extra copy of primer'
             self.relevant_alignments = self.uncategorized_relevant_alignments
 
+        elif self.missing_a_primer:
+            self.category = 'malformed layout'
+            self.subcategory = 'missing a primer'
+            self.relevant_alignments = self.uncategorized_relevant_alignments
+
         elif self.is_uninformative:
             self.register_uninformative()
 
@@ -604,7 +609,10 @@ class Architecture(knock_knock.architecture.Categorizer):
     @memoized_property
     def missing_a_primer(self):
         ''' Check if either primer was not found in any alignment. '''
-        return any(len(als) == 0 for als in self.all_primer_alignments.values())
+        has_primers = len(self.editing_strategy.primers) > 0
+        missing_any = any(len(als) == 0 for als in self.all_primer_alignments.values())
+
+        return has_primers and missing_any
 
     @memoized_property
     def target_flanking_alignments(self):
@@ -826,6 +834,11 @@ class Architecture(knock_knock.architecture.Categorizer):
                 start = covered[3].end + 1
             else:
                 start = 0
+
+        else:
+            # No sequencing direction.
+            start = -1
+            end = -2
 
         return interval.Interval(start, end)
 

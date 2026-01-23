@@ -36,3 +36,19 @@ m54050R1_171216_031623/000012780115/ccs:
 m54050R1_171216_031623/000025100965/ccs:
   category: concatenated misintegration
   subcategory: 5' and 3' blunt
+
+m54050R1_171216_031623/000016122370/ccs:
+  category: blunt misintegration
+  subcategory: 5' blunt, 3' imperfect
+
+m54050R1_171216_031623/000019005979/ccs:
+  category: blunt misintegration
+  subcategory: 5' imperfect, 3' blunt
+
+m54050R1_171216_031623/000024707737/ccs:
+  category: simple indel
+  subcategory: deletion >=50 nt
+
+m54050R1_171216_031623/000032113310/ccs:
+  category: malformed layout
+  subcategory: missing a primer

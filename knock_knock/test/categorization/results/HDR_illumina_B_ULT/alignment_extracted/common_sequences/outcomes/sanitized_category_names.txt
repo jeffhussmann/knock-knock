@@ -23,6 +23,7 @@ category006	donor fragment
 category006_subcategory000	donor fragment, 5' imperfect, 3' imperfect
 category007	complex misintegration
 category007_subcategory000	complex misintegration, complex misintegration
+category007_subcategory001	complex misintegration, deletion in donor
 category008	concatenated misintegration
 category008_subcategory000	concatenated misintegration, HDR
 category008_subcategory001	concatenated misintegration, 5' blunt
@@ -37,27 +38,29 @@ category010_subcategory000	genomic insertion, hg38
 category010_subcategory001	genomic insertion, hg19
 category010_subcategory002	genomic insertion, mm10
 category010_subcategory003	genomic insertion, e_coli
-category011	uncategorized
-category011_subcategory000	uncategorized, uncategorized
-category011_subcategory001	uncategorized, donor with indel
-category011_subcategory002	uncategorized, mismatch(es) near cut
-category011_subcategory003	uncategorized, multiple indels near cut
-category011_subcategory004	uncategorized, donor specific present
-category011_subcategory005	uncategorized, other
-category012	unexpected source
-category012_subcategory000	unexpected source, flipped
-category012_subcategory001	unexpected source, e coli
-category012_subcategory002	unexpected source, uncategorized
-category013	nonspecific amplification
-category013_subcategory000	nonspecific amplification, hg38
-category013_subcategory001	nonspecific amplification, hg19
-category013_subcategory002	nonspecific amplification, mm10
-category014	malformed layout
-category014_subcategory000	malformed layout, extra copy of primer
-category014_subcategory001	malformed layout, missing a primer
-category014_subcategory002	malformed layout, too short
-category014_subcategory003	malformed layout, primer far from read edge
-category014_subcategory004	malformed layout, primers not in same orientation
-category014_subcategory005	malformed layout, no alignments detected
-category015	bad sequence
-category015_subcategory000	bad sequence, non-overlapping
+category011	uninformative
+category011_subcategory000	uninformative, uninformative
+category012	uncategorized
+category012_subcategory000	uncategorized, uncategorized
+category012_subcategory001	uncategorized, donor with indel
+category012_subcategory002	uncategorized, mismatch(es) near cut
+category012_subcategory003	uncategorized, multiple indels near cut
+category012_subcategory004	uncategorized, donor specific present
+category012_subcategory005	uncategorized, other
+category013	unexpected source
+category013_subcategory000	unexpected source, flipped
+category013_subcategory001	unexpected source, e coli
+category013_subcategory002	unexpected source, uncategorized
+category014	nonspecific amplification
+category014_subcategory000	nonspecific amplification, hg38
+category014_subcategory001	nonspecific amplification, hg19
+category014_subcategory002	nonspecific amplification, mm10
+category015	malformed layout
+category015_subcategory000	malformed layout, extra copy of primer
+category015_subcategory001	malformed layout, missing a primer
+category015_subcategory002	malformed layout, too short
+category015_subcategory003	malformed layout, primer far from read edge
+category015_subcategory004	malformed layout, primers not in same orientation
+category015_subcategory005	malformed layout, no alignments detected
+category016	bad sequence
+category016_subcategory000	bad sequence, non-overlapping

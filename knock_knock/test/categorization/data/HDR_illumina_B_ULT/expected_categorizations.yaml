@@ -34,3 +34,12 @@
   category: simple indel
   subcategory: insertion
   note: deletion in left primer
+
+01:01101:016936:005403:
+  category: complex misintegration
+  subcategory: deletion in donor
+
+01:01102:021403:006006:
+  category: complex misintegration
+  subcategory: complex misintegration
+  note: previously incorrectly called concatenated misintegration
