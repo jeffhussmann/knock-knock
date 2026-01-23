@@ -1441,6 +1441,9 @@ def get_all_experiments(base_dir,
     if conditions is None:
         conditions = {}
 
+    # May pop batch from conditions below.
+    conditions = copy.deepcopy(conditions)
+
     if batches_to_exclude is None:
         batches_to_exclude = []
 
