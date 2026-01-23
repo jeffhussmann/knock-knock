@@ -339,7 +339,8 @@ class Experiment:
     def length_ranges(self, *, outcome=None):
         lengths = self.outcome_stratified_lengths.by_outcome(outcome)
 
-        nonzero, = np.nonzero(lengths)
+        nonzero = lengths[lengths > 0].index.values
+
         ranges = [(i, i) for i in nonzero]
 
         return ranges
@@ -353,8 +354,6 @@ class Experiment:
             for length in range(start, end + 1):
                 length_to_length_range[length] = length_range
 
-        length_to_length_range[None] = (self.length_to_store_unknown, self.length_to_store_unknown)
-                
         return length_to_length_range
     
     def alignment_groups(self, fn_key='bam_by_name', outcome=None, read_type=None):
@@ -1103,12 +1102,10 @@ class Experiment:
 
         outcome_stratified_lengths = self.outcome_stratified_lengths
 
-        if kwargs.get('truncate_to_max_observed_length', False):
-            outcome_stratified_lengths = outcome_stratified_lengths.truncate_to_max_observed_length()
-
         return knock_knock.visualize.lengths.plot_outcome_stratified_lengths(outcome_stratified_lengths,
                                                                              self.categorizer,
                                                                              self.editing_strategy,
+                                                                             truncate_to_max_observed_length=True,
                                                                              length_ranges=self.length_ranges,
                                                                              x_tick_multiple=self.x_tick_multiple,
                                                                              **kwargs,
@@ -1153,6 +1150,8 @@ class Experiment:
 
             if length is not None:
                 length = min(length, self.max_relevant_length)
+            else:
+                length = self.length_to_store_unknown
 
             length_range = length_to_length_range[length]
             by_length_range[length_range].add((name, als))

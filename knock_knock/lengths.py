@@ -129,7 +129,6 @@ class OutcomeStratifiedLengths:
                                                  self.non_relevant_categories,
                                                 )
 
-
             old_df = self.subcategory_lengths_df
 
             index = old_df.index
@@ -153,10 +152,14 @@ class OutcomeStratifiedLengths:
 
     def truncate_to_max_observed_length(self, only_relevant=False):
         ls = self.lengths_for_all_outcomes(only_relevant=only_relevant)
+
         max_observed_length = max((l for l in ls[ls > 0].index if l != self.length_to_store_unknown), default=self.max_relevant_length)
 
         # Add a 5% buffer, then round up to the nearest multiple of 500.
         new_max_length = int(np.ceil((max_observed_length * 1.05) / 500) * 500)
+
+        # Cap at the existing max length.
+        new_max_length = min(new_max_length, self.max_relevant_length)
 
         return self.truncate(0, new_max_length)
 

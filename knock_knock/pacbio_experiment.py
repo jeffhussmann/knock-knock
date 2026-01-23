@@ -52,14 +52,20 @@ class PacbioExperiment(Experiment):
         lengths = outcome_stratified_lengths.by_outcome(outcome=outcome)
         smoothed = lengths.rolling(window=2 * self.length_plot_smooth_window + 1, center=True, min_periods=1).sum()
         centers, _ = scipy.signal.find_peaks(smoothed, distance=25)
+        centers = list(centers)
 
-        edges = [0, outcome_stratified_lengths.max_relevant_length + 1]
+        for center in [outcome_stratified_lengths.max_relevant_length, outcome_stratified_lengths.length_to_store_unknown]:
+            if center not in centers:
+                centers.append(center)
+
+        edges = [0, outcome_stratified_lengths.length_to_store_unknown + max_window_size]
 
         for i in range(len(centers)):
             if i < len(centers) - 1:
                 gap = centers[i + 1] - centers[i]
             else:
-                gap = outcome_stratified_lengths.max_relevant_length + 1 - centers[i]
+                # Note: edges[1] is far right
+                gap = edges[1] - centers[i]
 
             offset = min(gap, max_window_size) // 2
 

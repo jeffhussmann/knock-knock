@@ -38,7 +38,9 @@ def plot_outcome_stratified_lengths(outcome_stratified_lengths,
         return
 
     if x_lims is None:
-        x_lims = (min(lengths_df.columns), max(lengths_df.columns))
+        min_length = min(lengths_df.columns)
+        max_length = max(lengths_df.columns)
+        x_lims = (min_length, max_length + 0.01 * (max_length - min_length))
 
     panel_groups = []
 
