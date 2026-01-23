@@ -76,6 +76,9 @@ class Identifier:
     def summary(self):
         return ', '.join(map(str, self.specific_fields))
 
+    def __lt__(self, other):
+        return dataclasses.astuple(self) < dataclasses.astuple(other)
+
 @dataclasses.dataclass(frozen=True)
 class ExperimentIdentifier(Identifier):
     base_dir: Path
