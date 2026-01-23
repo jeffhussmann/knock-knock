@@ -186,13 +186,7 @@ class EditingStrategy:
 
     @memoized_property
     def header(self):
-        ref_seqs = sorted(self.reference_sequences.items())
-        names = [name for name, seq in ref_seqs]
-        lengths = [len(seq) for name, seq in ref_seqs]
-
-        header = pysam.AlignmentHeader.from_references(names, lengths)
-
-        return header
+        return genomes.get_header_from_dictionary(self.reference_sequences)
 
     @memoized_property
     def primary_protospacer(self):

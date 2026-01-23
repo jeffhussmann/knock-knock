@@ -57,12 +57,7 @@ class Batch:
         self.data_dir = self.identifier.base_dir / 'data' / self.identifier.batch_name
         self.results_dir = self.identifier.base_dir / 'results' / self.identifier.batch_name
 
-        if progress is None or getattr(progress, '_silent', False):
-            def ignore_kwargs(x, **kwargs):
-                return x
-            progress = ignore_kwargs
-
-        self.progress = progress
+        self.progress = knock_knock.utilities.possibly_default_progress(progress)
 
         self.baseline_condition = baseline_condition
 
@@ -256,8 +251,10 @@ class Batch:
 
                 if fn.exists():
                     df = pd.read_csv(fn, index_col=group.full_condition_keys)
+
                 elif group.pegRNA_conversion_fractions_by_edit_description is not None:
                     df = group.pegRNA_conversion_fractions_by_edit_description.T
+
                 else:
                     df = None
 
