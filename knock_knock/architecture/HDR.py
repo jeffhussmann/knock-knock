@@ -1297,7 +1297,7 @@ class Architecture(knock_knock.architecture.Categorizer):
 
     @memoized_property
     def query_interval_to_plot(self):
-        if self.has_target_flanking_alignments_on_both_sides:
+        if len(self.editing_strategy.primers) == 0 and self.has_target_flanking_alignments_on_both_sides:
             left, right = self.target_flanking_intervals['read']['left'].start, self.target_flanking_intervals['read']['right'].end
 
             query_interval = (left, right)
