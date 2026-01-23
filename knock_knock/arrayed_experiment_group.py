@@ -1093,28 +1093,10 @@ class ArrayedExperimentGroup(knock_knock.experiment_group.ExperimentGroup):
         return conversion_fractions
 
     @memoized_property
-    def outcomes_containing_pegRNA_programmed_edits(self):
-        return knock_knock.outcome.outcomes_containing_pegRNA_programmed_edits(self.editing_strategy,
-                                                                               self.outcome_fractions(),
-                                                                              )
-    @memoized_property
     def pegRNA_conversion_fractions(self):
-        fs = {}
-
-        for edit_name, outcomes in self.outcomes_containing_pegRNA_programmed_edits.items():
-            fs[edit_name] = self.outcome_fractions().loc[outcomes].sum()
-
-        if len(fs) > 0:
-            fs_df = pd.DataFrame.from_dict(fs, orient='index')
-
-            # TODO: add condition annotations from identifiers
-            #fs_df.columns.names = self.full_condition_keys
-            fs_df.index.name = 'edit_name'
-
-        else:
-            fs_df = None
-
-        return fs_df
+        return knock_knock.outcome.pegRNA_conversion_fractions(self.editing_strategy,
+                                                               self.outcome_fractions(),
+                                                              )
 
     @memoized_property
     def pegRNA_conversion_fractions_by_edit_description(self):

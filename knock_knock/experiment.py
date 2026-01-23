@@ -1294,6 +1294,15 @@ class Experiment:
 
         return architecture
 
+    @memoized_property
+    def pegRNA_conversion_fractions(self):
+        fs = knock_knock.outcome.pegRNA_conversion_fractions(self.editing_strategy,
+                                                             self.outcome_fractions(),
+                                                            )
+        fs.name = str(self.identifier)
+
+        return fs
+
 def sample_sheet_row_to_editing_strategy_name(row):
     if row.get('editing_strategy', '') != '':
         editing_strategy_name = str(row['editing_strategy'])

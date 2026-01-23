@@ -670,6 +670,24 @@ def outcomes_containing_pegRNA_programmed_edits(editing_strategy,
 
     return outcomes_containing_pegRNA_programmed_edits
 
+def pegRNA_conversion_fractions(editing_strategy,
+                                outcome_fractions,
+                               ):
+    fs = {}
+
+    for edit_name, outcomes in outcomes_containing_pegRNA_programmed_edits(editing_strategy, outcome_fractions).items():
+        fs[edit_name] = outcome_fractions.loc[outcomes].sum()
+
+    if len(fs) > 0:
+        fs_df = pd.DataFrame.from_dict(fs, orient='index')
+
+        fs_df.index.name = 'edit_name'
+
+    else:
+        fs_df = None
+
+    return fs_df
+
 def outcomes_with_deletion_overlapping_cuts(editing_strategy, sgRNA_name, outcome_fractions, buffer=0):
     components = editing_strategy.sgRNA_components[sgRNA_name]
     effector = knock_knock.effector.effectors[components['effector']]
