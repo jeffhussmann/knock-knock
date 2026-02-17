@@ -56,7 +56,7 @@ class PacbioExperiment(Experiment):
 
     @memoized_with_kwargs
     def length_ranges(self, *, outcome=None):
-        outcome_stratified_lengths = self.outcome_stratified_lengths.truncate_to_max_observed_length()
+        outcome_stratified_lengths = self.truncated_outcome_stratified_lengths
 
         max_window_size = outcome_stratified_lengths.max_relevant_length // 50
 

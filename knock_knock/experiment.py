@@ -950,6 +950,10 @@ class Experiment:
         return knock_knock.lengths.OutcomeStratifiedLengths.from_file(self.fns['outcome_stratified_lengths'])
 
     @memoized_property
+    def truncated_outcome_stratified_lengths(self):
+        return self.outcome_stratified_lengths.truncate_to_max_observed_length()
+
+    @memoized_property
     def qname_to_inferred_length(self):
         qname_to_inferred_length = {}
 
@@ -1007,6 +1011,7 @@ class Experiment:
             yield diagram
 
     def generate_length_range_figures(self, specific_outcome=None, num_examples=1):
+        outcome_stratified_lengths = self.truncated_outcome_stratified_lengths
         length_to_length_range = self.length_to_length_range(outcome=specific_outcome)
 
         # Downsampling these here is redundant (since alignment_groups_to_diagrams
@@ -1019,9 +1024,9 @@ class Experiment:
             length = self.qname_to_inferred_length[name]
 
             if length is not None:
-                length = min(length, self.max_relevant_length)
+                length = min(length, outcome_stratified_lengths.max_relevant_length)
             else:
-                length = self.length_to_store_unknown
+                length = outcome_stratified_lengths.length_to_store_unknown
 
             length_range = length_to_length_range[length]
             by_length_range[length_range].add((name, als))
@@ -1074,7 +1079,12 @@ class Experiment:
         lengths_fig = self.length_distribution_figure()
         lengths_fig.savefig(self.fns['lengths_figure'], bbox_inches='tight')
 
-        self.generate_outcome_browser()
+        if len(self.editing_strategy.primers) == 0:
+            only_relevant = True
+        else:
+            only_relevant = False
+
+        self.generate_outcome_browser(only_relevant=only_relevant)
 
     def example_diagrams(self, outcome, num_examples):
         al_groups = self.alignment_groups(outcome=outcome)
