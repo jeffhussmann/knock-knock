@@ -1591,7 +1591,7 @@ class ReadDiagram:
         height = 1.3  / self.fig.get_figheight()
         gap = 0.5  / self.fig.get_figheight()
 
-        ax = self.fig.add_axes([ax_p.x0, ax_p.y1 + gap, ax_p.width, height], sharex=self.ax)
+        edits_ax = self.fig.add_axes([ax_p.x0, ax_p.y1 + gap, ax_p.width, height], sharex=self.ax)
 
         if al_idxs_to_draw_lines is None:
             al_idxs_to_draw_lines = set(range(len(arch.refined_alignments)))
@@ -1600,7 +1600,7 @@ class ReadDiagram:
             if al_i in al_idxs_to_draw_lines:
                 color = self.ref_name_to_color[al.reference_name]
 
-                ax.plot(arch.edits_in_window[al_i],
+                edits_ax.plot(arch.edits_in_window[al_i],
                         linewidth=line_width,
                         color=color,
                         alpha=line_alpha,
@@ -1609,7 +1609,7 @@ class ReadDiagram:
         if highlight_minimums:
             for al_i, interval in arch.stretches:
                 color = self.ref_name_to_color[arch.refined_alignments[al_i].reference_name]
-                ax.plot(arch.edits_in_window[al_i].loc[interval.start:interval.end],
+                edits_ax.plot(arch.edits_in_window[al_i].loc[interval.start:interval.end],
                         linewidth=3,
                         color=color,
                        )
@@ -1627,13 +1627,7 @@ class ReadDiagram:
 
                 if handoff_length >= 0:
                     if max_x >= self.query_interval[0] and min_x <= self.query_interval[1]:
-                        for segment_i in [left_segment_i, right_segment_i]:
-                            al = segments[segment_i]['cropped_alignment']
-                            if al is not None:
-                                color = self.ref_name_to_color[al.reference_name]
-                                self.ax.axvspan(min_x - 0.5, max_x + 0.5, color=color, alpha=0.1)
-
-                        self.ax.annotate(f'{handoff_length}-nt',
+                        edits_ax.annotate(f'{handoff_length}-nt',
                                          xy=(np.mean([min_x, max_x]), 1),
                                          xycoords=('data', 'axes fraction'),
                                          xytext=(0, 5),
@@ -1648,20 +1642,20 @@ class ReadDiagram:
                     start, end = hits.sam.query_interval(segment['cropped_alignment'])
 
                     color = self.ref_name_to_color[segment['cropped_alignment'].reference_name]
-                    ax.axvspan(start - 0.5, end + 0.5,
+                    edits_ax.axvspan(start - 0.5, end + 0.5,
                                color=color,
                                alpha=0.15,
                               )
 
-        ax.spines[['bottom', 'top', 'right']].set_visible(False)
-        for label in ax.get_xticklabels():
+        edits_ax.spines[['bottom', 'top', 'right']].set_visible(False)
+        for label in edits_ax.get_xticklabels():
             label.set_visible(False)
 
-        ax.set_ylabel(f'Edits in rolling\n{arch.recombination_window_size}-nt window', size=12)
-        ax.set_ylim(-0.5)
+        edits_ax.set_ylabel(f'Edits in rolling\n{arch.recombination_window_size}-nt window', size=12)
+        edits_ax.set_ylim(-0.5)
 
         if draw_quality_panel:
-            ax_p = ax.get_position()
+            ax_p = edits_ax.get_position()
 
             height = 1  / self.fig.get_figheight()
             gap = 0.5  / self.fig.get_figheight()
