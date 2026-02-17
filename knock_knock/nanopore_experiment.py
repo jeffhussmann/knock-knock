@@ -39,7 +39,6 @@ class Experiment(knock_knock.experiment.Experiment):
 
         self.max_relevant_length = int(self.description.get('max_relevant_length', 10000))
         self.x_tick_multiple = 500
-        self.length_plot_smooth_window = 1
 
         self.max_insertion_length = 20
 

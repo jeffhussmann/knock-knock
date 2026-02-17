@@ -140,9 +140,9 @@ class Experiment:
         self.color = knock_knock.visualize.extract_color(self.description)
         self.max_qual = 93
         
-        index_names = self.description.get('supplemental_indices')
+        index_names = self.description.get('additional_genomes', '')
 
-        if index_names is None:
+        if index_names == '':
             index_names = []
 
         if isinstance(index_names, str):
@@ -153,13 +153,15 @@ class Experiment:
         # count_index_levels are level names for index on outcome counts.
         self.count_index_levels = ['category', 'subcategory', 'details']
 
-        self.length_plot_smooth_window = 0
-
         self.has_UMIs = False
 
         self.outcome_fn_keys = [
             'outcome_list',
         ]
+
+    @memoized_property
+    def length_plot_smooth_window(self):
+        return 0
 
     def __repr__(self):
         return f'{self.__class__.__name__}: {self.identifier}'
@@ -208,7 +210,7 @@ class Experiment:
 
     @property
     def min_relevant_length(self):
-        if knock_knock.utilities.is_one_sided(self.description.get('experiment_type')):
+        if knock_knock.utilities.is_one_sided(self.experiment_type):
             min_relevant_length = 0
         else:
             min_relevant_length = self.description.get('min_relevant_length')
@@ -1200,12 +1202,6 @@ def load_sample_sheet_from_csv(csv_fn):
         sys.exit(1)
 
     sample_sheet = pd.DataFrame(df).to_dict(orient='index')
-
-    for name, d in sample_sheet.items():
-        if 'forward_primer' in d:
-            d['primer_names'] = [d['forward_primer'], d['reverse_primer']]
-            d.pop('forward_primer')
-            d.pop('reverse_primer')
 
     return sample_sheet
 

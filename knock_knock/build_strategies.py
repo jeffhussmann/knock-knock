@@ -470,19 +470,19 @@ class EditingStrategyBuilder:
         protospacer_name = list(self.sgRNAs)[0]
         components = self.sgRNAs[protospacer_name]
 
-        protospacer_alignemnts = self.genomes.align_protospacer_to_genome(protospacer_name,
-                                                                          components['protospacer'],
-                                                                          components['effector'],
-                                                                          self.genome,
-                                                                         )
+        effector = knock_knock.effector.effectors[components['effector']]
 
-        if len(protospacer_alignemnts) == 0:
+        protospacer_alignments = effector.align_protospacer_to_genome(components['protospacer'],
+                                                                      self.genomes.loaded(self.genome),
+                                                                     )
+
+        if len(protospacer_alignments) == 0:
             raise ValueError('failed to align {protospacer_name} to {self.genome}')
 
-        elif len(protospacer_alignemnts) > 1:
+        elif len(protospacer_alignments) > 1:
             raise ValueError('multiple alignments of {protospacer_name} to {self.genome}')
         
-        protospacer_alignemnt = protospacer_alignemnts[0]
+        protospacer_alignemnt = protospacer_alignments[0]
 
         return protospacer_alignemnt
 
@@ -492,6 +492,17 @@ def build_strategies(base_dir, batch_name, ignore_existing=False):
     sample_sheet_fn = data_dir / 'sample_sheet.csv'
 
     sample_sheet = knock_knock.utilities.read_and_sanitize_csv(sample_sheet_fn, index_col='sample_name')
+
+    mandatory_columns = {
+        'genome',
+        'amplicon_primers',
+        'sgRNAs',
+    }
+
+    missing_columns = mandatory_columns - set(sample_sheet.columns)
+
+    if len(missing_columns) > 0:
+        raise ValueError(f'Missing mandatory sample sheet column{'s' if len(missing_columns) > 1 else ''}: {missing_columns}')
 
     strategies_dir = knock_knock.editing_strategy.get_strategies_dir(base_dir)
 
@@ -519,39 +530,7 @@ def build_strategies(base_dir, batch_name, ignore_existing=False):
 
             builder.build()
 
-def build_indices(base_dir, name, num_threads=1, RAM_limit=int(60e9), **STAR_index_kwargs):
-    base_dir = Path(base_dir)
-
-    logger.info(f'Building indices for {name}')
-    fasta_dir = base_dir / 'indices' / name / 'fasta'
-
-    fasta_fns = genomes.get_all_fasta_file_names(fasta_dir)
-    if len(fasta_fns) == 0:
-        raise ValueError(f'No fasta files found in {fasta_dir}')
-    elif len(fasta_fns) > 1:
-        raise ValueError(f'Can only build minimap2 index from a single fasta file')
-
-    logger.info('Indexing fastas...')
-    genomes.make_fais(fasta_dir)
-
-    fasta_fn = fasta_fns[0]
-
-    logger.info('Building STAR index...')
-    STAR_dir = base_dir / 'indices' / name / 'STAR'
-    STAR_dir.mkdir(exist_ok=True)
-    mapping_tools.build_STAR_index([fasta_fn], STAR_dir,
-                                   num_threads=num_threads,
-                                   RAM_limit=RAM_limit,
-                                   **STAR_index_kwargs,
-                                  )
-
-    logger.info('Building minimap2 index...')
-    minimap2_dir = base_dir / 'indices' / name / 'minimap2'
-    minimap2_dir.mkdir(exist_ok=True)
-    minimap2_index_fn = minimap2_dir / f'{name}.mmi'
-    mapping_tools.build_minimap2_index(fasta_fn, minimap2_index_fn)
-
-def download_genome_and_build_indices(base_dir, genome_name, num_threads=8):
+def download_genome(base_dir, genome_name):
     urls = {
         'hg38': 'http://hgdownload.cse.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz',
         'hg19': 'http://hgdownload.cse.ucsc.edu/goldenPath/hg19/bigZips/hg19.fa.gz',
@@ -609,9 +588,38 @@ def download_genome_and_build_indices(base_dir, genome_name, num_threads=8):
         ]
         subprocess.run(gunzip_command, check=True)
 
-    STAR_index_kwargs = {}
+    logger.info('Indexing fastas...')
+    genomes.make_fais(fasta_dir)
 
+def build_indices(base_dir, genome_name, num_threads=1, RAM_limit=int(60e9), **STAR_index_kwargs):
     if genome_name in ['e_coli', 'phiX']:
-        STAR_index_kwargs['wonky_param'] = 4
+        STAR_index_kwargs.setdefault('wonky_param', 4)
 
-    build_indices(base_dir, genome_name, num_threads=num_threads, **STAR_index_kwargs)
+    base_dir = Path(base_dir)
+
+    logger.info(f'Building indices for {genome_name}')
+    fasta_dir = base_dir / 'indices' / genome_name / 'fasta'
+
+    fasta_fns = genomes.get_all_fasta_file_names(fasta_dir)
+    if len(fasta_fns) == 0:
+        raise ValueError(f'No fasta files found in {fasta_dir}')
+
+    logger.info('Building STAR index...')
+    STAR_dir = base_dir / 'indices' / genome_name / 'STAR'
+    STAR_dir.mkdir(exist_ok=True)
+    mapping_tools.build_STAR_index(fasta_fns, STAR_dir,
+                                   num_threads=num_threads,
+                                   RAM_limit=RAM_limit,
+                                   **STAR_index_kwargs,
+                                  )
+
+    if len(fasta_fns) > 1:
+        raise ValueError(f'Can only build minimap2 index from a single fasta file')
+
+    fasta_fn = fasta_fns[0]
+
+    logger.info('Building minimap2 index...')
+    minimap2_dir = base_dir / 'indices' / genome_name / 'minimap2'
+    minimap2_dir.mkdir(exist_ok=True)
+    minimap2_index_fn = minimap2_dir / f'{genome_name}.mmi'
+    mapping_tools.build_minimap2_index(fasta_fn, minimap2_index_fn)

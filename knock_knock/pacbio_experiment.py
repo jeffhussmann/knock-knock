@@ -24,8 +24,6 @@ class PacbioExperiment(Experiment):
 
         self.outcome_fn_keys = ['outcome_list']
 
-        self.length_plot_smooth_window = int(self.description.get('length_plot_smooth_window', 7))
-
     @property
     def preprocessed_read_type(self):
         return 'CCS_by_name'
@@ -40,8 +38,21 @@ class PacbioExperiment(Experiment):
 
     @memoized_property
     def max_relevant_length(self):
-        auto_length = int((self.editing_strategy.amplicon_length * 2.5 // 1000 + 1)) * 1000
-        return int(self.description.get('max_relevant_length', auto_length))
+        if len(self.editing_strategy.primers) == 0:
+            default_value = 20000
+        else:
+            default_value = int((self.editing_strategy.amplicon_length * 3 // 1000 + 1)) * 1000
+
+        return int(self.description.get('max_relevant_length', default_value))
+
+    @memoized_property
+    def length_plot_smooth_window(self):
+        if len(self.editing_strategy.primers) == 0:
+            default_value = 0
+        else:
+            default_value = 7
+
+        return int(self.description.get('length_plot_smooth_window', default_value))
 
     @memoized_with_kwargs
     def length_ranges(self, *, outcome=None):

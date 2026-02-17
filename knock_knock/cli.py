@@ -109,10 +109,11 @@ def make_tables(args):
                                                   sort_samples=not args.unsorted,
                                                   vmax_multiple=args.vmax_multiple,
                                                  )
-    else:
-        batches = knock_knock.experiment.get_all_batches(args.base_dir)
 
-        for batch_name in batches:
+    else:
+        batch_names = knock_knock.experiment.get_all_batch_names(args.base_dir)
+
+        for batch_name in batch_names:
             logger.info(f'Making {batch_name}')
 
             conditions = {'batch': batch_name}
@@ -130,6 +131,13 @@ def build_strategies(args):
     knock_knock.utilities.configure_logging_to_file(args.base_dir, 'knock_knock')
 
     knock_knock.build_strategies.build_strategies(args.base_dir, args.batch_name)
+
+def download_genome(args):
+    import knock_knock.build_strategies
+
+    knock_knock.build_strategies.download_genome(args.base_dir,
+                                                 args.genome_name,
+                                                )
 
 def build_indices(args):
     import knock_knock.build_strategies
@@ -209,10 +217,15 @@ def main():
     parser_strategies.add_argument('batch_name', help='batch name')
     parser_strategies.set_defaults(func=build_strategies)
 
-    parser_indices = subparsers.add_parser('build-indices', help='download a reference genome and build alignment indices')
+    parser_download = subparsers.add_parser('download-genome', help='download a reference genome')
+    add_base_dir_arg(parser_download)
+    parser_download.add_argument('genome_name', help='name of genome to download')
+    parser_download.set_defaults(func=download_genome)
+
+    parser_indices = subparsers.add_parser('build-indices', help='build STAR and minimap2 indices')
     add_base_dir_arg(parser_indices)
-    parser_indices.add_argument('genome_name', help='name of genome to download')
-    parser_indices.add_argument('--num-threads', type=int, default=8, help='number of threads to use for index building')
+    parser_indices.add_argument('genome_name', help='name of genome to build indices for')
+    parser_indices.add_argument('--num-threads', type=int, default=8, help='number of threads to use')
     parser_indices.set_defaults(func=build_indices)
 
     parser_install_data = subparsers.add_parser('install-example-data', help='install example data into user-specified project directory')
