@@ -405,8 +405,9 @@ tag_to_Detail = OrderedDict({
     'deletions': Deletions,
     'insertions': Insertions,
     'mismatches': Mismatches,
-    'names': Strs,
-    'num_edits': Int,
+    'perturbation': Str,
+    'edit': Str,
+    'features_covered': Strs,
     'num_segments': Int,
 })
 
