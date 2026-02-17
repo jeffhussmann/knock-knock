@@ -1247,7 +1247,13 @@ class Categorizer:
 
         return extended_al
 
-    def find_extending_alignment(self, alignment_to_extend, from_side, candidate_alignments, shared_feature, require_definite=True):
+    def find_extending_alignment(self,
+                                 alignment_to_extend,
+                                 from_side,
+                                 candidate_alignments,
+                                 shared_feature,
+                                 require_definite=True,
+                                ):
 
         extension_side = opposite_side(from_side)
         
@@ -1257,9 +1263,11 @@ class Categorizer:
             if from_side == 'left':
                 left_al = alignment_to_extend
                 right_al = candidate_al
+
             elif from_side == 'right':
                 left_al = candidate_al
                 right_al = alignment_to_extend
+
             else:
                 raise ValueError(from_side)
                 
@@ -1275,17 +1283,26 @@ class Categorizer:
             eligible.extend(by_status['possible'])
 
         if len(eligible) > 0:
-            best_results = max(eligible, key=lambda d: self.length_minus_edits(d['alignments'][extension_side]))
-            
-            extension_al = best_results['alignments'][extension_side]
-            cropped_extension_al = best_results['cropped_alignments'][extension_side]
-            
-            croppped_original_al = best_results['cropped_alignments'][from_side]
-        
-        else:
-            extension_al, cropped_extension_al, croppped_original_al = None, None, None
+            def priority_key(results):
+                return self.length_minus_edits(results['alignments'][extension_side])
 
-        return extension_al, cropped_extension_al, croppped_original_al
+            decorated = [(priority_key(results), results) for results in eligible]
+            highest_value = max(v for v, r in decorated)
+            all_with_highest_value = [r for v, r in decorated if v == highest_value]
+
+            best_results = all_with_highest_value[0]
+            
+            results = {
+                'best_extension_als': [r['alignments'][extension_side] for r in all_with_highest_value],
+                'extension_al': best_results['alignments'][extension_side],
+                'cropped_extension_al': best_results['cropped_alignments'][extension_side],
+                'cropped_original_al': best_results['cropped_alignments'][from_side],
+            }
+            
+        else:
+            results = None
+
+        return results
 
     @memoized_with_kwargs
     def extension_chains(self, *, require_definite=True):
@@ -2169,6 +2186,7 @@ class ExtensionChain:
             link = ExtensionChainLink(
                 link_name,
                 candidate_alignments,
+                [],
                 next_feature_name,
             )
 
@@ -2194,7 +2212,7 @@ class ExtensionChain:
         current_link.alignment = starting_alignment
 
         while current_link.alignment is not None and current_link.next_link is not None:
-            extension_al, cropped_extension_al, cropped_original_al = architecture.find_extending_alignment(
+            results = architecture.find_extending_alignment(
                 current_link.alignment,
                 self.direction_in_read,
                 current_link.next_link.candidate_alignments,
@@ -2202,9 +2220,10 @@ class ExtensionChain:
                 require_definite=self.require_definite,
             )
 
-            if extension_al is not None and cropped_original_al is not None:
-                current_link.next_link.alignment = cropped_extension_al
-                current_link.alignment = cropped_original_al
+            if results is not None:
+                current_link.next_link.alignment = results['cropped_extension_al']
+                current_link.alignment = results['cropped_original_al']
+                current_link.next_link.best_extension_alignments = results['best_extension_als']
 
             current_link = current_link.next_link
 
@@ -2234,6 +2253,7 @@ class ExtensionChain:
 class ExtensionChainLink:
     name: str
     candidate_alignments: list[pysam.AlignedSegment]
+    best_extension_alignments: list[pysam.AlignedSegment]
     next_feature: str | None = None
     next_link: Self | None = None
     alignment: pysam.AlignedSegment| None = None
