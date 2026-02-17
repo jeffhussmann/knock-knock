@@ -17,7 +17,6 @@ from pathlib import Path
 from textwrap import dedent
 
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 import pysam
 import yaml
@@ -35,7 +34,7 @@ import knock_knock.utilities
 import knock_knock.visualize
 import knock_knock.visualize.lengths
 
-from . import svg, table, explore
+from . import svg, explore
 
 logger = logging.getLogger(__name__)
 
@@ -891,140 +890,14 @@ class Experiment:
 
         return diagram
 
-    def length_distribution_figure(self,
-                                   outcome=None,
-                                   show_ranges=False,
-                                   show_title=False,
-                                   fig_size=(12, 6),
-                                   font_size=12,
-                                   x_tick_multiple=None,
-                                   max_relevant_length=None,
-                                  ):
-
-        if x_tick_multiple is None:
-            x_tick_multiple = self.x_tick_multiple
-
-        if max_relevant_length is None:
-            max_relevant_length = self.max_relevant_length
-
-        all_ys = self.read_lengths / self.total_reads
-
-        def convert_to_smoothed_percentages(ys):
-            window = self.length_plot_smooth_window * 2 + 1
-            smoothed = pd.Series(ys).rolling(window=window, center=True, min_periods=1).sum()
-            return smoothed * 100
-
-        fig, ax = plt.subplots(figsize=fig_size)
-
-        if outcome is None:
-            ys_list = [
-                (all_ys, self.color, 0.9, 'all reads', True),
-            ]
-
-            ys_to_check = all_ys
-
-        else:
-            if isinstance(outcome, tuple):
-                label = ': '.join(outcome)
-            else:
-                label = outcome
-
-            outcome_lengths = self.outcome_stratified_lengths.by_outcome(outcome)
-            color = self.outcome_stratified_lengths.outcome_to_color(smooth_window=self.length_plot_smooth_window)[outcome]
-
-            outcome_ys = outcome_lengths / self.total_reads
-
-            other_lengths = self.read_lengths - outcome_lengths
-            other_ys = other_lengths / self.total_reads
-
-            ys_list = [
-                (other_ys, 'black', 0.2, 'all other reads', False),
-                (outcome_ys, color, 0.9, label, True),
-            ]
-
-            ys_to_check = outcome_ys
-
-        max_y = 0
-
-        for ys, color, alpha, label, check_for_max in ys_list:
-            ys = convert_to_smoothed_percentages(ys)
-
-            if check_for_max:
-                max_y = max(max_y, max(ys, default=0.1))
-
-            if self.length_plot_smooth_window == 0:
-                line_width = 1
-            else:
-                line_width = 2
-
-            ax.plot(ys, color=color, alpha=alpha, linewidth=line_width, label=label)
-            
-            nonzero_ys = ys[ys > 0]
-            nonzero_xs = nonzero_ys.index.values
-            
-            # Don't mark nonzero points if any smoothing was done.
-            if self.length_plot_smooth_window == 0 and label != 'all other reads':
-                ax.scatter(nonzero_xs, nonzero_ys, s=2, c=color, alpha=alpha)
-                           
-        if show_ranges:
-            for _, (start, end) in self.length_ranges.iterrows():
-                if sum(ys_to_check[start:end + 1]) > 0:
-                    ax.axvspan(start - 0.5, end + 0.5,
-                               gid=f'length_range_{start:05d}_{end:05d}',
-                               alpha=0.1,
-                               facecolor='white',
-                               edgecolor='black',
-                               zorder=100,
-                              )
-            
-        y_lims = (0, max_y * 1.05)
-        ax.set_ylim(*y_lims)
-
-        x_max = int(max_relevant_length * 1.005)
-        ax.set_xlim(0, x_max)
-        
-        if show_title:
-            if outcome is None:
-                title = f"{self.identifier}"
-            else:
-                category, subcategory = outcome
-                title = f"{self.identifier}\n{category}: {subcategory}"
-
-            ax.set_title(title)
-            
-        if outcome is not None:
-            # No need to draw legend if only showing all reads
-            ax.legend(framealpha=0.5)
-        
-        for i, (name, length) in enumerate(self.editing_strategy.expected_lengths.items()):
-            y = 1 + 0.02  + 0.04 * i
-            ax.axvline(length, ymin=0, ymax=y, color='black', alpha=0.4, clip_on=False)
-
-            ax.annotate(name,
-                        xy=(length, y), xycoords=('data', 'axes fraction'),
-                        xytext=(0, 1), textcoords='offset points',
-                        ha='center', va='bottom',
-                        size=10,
-                       )
-        
-        main_ticks = list(range(0, max_relevant_length, x_tick_multiple))
-        main_tick_labels = [f'{x:,}' for x in main_ticks]
-
-        extra_ticks = [max_relevant_length]
-        extra_tick_labels = [r'$\geq$' + f'{max_relevant_length}']
-
-        if self.length_to_store_unknown is not None:
-            extra_ticks.append(self.length_to_store_unknown)
-            extra_tick_labels.append('?')
-
-        ax.set_xticks(main_ticks + extra_ticks)
-        ax.set_xticklabels(main_tick_labels + extra_tick_labels)
-        
-        minor = [x for x in np.arange(0, x_max, x_tick_multiple // 2) if x % x_tick_multiple != 0]
-        ax.set_xticks(minor, minor=True)
-
-        ax.set_ylabel('percentage of reads', size=font_size)
-        ax.set_xlabel('amplicon length', size=font_size)
+    def length_distribution_figure(self, outcome=None):
+        fig = knock_knock.visualize.lengths.plot_length_distribution_figure(self.truncated_outcome_stratified_lengths,
+                                                                            outcome=outcome,
+                                                                            x_tick_multiple=self.x_tick_multiple,
+                                                                            smooth_window=self.length_plot_smooth_window,
+                                                                            expected_lengths=self.editing_strategy.expected_lengths,
+                                                                            length_difference=(len(self.editing_strategy.primers) == 0),
+                                                                           )
 
         return fig
 
@@ -1213,7 +1086,7 @@ class Experiment:
             description = outcome
 
         def fig_to_img_tag(fig):
-            URI, width, height = table.fig_to_png_URI(fig)
+            URI, width, height = knock_knock.utilities.fig_to_png_URI(fig)
             plt.close(fig)
             tag = f"<img src={URI} class='center'>"
             return tag

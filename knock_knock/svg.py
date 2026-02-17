@@ -8,6 +8,8 @@ if 'inline' not in matplotlib.get_backend():
     matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
+import knock_knock.utilities
+
 before_svg_template = '''\
 <head>
 <title>{title}</title>
@@ -156,8 +158,6 @@ javascript:(function(){
 } )();'''
 
 def decorate_outcome_browser(exp, **kwargs):
-    import knock_knock.table
-
     fig = exp.plot_outcome_stratified_lengths(**kwargs)
 
     if fig is None:
@@ -236,7 +236,7 @@ def decorate_outcome_browser(exp, **kwargs):
 
         if fn.exists() or not inline_images:
             if inline_images:
-                URI, width, height = knock_knock.table.fn_to_URI(fn)
+                URI, width, height = knock_knock.utilities.fn_to_URI(fn)
             else:
                 relative_path = fn.relative_to(exp.fns['results_dir'])
                 URI = str(relative_path)

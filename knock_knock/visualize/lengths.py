@@ -338,3 +338,122 @@ def plot_outcome_stratified_lengths(outcome_stratified_lengths,
         ax.tick_params(axis='y', which='both', left=True, right=True)
 
     return fig
+
+def plot_length_distribution_figure(outcome_stratified_lengths,
+                                    outcome=None,
+                                    fig_size=(12, 6),
+                                    font_size=12,
+                                    x_tick_multiple=None,
+                                    smooth_window=0,
+                                    expected_lengths=None,
+                                    color='black',
+                                    length_difference=False,
+                                   ):
+
+    if expected_lengths is None:
+        expected_lengths = {}
+
+    read_lengths = outcome_stratified_lengths.lengths_for_all_outcomes()
+    total_reads = read_lengths.sum()
+
+    all_ys = read_lengths / total_reads
+
+    def convert_to_smoothed_percentages(ys):
+        window = smooth_window * 2 + 1
+        smoothed = pd.Series(ys).rolling(window=window, center=True, min_periods=1).sum()
+        return smoothed * 100
+
+    fig, ax = plt.subplots(figsize=fig_size)
+
+    if outcome is None:
+        ys_list = [
+            (all_ys, color, 0.9, 'all reads', True),
+        ]
+
+    else:
+        if isinstance(outcome, tuple):
+            label = ': '.join(outcome)
+        else:
+            label = outcome
+
+        outcome_lengths = outcome_stratified_lengths.by_outcome(outcome)
+        color = outcome_stratified_lengths.outcome_to_color(smooth_window=smooth_window)[outcome]
+
+        outcome_ys = outcome_lengths / total_reads
+
+        other_lengths = read_lengths - outcome_lengths
+        other_ys = other_lengths / total_reads
+
+        ys_list = [
+            (other_ys, 'black', 0.2, 'all other reads', False),
+            (outcome_ys, color, 0.9, label, True),
+        ]
+
+    max_y = 0
+
+    for ys, color, alpha, label, check_for_max in ys_list:
+        ys = convert_to_smoothed_percentages(ys)
+
+        if check_for_max:
+            max_y = max(max_y, max(ys, default=0.1))
+
+        if smooth_window == 0:
+            line_width = 1
+        else:
+            line_width = 2
+
+        ax.plot(ys, color=color, alpha=alpha, linewidth=line_width, label=label)
+        
+        nonzero_ys = ys[ys > 0]
+        nonzero_xs = nonzero_ys.index.values
+        
+        # Don't mark nonzero points if any smoothing was done.
+        if smooth_window == 0 and label != 'all other reads':
+            ax.scatter(nonzero_xs, nonzero_ys, s=2, c=color, alpha=alpha)
+                        
+    y_lims = (0, max_y * 1.05)
+    ax.set_ylim(*y_lims)
+
+    x_max = int(outcome_stratified_lengths.length_to_store_unknown * 1.005)
+    ax.set_xlim(0, x_max)
+    
+    if outcome is not None:
+        # No need to draw legend if only showing all reads
+        ax.legend(framealpha=0.5)
+    
+    for i, (name, length) in enumerate(expected_lengths.items()):
+        y = 1 + 0.02  + 0.04 * i
+        ax.axvline(length, ymin=0, ymax=y, color='black', alpha=0.4, clip_on=False)
+
+        ax.annotate(name,
+                    xy=(length, y), xycoords=('data', 'axes fraction'),
+                    xytext=(0, 1), textcoords='offset points',
+                    ha='center', va='bottom',
+                    size=10,
+                    )
+    
+    main_ticks = list(range(0, outcome_stratified_lengths.max_relevant_length, x_tick_multiple))
+    main_tick_labels = [f'{x:,}' for x in main_ticks]
+
+    extra_ticks = [outcome_stratified_lengths.max_relevant_length]
+    extra_tick_labels = [r'$\geq$' + f'{outcome_stratified_lengths.max_relevant_length}']
+
+    extra_ticks.append(outcome_stratified_lengths.length_to_store_unknown)
+    extra_tick_labels.append('?')
+
+    ax.set_xticks(main_ticks + extra_ticks)
+    ax.set_xticklabels(main_tick_labels + extra_tick_labels)
+    
+    minor = [x for x in np.arange(0, x_max, x_tick_multiple // 2) if x % x_tick_multiple != 0]
+    ax.set_xticks(minor, minor=True)
+
+    ax.set_ylabel('Percentage of reads', size=font_size)
+
+    if length_difference:
+        x_label = 'Read length change from unedited'
+    else:
+        x_label = 'Amplicon length'
+
+    ax.set_xlabel(x_label, size=font_size)
+
+    return fig

@@ -2184,40 +2184,6 @@ class Genomes:
     def fasta_index(self, name):
         return genomes.get_genome_index(self.locations[name]['fasta'])
 
-    def align_protospacer_to_genome(self, protospacer_name, protospacer_sequence, effector, genome_name):   
-        ''' Finds exact matches of protospacer in genomes with appropriately positioned PAM.
-        Note: does not tolerate a mismatched initial G (e.g. from a U6 expression casette).
-        '''
-
-        genome = self.loaded(genome_name)
-
-        matches = sw.find_all_matches_in_genome(protospacer_sequence, genome, verbose=False)
-        effector = effectors[effector]
-
-        valid_matches = []
-        
-        for ref_name, strand, position in matches:
-            if effector.protospacer_has_PAM(protospacer_sequence, position, strand, genome[ref_name]):
-            
-                al = pysam.AlignedSegment(self.header(genome_name))
-                
-                al.query_name = protospacer_name
-                al.reference_name = ref_name
-                al.reference_start = position
-                al.is_reverse = (strand == '-')
-                
-                possibly_RCed_seq = protospacer_sequence
-                if al.is_reverse:
-                    possibly_RCed_seq = hits.utilities.reverse_complement(protospacer_sequence)
-                
-                al.query_sequence = possibly_RCed_seq
-                al.query_qualities = [41] * len(possibly_RCed_seq)
-                al.cigar = [(hits.sam.BAM_CMATCH, len(possibly_RCed_seq))]
-                
-                valid_matches.append(al)
-
-        return valid_matches
-
 def load_all_fasta_records(dir_to_search):
     if dir_to_search is None or not dir_to_search.is_dir():
         return [], {}

@@ -1,10 +1,13 @@
-from pathlib import Path
-
+import base64
 import datetime
+import io
 import logging
+
+from pathlib import Path
 
 import anndata
 import pandas as pd
+import PIL
 
 def read_and_sanitize_csv(csv_fn, index_col=None):
     ''' Loads csv_fn into a DataFrame, then:
@@ -102,3 +105,33 @@ def possibly_default_progress(progress):
         progress = ignore_kwargs
     
     return progress
+
+def png_bytes_to_URI(png_bytes):
+    encoded = base64.b64encode(png_bytes).decode('UTF-8')
+    URI = f"'data:image/png;base64,{encoded}'"
+    return URI
+
+def fn_to_URI(fn):
+    im = PIL.Image.open(fn)
+    im.load()
+    return Image_to_png_URI(im)
+
+def Image_to_png_URI(im):
+    with io.BytesIO() as buf:
+        im.save(buf, format='png')
+        png_bytes = buf.getvalue()
+        
+    URI = png_bytes_to_URI(png_bytes)
+    
+    return URI, im.width, im.height
+
+def fig_to_png_URI(fig):
+    with io.BytesIO() as buffer:
+        fig.savefig(buffer, format='png', bbox_inches='tight')
+        png_bytes = buffer.getvalue()
+        im = PIL.Image.open(buffer)
+        im.load()
+       
+    URI = png_bytes_to_URI(png_bytes)
+    
+    return URI, im.width, im.height

@@ -1,6 +1,7 @@
 import Bio.SeqUtils
+import pysam
 
-from hits import utilities, gff
+from hits import genomes, gff, utilities, sam, sw
 
 class Effector:
     def __init__(self, name, PAM_pattern, PAM_side, cut_after_offset):
@@ -121,6 +122,55 @@ class Effector:
         valid_feature = valid_features[0]
 
         return valid_feature
+
+    def align_protospacer_to_genome(self,
+                                    protospacer,
+                                    genome,
+                                    header=None,
+                                    name='protospacer',
+                                   ):   
+        ''' Finds exact matches of protospacer in genomes with appropriately positioned PAM.
+        '''
+
+        if header is None:
+            header = genomes.get_header_from_dictionary(genome)
+
+        def align(protospacer_prefix):
+            matches = sw.find_all_matches_in_genome(protospacer_prefix, genome)
+
+            valid_matches = []
+            
+            for ref_name, strand, position in matches:
+                if self.protospacer_has_PAM(protospacer_prefix, position, strand, genome[ref_name]):
+                
+                    al = pysam.AlignedSegment(header)
+                    
+                    al.query_name = name
+                    al.reference_name = ref_name
+                    al.reference_start = position
+                    al.is_reverse = (strand == '-')
+                    
+                    possibly_RCed_seq = protospacer_prefix
+                    if al.is_reverse:
+                        possibly_RCed_seq = utilities.reverse_complement(protospacer_prefix)
+                    
+                    al.query_sequence = possibly_RCed_seq
+                    al.query_qualities = [41] * len(possibly_RCed_seq)
+                    al.cigar = [(sam.BAM_CMATCH, len(possibly_RCed_seq))]
+                    
+                    valid_matches.append(al)
+
+            return valid_matches
+
+        valid_matches = align(protospacer)
+
+        if len(valid_matches) == 0:
+            valid_matches = align(protospacer[1:])
+
+            if len(valid_matches) == 0:
+                raise ValueError(f'No valid locations for protospacer {protospacer}')
+
+        return valid_matches
 
 # tuples are (PAM_pattern, PAM side, cut_after_offset)
 effector_details = {

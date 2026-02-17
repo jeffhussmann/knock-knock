@@ -1,21 +1,18 @@
-import base64
 import functools
-import io
 import logging
-import os
 import zipfile
 
 from collections import defaultdict
 from pathlib import Path
 
 import pandas as pd
-import nbconvert
 import nbformat.v4 as nbf
 import PIL
 import tqdm
 
 import knock_knock.experiment
 import knock_knock.svg
+import knock_knock.utilities
 
 logger = logging.getLogger(__name__)
 
@@ -79,36 +76,6 @@ def load_counts(base_dir,
         df = df.sort_index(axis=1)
 
     return df
-
-def png_bytes_to_URI(png_bytes):
-    encoded = base64.b64encode(png_bytes).decode('UTF-8')
-    URI = f"'data:image/png;base64,{encoded}'"
-    return URI
-
-def fn_to_URI(fn):
-    im = PIL.Image.open(fn)
-    im.load()
-    return Image_to_png_URI(im)
-
-def Image_to_png_URI(im):
-    with io.BytesIO() as buf:
-        im.save(buf, format='png')
-        png_bytes = buf.getvalue()
-        
-    URI = png_bytes_to_URI(png_bytes)
-    
-    return URI, im.width, im.height
-
-def fig_to_png_URI(fig):
-    with io.BytesIO() as buffer:
-        fig.savefig(buffer, format='png', bbox_inches='tight')
-        png_bytes = buffer.getvalue()
-        im = PIL.Image.open(buffer)
-        im.load()
-       
-    URI = png_bytes_to_URI(png_bytes)
-    
-    return URI, im.width, im.height
 
 link_template = '''\
 <a 
@@ -278,7 +245,7 @@ def make_table(base_dir,
                     click_html_fn = exp.outcome_fns(outcome)['diagrams_html']
                     
                     if inline_images:
-                        hover_URI, width, height = fn_to_URI(hover_image_fn)
+                        hover_URI, width, height = knock_knock.utilities.fn_to_URI(hover_image_fn)
                     else:
                         relative_path = hover_image_fn.relative_to(exp.identifier.base_dir / 'results')
                         hover_URI = str(relative_path)
@@ -492,10 +459,11 @@ def generate_html(base_dir, fn,
                   sort_samples=True,
                   vmax_multiple=1,
                  ):
+    import nbconvert
 
     fn = Path(fn)
-    logo_fn = Path(os.path.realpath(__file__)).parent / 'logo_v2.png'
-    logo_URI, logo_width, logo_height = fn_to_URI(logo_fn)
+    logo_fn = Path(__file__).resolve().parent / 'logo_v2.png'
+    logo_URI, logo_width, logo_height = knock_knock.utilities.fn_to_URI(logo_fn)
 
     nb = nbf.new_notebook()
 
@@ -551,7 +519,7 @@ knock-knock is a tool for exploring, categorizing, and quantifying the sequence 
     # Note: with nbconvert==6.3.0, can't call the template file 'index.html.j2'
     # or it will silently fail to use the template, possible related to
     # https://github.com/jupyter/nbconvert/issues/1558.
-    template_path = Path(os.path.realpath(__file__)).parent / 'table_template' / 'table.html.j2'
+    template_path = Path(__file__).resolve().parent / 'table_template' / 'table.html.j2'
     exporter = nbconvert.HTMLExporter(exclude_input=True,
                                       exclude_output_prompt=True,
                                       template_file=str(template_path),
