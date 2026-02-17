@@ -77,7 +77,7 @@ def blast(ref_fn,
             '-max_target_seqs', '1000000',
             '-parse_deflines', # otherwise qnames/rnames are lost
             '-outfmt', '17', # SAM output
-            '-subject', str(reads_fasta_fn), # for bowtie-like behavior, reads are subject ...
+            '-subject', str(reads_fasta_fn), # reads are subject ...
             '-query', str(ref_fn), # ... and refs are query
             '-out', str(sam_fn),
         ]
