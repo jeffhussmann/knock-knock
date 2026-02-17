@@ -38,6 +38,7 @@ class StackedDiagrams:
     draw_insertion_degeneracy: bool = True
     draw_perfect_MH: bool = True
     draw_wild_type_on_top: bool = False
+    draw_pegRNAs: bool = True
     draw_pegRNA_names: bool = True
     features_to_draw: Any = field(default_factory=list)
     flip_if_reverse: bool = True
@@ -178,6 +179,10 @@ class StackedDiagrams:
                         cuts_drawn_at.add(x)
 
         self.draw_outcomes()
+
+        if self.draw_pegRNAs:
+            for pegRNA_i, pegRNA_name in enumerate(strat.pegRNA_names):
+                self.draw_pegRNA(strat.name, pegRNA_name, y_offset=pegRNA_i + 1, label_features=False)
 
     def get_bottom_and_top(self, y, multiple=1):
         delta = StackedDiagrams.wt_height * 0.5 * multiple
@@ -1605,7 +1610,7 @@ class DiagramGrid:
 
         ys = [value_source[x] for x in xs]
 
-        ax.plot(xs, ys, marker=marker, linestyle='', alpha=marker_alpha, label=label, **plot_kwargs)
+        ax.plot(xs, ys, marker=marker, linestyle='', alpha=marker_alpha, label=str(label), **plot_kwargs)
         ax.plot(xs, ys, marker=None, linestyle='-', alpha=line_alpha, **plot_kwargs)
 
         if interval_sources is not None:
@@ -2380,6 +2385,7 @@ def make_partial_incorporation_figure(editing_strategy,
                                       marker_size=7,
                                       line_alpha=0.75,
                                       legend_kwargs=None,
+                                      fractions_width_multiple=12,
                                       **diagram_kwargs,
                                      ):
 
@@ -2439,21 +2445,29 @@ def make_partial_incorporation_figure(editing_strategy,
 
     if manual_window is not None:
         window = manual_window
+
     elif len(strat.pegRNA_names) == 2:
         window = (-20, strat.nick_offset + 20 - 1)
+
     elif len(strat.pegRNA_names) == 1:
         window = (-20, len(strat.sgRNA_components[strat.pegRNA_names[0]]['RTT']) + 4)
+
     else:
         window = (-half_length, half_length)
 
     if strat.protospacer_feature is None:
         window_interval = hits.interval.Interval(strat.center_of_amplicon + window[0], strat.center_of_amplicon + window[1])
+
     elif strat.protospacer_feature.strand == '+':
         window_interval = hits.interval.Interval(strat.cut_after + window[0], strat.cut_after + window[1])
+
     else:
         window_interval = hits.interval.Interval(strat.cut_after - window[1], strat.cut_after - window[0])
 
-    if perform_marginalization_over_mismatches_outside_window:
+    if perform_marginalization_over_all_mismatches:
+        outcome_fractions = marginalize_over_mismatches_outside_window(outcome_fractions, hits.interval.Interval.empty())
+
+    elif perform_marginalization_over_mismatches_outside_window:
         outcome_fractions = marginalize_over_mismatches_outside_window(outcome_fractions, window_interval)
 
     def mismatch_in_window(d):
@@ -2511,7 +2525,8 @@ def make_partial_incorporation_figure(editing_strategy,
                           )
 
         if difference_from_condition is None:
-            title = '% of reads with\nspecific outcome'
+            title = '% of reads'
+
         else:
             if difference_from_condition_label is None:
                 if isinstance(difference_from_condition, str):
@@ -2521,10 +2536,10 @@ def make_partial_incorporation_figure(editing_strategy,
 
             title = f'Change (from mean of \n{difference_from_condition_label} samples)\nin % of reads with\nspecific outcome'
 
-        grid.add_ax('fractions', width_multiple=12, title=title)
+        grid.add_ax('fractions', width_multiple=fractions_width_multiple, title=title)
 
         if difference_from_condition is None and show_log_scale:
-            grid.add_ax('log10_fractions', width_multiple=12, gap_multiple=2, title='% of reads (log scale)')
+            grid.add_ax('log10_fractions', width_multiple=fractions_width_multiple, gap_multiple=2, title='% of reads (log scale)')
 
         ax_params = [
             ('fractions', 'percentage'),
@@ -2536,20 +2551,23 @@ def make_partial_incorporation_figure(editing_strategy,
                 if isinstance(condition, dict):
                     if len(condition) != 1:
                         raise ValueError
-                    label = sorted(condition)[0]
-                    keys = condition[label]
+
+                    condition_name = sorted(condition)[0]
+                    keys = condition[condition_name]
                     vs = outcome_fractions[keys].mean(axis=1)
                     stds = outcome_fractions[keys].std(axis=1)
                     interval_sources = {
                         'lower': vs - stds,
                         'upper': vs + stds,
                     }
-                    color = 'black'
+
                 else:
-                    vs = outcome_fractions[condition]
-                    color = condition_colors.get(condition, 'black')
-                    label = condition_labels.get(condition, condition)
+                    condition_name = condition
+                    vs = outcome_fractions[condition_name]
                     interval_sources = None
+
+                color = condition_colors.get(condition_name, 'black')
+                label = condition_labels.get(condition_name, condition_name)
 
                 grid.plot_on_ax(ax,
                                 vs,
