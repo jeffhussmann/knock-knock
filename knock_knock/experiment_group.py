@@ -109,6 +109,9 @@ class ExperimentGroup:
 
         self.postprocess(generate_summary_figures=generate_summary_figures)
 
+    def postprocess(self, **kwargs):
+        self.make_outcome_counts()
+
     def make_outcome_counts(self, level='details'):
         # There can be long tails of outcome details observed only one time
         # (e.g. a specific pattern of sequencing errors) that can make it
