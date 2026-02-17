@@ -330,6 +330,8 @@ class EditingStrategy:
 
         names.update(self.additional_sequence_names)
 
+        names.update(record.name for record in self.manual_gb_records)
+
         return names
 
     @memoized_property
