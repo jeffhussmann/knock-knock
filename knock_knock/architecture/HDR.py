@@ -175,9 +175,6 @@ class Architecture(knock_knock.architecture.Categorizer):
 
     @memoized_property
     def donor_alignments(self):
-        if self.editing_strategy.donor is None:
-            return []
-
         original_als = [al for al in self.alignments if al.reference_name == self.editing_strategy.donor]
         processed_als = []
 
@@ -308,7 +305,7 @@ class Architecture(knock_knock.architecture.Categorizer):
             mismatches=mismatches,
         )
 
-        self.relevant_alignments = [target_alignment]
+        self.relevant_alignments = self.filter_for_overlap_with_between_primers(self.parsimonious_and_gap_alignments)
 
         if len(self.mismatches_near_cut) > 0:
             self.category = 'uncategorized'
@@ -393,7 +390,6 @@ class Architecture(knock_knock.architecture.Categorizer):
             if self.gap_covered_by_target_alignment:
                 self.category = 'complex indel'
                 self.subcategory = 'complex indel'
-                self.relevant_alignments = self.parsimonious_and_gap_alignments
 
             elif junctions == set(['imperfect']):
                 if self.not_covered_by_simple_integration.total_length >= 2:
@@ -402,8 +398,6 @@ class Architecture(knock_knock.architecture.Categorizer):
                 else:
                     self.category = 'donor fragment'
                     self.subcategory = f'5\' {self.junction_summary_per_side[5]}, 3\' {self.junction_summary_per_side[3]}'
-
-                self.relevant_alignments = self.parsimonious_and_gap_alignments
 
             else:
                 self.subcategory = f'5\' {self.junction_summary_per_side[5]}, 3\' {self.junction_summary_per_side[3]}'
@@ -422,13 +416,13 @@ class Architecture(knock_knock.architecture.Categorizer):
                     self.category = 'complex misintegration'
                     self.subcategory = 'complex misintegration'
 
-                self.relevant_alignments = self.parsimonious_and_gap_alignments
+            self.relevant_alignments = self.filter_for_overlap_with_between_primers(self.parsimonious_and_gap_alignments)
         
         # TODO: check here for HA extensions into donor specific
         elif self.gap_covered_by_target_alignment:
             self.category = 'complex indel'
             self.subcategory = 'complex indel'
-            self.relevant_alignments = self.parsimonious_and_gap_alignments
+            self.relevant_alignments = self.filter_for_overlap_with_between_primers(self.parsimonious_and_gap_alignments)
 
         elif self.integration_interval.total_length <= 5:
             if self.target_to_at_least_cut[5] and self.target_to_at_least_cut[3]:
@@ -439,7 +433,7 @@ class Architecture(knock_knock.architecture.Categorizer):
                 self.category = 'complex indel'
                 self.subcategory = 'complex indel'
 
-            self.relevant_alignments = self.parsimonious_and_gap_alignments
+            self.relevant_alignments = self.filter_for_overlap_with_between_primers(self.parsimonious_and_gap_alignments)
 
         elif self.integration_summary == 'concatamer':
             if self.editing_strategy.donor_type == 'plasmid':
@@ -449,7 +443,7 @@ class Architecture(knock_knock.architecture.Categorizer):
                 self.category = 'concatenated misintegration'
                 self.subcategory = self.junction_summary
 
-            self.relevant_alignments = self.parsimonious_and_gap_alignments
+            self.relevant_alignments = self.filter_for_overlap_with_between_primers(self.parsimonious_and_gap_alignments)
 
         elif self.nonhomologous_donor_integration is not None:
             self.category = 'non-homologous donor'
@@ -1069,7 +1063,7 @@ class Architecture(knock_knock.architecture.Categorizer):
         self.subcategory = organism
 
         alignments = self.parsimonious_and_gap_alignments + self.parsimonious_donor_alignments + self.min_edit_distance_genomic_insertions
-        self.relevant_alignments = interval.make_parsimonious(alignments)
+        self.relevant_alignments = self.filter_for_overlap_with_between_primers(interval.make_parsimonious(alignments))
 
     @memoized_property
     def one_sided_covering_als(self):

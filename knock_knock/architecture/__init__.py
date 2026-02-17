@@ -602,6 +602,12 @@ class Categorizer:
 
         return between_primers
 
+    def filter_for_overlap_with_between_primers(self, als):
+        return [
+            al for al in als
+            if sam.crop_al_to_query_int(al, self.between_primers.start, self.between_primers.end) is not None
+        ]
+
     @memoized_property
     def between_primers_inclusive(self):
         return self.covered_by_primers | self.between_primers
