@@ -1558,38 +1558,6 @@ class EditingStrategy:
 
         return ('insertion', 'near cut', str(shifted))
 
-    @memoized_property
-    def edit_name(self):
-        SNVs = self.donor_SNVs
-
-        if len(SNVs['target']) == 1:
-            SNV_name = sorted(SNVs['target'])[0]
-            position = SNVs['target'][SNV_name]['position']
-            strand = SNVs['target'][SNV_name]['strand']
-            target_base = SNVs['target'][SNV_name]['base']
-            donor_base = SNVs['donor'][SNV_name]['base']
-            
-            if strand != self.protospacer_feature.strand:
-                raise ValueError
-                
-            if strand == '+':
-                offset = position - self.cut_after
-            else:
-                offset = self.cut_after - position + 1
-
-            edit_name = f'+{offset:02d}_{target_base}_to_{donor_base}'
-
-        elif len(SNVs['target']) > 1:
-            raise NotImplementedError
-
-        elif len(self.donor_insertions) == 1:
-            edit_name = 'insertion'
-
-        else:
-            edit_name = 'no_edit'
-
-        return edit_name
-
     def calculate_microhomology_lengths(self, donor_to_use='homologous', donor_strand='+'):
         def num_matches_at_edge(first, second, relevant_edge):
             ''' Count the number of identical characters at the beginning
