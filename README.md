@@ -162,8 +162,8 @@ Each row of `sgRNAs.csv` defines a single named sgRNA sequence, with columns `na
 `effector` is the editing effector used with the sgRNA, which defines the location and sequence of the PAM and the offset of nick(s) relative to the PAM.
 Valid options are
 - SpCas9
+- SpCas9_VRQR
 - SpCas9H840A
-- SpCas9N863A
 - SpCas9H840A_VRQR
 - SaCas9
 - SaCas9H840A
@@ -185,10 +185,9 @@ RAB11A,SpCas9,GGTAGTCGTACTCGTCGTCG
 #### amplicon_primers.csv
 
 The `amplicon_primers` column of `targets.csv` should reference entries in `amplicon_primers.csv`.
-Each row of `amplicon_primers.csv` defines a named amplicon primer pair, with columns `name` and `primer_sequences`.
+Each row of `amplicon_primers.csv` defines a single primer , with columns `name` and `sequence`.
 Primer sequences should be given as the 5' to 3' sequences of the primer pair (i.e. the two sequences should be on opposite strands), joined by a semicolon.
-Primers may include any adapters or Ns but should end in sequence that exactly matches the genome. 
-For Illumina data, list the primer corresponding to the R1 read first.
+Primers may include any adapters or Ns but should end in sequence that exactly matches the genome.
 
 As an example, the contents of the `amplicon_primers.csv` file included with knock-knock's example data are:
 
