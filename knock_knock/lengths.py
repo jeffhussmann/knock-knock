@@ -2,6 +2,7 @@ from collections import Counter, defaultdict
 
 import numpy as np
 import pandas as pd
+import scipy.signal
 
 import hits.utilities
 memoized_property = hits.utilities.memoized_property
@@ -259,3 +260,63 @@ class OutcomeStratifiedLengths:
         denominator = np.maximum(self.cumulative_lengths_from_end_for_relevant_reads, 1)
 
         return numerator / denominator
+
+    @memoized_with_kwargs
+    def length_ranges(self, *, smooth_window=0, outcome=None):
+        max_window_size = self.max_relevant_length // 50
+
+        lengths = self.by_outcome(outcome=outcome)
+        smoothed = lengths.rolling(window=2 * smooth_window + 1, center=True, min_periods=1).sum()
+        centers, _ = scipy.signal.find_peaks(smoothed, distance=25)
+        # centers are ilocs in smoothed, not index values
+        centers = list(smoothed.index[centers])
+
+        for center in [self.min_relevant_length, self.max_relevant_length, self.length_to_store_unknown]:
+            if center not in centers:
+                centers.append(center)
+
+        centers = sorted(centers)
+
+        edges = [min(centers) - max_window_size, max(centers) + max_window_size]
+
+        for i in range(len(centers)):
+            if i < len(centers) - 1:
+                gap = centers[i + 1] - centers[i]
+            else:
+                # Note: edges[1] is far right
+                gap = edges[1] - centers[i]
+
+            offset = min(gap, max_window_size) // 2
+
+            edges.append(centers[i] + offset)
+
+        for i in range(len(centers)):
+            if i == 0:
+                # Note: edges[0] is far left
+                gap = centers[i] - edges[0]
+            else:
+                gap = centers[i] - centers[i - 1]
+
+            offset = min(gap, max_window_size) // 2
+
+            edges.append(centers[i] - offset)
+
+        edges = sorted(edges)
+
+        for i in range(len(edges) - 1):
+            gap = edges[i + 1] - edges[i]
+            if gap > max_window_size:
+                chunks = int(np.ceil(gap / max_window_size))
+                for chunk_i in range(1, chunks):
+                    edges.append(edges[i] + chunk_i * gap // chunks)
+
+        edges = sorted(edges)
+
+        ranges = []
+        for i in range(len(edges) - 1):
+            start = edges[i]
+            end = edges[i + 1]
+            if sum(lengths.loc[start:end]) > 0:
+                ranges.append((start, end - 1))
+
+        return ranges
