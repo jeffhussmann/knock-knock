@@ -346,7 +346,7 @@ class Experiment:
 
     @memoized_with_kwargs
     def length_ranges(self, *, outcome=None):
-        lengths = self.outcome_stratified_lengths.by_outcome(outcome)
+        lengths = self.truncated_outcome_stratified_lengths.by_outcome(outcome)
 
         nonzero = lengths[lengths > 0].index.values
 
