@@ -153,15 +153,25 @@ class OutcomeStratifiedLengths:
     def truncate_to_max_observed_length(self, only_relevant=False):
         ls = self.lengths_for_all_outcomes(only_relevant=only_relevant)
 
-        max_observed_length = max((l for l in ls[ls > 0].index if l != self.length_to_store_unknown), default=self.max_relevant_length)
+        observed_lengths = [l for l in ls[ls > 0].index if l != self.length_to_store_unknown]
 
-        # Add a 5% buffer, then round up to the nearest multiple of 500.
-        new_max_length = int(np.ceil((max_observed_length * 1.05) / 500) * 500)
+        min_observed_length = min(observed_lengths, default=self.min_relevant_length)
+        max_observed_length = max(observed_lengths, default=self.max_relevant_length)
+
+        buffer = (max_observed_length - min_observed_length) * 0.05
+        # Add a 5% buffer, then round up to the nearest multiple of 100.
+        new_max_length = int(np.ceil((max_observed_length + buffer) / 100) * 100)
 
         # Cap at the existing max length.
         new_max_length = min(new_max_length, self.max_relevant_length)
 
-        return self.truncate(0, new_max_length)
+        # Subtract a 5% buffer, then round down to the nearest multiple of 100.
+        new_min_length = int(np.floor((min_observed_length - buffer) / 100) * 100)
+
+        # Cap at the existing min length.
+        new_min_length = max(new_min_length, self.min_relevant_length)
+
+        return self.truncate(new_min_length, new_max_length)
 
     @memoized_with_kwargs
     def lengths_df(self, *, level='subcategory', only_relevant=False):
