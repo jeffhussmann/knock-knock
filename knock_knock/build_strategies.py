@@ -142,7 +142,7 @@ class EditingStrategyBuilder:
         full_primers = {name: seq for name, seq in all_primers.items() if name in self.amplicon_primer_names}
 
         # Only align primer sequence downstream of any N's.
-        primers = {name: seq.upper().split('N')[-1] for name, seq in full_primers.items()}
+        primers = {name: seq.upper().split('N')[-1].strip() for name, seq in full_primers.items()}
 
         return primers
 
