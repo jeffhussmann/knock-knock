@@ -1589,11 +1589,15 @@ class Categorizer:
             raise ValueError
 
         if read_side == 'left':
-            read_interval = interval.Interval(0, len(primer) + buffer_length)
+            start = 0
+            end = len(primer) + buffer_length
         elif read_side == 'right':
-            read_interval = interval.Interval(len(self.seq) - len(primer) - buffer_length, len(self.seq))
+            start = max(0, len(self.seq) - len(primer) - buffer_length)
+            end = len(self.seq)
         else:
             raise ValueError
+
+        read_interval = interval.Interval(start, end)
 
         ref_intervals = {strat.target: target_interval}
 
