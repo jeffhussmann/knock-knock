@@ -222,7 +222,7 @@ def decorate_outcome_browser(exp, **kwargs):
             'stroke-opacity': '0.00',
         })
         
-        match = re.match(r'length_range_(?P<outcome>.+)_(?P<start>\d+)_(?P<end>\d+)', group.attrib['id'])
+        match = re.match(r'length_range_(?P<outcome>.+)_(?P<start>-?\d+)_(?P<end>-?\d+)', group.attrib['id'])
         
         sanitized_outcome, start, end = match.groups()
 
