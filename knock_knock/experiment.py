@@ -113,30 +113,8 @@ class Experiment:
         if self.max_reads is not None:
             self.max_reads = int(self.max_reads)
 
-        self.fns = {
-            'results_dir': self.results_dir,
-            'outcomes_dir': self.results_dir / 'outcomes',
-            'sanitized_category_names': self.results_dir / 'outcomes' / 'sanitized_category_names.txt',
-            'outcome_counts': self.results_dir / 'outcome_counts.csv',
-            'outcome_list': self.results_dir / 'outcome_list.txt',
-
-            'outcome_stratified_lengths': self.results_dir / 'lengths.hdf5',
-            'lengths_figure': self.results_dir / 'all_lengths.png',
-
-            'donor_microhomology_lengths': self.results_dir / 'donor_microhomology_lengths.txt', 
-
-            'length_ranges_dir': self.results_dir / 'length_ranges',
-            'outcome_browser': self.results_dir / 'outcome_browser.html',
-
-        }
-
         self.chunks_dir = self.results_dir / 'chunks'
 
-        def make_length_range_fig_fn(start, end):
-            return self.fns['length_ranges_dir'] / f'{start}_{end}.png'
-
-        self.fns['length_range_figure'] = make_length_range_fig_fn
-        
         self.color = knock_knock.visualize.extract_color(self.description)
         self.max_qual = 93
         
@@ -158,6 +136,32 @@ class Experiment:
         self.outcome_fn_keys = [
             'outcome_list',
         ]
+
+    @memoized_property
+    def fns(self):
+        fns = {
+            'results_dir': self.results_dir,
+            'outcomes_dir': self.results_dir / 'outcomes',
+            'sanitized_category_names': self.results_dir / 'outcomes' / 'sanitized_category_names.txt',
+            'outcome_counts': self.results_dir / 'outcome_counts.csv',
+            'outcome_list': self.results_dir / 'outcome_list.txt',
+
+            'outcome_stratified_lengths': self.results_dir / 'lengths.hdf5',
+            'lengths_figure': self.results_dir / 'all_lengths.png',
+
+            'donor_microhomology_lengths': self.results_dir / 'donor_microhomology_lengths.txt', 
+
+            'length_ranges_dir': self.results_dir / 'length_ranges',
+            'outcome_browser': self.results_dir / 'outcome_browser.html',
+
+        }
+
+        def make_length_range_fig_fn(start, end):
+            return self.fns['length_ranges_dir'] / f'{start}_{end}.png'
+
+        fns['length_range_figure'] = make_length_range_fig_fn
+
+        return fns
 
     @memoized_property
     def length_plot_smooth_window(self):
@@ -974,9 +978,7 @@ class Experiment:
         kwargs = kwargs.copy()
         kwargs.setdefault('smooth_window', self.length_plot_smooth_window)
 
-        outcome_stratified_lengths = self.outcome_stratified_lengths
-
-        return knock_knock.visualize.lengths.plot_outcome_stratified_lengths(outcome_stratified_lengths,
+        return knock_knock.visualize.lengths.plot_outcome_stratified_lengths(self.outcome_stratified_lengths,
                                                                              self.categorizer,
                                                                              self.editing_strategy,
                                                                              truncate_to_max_observed_length=True,
@@ -1018,9 +1020,7 @@ class Experiment:
         # will downsample anyways) but avoids excessive memory usage.
         by_length_range = defaultdict(lambda: utilities.ReservoirSampler(num_examples))
 
-        al_groups = self.alignment_groups(outcome=specific_outcome)
-
-        for name, als in al_groups:
+        for name, als in self.alignment_groups(outcome=specific_outcome):
             length = self.qname_to_inferred_length[name]
 
             if length is not None:
