@@ -102,7 +102,7 @@ def generate_simulated_reads(editing_strategy, reads_per_sequence=1, max_sequenc
 
             else:
                 if len(subs_included) < len(subs):
-                    category = 'partial replacement'
+                    category = 'partial edit'
 
                     pegRNAs_that_explain_all_substitutions = set()
 

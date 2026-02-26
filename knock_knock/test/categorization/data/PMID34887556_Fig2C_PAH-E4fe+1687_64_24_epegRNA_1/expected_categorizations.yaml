@@ -4,7 +4,7 @@
   note: clean
 
 017171944:0000000003:
-  category: partial replacement
+  category: partial edit
   subcategory: both pegRNAs
   note: has a mismatch in the overlap region
 
@@ -31,16 +31,16 @@
     extends slightly farther out
 
 017171944:0000000017:
-  category: partial replacement
+  category: partial edit
   subcategory: right pegRNA
   details: programmed_substitution_read_bases=AAGAG_____________
 
 017171944:0000000046:
-  category: partial replacement
+  category: partial edit
   subcategory: both pegRNAs
   details: programmed_substitution_read_bases=__GAGGGACAGTAGCAAT
 
 017171944:0000002567:
-  category: partial replacement
+  category: partial edit
   subcategory: left pegRNA
   details: programmed_substitution_read_bases=____GGGACAGTAGCAAT

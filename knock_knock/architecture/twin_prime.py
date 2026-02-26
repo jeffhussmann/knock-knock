@@ -30,7 +30,7 @@ class Architecture(prime_editing.Architecture):
             ),
         ),
         (
-            'partial replacement',
+            'partial edit',
             (
                 'left pegRNA',
                 'right pegRNA',
@@ -411,7 +411,7 @@ class Architecture(prime_editing.Architecture):
             self.category = 'intended edit'
             self.subcategory = 'replacement'
         else:
-            self.category = 'partial replacement'
+            self.category = 'partial edit'
 
             if len(self.pegRNAs_that_explain_all_substitutions) == 0:
                 self.subcategory = 'both pegRNAs'
