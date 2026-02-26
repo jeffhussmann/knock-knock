@@ -171,6 +171,7 @@ class OutcomeStratifiedLengths:
 
         # Cap at the existing min length.
         new_min_length = max(new_min_length, self.min_relevant_length)
+        new_min_length = min(new_min_length, 0)
 
         return self.truncate(new_min_length, new_max_length)
 
