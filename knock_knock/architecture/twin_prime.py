@@ -373,15 +373,15 @@ class Architecture(prime_editing.Architecture):
         if self.editing_strategy.pegRNA_programmed_deletion is not None:
             status = False
         else:
-            if not (self.has_intended_pegRNA_overlap or self.has_possible_intended_pegRNA_overlap):
-                status = False
-            else:
+            if self.has_intended_pegRNA_overlap or self.has_possible_intended_pegRNA_overlap:
                 if self.editing_strategy.pegRNA_substitutions is None:
                     status = True
                 elif not self.has_pegRNA_substitution:
                     status = False
                 else:
                     status = True
+            else:
+                status = False
 
         return status
 
@@ -441,7 +441,19 @@ class Architecture(prime_editing.Architecture):
 
     @memoized_property
     def intended_edit_relevant_alignments(self):
-        return self.target_flanking_alignments_list + self.pegRNA_extension_als_list
+        def extension_chain_als(require_definite):
+            chains = self.reconciled_extension_chains(require_definite=require_definite)['twin_prime']
+            als = chains['left'].alignments_list + chains['right'].alignments_list
+            return als
+
+        if self.has_intended_pegRNA_overlap:
+            als = extension_chain_als(require_definite=True)
+        elif self.has_possible_intended_pegRNA_overlap:
+            als = extension_chain_als(require_definite=False)
+        else:
+            als = self.target_flanking_alignments_list + self.pegRNA_extension_als_list
+
+        return als
 
     @memoized_property
     def contains_RTed_sequence(self):

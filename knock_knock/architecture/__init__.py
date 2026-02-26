@@ -1345,12 +1345,12 @@ class Categorizer:
             name_orders = {side: ['none'] + chains[side].name_order for side in ['left', 'right']}
 
             for left_key in name_orders['left']:
-                if left_key in chains['left'].alignments:
-                    left_al = chains['left'].alignments[left_key]
+                if left_key in chains['left'].cropped_alignments:
+                    left_al = chains['left'].cropped_alignments[left_key]
 
                     for right_key in name_orders['right']:
-                        if right_key in chains['right'].alignments:
-                            right_al = chains['right'].alignments[right_key]
+                        if right_key in chains['right'].cropped_alignments:
+                            right_al = chains['right'].cropped_alignments[right_key]
 
                             covered_left = chains['left'].query_covered_incremental[left_key]
                             covered_right = chains['right'].query_covered_incremental[right_key]
@@ -1447,12 +1447,12 @@ class Categorizer:
                 chains[side].description = chains[side].last_al_to_description[key]
 
                 last_index = name_orders[side].index(key)
-                chains[side].parsimonious_alignments = [al for key, al in chains[side].alignments.items() if name_orders[side].index(key) <= last_index]
+                chains[side].parsimonious_alignments = [al for key, al in chains[side].cropped_alignments.items() if name_orders[side].index(key) <= last_index]
 
                 chains[side].query_covered = chains[side].query_covered_incremental[key]
 
             last_als = {
-                side: chains[side].alignments[last_parsimonious_key[side]]
+                side: chains[side].cropped_alignments[last_parsimonious_key[side]]
                 if last_parsimonious_key[side] != 'none' else None
                 for side in ['left', 'right']
             }
@@ -2214,10 +2214,11 @@ class ExtensionChain:
 
         current_link = self.links_by_name[entry_point]
         current_link.alignment = starting_alignment
+        current_link.cropped_alignment = starting_alignment
 
         while current_link.alignment is not None and current_link.next_link is not None:
             results = architecture.find_extending_alignment(
-                current_link.alignment,
+                current_link.cropped_alignment,
                 self.direction_in_read,
                 current_link.next_link.candidate_alignments,
                 current_link.next_feature,
@@ -2225,8 +2226,9 @@ class ExtensionChain:
             )
 
             if results is not None:
-                current_link.next_link.alignment = results['cropped_extension_al']
-                current_link.alignment = results['cropped_original_al']
+                current_link.next_link.alignment = results['extension_al']
+                current_link.next_link.cropped_alignment = results['cropped_extension_al']
+                current_link.cropped_alignment = results['cropped_original_al']
                 current_link.next_link.best_extension_alignments = results['best_extension_als']
 
             current_link = current_link.next_link
@@ -2241,15 +2243,17 @@ class ExtensionChain:
         entry_point_i = self.name_order.index(entry_point)
 
         self.alignments = {name: self.links_by_name[name].alignment for name in self.name_order if self.links_by_name[name].alignment is not None}
+        self.cropped_alignments = {name: self.links_by_name[name].cropped_alignment for name in self.name_order if self.links_by_name[name].alignment is not None}
 
         self.alignments_list = list(self.alignments.values())
+        self.cropped_alignments_list = list(self.cropped_alignments.values())
 
         for name_order_i in range(entry_point_i, len(self.name_order)):
             name = self.name_order[name_order_i]
 
-            if name in self.alignments:
-                self.mismatches[name] = architecture.edits(self.alignments[name])
-                als_up_to = [self.alignments[other_name] for other_name in self.name_order[entry_point_i:name_order_i + 1]]
+            if name in self.cropped_alignments:
+                self.mismatches[name] = architecture.edits(self.cropped_alignments[name])
+                als_up_to = [self.cropped_alignments[other_name] for other_name in self.name_order[entry_point_i:name_order_i + 1]]
                 self.query_covered = interval.get_disjoint_covered(als_up_to)
                 self.query_covered_incremental[name] = self.query_covered
 
@@ -2261,3 +2265,4 @@ class ExtensionChainLink:
     next_feature: str | None = None
     next_link: Self | None = None
     alignment: pysam.AlignedSegment| None = None
+    cropped_alignment: pysam.AlignedSegment| None = None
