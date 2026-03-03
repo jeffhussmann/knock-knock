@@ -814,9 +814,12 @@ class EditingStrategy:
         return whole_target - self.around_cuts(each_side)
 
     def around_or_between_cuts(self, each_side):
-        left = min(self.cut_afters.values()) - each_side
-        right = max(self.cut_afters.values()) + each_side
-        return interval.Interval(left, right)
+        if len(self.cut_afters) == 0:
+            return interval.Interval.empty()
+        else:
+            left = min(self.cut_afters.values()) - each_side
+            right = max(self.cut_afters.values()) + each_side
+            return interval.Interval(left, right)
 
     @memoized_property
     def overlaps_cut(self):

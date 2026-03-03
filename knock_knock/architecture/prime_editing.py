@@ -1408,20 +1408,23 @@ class Architecture(knock_knock.architecture.Categorizer):
 
     @memoized_property
     def HA_names_by_side_of_target(self):
-        pegRNA_name = self.editing_strategy.pegRNA.name
-        HA_PBS = knock_knock.pegRNAs.make_HA_PBS_name(pegRNA_name)
-        HA_RT = knock_knock.pegRNAs.make_HA_RT_name(pegRNA_name)
+        if self.editing_strategy.pegRNA:
+            pegRNA_name = self.editing_strategy.pegRNA.name
+            HA_PBS = knock_knock.pegRNAs.make_HA_PBS_name(pegRNA_name)
+            HA_RT = knock_knock.pegRNAs.make_HA_RT_name(pegRNA_name)
 
-        if self.editing_strategy.pegRNA.strand == '+':
-            HA_names_by_side_of_target = {
-                5: HA_PBS,
-                3: HA_RT,
-            }
+            if self.editing_strategy.pegRNA.strand == '+':
+                HA_names_by_side_of_target = {
+                    5: HA_PBS,
+                    3: HA_RT,
+                }
+            else:
+                HA_names_by_side_of_target = {
+                    5: HA_RT,
+                    3: HA_PBS,
+                }
         else:
-            HA_names_by_side_of_target = {
-                5: HA_RT,
-                3: HA_PBS,
-            }
+            HA_names_by_side_of_target = {}
         
         return HA_names_by_side_of_target
 
@@ -2022,7 +2025,7 @@ class Architecture(knock_knock.architecture.Categorizer):
                 label_overrides[name] = 'PAM'
                 features_to_show.add((strat.target, name))
 
-        for primer_name in strat.primer_names:
+        for primer_name in strat.primers:
             color_overrides[primer_name] = 'lightgrey'
 
         for pegRNA_name in strat.pegRNA_names:
