@@ -45,20 +45,20 @@ def round_1_condition_to_color(condition):
 def round_2_condition_to_color(condition):
     palette = bokeh.palettes.Dark2_8
 
-    if condition['time_point'] == '06' and condition['cell_line'] == 'WT':
+    if condition['time_point'] == 'T1 (4h post nucleofection)' and condition['cell_line'] == 'Parental RPE1':
         color = palette[0]
-    elif condition['time_point'] == '72' and condition['cell_line'] == 'WT':
+    elif condition['time_point'] == 'T2 (7h post nucleofection)' and condition['cell_line'] == 'Parental RPE1':
         color = palette[2]
-    elif condition['time_point'] == '06' and condition['cell_line'] == 'MLH1_KO':
+    elif condition['time_point'] == 'T1 (4h post nucleofection)' and condition['cell_line'] == 'MLH1KO RPE1':
         color = palette[1]
-    elif condition['time_point'] == '72' and condition['cell_line'] == 'MLH1_KO':
+    elif condition['time_point'] == 'T2 (7h post nucleofection)' and condition['cell_line'] == 'MLH1KO RPE1':
         color = palette[3]
     else:
-        raise ValueError(condition)
+        color = 'black'
 
     return color
 
-def ABD_round_1_condition_to_color(condition):
+def round_3_condition_to_color(condition):
     palette = bokeh.palettes.Category20b_20
 
     start = {'WT': 19, 'MLH1 KO': 7, 'MLH1_KO': 7}[condition['cell_line']]
@@ -76,19 +76,6 @@ def condition_to_label(condition, condition_keys_to_label):
     label = ', '.join([f'{key}={value}' for key, value in condition.items() if key in condition_keys_to_label])
     return label
 
-base_dir = '/home/jah/projects/knock-knock_prime/ashley'
-
-target_name = 'HEK3_annotated'
-
-sgRNAs = [
-    'PRS26322',
-    'PRS26323',
-    'sgRNA2483',
-    'ngRNA_+26',
-]
-
-strat = knock_knock.editing_strategy.EditingStrategy(base_dir, target_name, sgRNAs=sgRNAs)
-
 class StrandsGrid:
     def __init__(self,
                  base_dir,
@@ -97,28 +84,28 @@ class StrandsGrid:
                  y_max=100,
                 ):
 
-        target_name = 'HEK3_annotated'
+        target_name = 'FANCF'
 
         sgRNAs = [
-            'PRS26322',
-            'PRS26323',
-            'PRS26583',
-            'PRS26584',
-            'sgRNA2483',
-            'ngRNA2433',
+            'oWY407',
+            'oWY408',
         ]
 
-        if pegRNA_name is not None:
-            sgRNAs.append(pegRNA_name)
+        if pegRNA_name is None:
+            self.anchor_sgRNA_name = 'pWY090'
+        else:
+            self.anchor_sgRNA_name = pegRNA_name
+
+        sgRNAs.append(self.anchor_sgRNA_name)
 
         self.pegRNA_name = pegRNA_name
 
         self.editing_strategy = knock_knock.editing_strategy.EditingStrategy(base_dir, target_name, sgRNAs=sgRNAs)
 
-        self.anchor = self.editing_strategy.cut_afters['sgRNA2483_protospacer_+']
+        self.anchor = self.editing_strategy.cut_afters[f'{self.anchor_sgRNA_name}_protospacer_+']
 
-        left_primer_name = 'OLI19224'
-        right_primer_name = 'OLI19254'
+        left_primer_name = 'oWY388'
+        right_primer_name = 'oWY390'
 
         self.left_primer = self.editing_strategy.features[self.editing_strategy.target, left_primer_name]
         self.right_primer = self.editing_strategy.features[self.editing_strategy.target, right_primer_name]
@@ -186,12 +173,9 @@ class StrandsGrid:
         ax = self.axs['top']
 
         sgRNA_info = [
-            ('sgRNA2483', 'pegRNA', 'tab:red'),
-            ('PRS26322', 'PRS26322', bottom_color),
-            ('PRS26323', 'PRS26323', top_color),
-            #('PRS26583', 'PRS26583', 'tab:grey'),
-            #('PRS26584', 'PRS26584', 'tab:grey'),
-            #('ngRNA2433', 'PE3 ngRNA', 'tab:grey'),
+            (self.anchor_sgRNA_name, 'pegRNA', 'tab:red'),
+            ('oWY408', 'oWY408', bottom_color),
+            ('oWY407', 'oWY407', top_color),
         ]
 
         transform = ax.get_xaxis_transform()
@@ -272,13 +256,14 @@ class StrandsGrid:
                     base_y,
                     base_y - 0.75 * rect_height,
                 ]
-                
-            ax.plot(xs, ys,
-                    transform=transform,
-                    clip_on=False,
-                    linewidth=2,
-                    color=color,
-                   )
+
+            if any(self.x_min <= x <= self.x_max for x in xs):
+                ax.plot(xs, ys,
+                        transform=transform,
+                        clip_on=False,
+                        linewidth=2,
+                        color=color,
+                       )
 
     def draw_pegRNA_sequence(self):
         ax = self.axs['pegRNA']
@@ -370,8 +355,6 @@ class StrandsGrid:
         for ax in self.axs.values():
             ax.set_ylim(0, self.y_max)
 
-        #self.axs['top'].set_ylabel('% of top strand reads,\ngenomic', size=12)
-
         label_kwargs = dict(
             xy=(0, 0.5),
             xycoords='axes fraction',
@@ -401,11 +384,15 @@ class StrandsGrid:
 
     def plot_fractions(self,
                        data,
-                       condition_to_color=round_1_condition_to_color,
+                       condition_to_color=round_2_condition_to_color,
                        cumulative=False,
-                       condition_keys_to_label=('group', 'cell_line', 'time_point', 'in_vitro_Cas9_sgRNA'),
+                       condition_keys_to_label=('cell_line', 'time_point', 'is_unedited'),
                        condition_filter=None,
+                       condition_to_z_order=None,
                       ):
+
+        if condition_to_z_order is None:
+            condition_to_z_order = lambda c: 1
 
         for strand in ['top', 'bottom', self.pegRNA_name]:
             if strand not in data:
@@ -422,7 +409,7 @@ class StrandsGrid:
                 condition = OrderedDict(zip(df.columns.names, column))
                 return [condition[key] for key in condition_keys_to_label]
             
-            for column in sorted(df, key=sort_key):
+            for i, column in enumerate(sorted(df.columns, key=sort_key)):
                 condition = OrderedDict(zip(df.columns.names, column))
 
                 if condition_filter is not None and not condition_filter(condition):
@@ -431,6 +418,7 @@ class StrandsGrid:
                 label = condition_to_label(condition, condition_keys_to_label)
 
                 color = condition_to_color(condition)
+                z_order = condition_to_z_order(condition)
 
                 nonzero_ps = df[column]
                 nonzero_ps = nonzero_ps[nonzero_ps > 0]
@@ -445,7 +433,7 @@ class StrandsGrid:
                 else:
                     to_plot = nonzero_ps
 
-                ax.plot(to_plot, 'o', color=color, markersize=3, clip_on=True, label=label)
+                ax.plot(to_plot, 'o', color=color, markersize=3, clip_on=True, label=label, zorder=z_order)
 
                 if len(nonzero_ps) > 0:
                     all_xs = np.arange(min(nonzero_ps.index), max(nonzero_ps.index) + 1)
@@ -461,18 +449,19 @@ class StrandsGrid:
                     else:
                         to_plot = all_ys
 
-                    ax.plot(all_xs, to_plot, '-', color=color, linewidth=1.5, clip_on=True)
+                    ax.plot(all_xs, to_plot, '-', color=color, alpha=0.5, linewidth=1.5, clip_on=True, zorder=z_order)
 
 def load_group_denominator(group):
     denominator = group.outcome_counts(level='category').reindex(['RTed sequence', 'targeted genomic sequence'], fill_value=0).sum()
     return denominator
 
-def load_group_counts(group, key=('targeted genomic sequence', 'unedited')):
+def load_exp_counts(exp, key=('targeted genomic sequence', 'unedited')):
+    strat = exp.editing_strategy
 
-    if key not in group.outcome_counts().index:
+    if key not in exp.outcome_counts().index:
         return None
         
-    counts = group.outcome_counts().sort_index().loc[key]
+    counts = exp.outcome_counts().sort_index().loc[key]
     
     if counts.index.nlevels > 1:
         counts = counts.groupby(level='details').sum()
@@ -489,17 +478,15 @@ def load_group_counts(group, key=('targeted genomic sequence', 'unedited')):
     just_edges_counts = counts.groupby(level=0).sum()
     
     if key[0] == 'RTed sequence':
-        offset = -len(group.editing_strategy.pegRNA.components['PBS']) + 1
+        offset = -len(exp.editing_strategy.pegRNA.components['PBS']) + 1
     else:
-        offset = strat.features[('HEK3', group.editing_strategy.sequencing_start_feature_name)].start - group.editing_strategy.features[group.editing_strategy.target, group.editing_strategy.sequencing_start_feature_name].start - strat.cut_afters['sgRNA2483_protospacer_+']
+        offset = -strat.cut_afters[f'{strat.pegRNA.name}_protospacer_+']
     
     just_edges_counts.index = just_edges_counts.index + offset
+
+    just_edges_percentages = just_edges_counts / exp.outcome_counts().sum() * 100
     
-    if isinstance(just_edges_counts, pd.Series):
-        just_edges_counts = just_edges_counts.to_frame()
-        just_edges_counts.columns.names = list(group.full_condition_keys)
-    
-    return just_edges_counts
+    return just_edges_percentages
 
 def load_all_data(batch, genome='hg38', key=('targeted genomic sequence', 'unedited'), min_reads=1000):
     genome_and_sgRNAs = set()
@@ -514,8 +501,8 @@ def load_all_data(batch, genome='hg38', key=('targeted genomic sequence', 'unedi
         
         genome_and_sgRNAs.add((genome, sgRNAs))
     
-    top_primer = 'OLI19224'
-    bottom_primer = 'OLI19254'
+    top_primer = 'oWY388'
+    bottom_primer = 'oWY390'
     
     data = {}
 

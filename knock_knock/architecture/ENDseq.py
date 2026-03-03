@@ -58,59 +58,9 @@ class Architecture(prime_editing.Architecture):
     def partial_gap_perfect_alignments(self):
         return []
 
-    def realign_edges_to_primers(self, read_side):
-        if read_side == 3:
-            edge_al = None
-
-        else:
-            strat = self.editing_strategy
-
-            buffer = 0
-
-            primer_feature = self.primers_by_side_of_read['left']
-
-            primer_interval = hits.interval.Interval.from_feature(primer_feature)
-
-            if primer_feature.strand == '+':
-                primer_interval.end = primer_interval.end + buffer
-                alignment_type = 'fixed_start'
-            else:
-                primer_interval.start = primer_interval.start - buffer
-                alignment_type = 'fixed_end'
-
-            als = hits.sw.align_read(
-                self.read,
-                [(strat.target, strat.target_sequence)],
-                0,
-                strat.header,
-                alignment_type=alignment_type,
-                read_interval=hits.interval.Interval(0, len(primer_feature) + buffer),
-                ref_intervals={strat.target: primer_interval},
-                min_score_ratio=0.5,
-            )
-
-            als = [al for al in als if hits.sam.get_strand(al) == primer_feature.strand]
-
-            if len(als) == 1:
-
-                edge_al = als[0]
-
-                edge_al = hits.sw.extend_alignment(edge_al, strat.reference_sequence_bytes[strat.target])
-                
-            else:
-                edge_al = None
-
-        return edge_al
-
     @memoized_property
     def perfect_right_edge_alignment(self):
         return None
-
-    @memoized_property
-    def primer_alignments(self):
-        primer_alignments = super().primer_alignments
-        primer_alignments['right'] = None
-        return primer_alignments
 
     @memoized_property
     def target_nts_past_primer(self):
@@ -122,7 +72,7 @@ class Architecture(prime_editing.Architecture):
 
     @memoized_with_args
     def minimal_cover_by_side(self, side):
-        covered = self.extension_chains_by_side[side]['query_covered_incremental']
+        covered = self.extension_chains()['prime_editing'][side].query_covered_incremental
 
         minimal_cover = None
 
@@ -137,6 +87,10 @@ class Architecture(prime_editing.Architecture):
                 break
 
         return minimal_cover
+                                                                 
+    @memoized_property
+    def manual_anchors(self):
+        return {self.editing_strategy.target: self.target_flanking_alignments_list}
 
     @memoized_property
     def minimal_cover(self):
@@ -152,29 +106,29 @@ class Architecture(prime_editing.Architecture):
 
             self.relevant_alignments = [self.longest_phiX_alignment]
 
-        elif self.starts_at_expected_location and self.minimal_cover is not None:
+        elif self.minimal_cover is not None:
             if self.minimal_cover == 'first target':
                 self.category = 'targeted genomic sequence'
                 self.subcategory = 'unedited'
-                edge = hits.sam.reference_edges(self.extension_chains_by_side['left']['alignments']['first target'])['right']
-                self.Details = Details(target_edge=edge, mismatches=self.non_pegRNA_mismatches)
+                edge = hits.sam.reference_edges(self.extension_chains()['prime_editing']['left'].alignments['first target'])['right']
+                self.details = Details(target_edge=edge, mismatches=self.non_pegRNA_mismatches)
 
             elif self.minimal_cover in ['pegRNA', 'first pegRNA']:
                 self.category = 'RTed sequence'
                 self.subcategory = 'n/a'
                 edge = self.extension_chain_edges['left']
-                self.Details = Details(pegRNA_edge=edge, mismatches=self.non_pegRNA_mismatches)
+                self.details = Details(pegRNA_edge=edge, mismatches=self.non_pegRNA_mismatches)
 
             elif self.minimal_cover == 'second target':
                 self.category = 'targeted genomic sequence'
                 self.subcategory = 'edited'
-                edge = hits.sam.reference_edges(self.extension_chains_by_side['left']['alignments']['second target'])['right']
-                self.Details = Details(target_edge=edge, mismatches=self.non_pegRNA_mismatches)
+                edge = hits.sam.reference_edges(self.extension_chains()['prime_editing']['left'].alignments['second target'])['right']
+                self.details = Details(target_edge=edge, mismatches=self.non_pegRNA_mismatches)
             
             else:
                 raise ValueError
 
-            self.relevant_alignments = self.parsimonious_extension_chain_alignments
+            self.relevant_alignments = self.extension_chain_alignments['prime_editing']
 
         elif self.query_length_covered_by_on_target_alignments <= 30:
             self.register_minimal_alignments_detected()
@@ -188,16 +142,6 @@ class Architecture(prime_editing.Architecture):
         self.categorized = True
 
         return self.category, self.subcategory, self.details
-
-    def plot_parameters(self):
-        strat = self.editing_strategy
-
-        plot_parameters = super().plot_parameters()
-
-        for virtual_primer in {(strat.target, name) for name in strat.primers if name != strat.sequencing_start_feature_name}:
-            plot_parameters['features_to_show'].remove(virtual_primer)
-
-        return plot_parameters
 
 class NoOverlapPairArchitecture(Architecture, knock_knock.architecture.NoOverlapPairCategorizer):
     individual_architecture_class = Architecture
@@ -392,7 +336,6 @@ class NoOverlapPairArchitecture(Architecture, knock_knock.architecture.NoOverlap
             ):
 
         plot_kwargs = kwargs.copy()
-        plot_kwargs.setdefault('alignment_registration', 'left')
 
         als_to_plot = self.alignments
 

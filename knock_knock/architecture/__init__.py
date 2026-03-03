@@ -1355,35 +1355,43 @@ class Categorizer:
                             covered_left = chains['left'].query_covered_incremental[left_key]
                             covered_right = chains['right'].query_covered_incremental[right_key]
 
-                            # Check if left and right overlap or abut each other.
-                            if covered_left.end >= covered_right.start - 1:
+                            if covered_left.end > covered_right.end:
+                                possible_covers.add(('single chain', left_key, 'none', sum(chains['left'].mismatches.values())))
 
-                                # include_overlap=False to avoid double counting mismatch-containing region
-                                cropped_als = sam.crop_to_best_switch_point(left_al,
-                                                                            right_al,
-                                                                            self.editing_strategy.reference_sequences,
-                                                                            include_overlap=False,
-                                                                           )
+                            elif covered_right.start < covered_left.start:
+                                possible_covers.add(('single chain', 'none', right_key, sum(chains['right'].mismatches.values())))
+
                             else:
-                                cropped_als = {'left': left_al, 'right': right_al}
 
-                            cropped_mismatches = {
-                                side: chains[side].mismatches.copy()
-                                for side in ['left', 'right']
-                            }
+                                # Check if left and right overlap or abut each other.
+                                if covered_left.end >= covered_right.start - 1:
 
-                            total_mismatches = {}
+                                    # include_overlap=False to avoid double counting mismatch-containing region
+                                    cropped_als = sam.crop_to_best_switch_point(left_al,
+                                                                                right_al,
+                                                                                self.editing_strategy.reference_sequences,
+                                                                                include_overlap=False,
+                                                                               )
+                                else:
+                                    cropped_als = {'left': left_al, 'right': right_al}
 
-                            for side, last_key in [('left', left_key), ('right', right_key)]:
-                                cropped_mismatches[side][last_key] = self.edits(cropped_als[side])
+                                cropped_mismatches = {
+                                    side: chains[side].mismatches.copy()
+                                    for side in ['left', 'right']
+                                }
 
-                                last_key_i = name_orders[side].index(last_key)
-                                total_mismatches[side] = sum(cropped_mismatches[side][key] for key in name_orders[side][:last_key_i + 1])
+                                total_mismatches = {}
 
-                            gap = max(0, covered_right.start - covered_left.end - 1)
-                            mismatches_and_gap = total_mismatches['left'] + total_mismatches['right'] + gap
-                            
-                            possible_covers.add(('two chains', left_key, right_key, mismatches_and_gap))
+                                for side, last_key in [('left', left_key), ('right', right_key)]:
+                                    cropped_mismatches[side][last_key] = self.edits(cropped_als[side])
+
+                                    last_key_i = name_orders[side].index(last_key)
+                                    total_mismatches[side] = sum(cropped_mismatches[side][key] for key in name_orders[side][:last_key_i + 1])
+
+                                gap = max(0, covered_right.start - covered_left.end - 1)
+                                mismatches_and_gap = total_mismatches['left'] + total_mismatches['right'] + gap
+                                
+                                possible_covers.add(('two chains', left_key, right_key, mismatches_and_gap))
             
             if chains['left'].query_covered == chains['right'].query_covered:
                 last_parsimonious_key = {}
