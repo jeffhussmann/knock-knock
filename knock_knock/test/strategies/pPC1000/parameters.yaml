@@ -3,6 +3,6 @@ target: pPC1000
 sources: 
   - ppc1000
 
-primer_names:
+primers:
   - gDNA_forward_primer
   - gDNA_reverse_primer

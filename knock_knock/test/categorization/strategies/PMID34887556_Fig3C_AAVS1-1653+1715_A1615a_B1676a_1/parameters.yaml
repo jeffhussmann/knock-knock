@@ -4,7 +4,7 @@ features_to_show:
 - - AAVS1-1653+1715
   - AAVS1-1653+1715_1
 genome_source: AAVS1-1653+1715
-primer_names:
+primers:
 - AAVS1-1653+1715_0
 - AAVS1-1653+1715_1
 sources:

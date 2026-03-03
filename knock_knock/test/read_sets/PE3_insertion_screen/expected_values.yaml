@@ -2,7 +2,7 @@ experiment_type: prime_editing
 editing_strategy: pPC1000
 strategy_kwargs:
   sgRNAs: pPC1044
-  primer_names: gDNA_forward_primer;gDNA_reverse_primer
+  primers: gDNA_forward_primer;gDNA_reverse_primer
 expected_values:
   01:01101:001334:030577_:
     category: wild type

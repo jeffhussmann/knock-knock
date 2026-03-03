@@ -5,7 +5,7 @@ features_to_show:
   - reverse_primer
 genome_source: hg38
 sequencing_start_feature_name: forward_primer
-primer_names:
+primers:
 - forward_primer
 - reverse_primer
 sources:

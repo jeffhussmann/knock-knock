@@ -182,7 +182,7 @@ def build_pooled_screen_read_set(set_name):
     possible_strategy_kwargs_keys = [
         'sgRNAs',
         'sequencing_start_feature_name',
-        'primer_names',
+        'primers',
     ]
 
     strategy_kwargs = {
@@ -245,7 +245,7 @@ def build_arrayed_group_read_set(set_name, source_dir=None, prompt=True):
     possible_strategy_kwargs_keys = [
         'sgRNAs',
         'sequencing_start_feature_name',
-        'primer_names',
+        'primers',
     ]
 
     strategy_kwargs = {

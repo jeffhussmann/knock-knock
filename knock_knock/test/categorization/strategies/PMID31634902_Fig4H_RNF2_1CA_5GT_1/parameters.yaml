@@ -4,7 +4,7 @@ features_to_show:
 - - RNF2
   - RNF2_0
 genome_source: RNF2
-primer_names:
+primers:
 - RNF2_1
 - RNF2_0
 sources:

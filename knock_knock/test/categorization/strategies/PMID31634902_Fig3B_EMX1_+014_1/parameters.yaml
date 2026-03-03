@@ -4,7 +4,7 @@ features_to_show:
 - - EMX1
   - EMX1_1
 genome_source: EMX1
-primer_names:
+primers:
 - EMX1_0
 - EMX1_1
 sources:

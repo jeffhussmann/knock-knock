@@ -4,7 +4,7 @@ features_to_show:
 - - HEK3
   - HEK3_1
 genome_source: HEK3
-primer_names:
+primers:
 - HEK3_0
 - HEK3_1
 sources:

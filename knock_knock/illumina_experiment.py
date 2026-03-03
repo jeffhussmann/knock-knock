@@ -413,10 +413,10 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
         strat = self.editing_strategy
 
-        start = strat.primers_by_side_of_target[5].start
+        start = strat.primer_features_by_side_of_target[5].start
         prefix = strat.target_sequence[start:start + match_length_required]
 
-        end = strat.primers_by_side_of_target[3].end
+        end = strat.primer_features_by_side_of_target[3].end
         suffix = strat.target_sequence[end + 1 - match_length_required:end + 1]
 
         if strat.sequencing_direction == '-':

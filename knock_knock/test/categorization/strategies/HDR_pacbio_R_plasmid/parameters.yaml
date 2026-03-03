@@ -1,6 +1,6 @@
 donor: pML217_RAB11A-150HA
 genome_source: RAB11A
-primer_names:
+primers:
 - RAB11A_PAC_0
 - RAB11A_PAC_1
 sources:

@@ -1,5 +1,5 @@
 donor: RAB11A-150HA_PCR_donor
-primer_names:
+primers:
 - RAB11A_PAC_fwd
 - RAB11A_PAC_rev
 target: target

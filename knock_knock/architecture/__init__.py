@@ -312,10 +312,10 @@ class Categorizer:
         return utilities.reverse_dictionary(self.target_side_to_read_side)
 
     @memoized_property
-    def primers_by_side_of_read(self):
+    def primer_features_by_side_of_read(self):
         by_side = {
-            self.target_side_to_read_side[target_side]: primer
-            for target_side, primer in self.editing_strategy.primers_by_side_of_target.items()
+            self.target_side_to_read_side[target_side]: feature
+            for target_side, feature in self.editing_strategy.primer_features_by_side_of_target.items()
         }
 
         return by_side
@@ -326,9 +326,9 @@ class Categorizer:
         '''
 
         if by == 'read':
-            primers = self.primers_by_side_of_read
+            primers = self.primer_features_by_side_of_read
         elif by == 'target':
-            primers = self.editing_strategy.primers_by_side_of_target
+            primers = self.editing_strategy.primer_features_by_side_of_target
         else:
             raise ValueError
 
@@ -369,7 +369,7 @@ class Categorizer:
 
             if len(side_als) > 0:
                 # Partition into equivalence classes of shared feature.
-                primer_name = self.editing_strategy.primers_by_side_of_target[side_of_target].ID
+                primer_name = self.editing_strategy.primer_features_by_side_of_target[side_of_target].ID
 
                 def relation(first_al, second_al):
                     return self.share_feature(first_al, primer_name, second_al, primer_name)
@@ -421,13 +421,15 @@ class Categorizer:
 
             interior = self.whole_read_minus_edges(1)
 
+            primers = strat.primer_features_by_side_of_target
+
             for side, ref_edge in ref_edges.items():
                 for primer_name, primer_interval in strat.primer_intervals.items():
                     if query_edges[side] in interior and ref_edge in primer_interval:
 
-                        if primer_name == strat.primers_by_side_of_target[5].ID:
+                        if 5 in primers and primer_name == primers[5].ID:
                             kwargs = dict(extend_after=False)
-                        elif primer_name == strat.primers_by_side_of_target[3].ID: 
+                        elif 3 in primers and primer_name == primers[3].ID: 
                             kwargs = dict(extend_before=False)
                         else:
                             raise ValueError
@@ -558,7 +560,7 @@ class Categorizer:
     def cropped_flanking_primer_alignments(self):
         primer_alignments = {}
 
-        for side, primer in self.primers_by_side_of_read.items():
+        for side, primer in self.primer_features_by_side_of_read.items():
             al = self.target_flanking_alignments[side]
             primer_alignments[side] = sam.crop_al_to_feature(al, primer)
 
@@ -576,16 +578,16 @@ class Categorizer:
 
         If there are no primers, uses target flanking alignments.
         '''
-        if len(self.editing_strategy.primers) == 2:
+        if len(self.editing_strategy.primers) > 0:
             primer_als = self.cropped_flanking_primer_alignments
 
             if self.covered_by_primers.is_empty:
                 between_primers = self.whole_read
 
-            elif primer_als['left'] and not primer_als['right']:
+            elif primer_als.get('left') and not primer_als.get('right'):
                 between_primers = interval.Interval(self.covered_by_primers.end + 1, self.whole_read.end)
 
-            elif primer_als['right'] and not primer_als['left']:
+            elif primer_als.get('right') and not primer_als.get('left'):
                 between_primers = interval.Interval(self.whole_read.start, self.covered_by_primers.start - 1)
 
             else:
@@ -627,7 +629,7 @@ class Categorizer:
         target_nts_past_primer = {}
 
         for side in ['left', 'right']:
-            target_past_primer = interval.get_covered(self.target_flanking_alignments[side]) - interval.get_covered(self.cropped_flanking_primer_alignments[side])
+            target_past_primer = interval.get_covered(self.target_flanking_alignments[side]) - interval.get_covered(self.cropped_flanking_primer_alignments.get(side))
             target_nts_past_primer[side] = target_past_primer.total_length 
 
         return target_nts_past_primer
@@ -766,7 +768,7 @@ class Categorizer:
             else:
                 raise ValueError
 
-            self.relevant_alignments = results['target_edge_als'] + results['covering_als']
+            self.relevant_alignments = self.target_flanking_alignments_list + results['covering_als']
 
     @memoized_property
     def single_read_covering_target_alignment(self):
@@ -957,8 +959,8 @@ class Categorizer:
         left_al = self.target_flanking_alignments['left']
         right_al = self.target_flanking_alignments['right']
 
-        left_primer = self.primers_by_side_of_read['left']
-        right_primer = self.primers_by_side_of_read['right']
+        left_primer = self.primer_features_by_side_of_read['left']
+        right_primer = self.primer_features_by_side_of_read['right']
 
         left_offset_to_q = self.feature_offset_to_q(left_al, left_primer.ID)
         right_offset_to_q = self.feature_offset_to_q(right_al, right_primer.ID)
@@ -1582,7 +1584,7 @@ class Categorizer:
 
         target_side = self.read_side_to_target_side[read_side]
 
-        primer = self.editing_strategy.primers_by_side_of_target.get(target_side)
+        primer = self.editing_strategy.primer_features_by_side_of_target.get(target_side)
 
         if self.seq is None or primer is None:
             return None

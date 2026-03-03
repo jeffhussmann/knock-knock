@@ -242,7 +242,7 @@ class EditingStrategyBuilder:
 
         #manifest['genome_source'] = self.info.get('genome_source', self.genome)
 
-        parameters['primer_names'] = self.amplicon_primer_names
+        parameters['primers'] = self.amplicon_primer_names
 
         parameters_fn.write_text(yaml.dump(parameters, default_flow_style=False))
 

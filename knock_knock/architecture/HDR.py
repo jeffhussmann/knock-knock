@@ -1229,7 +1229,7 @@ class Architecture(knock_knock.architecture.Categorizer):
                 primer_interval[read_side] = None
                 continue
 
-            primer = self.editing_strategy.primers_by_side_of_target[target_side]
+            primer = self.editing_strategy.primer_features_by_side_of_target[target_side]
             just_primer_al = sam.crop_al_to_ref_int(al, primer.start, primer.end)
             start, end = sam.query_interval(just_primer_al)
             if read_side == 'left':

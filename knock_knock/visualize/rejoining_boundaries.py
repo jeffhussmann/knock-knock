@@ -576,7 +576,7 @@ def plot_single_flap_extension_chain_edges(editing_strategy,
                 PAM_name = f'{ps_name}_PAM'
                 colors[PAM_name] = color
 
-            for primer_name in strat.primer_names:
+            for primer_name in strat.primers:
                 colors[primer_name] = 'grey'
 
             if len(strat.pegRNA_names) == 1:
@@ -593,7 +593,7 @@ def plot_single_flap_extension_chain_edges(editing_strategy,
             # 24.12.05: having trouble reconciling comment above with code. 
             # Should it be "PAM-proximal side of the nick"?
 
-            feature_names = strat.protospacer_names + list(strat.PAM_features) + strat.primer_names
+            feature_names = strat.protospacer_names + list(strat.PAM_features) + strat.primers
 
             if draw_genomic_homology:
                 feature_names.append(f'HA_RT_{pegRNA_name}')
@@ -806,7 +806,7 @@ def plot_dual_flap_extension_chain_edges(editing_strategy,
                 other_PAM_name: strat.pegRNA_name_to_color[other_pegRNA_name],
             }
 
-            for primer_name in strat.primer_names:
+            for primer_name in strat.primers:
                 colors[primer_name] = 'lightgrey'
 
             # By definition, the nt on the PAM-distal side of the nick
@@ -821,7 +821,7 @@ def plot_dual_flap_extension_chain_edges(editing_strategy,
                 PBS_name, other_PBS_name,
                 PAM_name,
                 other_PAM_name
-            ] + strat.primer_names
+            ] + strat.primers
 
             for feature_name in feature_names:
                 feature = strat.features[strat.target, feature_name]
@@ -1026,7 +1026,7 @@ def plot_dual_flap_extension_chain_edges(editing_strategy,
 
         for feature_name in [other_protospacer_name,
                              other_PBS_name,
-                             strat.primers_by_side_of_read[knock_knock.editing_strategy.other_side[side]].ID,
+                             strat.primer_features_by_side_of_read[knock_knock.editing_strategy.other_side[side]].ID,
                             ]:
             feature = strat.features[strat.target, feature_name]
             

@@ -106,7 +106,7 @@ class Experiment:
         self.sgRNAs = self.description.get('sgRNAs')
         self.donor = self.description.get('donor')
         self.nonhomologous_donor = self.description.get('nonhomologous_donor')
-        self.primer_names = self.description.get('primer_names')
+        self.primers = self.description.get('primers')
         self.sequencing_start_feature_name = self.description.get('sequencing_start_feature_name')
         self.infer_homology_arms = self.description.get('infer_homology_arms', True)
         self.max_reads = self.description.get('max_reads', None)
@@ -228,7 +228,7 @@ class Experiment:
                                                              donor=self.donor,
                                                              nonhomologous_donor=self.nonhomologous_donor,
                                                              sgRNAs=self.sgRNAs,
-                                                             primer_names=self.primer_names,
+                                                             primers=self.primers,
                                                              sequencing_start_feature_name=self.sequencing_start_feature_name,
                                                              supplemental_indices=self.supplemental_indices,
                                                              infer_homology_arms=self.infer_homology_arms,
@@ -1193,10 +1193,10 @@ def sample_sheet_row_to_editing_strategy_name(row):
         editing_strategy_name = str(row['editing_strategy'])
 
     else:
-        if row['amplicon_primers'] == '':
+        if row['primers'] == '':
             editing_strategy_name = f'{row['genome']}_{row['sgRNAs']}'
         else:
-            primers = '+'.join(row['amplicon_primers'].split(';'))
+            primers = '+'.join(row['primers'].split(';'))
             editing_strategy_name = f'{row['genome']}_{primers}'
 
     return editing_strategy_name

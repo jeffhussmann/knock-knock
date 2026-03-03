@@ -41,7 +41,7 @@ class EditingStrategy:
     def __init__(self,
                  base_dir,
                  name,
-                 primer_names=None,
+                 primers=None,
                  sgRNAs=None,
                  donor=None,
                  nonhomologous_donor=None,
@@ -136,7 +136,7 @@ class EditingStrategy:
             setattr(self, attribute_name, value)
 
         populate_attribute('sgRNAs', sgRNAs, force_list=True)
-        populate_attribute('primer_names', primer_names, force_list=True, default_value='')
+        populate_attribute('primers', primers, force_list=True, default_value='')
         populate_attribute('donor', donor)
         populate_attribute('nonhomologous_donor', nonhomologous_donor)
         populate_attribute('sequencing_start_feature_name', sequencing_start_feature_name)
@@ -583,7 +583,7 @@ class EditingStrategy:
             for protospacer_name in self.protospacer_features:
                 features_to_show.add((self.target, protospacer_name))
 
-            for primer_name in self.primer_names:
+            for primer_name in self.primers:
                 features_to_show.add((self.target, primer_name))
 
             features_to_show.update(set(self.PAM_features))
@@ -612,7 +612,10 @@ class EditingStrategy:
         feature_name = self.sequencing_start_feature_name
 
         if feature_name is None:
-            feature_name = 'sequencing_start'
+            if len(self.primers) == 1:
+                feature_name = self.primers[0]
+            else:
+                feature_name = 'sequencing_start'
 
         return self.features.get((self.target, feature_name))
 
@@ -827,21 +830,17 @@ class EditingStrategy:
         return overlaps_cut
         
     @memoized_property
-    def primers(self):
-        primer_names = self.primer_names
-
-        primers = {name: self.features[self.target, name] for name in primer_names}
-
-        return primers
+    def primer_features(self):
+        return {name: self.features[self.target, name] for name in self.primers}
 
     @memoized_property
-    def primers_by_side_of_target(self):
+    def primer_features_by_side_of_target(self):
         strand_to_side = {
             '+': 5,
             '-': 3,
         }
 
-        by_side = {strand_to_side[strand]: primer for strand, primer in self.primers_by_strand.items()}
+        by_side = {strand_to_side[strand]: feature for strand, feature in self.primer_features_by_strand.items()}
 
         return by_side
 
@@ -853,19 +852,19 @@ class EditingStrategy:
             return self.sequencing_start.strand
 
     @memoized_property
-    def primers_by_strand(self):
-        by_strand = {primer.strand: primer for primer in self.primers.values()}
+    def primer_features_by_strand(self):
+        by_strand = {feature.strand: feature for name, feature in self.primer_features.items()}
         return by_strand
 
     @memoized_property
     def primer_intervals(self):
         ''' Dictionary of target intervals covered by primers. ''' 
-        return {name: interval.Interval.from_feature(f) for name, f in self.primers.items()}
+        return {name: interval.Interval.from_feature(feature) for name, feature in self.primer_features.items()}
 
     @memoized_property
     def between_primers_interval(self):
-        start = self.primers_by_side_of_target[5].end + 1
-        end = self.primers_by_side_of_target[3].start - 1
+        start = self.primer_features_by_side_of_target[5].end + 1
+        end = self.primer_features_by_side_of_target[3].start - 1
         return interval.Interval(start, end)
 
     @memoized_property
@@ -873,7 +872,7 @@ class EditingStrategy:
         if len(self.primers) != 2:
             return None
         else:
-            return sum(len(f) for name, f in self.primers.items())
+            return sum(len(feature) for name, feature in self.primer_features.items())
 
     @memoized_property
     def target_side_intervals(self):
@@ -1036,7 +1035,7 @@ class EditingStrategy:
 
     @memoized_property
     def amplicon_interval(self):
-        primers = self.primers_by_side_of_target
+        primers = self.primer_features_by_side_of_target
 
         if len(primers) < 2:
             amplicon_interval = interval.Interval.empty()

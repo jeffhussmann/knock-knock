@@ -4,7 +4,7 @@ features_to_show:
 - - AAVS1-1651+1652
   - AAVS1-1651+1652_1
 genome_source: AAVS1-1651+1652
-primer_names:
+primers:
 - AAVS1-1651+1652_0
 - AAVS1-1651+1652_1
 sources:
