@@ -142,10 +142,10 @@ def download_genome(args):
 def build_indices(args):
     import knock_knock.build_strategies
 
-    knock_knock.build_strategies.download_genome_and_build_indices(args.base_dir,
-                                                                   args.genome_name,
-                                                                   args.num_threads
-                                                                  )
+    knock_knock.build_strategies.build_indices(args.base_dir,
+                                               args.genome_name,
+                                               args.num_threads
+                                              )
 
 def install_example_data(args):
     package_dir = Path(knock_knock.__file__).resolve().parent
