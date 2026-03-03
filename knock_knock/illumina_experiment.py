@@ -329,7 +329,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
                             alignment_sorters[outcome, which].write(al)
             pysam.set_verbosity(saved_verbosity)
 
-    def trim_reads(self):
+    def trim_reads(self, defined_start=True):
         ''' Trim a (potentially variable-length) UMI from the beginning of a read
         by searching for the expected sequence that the amplicon should begin with.
 
@@ -338,16 +338,29 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
         strat = self.editing_strategy
 
-        primer_prefix_length = 6
+        if defined_start:
+            primer_prefix_length = 6
 
-        if strat.sequencing_direction == '+':
-            start = strat.sequencing_start.start
-            prefix = strat.target_sequence[start:start + primer_prefix_length]
+            if strat.sequencing_direction == '+':
+                start = strat.sequencing_start.start
+                prefix = strat.target_sequence[start:start + primer_prefix_length]
+            else:
+                end = strat.sequencing_start.end
+                prefix = utilities.reverse_complement(strat.target_sequence[end + 1 - primer_prefix_length:end + 1])
+
+            prefix = prefix.upper()
+
+            def find_start(read):
+                try:
+                    start = read.seq.index(prefix, 0, 30)
+                except ValueError:
+                    start = 0
+
+                return start
+
         else:
-            end = strat.sequencing_start.end
-            prefix = utilities.reverse_complement(strat.target_sequence[end + 1 - primer_prefix_length:end + 1])
-
-        prefix = prefix.upper()
+            def find_start(read):
+                return 0
 
         fns = self.fns_by_read_type['fastq']
 
@@ -357,16 +370,16 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
         sequencing_primer_rc = hits.utilities.reverse_complement(adapters.primers[self.sequencing_primers['R2']]['R2'])
 
         for read in self.progress(self.reads, desc='Trimming reads'):
-            try:
-                start = read.seq.index(prefix, 0, 30)
-            except ValueError:
-                start = 0
+            start = find_start(read)
 
             read = read[:self.trim_to_max_length]
 
             end = adapters.trim_by_local_alignment(sequencing_primer_rc, read.seq)
 
             trimmed = read[start:end]
+
+            if self.reverse_complement:
+                trimmed = trimmed.reverse_complement()
 
             if 'UMI_key' in self.description:
                 UMI_annotation = knock_knock.experiment.UMIAnnotation.from_identifier(trimmed.name)
@@ -530,7 +543,12 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
         if self.paired_end:
             self.stitch_read_pairs()
         else:
-            self.trim_reads()
+            if self.experiment_type == 'ENDseq':
+                defined_start = False
+            else:
+                defined_start = True
+
+            self.trim_reads(defined_start=defined_start)
 
         self.extract_and_process_common_sequences()
         self.extract_reads_with_uncommon_sequences()
