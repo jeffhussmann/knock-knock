@@ -1,4 +1,3 @@
-import gzip
 import shutil
 from collections import defaultdict, Counter
 from contextlib import ExitStack
@@ -110,7 +109,7 @@ def demultiplex(base_dir, batch_name, genotypes_fasta_fn, relevant_slice=slice(N
             suffix_to_fh = {}
             for suffix in suffixes:
                 fn = output_dir / add_suffix_to_fn(input_fn, suffix, full_extension)
-                suffix_to_fh[suffix] = stack.enter_context(gzip.open(fn, 'wt', compresslevel=1))
+                suffix_to_fh[suffix] = stack.enter_context(hits.fastq.Writer(fn))
 
             for read in hits.fastq.reads(input_fn):
                 fingerprint = set()
@@ -133,7 +132,7 @@ def demultiplex(base_dir, batch_name, genotypes_fasta_fn, relevant_slice=slice(N
 
                 genotype_counts[input_fn.name][key] += 1
                 
-                suffix_to_fh[suffix].write(str(read))
+                suffix_to_fh[suffix].write(read)
 
     genotype_count_fn = output_dir / 'genotype_counts.csv'
     genotype_counts = pd.DataFrame(genotype_counts).T.fillna(0).astype(int).sort_index(axis=1)

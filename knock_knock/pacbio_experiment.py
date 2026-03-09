@@ -1,8 +1,3 @@
-import gzip
-
-import numpy as np
-import scipy.signal
-
 import hits.fastq
 import hits.utilities
 
@@ -61,9 +56,9 @@ class PacbioExperiment(Experiment):
     def preprocess(self):
         fn = self.fns_by_read_type['fastq'][self.preprocessed_read_type]
 
-        with gzip.open(fn, 'wt', compresslevel=1) as sorted_fh:
+        with hits.fastq.Writer(fn) as sorted_fh:
             for read in sorted(self.reads, key=lambda read: read.name):
-                sorted_fh.write(str(read))
+                sorted_fh.write(read)
 
     def align(self):
         for read_type in self.read_types:

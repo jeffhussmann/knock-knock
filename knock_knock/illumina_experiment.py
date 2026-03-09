@@ -1,4 +1,3 @@
-import gzip
 import logging
 from itertools import chain, islice
 
@@ -407,9 +406,9 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
             else:
                 trimmed_reads.append(trimmed)
 
-        with gzip.open(fns['trimmed'], 'wt', compresslevel=1) as trimmed_fh:
+        with fastq.Writer(fns['trimmed']) as trimmed_fh:
             for read in sorted(trimmed_reads, key=lambda read: read.name):
-                trimmed_fh.write(str(read))
+                trimmed_fh.write(read)
 
         with open(self.fns['too_short_outcome_list'], 'w') as too_short_fh:
             too_short_fh.write(f'## Generated at {utilities.current_time_string()}\n')
@@ -514,18 +513,17 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
                 stitched_reads.append(trimmed)
 
-        with gzip.open(fns['stitched'], 'wt', compresslevel=1) as stitched_fh:
+        with fastq.Writer(fns['stitched']) as stitched_fh:
             for read in sorted(stitched_reads, key=lambda read: read.name):
-
-                stitched_fh.write(str(read))
+                stitched_fh.write(read)
              
-        with (gzip.open(fns['R1_no_overlap'], 'wt', compresslevel=1) as R1_fh,
-              gzip.open(fns['R2_no_overlap'], 'wt', compresslevel=1) as R2_fh,
+        with (fastq.Writer(fns['R1_no_overlap']) as R1_fh,
+              fastq.Writer(fns['R2_no_overlap']) as R2_fh,
              ):
 
              for R1, R2, in sorted(no_overlap_read_pairs, key=lambda read_pair: read_pair[0].name):
-                R1_fh.write(str(R1))
-                R2_fh.write(str(R2))
+                R1_fh.write(R1)
+                R2_fh.write(R2)
         
         with open(self.fns['too_short_outcome_list'], 'w') as too_short_fh:
             too_short_fh.write(f'## Generated at {utilities.current_time_string()}\n')
@@ -596,12 +594,12 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
         fn = cs_exp.fns_by_read_type['fastq'][cs_exp.preprocessed_read_type]
 
-        with gzip.open(fn, 'wt', compresslevel=1) as fh:
+        with fastq.Writer(fn) as fh:
             for rank, (seq, count) in enumerate(seq_counts.most_common(1000)):
                 if count > 1:
                     name = f'{rank:010}_{count:010}'
                     read = hits.fastq.Read(name, seq, qual[:len(seq)])
-                    fh.write(str(read))
+                    fh.write(read)
 
         cs_exp.process(stage='align')
         cs_exp.process(stage='categorize')
@@ -647,10 +645,10 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
     def extract_reads_with_uncommon_sequences(self):
         uncommon_fn = self.fns_by_read_type['fastq'][self.uncommon_read_type]
-        with gzip.open(uncommon_fn, 'wt', compresslevel=1) as uncommon_fh:
+        with fastq.Writer(uncommon_fn) as uncommon_fh:
             for read in self.reads_by_type(self.preprocessed_read_type):
                 if read.seq not in self.common_sequence_to_outcome:
-                    uncommon_fh.write(str(read))
+                    uncommon_fh.write(read)
 
 class CommonSequencesExperiment(IlluminaExperiment):
     def __init__(self, experiment):
