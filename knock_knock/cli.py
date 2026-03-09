@@ -55,7 +55,7 @@ def parallel(args):
     exps = knock_knock.experiment.get_all_experiments(args.base_dir, args.conditions)
 
     if len(exps) == 0:
-        print('No experiments satify conditions:')
+        print('No experiments satisfy conditions:')
         print(args.conditions)
         sys.exit(1)
 
