@@ -1,4 +1,3 @@
-import dataclasses
 import logging
 
 import anndata
@@ -37,21 +36,33 @@ def postprocess_group(Group, identifier):
 class ExperimentGroup:
     @property
     def column_names(self):
-        return [field.name for field in dataclasses.fields(type(self).Experiment.Identifier)][1:]
+        return self.Experiment.Identifier.specific_field_names()
 
     @classmethod
     def from_identifier_fields(cls, fields, **kwargs):
         return cls(cls.Identifier(**fields), **kwargs)
 
     def experiment(self, identifier):
-        return type(self).Experiment(identifier, experiment_group=self)
+        return self.Experiment(identifier, experiment_group=self)
 
     def experiment_identifier_from_fields(self, **fields):
-        return type(self).Experiment.Identifier(self.identifier, **fields)
+        return self.Experiment.Identifier(self.identifier, **fields)
 
     def experiment_from_identifier_fields(self, **fields):
         identifier = self.experiment_identifier_from_fields(**fields)
         return self.experiment(identifier)
+
+    def filtered_experiment_ids(self, filters=None):
+        if filters is None:
+            filters = {}
+
+        for identifier in self.all_experiment_ids:
+            if identifier.passes_filters(filters):
+                yield identifier
+
+    def filtered_experiments(self, filters=None):
+        for identifier in self.filtered_experiment_ids(filters):
+            yield self.experiment(identifier)
 
     @property
     def experiments(self):

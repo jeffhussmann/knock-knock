@@ -62,8 +62,12 @@ class Identifier:
                 object.__setattr__(self, field.name, Path(self.__getattribute__(field.name)))
 
     @classmethod
-    def __field_names__(cls):
+    def field_names(cls):
         return tuple(field.name for field in dataclasses.fields(cls))
+
+    @classmethod
+    def specific_field_names(cls):
+        return cls.field_names()[1:]
 
     def __iter__(self):
         return iter(dataclasses.astuple(self))
@@ -78,6 +82,16 @@ class Identifier:
 
     def __lt__(self, other):
         return dataclasses.astuple(self) < dataclasses.astuple(other)
+
+    def passes_filters(self, filters):
+        passes_filters = True
+        
+        for key, value in filters.items():
+            if getattr(self, key) != value:
+                passes_filters = False
+                break
+
+        return passes_filters
 
 @dataclasses.dataclass(frozen=True)
 class ExperimentIdentifier(Identifier):
@@ -1007,7 +1021,7 @@ class Experiment:
             try:
                 diagram = architecture.plot(title='', **kwargs)
             except:
-                print(self.sample_name, qname)
+                print(self.identifier.sample_name, qname)
                 raise
                 
             yield diagram
