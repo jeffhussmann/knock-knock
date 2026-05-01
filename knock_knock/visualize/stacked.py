@@ -64,6 +64,7 @@ class StackedDiagrams:
 
     del_multiple = 0.25
     wt_height = 0.6
+    y_shift_to_center = 0.055
 
     def __post_init__(self):
         # Can either supply outcomes as (c, s, d) tuples along with a single editing_strategy,
@@ -229,13 +230,14 @@ class StackedDiagrams:
         for x, b in zip(range(window_left, window_right + 1), seq):
             if x not in xs_to_skip:
                 self.ax.annotate(transform_seq(b),
-                                 xy=(x, y),
+                                 xy=(x, y - StackedDiagrams.y_shift_to_center),
                                  xycoords='data', 
                                  ha='center',
                                  va='center',
                                  size=self.text_size,
                                  alpha=alpha,
                                  annotation_clip=False,
+                                 fontname='DejaVu Sans',
                                 )
 
     def draw_deletions(self, y, deletions, source_name, color='black', draw_MH=True, background_color='black'):
@@ -260,13 +262,14 @@ class StackedDiagrams:
                 for x, b in zip(range(window_left, window_right + 1), self.seqs[source_name]):
                     if (starts[0] <= x < starts[-1]) or (starts[0] + deletion.length <= x < starts[-1] + deletion.length):
                         self.ax.annotate(transform_seq(b),
-                                        xy=(x, y),
-                                        xycoords='data', 
-                                        ha='center',
-                                        va='center',
-                                        size=self.text_size,
-                                        color=hits.visualize.igv_colors[transform_seq(b)],
-                                        weight='bold',
+                                         xy=(x, y),
+                                         xycoords='data', 
+                                         ha='center',
+                                         va='center',
+                                         size=self.text_size,
+                                         color=hits.visualize.igv_colors[transform_seq(b)],
+                                         weight='bold',
+                                         fontname='DejaVu Sans',
                                         )
 
                         xs_to_skip.add(x)
@@ -288,12 +291,13 @@ class StackedDiagrams:
                         if left_b == right_b:
                             for x, b in ((left_x, left_b), (right_x, right_b)):
                                 self.ax.annotate(transform_seq(b),
-                                                xy=(x, y),
-                                                xycoords='data', 
-                                                ha='center',
-                                                va='center',
-                                                size=self.text_size,
-                                                color=hits.visualize.igv_colors[b],
+                                                 xy=(x, y),
+                                                 xycoords='data', 
+                                                 ha='center',
+                                                 va='center',
+                                                 size=self.text_size,
+                                                 color=hits.visualize.igv_colors[transform_seq(b)],
+                                                 fontname='DejaVu Sans',
                                                 )
                                 xs_to_skip.add(x)
 
@@ -321,7 +325,6 @@ class StackedDiagrams:
             else:
                 flipped_sides = {'left': 'left', 'right': 'right'}
 
-            
             if del_end < window_left:
                 text[flipped_sides['left']].append(deletion)
 
@@ -400,6 +403,7 @@ class StackedDiagrams:
                                      color=hits.visualize.igv_colors[transform_seq(b)],
                                      weight='bold',
                                      annotation_clip=False,
+                                     fontname='DejaVu Sans',
                                     )
 
     def draw_duplication(self, y, duplication, source_name):
@@ -462,13 +466,13 @@ class StackedDiagrams:
                     if on_top:
                         if self.label_protospacers:
                             self.ax.annotate(guide_name,
-                                            xy=(np.mean([guide_start, guide_end]), top),
-                                            xytext=(0, 5),
-                                            textcoords='offset points',
-                                            color=PAM_color,
-                                            annotation_clip=False,
-                                            ha='center',
-                                            va='bottom',
+                                             xy=(np.mean([guide_start, guide_end]), top),
+                                             xytext=(0, 5),
+                                             textcoords='offset points',
+                                             color=PAM_color,
+                                             annotation_clip=False,
+                                             ha='center',
+                                             va='bottom',
                                             )
                     else:
                         self.draw_rect(source_name, window_left - 0.5, min(PAM_start, guide_start), bottom, top, self.block_alpha)
@@ -536,6 +540,7 @@ class StackedDiagrams:
                                      size=self.text_size,
                                      alpha=0.35,
                                      annotation_clip=False,
+                                     fontname='DejaVu Sans',
                                     )
             
                 if read_base != '-':
@@ -645,6 +650,7 @@ class StackedDiagrams:
                                  size=self.text_size,
                                  color=hits.visualize.igv_colors[b],
                                  weight='bold',
+                                 fontname='DejaVu Sans',
                                )
 
         return mismatch_xs
@@ -721,7 +727,7 @@ class StackedDiagrams:
 
                     if read_base != '_':
                         self.ax.annotate(transform_seq(read_base),
-                                         xy=(x + self.shift_x, y),
+                                         xy=(x + self.shift_x, y - StackedDiagrams.y_shift_to_center),
                                          xycoords='data', 
                                          ha='center',
                                          va='center',
@@ -730,6 +736,7 @@ class StackedDiagrams:
                                          annotation_clip=False,
                                          color=letter_color,
                                          weight=letter_weight,
+                                         fontname='DejaVu Sans',
                                         )
 
                     self.draw_rect(source_name, x - 0.5, x + 0.5, bottom, top, rect_alpha, color=rect_color)
@@ -870,12 +877,13 @@ class StackedDiagrams:
 
         for x, b in zip(PBS_xs, PBS_seq):
             self.ax.annotate(b,
-                             xy=(x, y),
+                             xy=(x, y - StackedDiagrams.y_shift_to_center),
                              xycoords='data', 
                              ha='center',
                              va='center',
                              size=self.text_size,
                              annotation_clip=False,
+                             fontname='DejaVu Sans',
                             )
 
         RTT_xs = []
@@ -951,7 +959,7 @@ class StackedDiagrams:
                     weight = 'normal'
 
                 self.ax.annotate(b_to_draw,
-                                 xy=(x, y),
+                                 xy=(x, y - StackedDiagrams.y_shift_to_center),
                                  xycoords='data', 
                                  ha='center',
                                  va='center',
@@ -959,6 +967,7 @@ class StackedDiagrams:
                                  annotation_clip=False,
                                  color=color,
                                  weight=weight,
+                                 fontname='DejaVu Sans',
                                 )
 
         if strat.pegRNA_programmed_insertion is not None:
@@ -1145,6 +1154,7 @@ class StackedDiagrams:
                                  annotation_clip=False,
                                  color=color,
                                  weight=weight,
+                                 fontname='DejaVu Sans',
                                 )
 
         #if strat.pegRNA_programmed_insertion is not None:
@@ -1374,6 +1384,8 @@ class DiagramGrid:
                  inches_per_outcome=0.25,
                  outcome_ax_width=3,
                  diagram_ax=None,
+                 title_size=12,
+                 tick_label_size=8,
                  title=None,
                  label_aliases=None,
                  cut_color=None,
@@ -1389,6 +1401,8 @@ class DiagramGrid:
         self.inches_per_nt = inches_per_nt
         self.inches_per_outcome = inches_per_outcome
         self.outcome_ax_width = outcome_ax_width
+        self.title_size = title_size
+        self.tick_label_size = tick_label_size
 
         self.fig = None
         self.title = title
@@ -1434,7 +1448,7 @@ class DiagramGrid:
 
         return self.fig
 
-    def add_ax(self, name, width_multiple=10, gap_multiple=1, title='', side='right', title_size=12):
+    def add_ax(self, name, width_multiple=10, gap_multiple=1, title='', side='right'):
         width = self.width_per_heatmap_cell * width_multiple
 
         if side == 'right':
@@ -1471,12 +1485,13 @@ class DiagramGrid:
                 xytext=(0, -20),
                 va='top',
             )
+
         else:
             ax.spines['bottom'].set_visible(False)
             ax.xaxis.set_label_position('top')
             title_kwargs = dict(
                 xy=(0.5, 1),
-                xytext=(0, 20),
+                xytext=(0, self.tick_label_size * 2),
                 va='bottom',
             )
 
@@ -1485,7 +1500,7 @@ class DiagramGrid:
                         xycoords='axes fraction',
                         textcoords='offset points',
                         ha='center',
-                        size=title_size,
+                        size=self.title_size,
                         **title_kwargs,
                        )
 
@@ -1626,14 +1641,14 @@ class DiagramGrid:
                         clip_on=plot_kwargs.get('clip_on', True),
                        )
 
-    def style_frequency_ax(self, name, label_size=8, **kwargs):
+    def style_frequency_ax(self, name, **kwargs):
         ax = self.axs_by_name.get(name)
         if ax is None:
             return
 
-        ax.tick_params(labelsize=label_size)
+        ax.tick_params(labelsize=self.tick_label_size, pad=1)
 
-    def style_log10_frequency_ax(self, name, manual_ticks=None, label_size=8, include_percentage=False):
+    def style_log10_frequency_ax(self, name, manual_ticks=None, include_percentage=False):
         # To simplify logic of excluding panels, do nothing if name is not an existing ax.
         ax = self.axs_by_name.get(name)
         if ax is None:
@@ -1663,12 +1678,12 @@ class DiagramGrid:
             x_ticks = manual_ticks
 
         ax.set_xticks(np.log10(x_ticks))
-        ax.set_xticklabels([f'{100 * x:g}' + ('%' if include_percentage else '') for x in x_ticks], size=label_size)
+        ax.set_xticklabels([f'{100 * x:g}' + ('%' if include_percentage else '') for x in x_ticks], size=self.tick_label_size)
 
         for side in ['left', 'right']:
             ax.spines[side].set_visible(False)
 
-    def style_fold_change_ax(self, name, label_size=8):
+    def style_fold_change_ax(self, name):
         # To simplify logic of excluding panels, do nothing if name is not an existing ax.
         ax = self.axs_by_name.get(name)
         if ax is None:
@@ -1679,7 +1694,7 @@ class DiagramGrid:
 
         ax.axvline(0, color='black', alpha=0.5, clip_on=False)
 
-        plt.setp(ax.get_xticklabels(), size=label_size)
+        plt.setp(ax.get_xticklabels(), size=self.tick_label_size)
 
     @property
     def width_per_heatmap_cell(self):
@@ -2390,6 +2405,8 @@ def make_partial_incorporation_figure(editing_strategy,
                                       **diagram_kwargs,
                                      ):
 
+    line_widths = diagram_kwargs.get('line_widths', 1.5)
+
     strat = editing_strategy
 
     if isinstance(outcome_fractions, pd.Series):
@@ -2576,7 +2593,7 @@ def make_partial_incorporation_figure(editing_strategy,
                                 interval_sources=interval_sources,
                                 color=color,
                                 line_alpha=line_alpha,
-                                linewidth=1.5,
+                                linewidth=line_widths,
                                 markersize=marker_size,
                                 fill=0,
                                 label=label,
@@ -2593,7 +2610,7 @@ def make_partial_incorporation_figure(editing_strategy,
                                 l2fcs[condition],
                                 color=condition_colors.get(condition, 'black'),
                                 line_alpha=line_alpha,
-                                linewidth=1.5,
+                                linewidth=line_widths,
                                 markersize=marker_size,
                                 fill=0,
                                 label=condition_labels.get(condition, condition)
