@@ -36,8 +36,8 @@ class PoolWithLoggerThread:
     and a threaded handler for logging from the Pool's processes.
     '''
     
-    def __init__(self, processes, log_dir):
-        self.logger, self.file_handler = knock_knock.utilities.configure_logging_to_file(log_dir, 'knock_knock', verbose=True)
+    def __init__(self, processes, log_dir, task_name=''):
+        self.logger, self.file_handler = knock_knock.utilities.configure_logging_to_file(log_dir, 'knock_knock', verbose=True, task_name=task_name)
         # I don't really understand multiprocessing.Queue() vs.
         # multiprocessing.Manager().Queue(), but only the latter works here.
         manager = multiprocessing.Manager()
@@ -89,13 +89,13 @@ class MockPool:
     def starmap(self, func, iterable):
         return [func(*args) for args in iterable]
 
-def get_pool(num_processes, use_logger_thread, log_dir):
+def get_pool(num_processes, use_logger_thread, log_dir, task_name=''):
     if num_processes == 1:
         pool = knock_knock.parallel.MockPool()
 
     else:
         if use_logger_thread:
-            pool = knock_knock.parallel.PoolWithLoggerThread(num_processes, log_dir)
+            pool = knock_knock.parallel.PoolWithLoggerThread(num_processes, log_dir, task_name=task_name)
         else:
             NICENESS = 3
             pool = multiprocessing.Pool(num_processes, maxtasksperchild=1, initializer=os.nice, initargs=(NICENESS,))

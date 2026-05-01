@@ -46,11 +46,14 @@ def read_and_sanitize_csv(csv_fn, index_col=None):
 
     return possibly_series
 
-def configure_logging_to_file(log_dir, name, verbose=True):
+def configure_logging_to_file(log_dir, name, verbose=True, task_name=''):
     log_dir = Path(log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    log_fn = log_dir / f'log_{datetime.datetime.now():%y%m%d-%H%M%S}.out'
+    if task_name != '':
+        task_name = f'{task_name}_'
+
+    log_fn = log_dir / f'log_{task_name}{datetime.datetime.now():%y%m%d-%H%M%S}.out'
 
     logger = logging.getLogger(name)
     logger.propagate = False
@@ -69,8 +72,8 @@ def configure_logging_to_file(log_dir, name, verbose=True):
     return logger, file_handler
 
 class FileLoggingContext:
-    def __init__(self, log_dir, name):
-        self.logger, self.file_handler = configure_logging_to_file(log_dir, name)
+    def __init__(self, *args, **kwargs):
+        self.logger, self.file_handler = configure_logging_to_file(*args, **kwargs)
 
     def __enter__(self):
         pass

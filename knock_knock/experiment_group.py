@@ -78,6 +78,7 @@ class ExperimentGroup:
         pool = knock_knock.parallel.get_pool(num_processes=num_processes,
                                              use_logger_thread=use_logger_thread,
                                              log_dir=self.results_dir,
+                                             task_name='process',
                                             )
 
         stages = [
