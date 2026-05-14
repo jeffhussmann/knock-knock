@@ -64,6 +64,14 @@ class ExperimentGroup:
         for identifier in self.filtered_experiment_ids(filters):
             yield self.experiment(identifier)
 
+    @memoized_property
+    def outcome_counts_store_filters(self):
+        filters = {
+            'all': None
+        }
+
+        return filters
+
     @property
     def experiments(self):
         for identifier in self.all_experiment_ids:
@@ -117,14 +125,16 @@ class ExperimentGroup:
         ]
 
         with pool:
+            logger.info(f'Starting {self.identifier}')
+
             pool.starmap(process_experiment, args)
 
-        self.postprocess(generate_summary_figures=generate_summary_figures)
+            logger.info(f'Finished!')
 
     def postprocess(self, **kwargs):
-        self.make_outcome_counts()
+        self.make_outcome_counts_store()
 
-    def make_outcome_counts(self, level='details'):
+    def make_outcome_counts_sparse(self, level='details', filters=None):
         # There can be long tails of outcome details observed only one time
         # (e.g. a specific pattern of sequencing errors) that can make it
         # slow to rely on pandas to merge outcome indexes.
@@ -135,7 +145,7 @@ class ExperimentGroup:
         all_counts = {}
 
         description = 'Loading outcome counts'
-        experiments = self.progress(self.experiments, desc=description)
+        experiments = self.progress(self.filtered_experiments(filters), desc=description)
         for exp in experiments:
             counts = exp.outcome_counts(level=level, only_relevant=False)
             if counts is not None:
@@ -180,39 +190,76 @@ class ExperimentGroup:
                                 var=var,
                                )
 
-        adata.write_h5ad(self.fns['outcome_counts'])
-                                
-    @memoized_property
-    def outcome_counts_df(self):
-        fn = self.fns['outcome_counts']
+        adata.write_h5ad(self.fns['outcome_counts_sparse'])
+
+    def make_outcome_counts_store(self):
+        logger.info('Aggregating outcome counts')
+
+        empty_index = pd.MultiIndex.from_tuples([], names=['category', 'subcategory', 'details'])
+
+        with pd.HDFStore(self.fns['outcome_counts_store'], mode='w') as store:
+            for filter_i, (filter_name, filters) in enumerate(self.outcome_counts_store_filters.items()):
+                logger.info(f'Aggregating filter {filter_i}')
+
+                counts = {}
+                
+                for exp in self.filtered_experiments(filters):
+                    exp_counts = exp.outcome_counts()
+                    if exp_counts is None:
+                        # Should this just be what outcome_counts returns when empty?
+                        exp_counts = pd.Series(index=empty_index, dtype=int)
+
+                    counts[exp.identifier.specific_fields] = exp_counts
+                        
+                counts = pd.concat(counts, axis=1, names=self.Experiment.Identifier.specific_field_names()).fillna(0).astype(int)
+
+                store[filter_name] = counts
+
+    @memoized_with_args
+    def outcome_counts_store(self, filter_name):
+        # None if fn doesn't exist or filter_name isn't in store.
+        counts = None
+
+        fn = self.fns['outcome_counts_store']
 
         if fn.exists():
-            adata = anndata.read_h5ad(self.fns['outcome_counts'])
-            df = knock_knock.utilities.adata_to_df(adata)
-        else:
-            df = None
+            with pd.HDFStore(self.fns['outcome_counts_store'], 'r') as store:
+                if filter_name in store:
+                    counts = store[filter_name]
 
-        return df
+        return counts
 
     @memoized_with_kwargs
     def outcome_counts(self, *, level='details', only_relevant=True):
-        outcome_counts = self.outcome_counts_df
+        outcome_counts = []
 
-        if outcome_counts is not None:
+        for filter_name in self.outcome_counts_store_filters:
+            if (filter_counts := self.outcome_counts_store(filter_name)) is not None:
+                if level == 'details':
+                    pass
+                else:
+                    if level == 'category':
+                        keys = ['category']
+                    elif level == 'subcategory':
+                        keys = ['category', 'subcategory']
+                    else:
+                        raise ValueError
+
+                    filter_counts = filter_counts.groupby(keys, observed=True).sum()
+
+                outcome_counts.append(filter_counts)
+
+        if len(outcome_counts) == 0:
+            outcome_counts = None
+        else:
+            outcome_counts = pd.concat(outcome_counts, axis=1).fillna(0).astype(int)
+
             if only_relevant:
                 # See comment in Experiment.outcome_counts
                 outcome_counts = outcome_counts.drop(self.categorizer.non_relevant_categories, errors='ignore')
 
             # Sort columns to avoid annoying pandas PerformanceWarnings.
             outcome_counts.sort_index(axis='columns', inplace=True)
-
-            if level == 'details':
-                pass
-            else:
-                keys = ['category', 'subcategory', 'details']
-                keys = keys[:keys.index(level) + 1]
-
-                outcome_counts = outcome_counts.groupby(keys, observed=True).sum()
 
         return outcome_counts
 
