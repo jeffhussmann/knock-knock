@@ -25,7 +25,7 @@ import knock_knock.integrases
 from knock_knock.effector import effectors
 from knock_knock.outcome import DegenerateDeletion, DegenerateInsertion
 
-from hits.utilities import memoized_property, memoized_with_args
+from hits.utilities import memoized_property, memoized_with_args, memoized_with_kwargs
 
 logger = logging.getLogger(__name__)
 
