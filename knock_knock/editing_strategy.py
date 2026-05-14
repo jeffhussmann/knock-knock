@@ -196,7 +196,7 @@ class EditingStrategy:
             if len(self.pegRNA_names) > 0:
                 primary_protospacer = knock_knock.pegRNAs.protospacer_name(self.pegRNA_names[0])
             else:
-                primary_protospacer = self.protospacer_names[0]
+                primary_protospacer = sorted(self.protospacer_features)[0]
 
         return primary_protospacer
 
