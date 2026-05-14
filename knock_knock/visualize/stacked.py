@@ -2096,6 +2096,8 @@ def make_deletion_boundaries_figure(editing_strategy,
                                     window=None,
                                     sort_by_condition=None,
                                     perform_marginalization_over_mismatches_outside_window=True,
+                                    perform_marginalization_over_all_mismatches=False,
+                                    manual_outcomes=None,
                                     **kwargs,
                                    ):
     strat = editing_strategy
@@ -2202,13 +2204,20 @@ def make_deletion_boundaries_figure(editing_strategy,
 
     outcome_fractions = pd.concat(to_concat)
 
+    if perform_marginalization_over_all_mismatches:
+        outcome_fractions = marginalize_over_mismatches_outside_window(outcome_fractions, hits.interval.Interval.empty())
+
     if perform_marginalization_over_mismatches_outside_window:
         outcome_fractions = marginalize_over_mismatches_outside_window(outcome_fractions, window_interval)
-        
-    outcomes = [
-        (c, s, d) for (c, s, d), f_row in outcome_fractions.iterrows()
-        if max(f_row) > frequency_cutoff
-    ]
+
+    if manual_outcomes is not None:
+        outcomes = manual_outcomes
+
+    else:
+        outcomes = [
+            (c, s, d) for (c, s, d), f_row in outcome_fractions.iterrows()
+            if max(f_row) > frequency_cutoff
+        ]
 
     if sort_by_condition is not None:
         outcomes = outcome_fractions.loc[outcomes][sort_by_condition].sort_values(ascending=False).index
@@ -2325,23 +2334,8 @@ def restrict_mismatches_to_window(csd, window_interval):
 
     details = knock_knock.outcome.Details.from_string(d)
     
-    if (c, s) in {
-        ('wild type', 'mismatches'),
-        ('deletion', 'mismatches'),
-        ('insertion', 'mismatches'),
-        ('intended edit', 'substitution'),
-        ('intended edit', 'insertion'),
-        ('intended edit', 'deletion'),
-        ('intended edit', 'replacement'),
-        ('intended edit', 'combination'),
-        ('partial edit', 'partial incorporation'),
-    }:
-
-        mismatches = details['mismatches']
+    mismatches = details['mismatches']
         
-    else:
-        return c, s, d
-    
     mismatches_in_window = knock_knock.outcome.Mismatches([m for m in mismatches if m.position in window_interval])
 
     details.mismatches = mismatches_in_window
