@@ -63,11 +63,13 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
                     if not fn.exists():
                         pass
 
-        self.UMI_key = self.description.get('UMI_key')
-
         self.trim_to_max_length = self.description.get('trim_to_max_length')
         if self.trim_to_max_length is not None:
             self.trim_to_max_length = int(self.trim_to_max_length)
+
+    @property
+    def UMI_key(self):
+        return self.description.get('UMI_key')
 
     @property
     def paired_end(self):
@@ -655,6 +657,10 @@ class CommonSequencesExperiment(IlluminaExperiment):
         self.experiment = experiment
 
         super().__init__(experiment.identifier)
+
+    @property
+    def UMI_key(self):
+        return None
 
     @property
     def paired_end(self):

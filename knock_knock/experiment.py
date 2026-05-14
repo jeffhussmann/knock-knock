@@ -200,6 +200,10 @@ class Experiment:
     def experiment_type(self):
         return self.description.get('experiment_type', 'HDR')
 
+    @property
+    def UMI_key(self):
+        return self.description.get('UMI_key')
+
     @memoized_property
     def categorizer(self):
         return knock_knock.architecture.experiment_type_to_categorizer(self.experiment_type)
@@ -759,7 +763,7 @@ class Experiment:
                 if read.qname != name:
                     raise ValueError('iters out of sync')
 
-                if 'UMI_key' in self.description:
+                if self.UMI_key is not None:
                     UMI_annotation = UMIAnnotation.from_identifier(name)
                     UMI_seq = UMI_annotation['UMI_seq']
                     UMI_qual = UMI_annotation['UMI_qual']
