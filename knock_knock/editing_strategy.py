@@ -2028,13 +2028,27 @@ class EditingStrategy:
 
         return name_to_description
 
-    @memoized_property
-    def intended_edit_sequence(self):
+    @memoized_with_kwargs
+    def intended_edit_sequence(self, *, only_downstream_substitution=False):
         if len(self.pegRNAs) == 1:
             # Edit replaces target from start of PBS to end of HA_RT with pegRNA from start of PBS to end of RTT
 
             pegRNA_seq = self.reference_sequences[self.pegRNA.name]
-            pegRNA_slice = slice(self.features[self.pegRNA.name, self.pegRNA.HA_RT_name].start, self.features[self.pegRNA.name, self.pegRNA.HA_PBS_name].end + 1)
+            pegRNA_start = self.features[self.pegRNA.name, self.pegRNA.HA_RT_name].start
+            pegRNA_end = self.features[self.pegRNA.name, self.pegRNA.HA_PBS_name].end + 1
+            pegRNA_slice = slice(pegRNA_start, pegRNA_end)
+
+            if only_downstream_substitution:
+                subs = self.pegRNA_substitutions[self.pegRNA.name]
+
+                if len(subs) != 2:
+                    raise ValueError
+
+                # Revert the upstream substitution.
+                upstream_sub = max(subs.values(), key=lambda d: d['position'])
+                pegRNA_seq = list(pegRNA_seq)
+                pegRNA_seq[upstream_sub['position']] = upstream_sub['alternative_base']
+                pegRNA_seq = ''.join(pegRNA_seq)
 
             from_pegRNA = utilities.reverse_complement(pegRNA_seq[pegRNA_slice])
 
