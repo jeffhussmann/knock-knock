@@ -143,20 +143,7 @@ class Effector:
             for ref_name, strand, position in matches:
                 if self.protospacer_has_PAM(protospacer_prefix, position, strand, genome[ref_name]):
                 
-                    al = pysam.AlignedSegment(header)
-                    
-                    al.query_name = name
-                    al.reference_name = ref_name
-                    al.reference_start = position
-                    al.is_reverse = (strand == '-')
-                    
-                    possibly_RCed_seq = protospacer_prefix
-                    if al.is_reverse:
-                        possibly_RCed_seq = utilities.reverse_complement(protospacer_prefix)
-                    
-                    al.query_sequence = possibly_RCed_seq
-                    al.query_qualities = [41] * len(possibly_RCed_seq)
-                    al.cigar = [(sam.BAM_CMATCH, len(possibly_RCed_seq))]
+                    al = sam.perfectly_matching_AlignedSegment(header, ref_name, position, strand, protospacer_prefix, name=name)
                     
                     valid_matches.append(al)
 
@@ -167,8 +154,8 @@ class Effector:
         if len(valid_matches) == 0:
             valid_matches = align(protospacer[1:])
 
-            if len(valid_matches) == 0:
-                raise ValueError(f'No valid locations for protospacer {protospacer}')
+        if len(valid_matches) == 0:
+            raise ValueError(f'No valid locations for protospacer {protospacer}')
 
         return valid_matches
 
