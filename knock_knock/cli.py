@@ -10,6 +10,7 @@ import yaml
 import tqdm
 
 import knock_knock
+import knock_knock.build_strategies
 import knock_knock.utilities
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,7 @@ def parallel(args):
     pool = knock_knock.parallel.get_pool(num_processes=args.max_procs,
                                          use_logger_thread=args.use_logger_thread,
                                          log_dir=args.base_dir,
+                                         task_name='parallel',
                                         )
 
     stages = args.stages.split(',')
@@ -126,22 +128,16 @@ def make_tables(args):
                                                      )
 
 def build_strategies(args):
-    import knock_knock.build_strategies
-
-    knock_knock.utilities.configure_logging_to_file(args.base_dir, 'knock_knock')
+    knock_knock.utilities.configure_logging_to_file(args.base_dir, 'knock_knock', task_name='build_strategies')
 
     knock_knock.build_strategies.build_strategies(args.base_dir, args.batch_name)
 
 def download_genome(args):
-    import knock_knock.build_strategies
-
     knock_knock.build_strategies.download_genome(args.base_dir,
                                                  args.genome_name,
                                                 )
 
 def build_indices(args):
-    import knock_knock.build_strategies
-
     knock_knock.build_strategies.build_indices(args.base_dir,
                                                args.genome_name,
                                                args.num_threads

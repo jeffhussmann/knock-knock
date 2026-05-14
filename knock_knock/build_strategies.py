@@ -495,7 +495,7 @@ def build_strategies(base_dir, batch_name, ignore_existing=False):
 
     mandatory_columns = {
         'genome',
-        'amplicon_primers',
+        'primers',
         'sgRNAs',
     }
 
@@ -523,12 +523,16 @@ def build_strategies(base_dir, batch_name, ignore_existing=False):
             builder = EditingStrategyBuilder(base_dir,
                                              editing_strategy_name,
                                              row['genome'],
-                                             row['amplicon_primers'],
+                                             row['primers'],
                                              row['sgRNAs'],
                                              genomes=genomes,
                                             )
 
             builder.build()
+
+            logger.info(f'Finished with {editing_strategy_name}')
+
+    logger.info(f'Finished!')
 
 def download_genome(base_dir, genome_name):
     urls = {
