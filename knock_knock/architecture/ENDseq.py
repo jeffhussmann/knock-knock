@@ -25,6 +25,10 @@ class Architecture(prime_editing.Architecture):
              'unknown editing status'
             ),
         ),
+        ('indel',
+            ('n/a',
+            ),
+        ),
         ('nonspecific amplification',
             ('hg38',
              'mm10',
@@ -70,31 +74,131 @@ class Architecture(prime_editing.Architecture):
 
         return target_nts_past_primer
 
-    @memoized_with_args
-    def minimal_cover_by_side(self, side):
-        covered = self.extension_chains()['prime_editing'][side].query_covered_incremental
+    def get_target_edge(self, al):
+        strat = self.editing_strategy
 
-        minimal_cover = None
+        target_PBS_name = strat.PBS_names_by_side_of_read[self.pegRNA_side]
+        target_PBS = strat.features[strat.target, target_PBS_name]
 
-        for key in ['first target',
-                    'pegRNA',
-                    'first pegRNA',
-                    'second target',
-                   ]:
+        ref_p = hits.sam.reference_edges(al)['right']
+
+        if target_PBS.strand == '+':
+            edge = ref_p - target_PBS.end
+        else:
+            # TODO: confirm that there are no off-by-one errors here.
+            edge = (target_PBS.start - 1) - ref_p
+
+        return edge
+
+    def get_pegRNA_edge(self, al):
+        strat = self.editing_strategy
+        pegRNA_name = strat.pegRNA_names[0]
+
+        # PBS feature is always in reverse orientation, so start is last base
+        # before reverse transcription.
+        PBS_start = strat.features[pegRNA_name, 'PBS'].start
+
+        # 0 is first reverse transcribed nt.
+        edge = (PBS_start - 1) - al.reference_start
+
+        return edge
+
+    @memoized_property
+    def read_is_covered(self):
+        chains = self.reconciled_extension_chains()['prime_editing']
+        covered = chains['left'].query_covered | chains['right'].query_covered
+        uncovered = self.between_primers - covered
+        return uncovered.is_empty
+
+    def register_covered(self):
+        chains = self.reconciled_extension_chains()['prime_editing']
+
+        details_fields = {
+            'mismatches': self.non_pegRNA_mismatches,
+        }
+
+        if chains['left'].query_covered == chains['right'].query_covered:
+            if chains['left'].description == "not RT'ed":
+                self.category = 'targeted genomic sequence'
+
+                if chains['right'].description == "not RT'ed":
+                    self.subcategory = 'unedited'
+                elif chains['right'].description == "RT'ed":
+                    # Edge case here when left edge of read falls in the PBS.
+                    self.subcategory = 'edited'
+                else:
+                    self.category = 'uncategorized'
+                    self.subcategory = 'uncategorized'
+
+                details_fields['target_edge'] = self.get_target_edge(chains['left'].alignments['first target'])
+
+            elif chains['left'].description == "RT'ed":
+                if self.pegRNA_side == 'left':
+                    self.category = 'RTed sequence'
+                    self.subcategory = 'n/a'
+                    details_fields['pegRNA_edge'] = self.get_pegRNA_edge(chains['left'].alignments['pegRNA'])
+                else:
+                    self.category = 'targeted genomic sequence'
+                    self.subcategory = 'edited'
+                    details_fields['target_edge'] = self.get_target_edge(chains['right'].alignments['second target'])
+
+            elif chains['left'].description == "RT'ed + annealing-extended":
+                self.category = 'targeted genomic sequence'
+                self.subcategory = 'edited'
+                details_fields['target_edge'] = self.get_target_edge(chains['left'].alignments['second target'])
+
+            else:
+                self.category = 'uncategorized'
+                self.subcategory = 'uncategorized'
+
+        elif chains['right'].description == 'not seen':
+            if chains['left'].description == "not RT'ed":
+                self.category = 'targeted genomic sequence'
+                self.subcategory = 'unedited'
+                details_fields['target_edge'] = self.get_target_edge(chains['left'].alignments['first target'])
+
+            elif chains['left'].description == "RT'ed":
+                if self.pegRNA_side == 'left':
+                    self.category = 'RTed sequence'
+                    self.subcategory = 'n/a'
+                    details_fields['pegRNA_edge'] = self.get_pegRNA_edge(chains['left'].alignments['pegRNA'])
+                else:
+                    self.category = 'targeted genomic sequence'
+                    self.subcategory = 'edited'
+                    details_fields['target_edge'] = self.get_target_edge(chains['left'].alignments['first target'])
+
+            else:
+                self.category = 'uncategorized'
+                self.subcategory = 'uncategorized'
+
+        elif chains['left'].description == 'not seen':
+            self.category = 'targeted genomic sequence'
+
+            details_fields['target_edge'] = self.get_target_edge(chains['right'].alignments['first target'])
+
+            if chains['right'].description == "not RT'ed":
+                self.subcategory = 'unedited'
+            elif chains['right'].description == "RT'ed":
+                self.subcategory = 'edited'
+            else:
+                self.category = 'uncategorized'
+                self.subcategory = 'uncategorized'
             
-            if (key in covered) and (self.between_primers - covered[key]).is_empty:
-                minimal_cover = key
-                break
+        else:
+            self.register_indel()
 
-        return minimal_cover
-                                                                 
+        self.relevant_alignments = self.extension_chain_alignments['prime_editing']
+        self.details = Details(**details_fields)
+
+    def register_indel(self):
+        self.category = 'indel'
+        self.subcategory = 'n/a'
+
+        self.relevant_alignments = self.extension_chain_alignments['prime_editing']
+
     @memoized_property
     def manual_anchors(self):
         return {self.editing_strategy.target: self.target_flanking_alignments_list}
-
-    @memoized_property
-    def minimal_cover(self):
-        return self.minimal_cover_by_side('left')
 
     def categorize(self):
         if self.nonspecific_amplification:
@@ -106,29 +210,8 @@ class Architecture(prime_editing.Architecture):
 
             self.relevant_alignments = [self.longest_phiX_alignment]
 
-        elif self.minimal_cover is not None:
-            if self.minimal_cover == 'first target':
-                self.category = 'targeted genomic sequence'
-                self.subcategory = 'unedited'
-                edge = hits.sam.reference_edges(self.extension_chains()['prime_editing']['left'].alignments['first target'])['right']
-                self.details = Details(target_edge=edge, mismatches=self.non_pegRNA_mismatches)
-
-            elif self.minimal_cover in ['pegRNA', 'first pegRNA']:
-                self.category = 'RTed sequence'
-                self.subcategory = 'n/a'
-                edge = self.extension_chain_edges['left']
-                self.details = Details(pegRNA_edge=edge, mismatches=self.non_pegRNA_mismatches)
-
-            elif self.minimal_cover == 'second target':
-                self.category = 'targeted genomic sequence'
-                self.subcategory = 'edited'
-                edge = hits.sam.reference_edges(self.extension_chains()['prime_editing']['left'].alignments['second target'])['right']
-                self.details = Details(target_edge=edge, mismatches=self.non_pegRNA_mismatches)
-            
-            else:
-                raise ValueError
-
-            self.relevant_alignments = self.extension_chain_alignments['prime_editing']
+        elif self.read_is_covered:
+            self.register_covered()
 
         elif self.query_length_covered_by_on_target_alignments <= 30:
             self.register_minimal_alignments_detected()

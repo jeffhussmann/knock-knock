@@ -1,4 +1,4 @@
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 
 import bokeh.palettes
 
@@ -16,33 +16,6 @@ top_color = '#FF00FF'
 bottom_color = '#00FF00'
 
 def round_1_condition_to_color(condition):
-    if condition['in_vitro_Cas9_sgRNA'] == 'none':
-        palette = bokeh.palettes.Category20b_20
-
-        if condition['time_point'] == '02':
-            color = palette[0 + 1]
-        elif condition['time_point'] == '06':
-            color = palette[12 + 1]
-        elif condition['time_point'] == '12':
-            color = palette[4 + 1]
-        else:
-            color = 'black'
-
-    else:
-        palette = bokeh.palettes.Category20c_20
-
-        if condition['time_point'] == '02':
-            color = palette[0]
-        elif condition['time_point'] == '06':
-            color = palette[4]
-        elif condition['time_point'] == '12':
-            color = palette[8]
-        else:
-            color = 'black'
-
-    return color
-
-def round_2_condition_to_color(condition):
     palette = bokeh.palettes.Dark2_8
 
     if condition['time_point'] == 'T1 (4h post nucleofection)' and condition['cell_line'] == 'Parental RPE1':
@@ -58,17 +31,40 @@ def round_2_condition_to_color(condition):
 
     return color
 
+def round_2_condition_to_color(condition):
+    palette = bokeh.palettes.Dark2_8
+
+    if condition['arrest_status'] == 'Nonarrested':
+        color = palette[0]
+    elif condition['arrest_status'] == 'Nonswapped':
+        color = palette[2]
+    elif condition['arrest_status'] == 'Swapped':
+        color = palette[1]
+    else:
+        color = 'black'
+
+    return color
+
 def round_3_condition_to_color(condition):
     palette = bokeh.palettes.Category20b_20
 
-    start = {'WT': 19, 'MLH1 KO': 7, 'MLH1_KO': 7}[condition['cell_line']]
-
-    offset = {'00': 0, '06': -1, '12': -2, '72': -3, '': None}[condition['time_point']]
-
-    if offset is None:
-        color = 'black'
+    if condition['cell_line'] == 'MLH1ko':
+        index = 3
+    elif condition['cell_line'] == 'parental':
+        index = 7
     else:
-        color = palette[start + offset]
+        raise ValueError
+
+    if condition['time_point'] == '-PE':
+        offset = 0
+    elif condition['time_point'] == '05h':
+        offset = -1
+    elif condition['time_point'] == '10h':
+        offset = -3
+    else:
+        raise ValueError
+
+    color = palette[index + offset]
 
     return color
 
@@ -89,6 +85,7 @@ class StrandsGrid:
         sgRNAs = [
             'oWY407',
             'oWY408',
+            'oWY427',
         ]
 
         if pegRNA_name is None:
@@ -175,6 +172,7 @@ class StrandsGrid:
         sgRNA_info = [
             (self.anchor_sgRNA_name, 'pegRNA', 'tab:red'),
             ('oWY408', 'oWY408', bottom_color),
+            ('oWY427', 'oWY427', bottom_color),
             ('oWY407', 'oWY407', top_color),
         ]
 
@@ -379,8 +377,8 @@ class StrandsGrid:
         if self.pegRNA_name is not None:
             self.axs['pegRNA'].set_ylabel('% of top strand reads,\nRT\'ed flap', size=12)
 
-    def add_legend(self, ax_name='top'):
-        self.axs[ax_name].legend(markerscale=2)
+    def add_legend(self, ax_name='top', **kwargs):
+        self.axs[ax_name].legend(markerscale=2, **kwargs)
 
     def plot_fractions(self,
                        data,
@@ -389,6 +387,7 @@ class StrandsGrid:
                        condition_keys_to_label=('cell_line', 'time_point', 'is_unedited'),
                        condition_filter=None,
                        condition_to_z_order=None,
+                       clip_on=True,
                       ):
 
         if condition_to_z_order is None:
@@ -433,7 +432,14 @@ class StrandsGrid:
                 else:
                     to_plot = nonzero_ps
 
-                ax.plot(to_plot, 'o', color=color, markersize=3, clip_on=True, label=label, zorder=z_order)
+                ax.plot(to_plot,
+                        'o',
+                        color=color,
+                        markersize=5,
+                        clip_on=clip_on,
+                        label=label,
+                        zorder=z_order,
+                       )
 
                 if len(nonzero_ps) > 0:
                     all_xs = np.arange(min(nonzero_ps.index), max(nonzero_ps.index) + 1)
@@ -449,22 +455,37 @@ class StrandsGrid:
                     else:
                         to_plot = all_ys
 
-                    ax.plot(all_xs, to_plot, '-', color=color, alpha=0.5, linewidth=1.5, clip_on=True, zorder=z_order)
+                    ax.plot(all_xs,
+                            to_plot,
+                            '-', 
+                            color=color,
+                            alpha=0.5,
+                            linewidth=2.5,
+                            clip_on=clip_on,
+                            zorder=z_order,
+                           )
 
-def load_group_denominator(group):
-    denominator = group.outcome_counts(level='category').reindex(['RTed sequence', 'targeted genomic sequence'], fill_value=0).sum()
-    return denominator
+def load_exp_counts(exp, key=('targeted genomic sequence', 'unedited'), collapse_UMIs=False):
+    if collapse_UMIs:
+        UMI_counts = Counter((outcome.category, outcome.subcategory, str(outcome.details), outcome.UMI_seq) for outcome in exp.outcome_iter())
+        UMI_counts = pd.Series(UMI_counts).sort_values(ascending=False)
+        UMI_counts.index.names = ['category', 'subcategory', 'details', 'UMI']
+        counts = UMI_counts
+    else:
+        counts = exp.outcome_counts()
 
-def load_exp_counts(exp, key=('targeted genomic sequence', 'unedited')):
-    strat = exp.editing_strategy
+    counts = counts.sort_index()
 
-    if key not in exp.outcome_counts().index:
+    if key not in counts.index:
         return None
         
-    counts = exp.outcome_counts().sort_index().loc[key]
+    counts = counts.loc[key]
     
     if counts.index.nlevels > 1:
-        counts = counts.groupby(level='details').sum()
+        if collapse_UMIs:
+            counts = counts.groupby(level='details').size()
+        else:
+            counts = counts.groupby(level='details').sum()
 
     if key[0] == 'targeted genomic sequence':
         details_key = 'target_edge'
@@ -477,73 +498,11 @@ def load_exp_counts(exp, key=('targeted genomic sequence', 'unedited')):
 
     just_edges_counts = counts.groupby(level=0).sum()
     
-    if key[0] == 'RTed sequence':
-        offset = -len(exp.editing_strategy.pegRNA.components['PBS']) + 1
+    if collapse_UMIs:
+        denominator = UMI_counts.groupby(level='category').size().reindex(['targeted genomic sequence', 'RTed sequence'], fill_value=0).sum()
     else:
-        offset = -strat.cut_afters[f'{strat.pegRNA.name}_protospacer_+']
-    
-    just_edges_counts.index = just_edges_counts.index + offset
+        denominator = exp.outcome_counts(level='category').reindex(['targeted genomic sequence', 'RTed sequence'], fill_value=0).sum()
 
-    just_edges_percentages = just_edges_counts / exp.outcome_counts().sum() * 100
+    just_edges_percentages = just_edges_counts / denominator * 100
     
     return just_edges_percentages
-
-def load_all_data(batch, genome='hg38', key=('targeted genomic sequence', 'unedited'), min_reads=1000):
-    genome_and_sgRNAs = set()
-
-    for _, row in batch.group_descriptions.iterrows():
-        sgRNAs = row['sgRNAs']
-        if sgRNAs is None:
-            sgRNAs = ''
-        sgRNAs = sgRNAs.replace(';', '+')
-        
-        genome = row['genome']
-        
-        genome_and_sgRNAs.add((genome, sgRNAs))
-    
-    top_primer = 'oWY388'
-    bottom_primer = 'oWY390'
-    
-    data = {}
-
-    pegRNA_names = set()
-    
-    for genome, sgRNAs in genome_and_sgRNAs:
-        gn_suffix = sgRNAs
-        group_data = {}
-        
-        top_group = batch.groups[f'{top_primer}_{genome}_{gn_suffix}_']
-        top_counts = load_group_counts(top_group, key=key)
-        top_denominator = load_group_denominator(top_group)
-        
-        if top_counts is not None:
-            top_percentages = top_counts / top_denominator * 100
-            group_data['top'] = top_percentages[top_denominator[top_denominator > min_reads].index]
-
-        bottom_group = batch.groups[f'{bottom_primer}_{genome}_{gn_suffix}_']
-        bottom_counts = load_group_counts(bottom_group, key=key)
-        bottom_denominator = load_group_denominator(bottom_group)
-        
-        if bottom_counts is not None:
-            bottom_percentages = bottom_counts / bottom_denominator * 100
-            group_data['bottom'] = bottom_percentages[bottom_denominator[bottom_denominator > min_reads].index]
-
-        if top_group.editing_strategy.pegRNA is not None:
-            pegRNA_counts = load_group_counts(top_group, key=('RTed sequence', 'n/a'))
-            group_data[top_group.editing_strategy.pegRNA.name] = pegRNA_counts / top_denominator * 100
-
-            pegRNA_names.add(top_group.editing_strategy.pegRNA.name)
-            
-        data[gn_suffix] = group_data
-
-    all_data = {}
-
-    for strand in ['top', 'bottom']:
-        flipped = {gn_suffix: data[gn_suffix][strand] for gn_suffix in data if strand in data[gn_suffix]}
-        if len(flipped) > 0:
-            all_data[strand] = pd.concat({gn_suffix: data[gn_suffix][strand] for gn_suffix in data if strand in data[gn_suffix]}, axis=1, names=['group']).fillna(0).sort_index()
-
-    for pegRNA_name in pegRNA_names:
-        all_data[pegRNA_name] = pd.concat({gn_suffix: data[gn_suffix][pegRNA_name] for gn_suffix in data if pegRNA_name in data[gn_suffix]}, axis=1, names=['group']).fillna(0).sort_index()
-    
-    return all_data
