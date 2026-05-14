@@ -669,6 +669,8 @@ class Experiment:
 
                 counts = counts.groupby(keys).sum()
 
+            counts.name = self.identifier.summary
+
         except (FileNotFoundError, pd.errors.EmptyDataError):
             counts = None
 
@@ -677,6 +679,7 @@ class Experiment:
     @memoized_with_kwargs
     def outcome_fractions(self, *, level='details', only_relevant=True):
         counts = self.outcome_counts(level=level, only_relevant=only_relevant)
+
         if counts is None:
             fractions = None
         else:
