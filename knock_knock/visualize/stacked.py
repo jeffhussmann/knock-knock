@@ -1178,13 +1178,20 @@ class StackedDiagrams:
                 background_color = 'black'
                 
             if (category == 'deletion') or \
-               (category == 'multiple indels' and subcategory == 'multiple indels') or \
+               (category == 'insertion') or \
                (category == 'simple indel' and subcategory.startswith('deletion')) or \
+               (category == 'simple indel' and subcategory.startswith('insertion')) or \
+               (category == 'multiple indels' and subcategory == 'multiple indels') or \
                (category == 'wild type' and subcategory == 'short indel far from cut'):
 
                 deletions = [strat.expand_degenerate_indel(deletion) for deletion in details['deletions']]
 
                 xs_to_skip = self.draw_deletions(y, deletions, source_name, background_color=background_color)
+
+                insertions = [strat.expand_degenerate_indel(insertion) for insertion in details['insertions']]
+
+                for insertion in insertions:
+                    self.draw_insertion(y, insertion, source_name)
 
                 mismatch_xs = self.draw_non_programmed_mismatches(y, details['mismatches'], source_name)
 
@@ -1193,25 +1200,6 @@ class StackedDiagrams:
                 if self.draw_all_sequence:
                     self.draw_sequence(y, source_name, xs_to_skip, alpha=self.sequence_alpha)
             
-            elif category == 'insertion' or (category == 'simple indel' and subcategory.startswith('insertion')):
-                insertion = details['insertions'][0]
-                insertion = strat.expand_degenerate_indel(insertion)
-
-                self.draw_rect(source_name, window_left - 0.5, window_right + 0.5, bottom, top, self.block_alpha, color=background_color)
-                self.draw_insertion(y, insertion, source_name)
-
-                mismatch_xs = self.draw_non_programmed_mismatches(y, details['mismatches'], source_name)
-
-                if self.draw_all_sequence:
-                    self.draw_sequence(y, source_name, mismatch_xs, alpha=self.sequence_alpha)
-
-            elif category == 'insertion with deletion':
-                outcome = InsertionWithDeletionOutcome.from_string(details).undo_anchor_shift(strat.anchor)
-                insertion = outcome.insertion_outcome.insertion
-                deletion = outcome.deletion_outcome.deletion
-                self.draw_insertion(y, insertion, source_name)
-                self.draw_deletions(y, [deletion], source_name, background_color=background_color)
-                    
             elif category == 'mismatches' or (category == 'wild type' and subcategory == 'mismatches'):
                 self.draw_rect(source_name, window_left - 0.5, window_right + 0.5, bottom, top, self.block_alpha)
 
