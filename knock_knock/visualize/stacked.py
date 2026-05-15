@@ -643,7 +643,7 @@ class StackedDiagrams:
             if window_left <= x <= window_right:
                 b = transform_seq(mismatch.basecall).upper()
                 self.ax.annotate(b,
-                                 xy=(x, y),
+                                 xy=(x, y - StackedDiagrams.y_shift_to_center),
                                  xycoords='data', 
                                  ha='center',
                                  va='center',
