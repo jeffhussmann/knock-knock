@@ -1710,6 +1710,7 @@ class EditingStrategy:
     @memoized_property
     def nick_offset(self):
         nicking_sgRNAs = [n for n in self.protospacer_names if n != self.primary_protospacer]
+
         if len(nicking_sgRNAs) == 1:
             nicking_sgRNA = nicking_sgRNAs[0]
 
@@ -2211,9 +2212,10 @@ def load_all_genbank_records(dir_to_search):
         warnings.filterwarnings('ignore', category=BiopythonWarning)
 
         for genbank_fn in genbank_fns:
-            for record in Bio.SeqIO.parse(genbank_fn, 'gb'):
-                genbank_records.append(record)
+            with open(genbank_fn) as genbank_fh:
+                for record in Bio.SeqIO.parse(genbank_fh, 'gb'):
+                    genbank_records.append(record)
 
-                name_to_fn[record.name] = genbank_fn
+                    name_to_fn[record.name] = genbank_fn
 
     return genbank_records, name_to_fn
