@@ -1,5 +1,7 @@
 import logging
 
+from collections import defaultdict
+
 import anndata
 import pandas as pd
 import scipy.sparse
@@ -52,26 +54,6 @@ class ExperimentGroup:
         identifier = self.experiment_identifier_from_fields(**fields)
         return self.experiment(identifier)
 
-    def filtered_experiment_ids(self, filters=None):
-        if filters is None:
-            filters = {}
-
-        for identifier in self.all_experiment_ids:
-            if identifier.passes_filters(filters):
-                yield identifier
-
-    def filtered_experiments(self, filters=None):
-        for identifier in self.filtered_experiment_ids(filters):
-            yield self.experiment(identifier)
-
-    @memoized_property
-    def outcome_counts_store_filters(self):
-        filters = {
-            'all': None
-        }
-
-        return filters
-
     @property
     def experiments(self):
         for identifier in self.all_experiment_ids:
@@ -80,6 +62,16 @@ class ExperimentGroup:
     @memoized_property
     def first_experiment(self):
         return next(self.experiments)
+
+    @memoized_property
+    def experiment_partitions(self):
+        experiment_partitions = {}
+
+        for name, fields_list in self.experiment_id_fields_partitions.items():
+            exps = [self.experiment_from_identifier_fields(**fields) for fields in fields_list]
+            experiment_partitions[name] = exps
+
+        return experiment_partitions
 
     @property
     def categorizer(self):
@@ -195,78 +187,99 @@ class ExperimentGroup:
     def make_outcome_counts_store(self):
         logger.info('Aggregating outcome counts')
 
-        empty_index = pd.MultiIndex.from_tuples([], names=['category', 'subcategory', 'details'])
+        concat_names = self.Experiment.Identifier.specific_field_names()
 
         with pd.HDFStore(self.fns['outcome_counts_store'], mode='w') as store:
-            for filter_i, (filter_name, filters) in enumerate(self.outcome_counts_store_filters.items()):
-                logger.info(f'Aggregating filter {filter_i}')
+            all_category_counts = []
+            all_subcategory_counts = []
+
+            for partition_i, (partition_name, exps) in enumerate(self.experiment_partitions.items()):
+                logger.info(f'Aggregating partition {partition_i}')
 
                 counts = {}
                 
-                for exp in self.filtered_experiments(filters):
+                for exp in exps:
                     exp_counts = exp.outcome_counts()
-                    if exp_counts is None:
-                        # Should this just be what outcome_counts returns when empty?
-                        exp_counts = pd.Series(index=empty_index, dtype=int)
-
-                    counts[exp.identifier.specific_fields] = exp_counts
+                    if exp_counts is not None:
+                        counts[exp.identifier.specific_fields] = exp_counts
                         
-                counts = pd.concat(counts, axis=1, names=self.Experiment.Identifier.specific_field_names()).fillna(0).astype(int)
+                if counts:
+                    counts = pd.concat(counts, axis=1, names=concat_names).fillna(0).astype(int)
+                    store[partition_name] = counts
 
-                store[filter_name] = counts
+                    category_counts = counts.groupby('category', observed=True).sum()
+                    subcategory_counts = counts.groupby(['category', 'subcategory'], observed=True).sum()
+
+                    all_category_counts.append(category_counts)
+                    all_subcategory_counts.append(subcategory_counts)
+
+            store['category'] = pd.concat(all_category_counts, axis=1).fillna(0).astype(int)
+            store['subcategory'] = pd.concat(all_subcategory_counts, axis=1).fillna(0).astype(int)
 
     @memoized_with_args
-    def outcome_counts_store(self, filter_name):
-        # None if fn doesn't exist or filter_name isn't in store.
+    def outcome_counts_store(self, key):
         counts = None
 
-        fn = self.fns['outcome_counts_store']
+        if (fn := self.fns['outcome_counts_store']).exists():
+            with pd.HDFStore(fn, 'r') as store:
+                if key in store:
+                    counts = store[key]
 
-        if fn.exists():
-            with pd.HDFStore(self.fns['outcome_counts_store'], 'r') as store:
-                if filter_name in store:
-                    counts = store[filter_name]
+        if key in ['category', 'subcategory']:
+            if counts is not None:
+                # Add any missing columns
+                all_columns = [experiment_id.specific_fields for experiment_id in self.all_experiment_ids]
+                counts = counts.reindex(all_columns, axis=1).fillna(0).astype(int)
+
+        elif key in self.experiment_id_fields_partitions:
+            all_fields = self.experiment_id_fields_partitions[key]
+            all_columns = pd.MultiIndex.from_tuples([self.experiment_identifier_from_fields(**fields).specific_fields for fields in all_fields], names=self.Experiment.Identifier.specific_field_names())
+
+            if counts is not None:
+                # Add any missing columns
+                counts = counts.reindex(all_columns, axis=1).fillna(0).astype(int)
+            else:
+                empty_index = pd.MultiIndex.from_tuples([], names=['category', 'subcategory', 'details'])
+
+                counts = pd.DataFrame(index=empty_index, columns=all_columns, dtype=int)
+
+        else:
+            raise ValueError(key)
 
         return counts
 
     @memoized_with_kwargs
     def outcome_counts(self, *, level='details', only_relevant=True):
-        outcome_counts = []
-
-        for filter_name in self.outcome_counts_store_filters:
-            if (filter_counts := self.outcome_counts_store(filter_name)) is not None:
-                if level == 'details':
-                    pass
-                else:
-                    if level == 'category':
-                        keys = ['category']
-                    elif level == 'subcategory':
-                        keys = ['category', 'subcategory']
-                    else:
-                        raise ValueError
-
-                    filter_counts = filter_counts.groupby(keys, observed=True).sum()
-
-                outcome_counts.append(filter_counts)
-
-        if len(outcome_counts) == 0:
-            outcome_counts = None
+        if level in ['category', 'subcategory']:
+            outcome_counts = self.outcome_counts_store(level)
+        
         else:
+            outcome_counts = []
+
+            for partition_name in self.progress(self.experiment_id_fields_partitions):
+                outcome_counts.append(self.outcome_counts_store(partition_name))
+
             outcome_counts = pd.concat(outcome_counts, axis=1).fillna(0).astype(int)
 
-            if only_relevant:
-                # See comment in Experiment.outcome_counts
-                outcome_counts = outcome_counts.drop(self.categorizer.non_relevant_categories, errors='ignore')
+        if only_relevant:
+            # See comment in Experiment.outcome_counts
+            outcome_counts = outcome_counts.drop(self.categorizer.non_relevant_categories, errors='ignore')
 
-            # Sort columns to avoid annoying pandas PerformanceWarnings.
-            outcome_counts.sort_index(axis='columns', inplace=True)
+        # Sort columns to avoid annoying pandas PerformanceWarnings.
+        outcome_counts.sort_index(axis='columns', inplace=True)
 
         return outcome_counts
 
     @memoized_with_kwargs
     def total_reads(self, *, only_relevant=True):
         total_reads = self.outcome_counts(only_relevant=only_relevant).sum()
-        total_reads.name = 'reads'
+
+        try:
+            total_reads.name = 'reads'
+        except AttributeError:
+            # For some subclasses, total_reads could be a scalar
+            pass
+
         return total_reads
 
     @memoized_with_kwargs
