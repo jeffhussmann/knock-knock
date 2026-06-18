@@ -94,8 +94,8 @@ class EditingStrategyBuilder:
 
     @utilities.memoized_property
     def extra_sequences(self):
-        fasta_records, _ = knock_knock.editing_strategy.load_all_fasta_records(self.strategies_dir)
-        genbank_records, _ = knock_knock.editing_strategy.load_all_genbank_records(self.strategies_dir)
+        fasta_records, _ = knock_knock.editing_strategy.load_all_fasta_records(self.strategies_dir / 'additional_sequences')
+        genbank_records, _ = knock_knock.editing_strategy.load_all_genbank_records(self.strategies_dir / 'additional_sequences')
 
         all_records = fasta_records + genbank_records
 
@@ -454,8 +454,6 @@ class EditingStrategyBuilder:
                     if edits_in_required == 0:
                         primer_alignments[al.query_name].append(al)
                     
-        #shutil.rmtree(primers_dir)
-
         return primer_alignments
 
     def align_primers_to_reference_genome_manually(self):
