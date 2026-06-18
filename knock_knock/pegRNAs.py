@@ -744,7 +744,8 @@ class pegRNA:
                 if flap_p - 1 >= 0:
                     flap_base_before = self.intended_flap_sequence[flap_p - 1]
                 else:
-                    flap_base_before = ' '
+                    # Note: not really 'flap'
+                    flap_base_before = self.target_upstream_of_nick[-1]
 
                 if flap_p + 1 <= len(self.intended_flap_sequence) - 1:
                     flap_base_after = self.intended_flap_sequence[flap_p + 1]
@@ -765,7 +766,7 @@ class pegRNA:
                 if target_downstream_p - 1 >= 0:
                     target_base_before = self.target_downstream_of_nick[target_downstream_p - 1]
                 else:
-                    target_base_before = ' '
+                    target_base_before = self.target_upstream_of_nick[-1]
 
                 if target_downstream_p + 1 <= len(self.target_downstream_of_nick) - 1:
                     target_base_after = self.target_downstream_of_nick[target_downstream_p + 1]
