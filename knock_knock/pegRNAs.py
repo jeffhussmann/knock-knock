@@ -330,7 +330,8 @@ class pegRNA:
 
         return target_upstream_of_nick
 
-    def align_RTT_to_target(self):
+    @memoized_property
+    def RTT_to_target_alignments(self):
         ''' Align the intended flap sequence to genomic sequence downstream
         of the nick using Biopython's dynamic programming.
         ''' 
@@ -352,12 +353,13 @@ class pegRNA:
             unaligned = Bio.Align.Alignment(sequences, coordinates)
             alignments = [unaligned]
 
+        alignments = [trim_excess_target_from_alignment(alignment) for alignment in alignments]
+
         return alignments
 
     def print_best_alignments(self):
-        alignments = self.align_RTT_to_target()
-        for alignment in alignments:
-            print(trim_excess_target_from_alignment(alignment))
+        for alignment in self.RTT_to_target_alignments:
+            print(alignment)
 
     @memoized_property
     def programmed_substitution_target_ps(self):
@@ -371,25 +373,13 @@ class pegRNA:
 
         return ps
 
-    @memoized_property
-    def edit_properties(self):
-        ''' Align the intended flap sequence to genomic sequence downstream
-        of the nick using Biopython's dynamic programming.
-        Return representations of substitutions, deletions, insertions, and
-        of the exactly-matching terminal HA_RT in coordinates relative to the 
-        start of the flap and the nick, respectively. 
-        ''' 
-
-        alignments = self.align_RTT_to_target()
-
-        best_alignment = trim_excess_target_from_alignment(alignments[0])
-
+    def convert_alignment_to_edit_properties(self, alignment):
         substitutions = {}
         deletions = []
         insertions = []
         HA_RT = None
 
-        flap_subsequences, target_subsequences = best_alignment.aligned
+        flap_subsequences, target_subsequences = alignment.aligned
         
         # Do completely non-homologous flaps always produce len 0?
         if len(flap_subsequences) > 0 and len(target_subsequences) > 0:
@@ -518,9 +508,71 @@ class pegRNA:
                 
         return properties
 
+    @memoized_property
+    def degenerate_edit_properties(self):
+        return [self.convert_alignment_to_edit_properties(alignment) for alignment in self.RTT_to_target_alignments]
+
+    @memoized_property
+    def edit_properties(self):
+        ''' Align the intended flap sequence to genomic sequence downstream
+        of the nick using Biopython's dynamic programming.
+        Return representations of substitutions, deletions, insertions, and
+        of the exactly-matching terminal HA_RT in coordinates relative to the 
+        start of the flap and the nick, respectively. 
+        ''' 
+
+        return self.degenerate_edit_properties[0]
+
+    @memoized_property
+    def edit_type(self):
+        if len(self.edit_properties['substitutions']) > 0:
+            if len(self.edit_properties['deletions']) == 0 and len(self.edit_properties['insertions']) == 0:
+                edit_type = 'substitution(s)'
+            else:
+                edit_type = 'combination'
+        else:
+            if len(self.edit_properties['deletions']) == 1 and len(self.edit_properties['insertions']) == 0:
+                edit_type = 'deletion'
+            elif len(self.edit_properties['deletions']) == 0 and len(self.edit_properties['insertions']) == 1:
+                edit_type = 'insertion'
+            else:
+                edit_type = 'combination'
+        
+        return edit_type
+
+    @memoized_property
+    def degenerate_edit_descriptions(self):
+        return [self.convert_edit_properties_to_description(edit_properties) for edit_properties in self.degenerate_edit_properties]
+
+    @memoized_property
+    def edit_description(self):
+        return self.degenerate_edit_descriptions[0]
+
+    def convert_edit_properties_to_description(self, edit_properties):
+        if edit_properties['HA_RT'] is None:
+            edit_description = 'no homology'
+            
+        else:
+            strings = []
+
+            for name, details in edit_properties['substitutions'].items():
+                strings.append((details['target_downstream'], details['description']))
+
+            for insertion in edit_properties['insertions']:
+                strings.append((insertion['start_in_flap'], insertion['description']))
+
+            for deletion in edit_properties['deletions']: 
+                strings.append((deletion['downstream_of_nick_start'], deletion['description']))
+
+            strings = [s for p, s in sorted(strings)]
+
+            edit_description = ','.join(strings)
+
+        return edit_description
+
     def infer_edit_features(self):
         ''' 
-        Note that in pooled screening contexts, self.max_deletion_length may need to be set.
+        Note that in self-targeting screening contexts, self.max_deletion_length may need to be set.
         '''
 
         new_features = {}
@@ -584,21 +636,6 @@ class pegRNA:
             seqs['target', name] = self.target_sequence[starts['target', name]:ends['target', name]]
             if features['target', 'PBS'].strand == '-':
                 seqs['target', name] = utilities.reverse_complement(seqs['target', name])
-
-        # Align the intended flap sequence to the target downstream of the nick.
-
-        if len(self.edit_properties['substitutions']) > 0:
-            if len(self.edit_properties['deletions']) == 0 and len(self.edit_properties['insertions']) == 0:
-                self.edit_type = 'substitution(s)'
-            else:
-                self.edit_type = 'combination'
-        else:
-            if len(self.edit_properties['deletions']) == 1 and len(self.edit_properties['insertions']) == 0:
-                self.edit_type = 'deletion'
-            elif len(self.edit_properties['deletions']) == 0 and len(self.edit_properties['insertions']) == 1:
-                self.edit_type = 'insertion'
-            else:
-                self.edit_type = 'combination'
 
         # Convert from flap/downstream coordinates to pegRNA/target coordinates.
 
@@ -812,28 +849,6 @@ class pegRNA:
             new_features[names['pegRNA'], self.HA_RT_name] = pegRNA_HA_RT
 
         self.features.update(new_features)
-
-    @memoized_property
-    def edit_description(self):
-        if self.edit_properties['HA_RT'] is None:
-            edit_description = 'no homology'
-        else:
-            strings = []
-
-            for name, details in self.edit_properties['substitutions'].items():
-                strings.append((details['target_downstream'], details['description']))
-
-            for insertion in self.edit_properties['insertions']:
-                strings.append((insertion['start_in_flap'], insertion['description']))
-
-            for deletion in self.edit_properties['deletions']: 
-                strings.append((deletion['downstream_of_nick_start'], deletion['description']))
-
-            strings = [s for p, s in sorted(strings)]
-
-            edit_description = ','.join(strings)
-
-        return edit_description
 
     @memoized_property
     def RTT_structure(self):
