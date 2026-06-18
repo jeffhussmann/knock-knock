@@ -163,6 +163,11 @@ class Effector:
 effector_details = {
     'SpCas9': ('NGG', 3, (-4, -4)), 
     'SpCas9H840A': ('NGG', 3, (-4, None)),
+    'SpCas9HD10A': ('NGG', 3, (None, -4)),
+
+    'SpRY': ('NRN', 3, (-4, -4)), 
+    'SpRYH840A': ('NRN', 3, (-4, None)),
+    'SpRYD10A': ('NRN', 3, (None, -4)),
 
     'SpCas9_VRQR': ('NGA', 3, (-4, -4)),
     'SpCas9H840A_VRQR': ('NGA', 3, (-4, None)),
