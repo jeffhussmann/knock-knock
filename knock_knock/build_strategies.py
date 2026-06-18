@@ -16,6 +16,7 @@ from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
 from hits import fastq, genomes, interval, mapping_tools, sam, sw, utilities
+import knock_knock.architecture
 import knock_knock.editing_strategy
 import knock_knock.effector
 import knock_knock.experiment
@@ -41,6 +42,8 @@ feature_colors = {
     'protospacer': '#ff9ccd',
     'scaffold': '#b7e6d7',
 }
+
+REQUIRED_PRIMER_SUFFIX_LENGTH = 18
 
 class EditingStrategyBuilder:
     ''' 
@@ -433,15 +436,25 @@ class EditingStrategyBuilder:
 
         primer_alignments = defaultdict(list)
 
-        # Retain only alignments that include the 3' end of the primer.
+        # Retain only alignments that include exact matches to a minimum length
+        # at the 3' end of the primer.
 
         with pysam.AlignmentFile(bam_fn) as bam_fh:
             for al in bam_fh:
+                required_start = len(al.query_sequence) - 1 - REQUIRED_PRIMER_SUFFIX_LENGTH
+                required_end = len(al.query_sequence) - 1
+                required_interval = interval.Interval(required_start, required_end)
+
                 covered = interval.get_covered(al)
-                if len(al.query_sequence) - 1 in covered:
-                    primer_alignments[al.query_name].append(al)
+
+                if required_interval in covered:
+                    edit_positions = knock_knock.architecture.edit_positions(al)
+                    edits_in_required = edit_positions[required_start:].sum()
+
+                    if edits_in_required == 0:
+                        primer_alignments[al.query_name].append(al)
                     
-        shutil.rmtree(primers_dir)
+        #shutil.rmtree(primers_dir)
 
         return primer_alignments
 
@@ -451,7 +464,7 @@ class EditingStrategyBuilder:
 
         loaded_genome = self.genomes.loaded(self.genome)
 
-        primer_alignments = sw.align_primers_to_genome(self.primers, loaded_genome, suffix_length=18)
+        primer_alignments = sw.align_primers_to_genome(self.primers, loaded_genome, suffix_length=REQUIRED_PRIMER_SUFFIX_LENGTH)
 
         return primer_alignments
 
