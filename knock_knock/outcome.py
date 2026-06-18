@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 import hits.interval
+import hits.utilities
 
 import knock_knock.effector
 
@@ -689,6 +690,23 @@ def pegRNA_conversion_fractions(editing_strategy,
 
     return fs_df
 
+def mismatch_fractions(editing_strategy,
+                       outcome_fractions,
+                      ):
+    
+    fractions = np.zeros((len(editing_strategy.target_sequence), len(hits.utilities.base_order)))
+
+    for (c, s, d), f in outcome_fractions().items():
+        mismatches = knock_knock.outcome.Details.from_string(d)['mismatches']
+        for position, basecall in zip(mismatches.positions, mismatches.basecalls):
+            fractions[position, hits.utilities.base_to_index[basecall]] += f
+
+    index = np.arange(len(editing_strategy.target_sequence))
+    columns = list(hits.utilities.base_order)
+    fractions = pd.DataFrame(fractions, index=index, columns=columns)
+
+    return fractions
+    
 def outcomes_with_deletion_overlapping_cuts(editing_strategy, sgRNA_name, outcome_fractions, buffer=0):
     components = editing_strategy.sgRNA_components[sgRNA_name]
     effector = knock_knock.effector.effectors[components['effector']]
