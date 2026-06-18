@@ -1280,7 +1280,7 @@ class StackedDiagrams:
         
                 self.draw_donor(y, HDR_outcome, deletion_outcome, insertion_outcome, source_name, False)
 
-            elif category in ['intended edit', 'partial replacement', 'partial edit'] or \
+            elif category in ['intended edit', 'partial edit'] or \
                  (category == 'edit + indel' and subcategory == 'deletion'):
 
                 self.draw_programmed_edit(y, details, source_name)

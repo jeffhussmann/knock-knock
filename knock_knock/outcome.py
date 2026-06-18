@@ -655,7 +655,7 @@ def outcomes_containing_pegRNA_programmed_edits(editing_strategy,
 
     if outcome_fractions is not None:
         for c, s, d  in outcome_fractions.index:
-            if c in {'intended edit', 'partial replacement', 'partial edit'}:
+            if c in {'intended edit', 'partial edit'}:
                 details = Details.from_string(d)
 
                 if subs is not None:
