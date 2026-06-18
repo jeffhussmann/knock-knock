@@ -62,8 +62,7 @@ class EditingStrategy:
         self.name = name
 
         if base_dir is None:
-            # Some strategies (e.g. for pooled screens) do not load anything
-            # from disk.
+            # Some strategies (e.g. for pooled screens) do not load anything from disk.
             self.base_dir = None
             self.additional_sequences_dir = None
             self.dir = None
@@ -192,10 +191,11 @@ class EditingStrategy:
     def primary_protospacer(self):
         primary_protospacer = self.parameters.get('primary_protospacer')
 
-        if primary_protospacer is None and len(self.protospacer_names) > 0:
+        if primary_protospacer is None:
             if len(self.pegRNA_names) > 0:
                 primary_protospacer = knock_knock.pegRNAs.protospacer_name(self.pegRNA_names[0])
-            else:
+
+            elif len(self.protospacer_features) > 0:
                 primary_protospacer = sorted(self.protospacer_features)[0]
 
         return primary_protospacer
