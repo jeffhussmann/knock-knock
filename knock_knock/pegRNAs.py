@@ -882,6 +882,8 @@ class pegRNA:
 
     @memoized_property
     def substitution_subset_to_programmed_substitution_read_bases(self):
+        ''' To avoid ambiguity in subset order, uses frozenset. '''
+
         strings = {}
         
         for substitution_subset in utilities.powerset(self.substitutions['flap']):
@@ -896,7 +898,7 @@ class pegRNA:
                 chars[target_order] = alternative_base
             
             programmed_substitution_read_bases = (''.join(chars))
-            strings[substitution_subset] = programmed_substitution_read_bases
+            strings[frozenset(substitution_subset)] = programmed_substitution_read_bases
 
         return strings
 
@@ -913,7 +915,7 @@ class pegRNA:
             if len(substitution_subset) == 0:
                 continue
 
-            substitution_string = self.substitution_subset_to_programmed_substitution_read_bases(substitution_subset)
+            substitution_string = self.substitution_subset_to_programmed_substitution_read_bases(frozenset(substitution_subset))
             
             subset_in_flap_order = sorted(substitution_subset, key=substitution_name_to_flap_order.get)
             
