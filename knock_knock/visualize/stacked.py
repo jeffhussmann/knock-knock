@@ -1459,10 +1459,9 @@ class DiagramGrid:
 
         ax.set_yticks([])
         ax.xaxis.tick_top()
-        ax.spines['left'].set_alpha(0.3)
         ax.spines['right'].set_alpha(0.3)
         ax.tick_params(labelsize=6)
-        ax.grid(axis='x', alpha=0.3, clip_on=False)
+        ax.grid(axis='x', alpha=0.4, clip_on=False)
         
         if self.ax_on_bottom:
             ax.spines['top'].set_visible(False)
@@ -1518,6 +1517,7 @@ class DiagramGrid:
                    interval_sources=None,
                    transform=None,
                    y_offset=0,
+                   y_interval_offset=0,
                    interval_alpha=1,
                    marker_alpha=1,
                    line_alpha=1,
@@ -1557,7 +1557,7 @@ class DiagramGrid:
         else:
             xs = [value_source.get((c, s, d), fill) for source_name, c, s, d in self.outcomes]
 
-        ax.plot(xs, ys, marker=marker, linestyle='', alpha=marker_alpha, label=label, **plot_kwargs)
+        ax.plot(xs, ys, marker=marker, linestyle='', alpha=marker_alpha, label=str(label), **plot_kwargs)
         ax.plot(xs, ys, marker=None, linestyle='-', alpha=line_alpha, **plot_kwargs)
 
         if interval_sources is not None:
@@ -1567,7 +1567,8 @@ class DiagramGrid:
             }
 
             for y, lower_x, upper_x in zip(ys, interval_xs['lower'], interval_xs['upper']):
-                ax.plot([lower_x, upper_x], [y, y],
+                ax.plot([lower_x, upper_x],
+                        [y + y_interval_offset, y + y_interval_offset],
                         color=plot_kwargs.get('color'),
                         alpha=interval_alpha,
                         clip_on=plot_kwargs.get('clip_on', True),
@@ -1584,6 +1585,7 @@ class DiagramGrid:
                          line_alpha=0.75,
                          label='',
                          marker='.',
+                         threshold_for_points=0,
                          **plot_kwargs,
                         ):
 
@@ -1598,7 +1600,7 @@ class DiagramGrid:
             transform = np.log10
 
         if transform is not None:
-            # suppress warnings from log of zeros
+            # Suppress warnings from log of zeros.
             # Using the warnings context manager doesn't work here, maybe because of pandas multithreading.
             warnings.filterwarnings('ignore')
 
@@ -1613,7 +1615,9 @@ class DiagramGrid:
 
         ys = [value_source[x] for x in xs]
 
-        ax.plot(xs, ys, marker=marker, linestyle='', alpha=marker_alpha, label=str(label), **plot_kwargs)
+        above_threshold_xs = [x for x, y in zip(xs, ys) if y >= threshold_for_points]
+        above_threshold_ys = [y for x, y in zip(xs, ys) if y >= threshold_for_points]
+        ax.plot(above_threshold_xs, above_threshold_ys, marker=marker, linestyle='', alpha=marker_alpha, label=str(label), **plot_kwargs)
         ax.plot(xs, ys, marker=None, linestyle='-', alpha=line_alpha, **plot_kwargs)
 
         if interval_sources is not None:
@@ -1728,6 +1732,7 @@ class DiagramGrid:
 
         im = ax.imshow(vals, cmap=cmap, vmin=vmin, vmax=vmax)
         self.ims.append(im)
+
         plt.setp(ax.spines.values(), visible=False)
 
         if draw_tick_labels:
@@ -1909,6 +1914,7 @@ class DiagramGrid:
                                               ):
         plot_kwargs = copy.copy(plot_kwargs)
         plot_kwargs.setdefault('line_alpha', 0.75)
+        plot_kwargs.setdefault('marker_alpha', 1)
         plot_kwargs.setdefault('linewidth', 1.5)
         plot_kwargs.setdefault('markersize', 7)
         plot_kwargs.setdefault('clip_on', False)
@@ -1933,9 +1939,8 @@ class DiagramGrid:
                 if len(condition) != 1:
                     raise ValueError
                 
-                color = 'black'
-                label = sorted(condition)[0]
-                keys = condition[label]
+                condition_name = sorted(condition)[0]
+                keys = condition[condition_name]
                 fs = pegRNA_conversion_fractions[keys].mean(axis=1)
                 stds = pegRNA_conversion_fractions[keys].std(axis=1)
 
@@ -1945,11 +1950,14 @@ class DiagramGrid:
                 }
 
             else:
-                fs = pegRNA_conversion_fractions[condition]
+                condition_name = condition
+                fs = pegRNA_conversion_fractions[condition_name]
                 label = str(condition)
-                color = condition_colors.get(condition, 'black')
 
                 interval_sources = None
+
+            color = condition_colors.get(condition_name, 'black')
+            label = condition_name
 
             self.plot_on_ax_above('pegRNA_conversion_fractions',
                                   fs.index,
@@ -1958,6 +1966,36 @@ class DiagramGrid:
                                   interval_sources=interval_sources,
                                   label=label,
                                   color=color,
+                                  **plot_kwargs,
+                                 )
+
+    def plot_mismatch_fractions_above(self,
+                                      mismatch_fractions,
+                                      gap=4,
+                                      height_multiple=10,
+                                      **plot_kwargs,
+                                     ):
+
+        plot_kwargs = copy.copy(plot_kwargs)
+        plot_kwargs.setdefault('line_alpha', 0.75)
+        plot_kwargs.setdefault('linewidth', 1.5)
+        plot_kwargs.setdefault('markersize', 7)
+        plot_kwargs.setdefault('clip_on', True)
+
+        mismatch_fractions = mismatch_fractions.copy()
+
+        mismatch_fractions.index = mismatch_fractions.index - self.editing_strategy.cut_after
+
+        self.add_ax_above('mismatch_fractions', gap=gap, height_multiple=height_multiple)
+        
+        for b in 'NTCAG':
+            self.plot_on_ax_above('mismatch_fractions',
+                                  mismatch_fractions.index,
+                                  mismatch_fractions[b],
+                                  transform='percentage',
+                                  label=b,
+                                  color=hits.visualize.igv_colors[b],
+                                  threshold_for_points=0.1,
                                   **plot_kwargs,
                                  )
 
@@ -2050,15 +2088,18 @@ class DiagramGrid:
                 if y == 0:
                     alpha = 1
                     clip_on = False
+                    color = 'black'
+
                 else:
-                    alpha = 0.3
+                    alpha = 0.4
                     clip_on = True
+                    color = '#b0b0b0' # Match default grid.
 
                 ax.plot(x_bounds,
                         [y for x in x_bounds],
-                        linewidth=0.5,
+                        linewidth=0.8,
                         clip_on=clip_on,
-                        color='black',
+                        color=color,
                         alpha=alpha,
                        )
 
@@ -2073,15 +2114,15 @@ class DiagramGrid:
 
                 title = f'Change (from mean of\n{difference_from_condition_label} samples)\nin total % incorporation\nacross all outcomes'
 
-            ax.set_ylabel(title, size=12)
-            ax.tick_params(labelsize=8)
+            ax.set_ylabel(title, size=self.title_size)
+            ax.tick_params(labelsize=self.tick_label_size)
 
             ax.spines.left.set_position(('data', x_bounds[0]))
             ax.spines.bottom.set_visible(False)
 
 def make_deletion_boundaries_figure(editing_strategy,
                                     outcome_fractions,
-                                    deletion_boundaries_retriever,
+                                    deletion_boundaries_retriever=None,
                                     plot_boundaries=True,
                                     frequency_cutoff=5e-4,
                                     conditions=None,
@@ -2307,9 +2348,6 @@ def make_deletion_boundaries_figure(editing_strategy,
             for cut_after in strat.cut_afters.values():
                 grid.axs_by_name[quantity].axvline(cut_after + 0.5 - grid.diagrams.offsets[strat.name], linestyle='--', color=grid.diagrams.cut_color, linewidth=grid.diagrams.line_widths)
 
-        for pegRNA_i, pegRNA_name in enumerate(strat.pegRNA_names):
-            grid.diagrams.draw_pegRNA(strat.name, pegRNA_name, y_offset=pegRNA_i + 1, label_features=False)
-
         grid.axs_by_name['fraction_removed'].set_ylabel('% of reads with\nposition deleted', size=14)
         
         grid.axs_by_name[panel_order[1]].set_ylabel('% of reads\nwith deletion\nstarting at', size=14)
@@ -2381,13 +2419,14 @@ def make_partial_incorporation_figure(editing_strategy,
                                       log2_fold_change_from_condition=None,
                                       heatmap_kwargs=None,
                                       marker_size=7,
+                                      plot_line_widths=1.5,
                                       line_alpha=0.75,
+                                      marker_alpha=1,
+                                      legend=True,
                                       legend_kwargs=None,
                                       fractions_width_multiple=12,
                                       **diagram_kwargs,
                                      ):
-
-    line_widths = diagram_kwargs.get('line_widths', 1.5)
 
     strat = editing_strategy
 
@@ -2493,7 +2532,7 @@ def make_partial_incorporation_figure(editing_strategy,
     else:
         def outcome_filter(c, s, d):
             return (
-                (c in {'intended edit', 'partial replacement', 'partial edit'})
+                (c in {'intended edit', 'partial edit'})
                 or
                 (include_non_programmed_mismatches and 
                  (((c, s) == ('wild type', 'mismatches') and mismatch_in_window(d)) or
@@ -2514,6 +2553,9 @@ def make_partial_incorporation_figure(editing_strategy,
     if sort_by_frequency:
         outcomes = outcome_fractions.reindex(outcomes).fillna(0).mean(axis=1).sort_values(ascending=False).index
 
+    features_to_draw = set(strat.primers)
+    features_to_draw.update(diagram_kwargs.pop('features_to_draw', []))
+
     if len(outcomes) > 0:
         grid = DiagramGrid(outcomes, 
                            strat,
@@ -2521,6 +2563,7 @@ def make_partial_incorporation_figure(editing_strategy,
                            window=window,
                            block_alpha=0.1,
                            color_overrides=color_overrides,
+                           features_to_draw=features_to_draw,
                            **diagram_kwargs,
                           )
 
@@ -2547,7 +2590,7 @@ def make_partial_incorporation_figure(editing_strategy,
         ]
 
         for ax, transform in ax_params:
-            for condition in line_conditions:
+            for c_i, condition in enumerate(line_conditions):
                 if isinstance(condition, dict):
                     if len(condition) != 1:
                         raise ValueError
@@ -2575,27 +2618,64 @@ def make_partial_incorporation_figure(editing_strategy,
                                 interval_sources=interval_sources,
                                 color=color,
                                 line_alpha=line_alpha,
-                                linewidth=line_widths,
+                                linewidth=plot_line_widths,
                                 markersize=marker_size,
                                 fill=0,
                                 label=label,
+                                markeredgewidth=0,
+                                marker_alpha=marker_alpha,
+                                #y_interval_offset=(c_i - len(line_conditions) // 2) * 0.01,
+                                y_offset=(c_i - len(line_conditions) // 2) * 0.02,
                                )
 
         if log2_fold_change_from_condition is not None:
             grid.add_ax('log2_fold_change', width_multiple=12, gap_multiple=2, title=f'Log₂ fold-change from\n{log2_fold_change_from_condition}')
 
-            fcs = outcome_fractions.div(outcome_fractions[log2_fold_change_from_condition], axis=0)
+            if log2_fold_change_from_condition in outcome_fractions.columns:
+                denominator = outcome_fractions[log2_fold_change_from_condition]
+            else:
+                for condition in line_conditions:
+                    if isinstance(condition, dict):
+                        condition_name = sorted(condition)[0]
+                        if condition_name == log2_fold_change_from_condition:
+                            keys = condition[condition_name]
+                            denominator = outcome_fractions[keys].mean(axis=1)
+                            break
+                        
+            fcs = outcome_fractions.div(denominator, axis=0)
             l2fcs = np.log2(fcs)
 
             for condition in line_conditions:
+                if isinstance(condition, dict):
+                    if len(condition) != 1:
+                        raise ValueError
+
+                    condition_name = sorted(condition)[0]
+                    keys = condition[condition_name]
+                    vs = l2fcs[keys].mean(axis=1)
+                    stds = l2fcs[keys].std(axis=1)
+                    interval_sources = {
+                        'lower': vs - stds,
+                        'upper': vs + stds,
+                    }
+
+                else:
+                    condition_name = condition
+                    vs = l2fcs[condition_name]
+                    interval_sources = None
+
+                color = condition_colors.get(condition_name, 'black')
+                label = condition_labels.get(condition_name, condition_name)
+
                 grid.plot_on_ax('log2_fold_change',
-                                l2fcs[condition],
-                                color=condition_colors.get(condition, 'black'),
+                                vs,
+                                interval_sources=interval_sources,
+                                color=color,
                                 line_alpha=line_alpha,
-                                linewidth=line_widths,
+                                linewidth=plot_line_widths,
                                 markersize=marker_size,
                                 fill=0,
-                                label=condition_labels.get(condition, condition)
+                                label=label,
                                )
 
             grid.add_heatmap(l2fcs.loc[outcomes[::-1], heatmap_conditions],
@@ -2615,14 +2695,16 @@ def make_partial_incorporation_figure(editing_strategy,
         grid.set_xlim('log10_fractions', (np.log10(0.49 * frequency_cutoff), np.log10(x_max)))
         grid.style_log10_frequency_ax('log10_fractions')
 
-        for pegRNA_i, pegRNA_name in enumerate(strat.pegRNA_names):
-            grid.diagrams.draw_pegRNA(strat.name, pegRNA_name, y_offset=pegRNA_i + 1, label_features=False)
-
         if pegRNA_conversion_fractions is not None:
             grid.plot_pegRNA_conversion_fractions_above(pegRNA_conversion_fractions,
                                                         conditions=line_conditions,
                                                         condition_colors=condition_colors,
                                                         height_multiple=pegRNA_conversion_fractions_height_multiple,
+                                                        markersize=marker_size,
+                                                        markeredgewidth=0,
+                                                        linewidth=plot_line_widths,
+                                                        line_alpha=line_alpha,
+                                                        marker_alpha=marker_alpha,
                                                        )
 
             grid.style_pegRNA_conversion_plot('pegRNA_conversion_fractions',
@@ -2639,9 +2721,10 @@ def make_partial_incorporation_figure(editing_strategy,
             legend_ax = grid.ordered_axs[-2]
             bbox_to_anchor = (1, 0)
 
-        legend_kwargs.setdefault('bbox_to_anchor', bbox_to_anchor)
-        legend_kwargs.setdefault('loc', 'upper left')
-        
-        legend_ax.legend(**legend_kwargs)
+        if legend:
+            legend_kwargs.setdefault('bbox_to_anchor', bbox_to_anchor)
+            legend_kwargs.setdefault('loc', 'upper left')
+            
+            legend_ax.legend(**legend_kwargs)
 
         return grid
