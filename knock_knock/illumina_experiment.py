@@ -330,6 +330,68 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
                             alignment_sorters[outcome, which].write(al)
             pysam.set_verbosity(saved_verbosity)
 
+    @memoized_property
+    def bootstrap_editing_strategy(self):
+        strat = knock_knock.editing_strategy.EditingStrategy(self.identifier.base_dir,
+                                                             self.editing_strategy_name,
+                                                             primers=self.primers,
+                                                            )
+
+        return strat
+
+    def detect_sequencing_start_feature_name(self):
+        strat = self.bootstrap_editing_strategy
+
+        primer_sequences = {name: strat.feature_sequence(strat.target, name).upper() for name in strat.primers}
+
+        primer_prefix_length = 6
+        read_length_to_examine = 30
+        max_reads_to_check = 10000
+
+        primer_prefixes = {name: seq[:primer_prefix_length] for name, seq in primer_sequences.items()}
+
+        if self.paired_end and self.reverse_complement:
+            read_key = 'R2'
+        else:
+            read_key = 'R1'
+
+        reads = self.original_reads_by_key(read_key)
+
+        reads = islice(reads, max_reads_to_check)
+
+        prefix_counts = Counter()
+
+        seen_enough = False
+
+        for read in reads:
+            for name, prefix in primer_prefixes.items():
+                if prefix in read.seq[:read_length_to_examine]:
+                    prefix_counts[name] += 1
+
+                    if prefix_counts[name] >= 500:
+                        seen_enough = True
+                        break
+
+            if seen_enough:
+                break
+
+        if len(prefix_counts) == 0:
+            logger.warning(f'Unable to detect sequencing orientation for {self.identifier}')
+            feature_name = sorted(primer_prefixes)[0]
+
+        else:
+            feature_name, _ = prefix_counts.most_common()[0]
+
+        return feature_name
+        
+    @property
+    def sequencing_start_feature_name(self):
+        if (feature_name := super().sequencing_start_feature_name) is None:
+            feature_name = self.detect_sequencing_start_feature_name()
+
+        return feature_name
+        
+
     def trim_reads(self, defined_start=True):
         ''' Trim a (potentially variable-length) UMI from the beginning of a read
         by searching for the expected sequence that the amplicon should begin with.

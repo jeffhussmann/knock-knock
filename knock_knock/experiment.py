@@ -121,7 +121,6 @@ class Experiment:
         self.donor = self.description.get('donor')
         self.nonhomologous_donor = self.description.get('nonhomologous_donor')
         self.primers = self.description.get('primers')
-        self.sequencing_start_feature_name = self.description.get('sequencing_start_feature_name')
         self.infer_homology_arms = self.description.get('infer_homology_arms', True)
         self.max_reads = self.description.get('max_reads', None)
         if self.max_reads is not None:
@@ -238,6 +237,10 @@ class Experiment:
             min_relevant_length = self.description.get('min_relevant_length')
 
         return min_relevant_length
+
+    @property
+    def sequencing_start_feature_name(self):
+        return self.description.get('sequencing_start_feature_name')
 
     @memoized_property
     def editing_strategy(self):
