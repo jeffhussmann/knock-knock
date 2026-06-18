@@ -472,7 +472,7 @@ class Categorizer:
             else:
                 min_relevant_length = 0
 
-            # Note: refined_target_alignments is already cropped to a relevant_window on both sides
+            # Note: refined_target_alignments is already cropped to a relevant_window on both sides.
             # For each side, annotate each al with the length of its overlap with that side. 
 
             cuts_interval = self.editing_strategy.around_or_between_cuts(0)
@@ -933,8 +933,8 @@ class Categorizer:
 
     @property
     def inferred_amplicon_length(self):
-        ''' Infer the length of the amplicon including the portion
-        of primers that is present in the genome. To prevent synthesis
+        ''' Infer the length of the amplicon, including the portion
+        of each primer that is present in the genome. To prevent synthesis
         errors in primers from shifting this slightly, identify the
         distance in the query between the end of the left primer and
         the start of the right primer, then add the expected length of
@@ -1803,7 +1803,9 @@ def max_indel_nearby(alignment, ref_pos, window):
     max_ins = max_ins_nearby(alignment, ref_pos, window)
     return max(max_del, max_ins)
 
-def get_mismatch_info(alignment, reference_sequences, programmed_substitutions=None):
+def get_mismatch_info(alignment, reference_sequences=None, programmed_substitutions=None):
+    ''' TODO: redundancy with hits.sam.aligned_tuples '''
+
     mismatches = []
 
     if alignment is None:
@@ -1811,6 +1813,9 @@ def get_mismatch_info(alignment, reference_sequences, programmed_substitutions=N
 
     if programmed_substitutions is None:
         programmed_substitutions = {}
+
+    if reference_sequences is None:
+        reference_sequences = {}
 
     if alignment.reference_name in programmed_substitutions:
         programmed_substitutions = programmed_substitutions[alignment.reference_name]
@@ -1874,7 +1879,7 @@ def get_indel_info(alignment):
 
     return indels
 
-def edit_positions(al, reference_sequences, use_deletion_length=False, programmed_substitutions=None):
+def edit_positions(al, reference_sequences=None, use_deletion_length=False, programmed_substitutions=None):
     ''' Returns an array of length equal to the query that marks all positions
     at which the query doesn't match the reference.
     ''' 
