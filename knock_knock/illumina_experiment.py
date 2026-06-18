@@ -73,7 +73,7 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
     @property
     def paired_end(self):
-        return 'R2' in self.description
+        return self.description.get('R2', '') != ''
 
     @property
     def preprocessed_read_type(self):
