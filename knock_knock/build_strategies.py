@@ -15,7 +15,12 @@ from Bio.SeqFeature import SeqFeature, FeatureLocation
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
-from hits import fastq, genomes, interval, mapping_tools, sam, sw, utilities
+from hits import interval, mapping_tools, sam, sw
+
+import hits.fastq
+import hits.genomes
+import hits.utilities
+
 import knock_knock.architecture
 import knock_knock.editing_strategy
 import knock_knock.effector
@@ -23,6 +28,8 @@ import knock_knock.experiment
 import knock_knock.pegRNAs
 
 import knock_knock.utilities
+
+memoized_property = hits.utilities.memoized_property
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +99,7 @@ class EditingStrategyBuilder:
 
         self.dir = knock_knock.editing_strategy.get_strategies_dir(self.base_dir) / self.name
 
-    @utilities.memoized_property
+    @memoized_property
     def extra_sequences(self):
         fasta_records, _ = knock_knock.editing_strategy.load_all_fasta_records(self.strategies_dir / 'additional_sequences')
         genbank_records, _ = knock_knock.editing_strategy.load_all_genbank_records(self.strategies_dir / 'additional_sequences')
@@ -110,7 +117,7 @@ class EditingStrategyBuilder:
 
         return extra_sequences
 
-    @utilities.memoized_property
+    @memoized_property
     def sgRNAs(self):
         csv_fn = self.strategies_dir / 'sgRNAs.csv'
 
@@ -128,7 +135,7 @@ class EditingStrategyBuilder:
 
         return sgRNAs
 
-    @utilities.memoized_property
+    @memoized_property
     def primers(self):
         amplicon_primers_fn = self.strategies_dir / 'amplicon_primers.csv'
 
@@ -173,8 +180,8 @@ class EditingStrategyBuilder:
 
         return protospacer_features_in_amplicon
 
-    @utilities.memoized_property
-    def extracted_target_sequence(self):
+    @memoized_property
+    def extracted_target_region(self):
         if len(self.primers) > 0:
             left_primer_al, right_primer_al = self.concordant_primer_alignments_to_genome
 
@@ -194,7 +201,22 @@ class EditingStrategyBuilder:
         target_start = max(0, region_start - buffer)
         target_end = min(self.reference_length(ref_name), region_end + buffer)
 
-        target_sequence = self.region_fetcher(ref_name, target_start, target_end).upper()
+        extracted_target_region = {
+            'genome': self.genome,
+            'ref_name': ref_name,
+            'target_start': target_start,
+            'target_end': target_end,
+        }
+
+        return extracted_target_region
+
+    @memoized_property
+    def extracted_target_sequence(self):
+        target_sequence = self.region_fetcher(self.extracted_target_region['ref_name'],
+                                              self.extracted_target_region['target_start'],
+                                              self.extracted_target_region['target_end'],
+                                             )
+        target_sequence = target_sequence.upper()
 
         return target_sequence
 
@@ -240,10 +262,9 @@ class EditingStrategyBuilder:
         parameters_fn = self.dir / 'parameters.yaml'
 
         parameters = {
+            'extracted_target_region': self.extracted_target_region,
             'target': target_name,
         }
-
-        #manifest['genome_source'] = self.info.get('genome_source', self.genome)
 
         parameters['primers'] = self.amplicon_primer_names
 
@@ -257,7 +278,7 @@ class EditingStrategyBuilder:
         #if strat.genome_source in self.index_locations:
         #    strat.map_protospacers(strat.genome_source)
 
-    @utilities.memoized_property
+    @memoized_property
     def region_fetcher(self):
         if self.genome in self.index_locations:
             region_fetcher = self.genomes.region_fetcher(self.genome)
@@ -362,7 +383,7 @@ class EditingStrategyBuilder:
 
         return valids[0]
 
-    @utilities.memoized_property
+    @memoized_property
     def concordant_primer_alignments_to_genome(self):
         if len(self.primers) == 2:
             alignment_tester = sw.identify_concordant_primer_alignment_pair
@@ -389,7 +410,7 @@ class EditingStrategyBuilder:
 
         return concordant_primer_alignments
 
-    @utilities.memoized_property
+    @memoized_property
     def concordant_primer_alignments_to_target(self):
         if len(self.primers) == 0:
             concordant_primer_alignments = []
@@ -420,8 +441,8 @@ class EditingStrategyBuilder:
 
         with fastq_fn.open('w') as fh:
             for primer_name, primer_seq in self.primers.items():
-                quals = fastq.encode_sanger([40]*len(primer_seq))
-                read = fastq.Read(primer_name, primer_seq, quals)
+                quals = hits.fastq.encode_sanger([40]*len(primer_seq))
+                read = hits.fastq.Read(primer_name, primer_seq, quals)
                 fh.write(str(read))
 
         STAR_prefix = primers_dir / 'primers_'
@@ -473,7 +494,7 @@ class EditingStrategyBuilder:
 
         return primer_alignments
 
-    @utilities.memoized_property
+    @memoized_property
     def protospacer_alignment(self):
         if len(self.sgRNAs) != 1:
             raise ValueError('WGS mode requires exactly one sgRNA')
@@ -604,7 +625,7 @@ def download_genome(base_dir, genome_name):
         subprocess.run(gunzip_command, check=True)
 
     logger.info('Indexing fastas...')
-    genomes.make_fais(fasta_dir)
+    hits.genomes.make_fais(fasta_dir)
 
 def build_indices(base_dir, genome_name, num_threads=1, RAM_limit=int(60e9), **STAR_index_kwargs):
     if genome_name in ['e_coli', 'phiX']:
@@ -615,7 +636,7 @@ def build_indices(base_dir, genome_name, num_threads=1, RAM_limit=int(60e9), **S
     logger.info(f'Building indices for {genome_name}')
     fasta_dir = base_dir / 'indices' / genome_name / 'fasta'
 
-    fasta_fns = genomes.get_all_fasta_file_names(fasta_dir)
+    fasta_fns = hits.genomes.get_all_fasta_file_names(fasta_dir)
     if len(fasta_fns) == 0:
         raise ValueError(f'No fasta files found in {fasta_dir}')
 
