@@ -15,8 +15,9 @@ import hits.interval
 import hits.utilities
 import hits.visualize
 
-import knock_knock.pegRNAs
 import knock_knock.editing_strategy
+import knock_knock.outcome
+import knock_knock.pegRNAs
 
 import knock_knock.outcome
 
@@ -190,8 +191,9 @@ class StackedDiagrams:
         return y - delta, y + delta
     
     def draw_rect(self, source_name, x0, x1, y0, y1, alpha, color='black', fill=True, clip_to_window=True):
-        window_left, window_right = self.windows[source_name]
         if clip_to_window:
+            window_left, window_right = self.windows[source_name]
+
             if x0 > window_right or x1 < window_left:
                 return
 
@@ -1982,22 +1984,28 @@ class DiagramGrid:
         plot_kwargs.setdefault('markersize', 7)
         plot_kwargs.setdefault('clip_on', True)
 
-        mismatch_fractions = mismatch_fractions.copy()
+        mismatch_fractions = mismatch_fractions.sort_index(axis=1)
+
+        if self.diagrams.flip[self.diagrams.single_source_name]:
+            mismatch_fractions = knock_knock.outcome.complement_mismatch_fractions(mismatch_fractions)
 
         mismatch_fractions.index = mismatch_fractions.index - self.editing_strategy.cut_after
 
         self.add_ax_above('mismatch_fractions', gap=gap, height_multiple=height_multiple)
-        
-        for b in 'NTCAG':
-            self.plot_on_ax_above('mismatch_fractions',
-                                  mismatch_fractions.index,
-                                  mismatch_fractions[b],
-                                  transform='percentage',
-                                  label=b,
-                                  color=hits.visualize.igv_colors[b],
-                                  threshold_for_points=0.1,
-                                  **plot_kwargs,
-                                 )
+
+        all_labels = [labels for labels, rows in mismatch_fractions.T.groupby(mismatch_fractions.columns.names[:-1])]
+
+        for labels in all_labels:
+            for b in 'NTCAG':
+                self.plot_on_ax_above('mismatch_fractions',
+                                      mismatch_fractions.index,
+                                      mismatch_fractions[labels][b],
+                                      transform='percentage',
+                                      label=b,
+                                      color=hits.visualize.igv_colors[b],
+                                      threshold_for_points=0.1,
+                                      **plot_kwargs,
+                                     )
 
     def plot_RTT_structure_above(self,
                                  pegRNA_name,
@@ -2397,6 +2405,7 @@ def marginalize_over_mismatches_outside_window(outcome_fractions, window_interva
 def make_partial_incorporation_figure(editing_strategy,
                                       outcome_fractions,
                                       pegRNA_conversion_fractions=None,
+                                      plot_mismatch_fractions=False,
                                       conditions=None,
                                       line_conditions=None,
                                       heatmap_conditions=None,
@@ -2425,6 +2434,7 @@ def make_partial_incorporation_figure(editing_strategy,
                                       legend=True,
                                       legend_kwargs=None,
                                       fractions_width_multiple=12,
+                                      plot_clip_on=True,
                                       **diagram_kwargs,
                                      ):
 
@@ -2432,6 +2442,7 @@ def make_partial_incorporation_figure(editing_strategy,
 
     if isinstance(outcome_fractions, pd.Series):
         outcome_fractions = outcome_fractions.to_frame()
+        outcome_fractions.columns.name = 'sample'
 
     if conditions is None:
         conditions = outcome_fractions.columns
@@ -2626,6 +2637,7 @@ def make_partial_incorporation_figure(editing_strategy,
                                 marker_alpha=marker_alpha,
                                 #y_interval_offset=(c_i - len(line_conditions) // 2) * 0.01,
                                 y_offset=(c_i - len(line_conditions) // 2) * 0.02,
+                                clip_on=plot_clip_on,
                                )
 
         if log2_fold_change_from_condition is not None:
@@ -2720,6 +2732,10 @@ def make_partial_incorporation_figure(editing_strategy,
         else:
             legend_ax = grid.ordered_axs[-2]
             bbox_to_anchor = (1, 0)
+
+        if plot_mismatch_fractions:
+            mismatch_fractions = knock_knock.outcome.mismatch_fractions(editing_strategy, outcome_fractions)
+            grid.plot_mismatch_fractions_above(mismatch_fractions)
 
         if legend:
             legend_kwargs.setdefault('bbox_to_anchor', bbox_to_anchor)

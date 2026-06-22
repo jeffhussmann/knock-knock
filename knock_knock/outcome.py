@@ -684,6 +684,7 @@ def pegRNA_conversion_fractions(editing_strategy,
         fs_df = pd.DataFrame.from_dict(fs, orient='index')
 
         fs_df.index.name = 'edit_name'
+        fs_df.columns.names = outcome_fractions.columns.names
 
     else:
         fs_df = None
@@ -693,20 +694,36 @@ def pegRNA_conversion_fractions(editing_strategy,
 def mismatch_fractions(editing_strategy,
                        outcome_fractions,
                       ):
+
+    if isinstance(outcome_fractions, pd.Series):
+        outcome_fractions = outcome_fractions.to_frame()
+        outcome_fractions.columns.name = 'sample'
     
-    fractions = np.zeros((len(editing_strategy.target_sequence), len(hits.utilities.base_order)))
-
-    for (c, s, d), f in outcome_fractions().items():
-        mismatches = knock_knock.outcome.Details.from_string(d)['mismatches']
-        for position, basecall in zip(mismatches.positions, mismatches.basecalls):
-            fractions[position, hits.utilities.base_to_index[basecall]] += f
-
     index = np.arange(len(editing_strategy.target_sequence))
     columns = list(hits.utilities.base_order)
-    fractions = pd.DataFrame(fractions, index=index, columns=columns)
 
-    return fractions
-    
+    fractions = np.zeros((len(outcome_fractions.columns), len(index), len(columns)))
+
+    for (c, s, d), fs in outcome_fractions.iterrows():
+        mismatches = knock_knock.outcome.Details.from_string(d)['mismatches']
+        for position, basecall in zip(mismatches.positions, mismatches.basecalls):
+            fractions[:, position, hits.utilities.base_to_index[basecall]] += fs.values
+
+    fractions_frames = {}
+
+    for label, label_fractions in zip(outcome_fractions.columns, fractions):
+        label_fractions = pd.DataFrame(label_fractions, index=index, columns=columns)
+        label_fractions.index.name = 'position'
+        label_fractions.columns.name = 'base'
+        fractions_frames[label] = label_fractions
+
+    fractions_frame = pd.concat(fractions_frames, axis=1, names=outcome_fractions.columns.names)
+
+    return fractions_frame
+
+def complement_mismatch_fractions(fs):
+    return fs.rename(columns=hits.utilities.complement, level='base')
+
 def outcomes_with_deletion_overlapping_cuts(editing_strategy, sgRNA_name, outcome_fractions, buffer=0):
     components = editing_strategy.sgRNA_components[sgRNA_name]
     effector = knock_knock.effector.effectors[components['effector']]
