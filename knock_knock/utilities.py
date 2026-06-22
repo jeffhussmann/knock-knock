@@ -46,7 +46,7 @@ def read_and_sanitize_csv(csv_fn, index_col=None):
 
     return possibly_series
 
-def configure_logging_to_file(log_dir, name, verbose=True, task_name=''):
+def configure_logging_to_file(log_dir, name=None, verbose=True, task_name=''):
     log_dir = Path(log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
 
