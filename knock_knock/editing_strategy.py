@@ -149,6 +149,7 @@ class EditingStrategy:
 
         if supplemental_indices is None:
             supplemental_indices = {}
+
         self.supplemental_indices = supplemental_indices
 
         self.infer_homology_arms = infer_homology_arms
@@ -164,7 +165,7 @@ class EditingStrategy:
     def __repr__(self):
         if len(self.pegRNA_names) > 0:
             representation = f'''\
-                TargetInfo:
+                {type(self).__name__}:
                     name = {self.name}
                     base_dir = {self.base_dir}
                     target = {self.target}
@@ -174,7 +175,7 @@ class EditingStrategy:
 
         else:
             representation = f'''\
-                TargetInfo:
+                {type(self).__name__}:
                     name = {self.name}
                     base_dir = {self.base_dir}
                     target = {self.target}
