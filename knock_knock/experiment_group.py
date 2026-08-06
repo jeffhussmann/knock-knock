@@ -216,6 +216,8 @@ class ExperimentGroup:
             store['category'] = pd.concat(all_category_counts, axis=1).fillna(0).astype(int)
             store['subcategory'] = pd.concat(all_subcategory_counts, axis=1).fillna(0).astype(int)
 
+        logger.info(f'Finished aggregating!')
+
     @memoized_with_args
     def outcome_counts_store(self, key):
         counts = None
@@ -261,12 +263,13 @@ class ExperimentGroup:
 
             outcome_counts = pd.concat(outcome_counts, axis=1).fillna(0).astype(int)
 
-        if only_relevant:
-            # See comment in Experiment.outcome_counts
-            outcome_counts = outcome_counts.drop(self.categorizer.non_relevant_categories, errors='ignore')
+        if outcome_counts is not None:
+            if only_relevant:
+                # See comment in Experiment.outcome_counts
+                outcome_counts = outcome_counts.drop(self.categorizer.non_relevant_categories, errors='ignore')
 
-        # Sort columns to avoid annoying pandas PerformanceWarnings.
-        outcome_counts.sort_index(axis='columns', inplace=True)
+            # Sort columns to avoid annoying pandas PerformanceWarnings.
+            outcome_counts.sort_index(axis='columns', inplace=True)
 
         return outcome_counts
 
