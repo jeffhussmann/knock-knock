@@ -369,8 +369,7 @@ class StackedDiagrams:
         transform_seq = self.transform_seqs[source_name]
         starts = np.array(insertion.starts_afters) - offset
 
-        cut = strat.cut_after - offset
-        if cut in starts:
+        if strat.cut_after is not None and (cut := strat.cut_after - offset) in starts:
             start_to_label = cut
         else:
             start_to_label = starts[0]
@@ -2318,7 +2317,7 @@ def make_deletion_boundaries_figure(editing_strategy,
     grid.set_xlim('log10_fractions', (np.log10(0.49 * frequency_cutoff), np.log10(x_max)))
     grid.style_log10_frequency_ax('log10_fractions')
 
-    if plot_boundaries:
+    if plot_boundaries and deletion_boundaries_retriever is not None:
         if flip:
             panel_order = [
                 'fraction_removed',
