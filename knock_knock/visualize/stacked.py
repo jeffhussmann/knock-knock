@@ -2111,7 +2111,8 @@ class DiagramGrid:
                        )
 
             if difference_from_condition is None:
-                title = 'Total % incorporation\nat position across\nall outcomes'
+                title = 'Total %\nincorporation\nacross all\noutcomes'
+
             else:
                 if difference_from_condition_label is None:
                     if isinstance(difference_from_condition, str):
@@ -2290,7 +2291,7 @@ def make_deletion_boundaries_figure(editing_strategy,
     grid.add_ax('fractions', width_multiple=12, title='% of reads\nwith specific outcome')
 
     if show_log_scale:
-        grid.add_ax('log10_fractions', width_multiple=12, gap_multiple=2, title='% of reads (log scale)')
+        grid.add_ax('log10_fractions', width_multiple=12, gap_multiple=2, title='% of reads\n(log scale)')
 
     for ax, transform in [('fractions', 'percentage'),
                           ('log10_fractions', 'log10'),
@@ -2716,6 +2717,7 @@ def make_partial_incorporation_figure(editing_strategy,
                                                         linewidth=plot_line_widths,
                                                         line_alpha=line_alpha,
                                                         marker_alpha=marker_alpha,
+                                                        gap=3,
                                                        )
 
             grid.style_pegRNA_conversion_plot('pegRNA_conversion_fractions',
