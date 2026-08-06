@@ -68,6 +68,22 @@ def round_3_condition_to_color(condition):
 
     return color
 
+def round_4_condition_to_color(condition):
+    palette = bokeh.palettes.Category20c_20
+
+    if condition['arrest_status'] == 'arrested':
+        index = 0
+    elif condition['arrest_status'] == 'unarrest':
+        index = 4
+    else:
+        raise ValueError
+
+    offset = 0
+
+    color = palette[index + offset]
+
+    return color
+
 def condition_to_label(condition, condition_keys_to_label):
     label = ', '.join([f'{key}={value}' for key, value in condition.items() if key in condition_keys_to_label])
     return label
