@@ -459,6 +459,7 @@ class pegRNA:
                 sequence = self.intended_flap_sequence[insertion['start_in_flap']:insertion['end_in_flap'] + 1]
                 position = insertion['starts_after_in_downstream'] + 1
                 insertion['description'] = f'+{position}ins{sequence}'
+                insertion['sequence'] = sequence
                 insertion['length'] = len(sequence)
 
             # Deletions are gaps between consecutive target subsequences. If the
@@ -484,6 +485,7 @@ class pegRNA:
                 sequence = self.target_downstream_of_nick[deletion['downstream_of_nick_start']:deletion['downstream_of_nick_end'] + 1]
                 position = deletion['downstream_of_nick_start'] + 1
                 deletion['description'] = f'+{position}del{sequence}'
+                deletion['sequence'] = sequence
                 deletion['length'] = len(sequence)
 
         # If the inferred alignment ends in mismatches, reject it and assume this is a non-homologous flap.
