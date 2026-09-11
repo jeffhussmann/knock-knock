@@ -1,5 +1,4 @@
 import Bio.SeqUtils
-import pysam
 
 from hits import genomes, gff, utilities, sam, sw
 
@@ -162,14 +161,23 @@ class Effector:
 # tuples are (PAM_pattern, PAM side, cut_after_offset)
 effector_details = {
     'SpCas9': ('NGG', 3, (-4, -4)), 
-    'SpCas9H840A': ('NGG', 3, (-4, None)),
-    'SpCas9HD10A': ('NGG', 3, (None, -4)),
+    'SpCas9_H840A': ('NGG', 3, (-4, None)),
+
+    'SpCas9_D10A': ('NGG', 3, (None, -4)),
+    'SpCas9-NG_D10A': ('NG', 3, (None, -4)),
+    'SpCas9-NRRH_D10A': ('NRRN', 3, (None, -4)),
+    'SpCas9(MKRCMV)_D10A': ('NGT', 3, (None, -4)),
+    'SpCas9(ARGIMR)_D10A': ('NGT', 3, (None, -4)),
+    'SpCas9(MRRWMR)_D10A': ('NGT', 3, (None, -4)),
+    'SpCas9(LWRYEK)_D10A': ('NGC', 3, (None, -4)),
+    'SpCas9(LWKYQS)_D10A': ('NGC', 3, (None, -4)),
+    'SpCas9(eSpGC)_D10A': ('NGC', 3, (None, -4)),
 
     'SpCas9-NG': ('NG', 3, (-4, -4)), 
 
-    'SpRY': ('NRN', 3, (-4, -4)), 
-    'SpRYH840A': ('NRN', 3, (-4, None)),
-    'SpRYD10A': ('NRN', 3, (None, -4)),
+    'SpRY': ('NNN', 3, (-4, -4)), 
+    'SpRY_H840A': ('NNN', 3, (-4, None)),
+    'SpRY_D10A': ('NNN', 3, (None, -4)),
 
     'SpCas9_VRQR': ('NGA', 3, (-4, -4)),
     'SpCas9H840A_VRQR': ('NGA', 3, (-4, None)),
