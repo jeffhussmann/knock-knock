@@ -43,6 +43,7 @@ class EditingStrategy:
                  name,
                  primers=None,
                  sgRNAs=None,
+                 manual_effector=None,
                  donor=None,
                  nonhomologous_donor=None,
                  sequencing_start_feature_name=None,
@@ -136,6 +137,7 @@ class EditingStrategy:
 
         populate_attribute('sgRNAs', sgRNAs, force_list=True)
         populate_attribute('primers', primers, force_list=True, default_value='')
+        populate_attribute('manual_effector', manual_effector)
         populate_attribute('donor', donor)
         populate_attribute('nonhomologous_donor', nonhomologous_donor)
         populate_attribute('sequencing_start_feature_name', sequencing_start_feature_name)
@@ -245,6 +247,7 @@ class EditingStrategy:
         If manual_sgRNA_components were provided, returns those.
         Otherwise, attempts to load an sgRNAs file specific to this strategy dir.
         If this doesn't exist, then attempts to load a global (base_dir) file.
+        If effector was provided, override all effectors with that value.
         '''
 
         if self.manual_sgRNA_components is not None:
@@ -263,6 +266,10 @@ class EditingStrategy:
             
             if fn is not None:
                 all_components = knock_knock.pegRNAs.read_csv(fn)
+
+        if self.manual_effector is not None:
+            for name, components in all_components.items():
+                components['effector'] = self.manual_effector
 
         return all_components
 

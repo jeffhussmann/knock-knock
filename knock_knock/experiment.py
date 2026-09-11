@@ -119,6 +119,7 @@ class Experiment:
 
         self.sgRNAs = self.description.get('sgRNAs')
         self.donor = self.description.get('donor')
+        self.effector = self.description.get('effector')
         self.nonhomologous_donor = self.description.get('nonhomologous_donor')
         self.primers = self.description.get('primers')
         self.infer_homology_arms = self.description.get('infer_homology_arms', True)
@@ -250,6 +251,7 @@ class Experiment:
                                                              nonhomologous_donor=self.nonhomologous_donor,
                                                              sgRNAs=self.sgRNAs,
                                                              primers=self.primers,
+                                                             manual_effector=self.effector,
                                                              sequencing_start_feature_name=self.sequencing_start_feature_name,
                                                              supplemental_indices=self.supplemental_indices,
                                                              infer_homology_arms=self.infer_homology_arms,
