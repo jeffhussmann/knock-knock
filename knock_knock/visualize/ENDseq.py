@@ -72,9 +72,15 @@ def round_4_condition_to_color(condition):
     palette = bokeh.palettes.Category20c_20
 
     if condition['arrest_status'] == 'arrested':
-        index = 0
-    elif condition['arrest_status'] == 'unarrest':
-        index = 4
+        if condition['cell_line'] == 'MLH1ko':
+            index = 0
+        else:
+            index = 8
+    elif condition['arrest_status'].startswith('unarrest'):
+        if condition['cell_line'] == 'MLH1ko':
+            index = 4
+        else:
+            index = 12
     else:
         raise ValueError
 
@@ -215,7 +221,7 @@ class StrandsGrid:
                                                     clip_on=False,
                                                     alpha=alpha,
                                                     color=color,
-                                                )
+                                                   )
                 ax.add_patch(rect)
 
             x = (min(ps_feature.start, PAM_feature.start) + max(ps_feature.end, PAM_feature.end)) * 0.5 - self.anchor
@@ -394,7 +400,8 @@ class StrandsGrid:
             self.axs['pegRNA'].set_ylabel('% of top strand reads,\nRT\'ed flap', size=12)
 
     def add_legend(self, ax_name='top', **kwargs):
-        self.axs[ax_name].legend(markerscale=2, **kwargs)
+        legend = self.axs[ax_name].legend(markerscale=2, **kwargs)
+        return legend
 
     def plot_fractions(self,
                        data,
@@ -404,6 +411,8 @@ class StrandsGrid:
                        condition_filter=None,
                        condition_to_z_order=None,
                        clip_on=True,
+                       marker_size=5,
+                       line_width=2.5,
                       ):
 
         if condition_to_z_order is None:
@@ -451,7 +460,7 @@ class StrandsGrid:
                 ax.plot(to_plot,
                         'o',
                         color=color,
-                        markersize=5,
+                        markersize=marker_size,
                         clip_on=clip_on,
                         label=label,
                         zorder=z_order,
@@ -476,7 +485,7 @@ class StrandsGrid:
                             '-', 
                             color=color,
                             alpha=0.5,
-                            linewidth=2.5,
+                            linewidth=line_width,
                             clip_on=clip_on,
                             zorder=z_order,
                            )
