@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 from pathlib import Path
 from collections import Counter, defaultdict
 
+import hgvs.parser
 import pysam
 import yaml
 
@@ -62,7 +63,7 @@ class EditingStrategyBuilder:
     def __init__(self,
                  base_dir,
                  name,
-                 genome,
+                 genotype_name,
                  amplicon_primer_names,
                  sgRNA_names,
                  genomes=None,
@@ -74,7 +75,7 @@ class EditingStrategyBuilder:
         self.name = name
         self.dir = self.strategies_dir / self.name
 
-        self.genome = genome
+        self.genotype_name = genotype_name
 
         def ensure_list(possible_string):
             converted = possible_string
@@ -156,6 +157,43 @@ class EditingStrategyBuilder:
 
         return primers
 
+    @memoized_property
+    def genotype(self):
+        genotypes_fn = self.strategies_dir / 'genotypes.yaml'
+
+        if genotypes_fn.exists():
+            genotypes = yaml.safe_load(genotypes_fn.read_text())
+        else:
+            genotypes = {}
+
+
+        if self.genotype_name in genotypes:
+            genotype = genotypes[self.genotype_name]
+
+        elif self.genotype_name in self.index_locations:
+            genotype = {
+                'genome': self.genotype_name,
+            }
+
+        else:
+            raise ValueError(f'Unknown genotype: {self.genotype_name}')
+
+        return genotype
+
+    @memoized_property
+    def genome(self):
+        return self.genotype['genome']
+
+    @memoized_property
+    def variants(self):
+        variants = self.genotype.get('variants', [])
+
+        parser = hgvs.parser.Parser()
+
+        variants = [parser.parse(variant) for variant in variants]
+        
+        return variants
+
     def identify_protospacer_features_in_amplicon(self,
                                                   amplicon_sequence,
                                                   amplicon_description=None,
@@ -208,6 +246,9 @@ class EditingStrategyBuilder:
             'target_end': target_end,
         }
 
+        if self.variants:
+            extracted_target_region['variants'] = [str(variant) for variant in self.variants]
+
         return extracted_target_region
 
     @memoized_property
@@ -217,6 +258,35 @@ class EditingStrategyBuilder:
                                               self.extracted_target_region['target_end'],
                                              )
         target_sequence = target_sequence.upper()
+
+        target_sequence = list(target_sequence)
+
+        def var_g_to_chr(var_g):
+            chr_symbol = int(var_g.ac.split('.')[0].split('_')[-1])
+            if chr_symbol == 23:
+                chr_symbol = 'X'
+
+            return f'chr{chr_symbol}'
+
+        # Note that parsed hgvs has position in 1-based coords,
+        # but extract_target_region in 0-based.
+        for variant in self.variants:
+            if var_g_to_chr(variant) != self.extracted_target_region['ref_name']:
+                logger.warning(f'{variant} not on {self.extracted_target_region['ref_name']}')
+                continue
+
+            position_in_target = variant.posedit.pos.start.base - 1 - self.extracted_target_region['target_start']
+
+            if position_in_target < 0 or position_in_target > len(target_sequence) - 1:
+                logger.warning(f'{variant} not in the extracted window of {self.extracted_target_region['ref_name']}')
+                continue
+
+            if target_sequence[position_in_target] != variant.posedit.edit.ref:
+                raise ValueError(f'target sequence doesn\'t match ref at variant position: {variant}')
+
+            target_sequence[position_in_target] = variant.posedit.edit.alt
+
+        target_sequence = ''.join(target_sequence)
 
         return target_sequence
 
@@ -526,7 +596,7 @@ def build_strategies(base_dir, batch_name, ignore_existing=False):
     sample_sheet = knock_knock.utilities.read_and_sanitize_csv(sample_sheet_fn, index_col='sample_name')
 
     mandatory_columns = {
-        'genome',
+        'genotype',
         'primers',
         'sgRNAs',
     }
@@ -554,7 +624,7 @@ def build_strategies(base_dir, batch_name, ignore_existing=False):
 
             builder = EditingStrategyBuilder(base_dir,
                                              editing_strategy_name,
-                                             row['genome'],
+                                             row['genotype'],
                                              row['primers'],
                                              row['sgRNAs'],
                                              genomes=genomes,

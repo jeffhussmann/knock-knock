@@ -1220,10 +1220,11 @@ def sample_sheet_row_to_editing_strategy_name(row):
 
     else:
         if row['primers'] == '':
-            editing_strategy_name = f'{row['genome']}_{row['sgRNAs']}'
+            editing_strategy_name = f'{row['genotype']}_{row['sgRNAs']}'
+
         else:
             primers = '+'.join(row['primers'].split(';'))
-            editing_strategy_name = f'{row['genome']}_{primers}'
+            editing_strategy_name = f'{row['genotype']}_{primers}'
 
     return editing_strategy_name
 

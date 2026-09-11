@@ -1988,7 +1988,8 @@ class DiagramGrid:
         if self.diagrams.flip[self.diagrams.single_source_name]:
             mismatch_fractions = knock_knock.outcome.complement_mismatch_fractions(mismatch_fractions)
 
-        mismatch_fractions.index = mismatch_fractions.index - self.editing_strategy.cut_after
+        mismatch_fractions.index = mismatch_fractions.index.droplevel('base')
+        mismatch_fractions.index -= self.editing_strategy.cut_after
 
         self.add_ax_above('mismatch_fractions', gap=gap, height_multiple=height_multiple)
 
