@@ -2254,10 +2254,10 @@ def make_deletion_boundaries_figure(editing_strategy,
     outcome_fractions = pd.concat(to_concat)
 
     if perform_marginalization_over_all_mismatches:
-        outcome_fractions = marginalize_over_mismatches_outside_window(outcome_fractions, hits.interval.Interval.empty())
+        outcome_fractions = knock_knock.outcome.marginalize_over_mismatches_outside_window(outcome_fractions, hits.interval.Interval.empty())
 
     if perform_marginalization_over_mismatches_outside_window:
-        outcome_fractions = marginalize_over_mismatches_outside_window(outcome_fractions, window_interval)
+        outcome_fractions = knock_knock.outcome.marginalize_over_mismatches_outside_window(outcome_fractions, window_interval)
 
     if manual_outcomes is not None:
         outcomes = manual_outcomes
@@ -2367,40 +2367,6 @@ def make_deletion_boundaries_figure(editing_strategy,
     grid.outcome_fractions = outcome_fractions
 
     return grid
-
-def restrict_mismatches_to_window(csd, window_interval):
-    ''' Return a transformed version of csd in which all non-programmed mismatches
-    outside of window_interval have been removed.
-
-    Intended for used as a groupby key for collapsing outcomes to a representative when
-    marginalizing over all mismatches outside of a registered window.
-    ''' 
-
-    c, s, d = csd
-
-    details = knock_knock.outcome.Details.from_string(d)
-    
-    mismatches = details['mismatches']
-        
-    mismatches_in_window = knock_knock.outcome.Mismatches([m for m in mismatches if m.position in window_interval])
-
-    details.mismatches = mismatches_in_window
-    
-    if s == 'mismatches' and len(mismatches_in_window) == 0:
-        restricted_s = 'clean'
-    else:
-        restricted_s = s
-    
-    restricted_c = c
-    
-    restricted_d = str(details)
-    
-    return restricted_c, restricted_s, restricted_d
-
-def marginalize_over_mismatches_outside_window(outcome_fractions, window_interval):
-    outcome_fractions = outcome_fractions.groupby(by=lambda csd: restrict_mismatches_to_window(csd, window_interval)).sum()
-    outcome_fractions.index = pd.MultiIndex.from_tuples(outcome_fractions.index, names=('category', 'subcategory', 'details'))
-    return outcome_fractions
 
 def make_partial_incorporation_figure(editing_strategy,
                                       outcome_fractions,
@@ -2515,10 +2481,10 @@ def make_partial_incorporation_figure(editing_strategy,
         window_interval = hits.interval.Interval(strat.cut_after - window[1], strat.cut_after - window[0])
 
     if perform_marginalization_over_all_mismatches:
-        outcome_fractions = marginalize_over_mismatches_outside_window(outcome_fractions, hits.interval.Interval.empty())
+        outcome_fractions = knock_knock.outcome.marginalize_over_mismatches_outside_window(outcome_fractions, hits.interval.Interval.empty())
 
     elif perform_marginalization_over_mismatches_outside_window:
-        outcome_fractions = marginalize_over_mismatches_outside_window(outcome_fractions, window_interval)
+        outcome_fractions = knock_knock.outcome.marginalize_over_mismatches_outside_window(outcome_fractions, window_interval)
 
     def mismatch_in_window(d):
         details = knock_knock.outcome.Details.from_string(d)

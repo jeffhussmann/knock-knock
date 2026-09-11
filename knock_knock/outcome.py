@@ -746,3 +746,37 @@ def outcomes_with_deletion_overlapping_cuts(editing_strategy, sgRNA_name, outcom
             outcomes.append((c, s, d))
 
     return outcomes
+
+def restrict_mismatches_to_window(csd, window_interval):
+    ''' Return a transformed version of csd in which all non-programmed mismatches
+    outside of window_interval have been removed.
+
+    Intended for used as a groupby key for collapsing outcomes to a representative when
+    marginalizing over all mismatches outside of a registered window.
+    ''' 
+
+    c, s, d = csd
+
+    details = Details.from_string(d)
+    
+    mismatches = details['mismatches']
+        
+    mismatches_in_window = Mismatches([m for m in mismatches if m.position in window_interval])
+
+    details.mismatches = mismatches_in_window
+    
+    if s == 'mismatches' and len(mismatches_in_window) == 0:
+        restricted_s = 'clean'
+    else:
+        restricted_s = s
+    
+    restricted_c = c
+    
+    restricted_d = str(details)
+    
+    return restricted_c, restricted_s, restricted_d
+
+def marginalize_over_mismatches_outside_window(outcome_fractions, window_interval):
+    outcome_fractions = outcome_fractions.groupby(by=lambda csd: restrict_mismatches_to_window(csd, window_interval)).sum()
+    outcome_fractions.index = pd.MultiIndex.from_tuples(outcome_fractions.index, names=('category', 'subcategory', 'details'))
+    return outcome_fractions
