@@ -29,6 +29,7 @@ import knock_knock.experiment
 import knock_knock.pegRNAs
 
 import knock_knock.utilities
+import knock_knock.variants
 
 memoized_property = hits.utilities.memoized_property
 
@@ -101,7 +102,7 @@ class EditingStrategyBuilder:
         self.dir = knock_knock.editing_strategy.get_strategies_dir(self.base_dir) / self.name
 
     @memoized_property
-    def extra_sequences(self):
+    def additional_sequences(self):
         fasta_records, _ = knock_knock.editing_strategy.load_all_fasta_records(self.strategies_dir / 'additional_sequences')
         genbank_records, _ = knock_knock.editing_strategy.load_all_genbank_records(self.strategies_dir / 'additional_sequences')
 
@@ -114,9 +115,9 @@ class EditingStrategyBuilder:
         if len(duplicates) > 0:
             raise ValueError('multiple records for names {duplicates}')
 
-        extra_sequences = {record.name: str(record.seq).upper() for record in all_records}
+        additional_sequences = {record.name: str(record.seq).upper() for record in all_records}
 
-        return extra_sequences
+        return additional_sequences
 
     @memoized_property
     def sgRNAs(self):
@@ -261,17 +262,10 @@ class EditingStrategyBuilder:
 
         target_sequence = list(target_sequence)
 
-        def var_g_to_chr(var_g):
-            chr_symbol = int(var_g.ac.split('.')[0].split('_')[-1])
-            if chr_symbol == 23:
-                chr_symbol = 'X'
-
-            return f'chr{chr_symbol}'
-
         # Note that parsed hgvs has position in 1-based coords,
         # but extract_target_region in 0-based.
         for variant in self.variants:
-            if var_g_to_chr(variant) != self.extracted_target_region['ref_name']:
+            if knock_knock.variants.var_g_to_chr(variant) != self.extracted_target_region['ref_name']:
                 logger.warning(f'{variant} not on {self.extracted_target_region['ref_name']}')
                 continue
 
@@ -289,6 +283,49 @@ class EditingStrategyBuilder:
         target_sequence = ''.join(target_sequence)
 
         return target_sequence
+
+    @memoized_property
+    def variant_flanking_regions(self):
+        fetcher = self.genomes.region_fetcher('hg38')
+
+        parser = hgvs.parser.Parser()
+
+        variant_flanking_regions = {}
+
+        for variant in self.genotype.get('variant_flanking_regions', []):
+            var_g = parser.parse(variant)
+
+            ref_name = knock_knock.build_strategies.var_g_to_chr(var_g)
+            
+            var_g_0 = var_g.posedit.pos.start.base - 1
+            
+            full_ref = fetcher(ref_name, None, None)
+            
+            full_ref = (full_ref[:var_g_0] + var_g.posedit.edit.alt + full_ref[var_g_0 + 1:]).encode()
+
+            target_seq  = self.extracted_target_sequence.encode()
+            
+            header = pysam.AlignmentHeader.from_references([self.name], [len(target_seq)])
+            
+            mapper = hits.sw.SeedAndExtender(target_seq, 10, header, self.name)
+            
+            als = mapper.seed_and_extend(full_ref, var_g_0 - 10, var_g_0 + 10, 'alignment')
+            
+            if len(als) != 1:
+                raise ValueError
+            
+            al = als[0]
+
+            variant_flanking_regions[variant] = {
+                'ref_name': ref_name,
+                'target_start': al.reference_start,
+                'target_end': al.reference_end,
+                'genomic_1_start': al.query_alignment_start + 1,
+                'genomic_1_end': al.query_alignment_end + 1,
+                'strand': hits.sam.get_strand(al),
+            }
+
+        return variant_flanking_regions
 
     def build(self):
         self.dir.mkdir(exist_ok=True)
@@ -332,11 +369,11 @@ class EditingStrategyBuilder:
         parameters_fn = self.dir / 'parameters.yaml'
 
         parameters = {
-            'extracted_target_region': self.extracted_target_region,
             'target': target_name,
+            'primers': self.amplicon_primer_names,
+            'extracted_target_region': self.extracted_target_region,
+            'variant_flanking_regions': self.variant_flanking_regions,
         }
-
-        parameters['primers'] = self.amplicon_primer_names
 
         parameters_fn.write_text(yaml.dump(parameters, default_flow_style=False))
 
@@ -354,11 +391,11 @@ class EditingStrategyBuilder:
             region_fetcher = self.genomes.region_fetcher(self.genome)
 
         else:
-            if self.genome not in self.extra_sequences:
+            if self.genome not in self.additional_sequences:
                 raise ValueError(f'no sequence record found for "{self.genome}"')
 
             def region_fetcher(seq_name, start, end):
-                return self.extra_sequences[seq_name][start:end]
+                return self.additional_sequences[seq_name][start:end]
 
         return region_fetcher
 
@@ -367,7 +404,7 @@ class EditingStrategyBuilder:
             genome_index = self.genomes.fasta_index(self.genome)
             length = genome_index[reference_name].length
         else:
-            length = len(self.extra_sequences[reference_name])
+            length = len(self.additional_sequences[reference_name])
 
         return length
 

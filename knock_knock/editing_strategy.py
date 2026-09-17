@@ -19,8 +19,9 @@ import hits.restriction
 import hits.visualize
 from hits import fasta, genomes, gff, utilities, mapping_tools, interval, sam, sw
 
-import knock_knock.pegRNAs
 import knock_knock.integrases
+import knock_knock.pegRNAs
+import knock_knock.variants
 
 from knock_knock.effector import effectors
 from knock_knock.outcome import DegenerateDeletion, DegenerateInsertion
@@ -2085,6 +2086,42 @@ class EditingStrategy:
             edited_target = self.target_sequence
 
         return edited_target
+
+    def offset_for_genomic_1(self, var_g): 
+        ''' Return an offset that converts target coordinates to 1-based genomic coordinates. '''
+        offset_for_genomic_1 = None
+
+        if var_g is None:
+            chr_name = None
+        else:
+            chr_name = knock_knock.variants.var_g_to_chr(var_g)
+
+        if self.parameters['extracted_target_region']['ref_name'] == chr_name:
+            offset_for_genomic_1 = self.parameters['extracted_target_region']['target_start'] + 1
+
+        else:
+            if var_g is None:
+                raise ValueError
+
+            variant_genomic_1_p = var_g.posedit.pos.start.base
+
+            for modeled_variant, region in self.parameters['variant_flanking_regions'].items():
+                if region['ref_name'] == chr_name and (region['genomic_1_start'] <= variant_genomic_1_p <= region['genomic_1_end']):
+                    if region['strand'] == '+':
+                        if offset_for_genomic_1 is not None:
+                            # In multiple regions
+                            raise NotImplementedError
+
+                        offset_for_genomic_1 = region['genomic_1_start'] - region['target_start']
+
+                    else:
+                        raise NotImplementedError
+
+        if offset_for_genomic_1 is None:
+            raise ValueError
+
+        return offset_for_genomic_1
+
 
 def parse_genbank_record(gb_record):
     convert_strand = {

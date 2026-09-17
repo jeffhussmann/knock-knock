@@ -166,12 +166,16 @@ effector_details = {
     'SpCas9_D10A': ('NGG', 3, (None, -4)),
     'SpCas9-NG_D10A': ('NG', 3, (None, -4)),
     'SpCas9-NRRH_D10A': ('NRRN', 3, (None, -4)),
+    'SpCas9-NRTH_D10A': ('NRTH', 3, (None, -4)),
+    'SpCas9-NRCH_D10A': ('NRCH', 3, (None, -4)),
     'SpCas9(MKRCMV)_D10A': ('NGT', 3, (None, -4)),
     'SpCas9(ARGIMR)_D10A': ('NGT', 3, (None, -4)),
     'SpCas9(MRRWMR)_D10A': ('NGT', 3, (None, -4)),
     'SpCas9(LWRYEK)_D10A': ('NGC', 3, (None, -4)),
     'SpCas9(LWKYQS)_D10A': ('NGC', 3, (None, -4)),
     'SpCas9(eSpGC)_D10A': ('NGC', 3, (None, -4)),
+    'SpCas9(eMQKSER)_D10A': ('NGC', 3, (None, -4)),
+    'SpCas9(MQKSER)_D10A': ('NGC', 3, (None, -4)),
 
     'SpCas9-NG': ('NG', 3, (-4, -4)), 
 

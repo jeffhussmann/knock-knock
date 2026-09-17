@@ -694,6 +694,7 @@ def pegRNA_conversion_fractions(editing_strategy,
 def mismatch_fractions(editing_strategy,
                        outcome_fractions,
                        relative_to_extracted_genomic_region=False,
+                       var_g=None,
                       ):
 
     if isinstance(outcome_fractions, pd.Series):
@@ -701,8 +702,9 @@ def mismatch_fractions(editing_strategy,
         outcome_fractions.columns.name = 'sample'
     
     positions = np.arange(len(editing_strategy.target_sequence))
+
     if relative_to_extracted_genomic_region:
-        positions += editing_strategy.parameters['extracted_target_region']['target_start'] + 1 # Note 1-based indexing here.
+        positions += editing_strategy.offset_for_genomic_1(var_g)
 
     index = pd.MultiIndex.from_tuples(zip(positions, editing_strategy.target_sequence), names=['position', 'base'])
     columns = list(hits.utilities.base_order)
