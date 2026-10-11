@@ -306,7 +306,9 @@ class EditingStrategy:
 
     @memoized_property
     def all_gb_records(self):
-        gb_records = self.manual_gb_records
+        gb_records = []
+        
+        gb_records.extend(self.manual_gb_records)
 
         name_to_fn = {}
 
