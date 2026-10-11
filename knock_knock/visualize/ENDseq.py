@@ -432,6 +432,8 @@ class StrandsGrid:
             def sort_key(column):
                 condition = OrderedDict(zip(df.columns.names, column))
                 return [condition[key] for key in condition_keys_to_label]
+
+            already_labeled = set()
             
             for i, column in enumerate(sorted(df.columns, key=sort_key)):
                 condition = OrderedDict(zip(df.columns.names, column))
@@ -440,6 +442,11 @@ class StrandsGrid:
                     continue
 
                 label = condition_to_label(condition, condition_keys_to_label)
+
+                if label in already_labeled:
+                    label = None
+                else:
+                    already_labeled.add(label)
 
                 color = condition_to_color(condition)
                 z_order = condition_to_z_order(condition)
@@ -490,7 +497,11 @@ class StrandsGrid:
                             zorder=z_order,
                            )
 
-def load_exp_counts(exp, key=('targeted genomic sequence', 'unedited'), collapse_UMIs=False):
+def load_exp_counts(exp,
+                    key=('targeted genomic sequence', 'unedited'),
+                    collapse_UMIs=False,
+                   ):
+
     if collapse_UMIs:
         UMI_counts = Counter((outcome.category, outcome.subcategory, str(outcome.details), outcome.UMI_seq) for outcome in exp.outcome_iter())
         UMI_counts = pd.Series(UMI_counts).sort_values(ascending=False)
