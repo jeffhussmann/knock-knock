@@ -959,6 +959,9 @@ class Categorizer:
         left_al = self.target_flanking_alignments['left']
         right_al = self.target_flanking_alignments['right']
 
+        if len(self.primer_features_by_side_of_read) != 2:
+            return None
+
         left_primer = self.primer_features_by_side_of_read['left']
         right_primer = self.primer_features_by_side_of_read['right']
 

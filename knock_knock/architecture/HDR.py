@@ -612,22 +612,23 @@ class Architecture(knock_knock.architecture.Categorizer):
     def target_flanking_alignments(self):
         target_flanking_alignments = super().target_flanking_alignments
 
-        # To unambiguously be from the target, require extending outside of the homology arms.
-        for target_side in [5, 3]:
-            HA = self.editing_strategy.homology_arms[target_side]['target']
+        if self.editing_strategy.homology_arms is not None:
+            # To unambiguously be from the target, require extending outside of the homology arms.
+            for target_side in [5, 3]:
+                HA = self.editing_strategy.homology_arms[target_side]['target']
 
-            if target_side == 5:
-                crop_start = 0
-                crop_end = HA.start - 1
-            else:
-                crop_start = HA.end + 1
-                crop_end = len(self.editing_strategy.target_sequence)
+                if target_side == 5:
+                    crop_start = 0
+                    crop_end = HA.start - 1
+                else:
+                    crop_start = HA.end + 1
+                    crop_end = len(self.editing_strategy.target_sequence)
 
-            read_side = self.target_side_to_read_side[target_side]
-            cropped_al = sam.crop_al_to_ref_int(target_flanking_alignments[read_side], crop_start, crop_end)
+                read_side = self.target_side_to_read_side[target_side]
+                cropped_al = sam.crop_al_to_ref_int(target_flanking_alignments[read_side], crop_start, crop_end)
 
-            if cropped_al is None:
-                target_flanking_alignments[read_side] = None
+                if cropped_al is None:
+                    target_flanking_alignments[read_side] = None
 
         return target_flanking_alignments
         
@@ -1327,7 +1328,7 @@ class Architecture(knock_knock.architecture.Categorizer):
         if flip_target:
             refs_to_flip.add(strat.target)
 
-        if len(strat.homology_arms) > 0:
+        if strat.homology_arms is not None and len(strat.homology_arms) > 0:
             HAs = strat.homology_arms[5]
             opposite_of_target = (HAs['target'].strand != HAs['donor'].strand)
 

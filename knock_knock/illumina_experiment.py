@@ -391,7 +391,6 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
         return feature_name
         
-
     def trim_reads(self, defined_start=True):
         ''' Trim a (potentially variable-length) UMI from the beginning of a read
         by searching for the expected sequence that the amplicon should begin with.
@@ -489,11 +488,17 @@ class IlluminaExperiment(knock_knock.experiment.Experiment):
 
         strat = self.editing_strategy
 
-        start = strat.primer_features_by_side_of_target[5].start
-        prefix = strat.target_sequence[start:start + match_length_required]
+        if 5 in strat.primer_features_by_side_of_target:
+            start = strat.primer_features_by_side_of_target[5].start
+            prefix = strat.target_sequence[start:start + match_length_required]
+        else:
+            prefix = 'N' * match_length_required
 
-        end = strat.primer_features_by_side_of_target[3].end
-        suffix = strat.target_sequence[end + 1 - match_length_required:end + 1]
+        if 3 in strat.primer_features_by_side_of_target:
+            end = strat.primer_features_by_side_of_target[3].end
+            suffix = strat.target_sequence[end + 1 - match_length_required:end + 1]
+        else:
+            suffix = 'N' * match_length_required
 
         if strat.sequencing_direction == '-':
             prefix, suffix = utilities.reverse_complement(suffix), utilities.reverse_complement(prefix)
