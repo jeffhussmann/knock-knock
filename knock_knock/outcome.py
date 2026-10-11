@@ -24,6 +24,12 @@ class Detail:
     def from_string(cls, string):
         return cls(string)
 
+    def __eq__(self, other):
+        if type(self) != type(other):
+            return False
+        else:
+            return str(self) == str(other)
+
 class DegenerateDeletion(Detail):
     def __init__(self, starts_ats, length):
         self.kind = 'D'
@@ -233,7 +239,7 @@ def degenerate_indel_from_string(details_string):
 
         return DegenerateIndel.from_string(details_string)
 
-class Mismatch:
+class Mismatch(Detail):
     def __init__(self, position, basecall):
         self.position = position
         self.basecall = basecall
@@ -255,6 +261,7 @@ class Mismatches:
     def __init__(self, mismatches=None):
         if mismatches is None:
             mismatches = []
+
         self.mismatches = sorted(mismatches, key=lambda mismatch: mismatch.position)
     
     def __str__(self):
