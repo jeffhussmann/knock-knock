@@ -458,7 +458,7 @@ class StackedDiagrams:
 
                     protospacer_color = self.color_overrides.get(guide_name, strat.protospacer_color)
 
-                    PAM_name = f'{guide_name[:-len("_protospacer")]}_PAM'
+                    PAM_name = f'{guide_name[:-len('_protospacer')]}_PAM'
                     PAM_color = self.color_overrides.get(PAM_name, strat.PAM_color)
 
                     self.draw_rect(source_name, guide_start, guide_end, bottom, top, None, color=protospacer_color)
@@ -2371,7 +2371,7 @@ def make_deletion_boundaries_figure(editing_strategy,
 
 def make_partial_incorporation_figure(editing_strategy,
                                       outcome_fractions,
-                                      pegRNA_conversion_fractions=None,
+                                      plot_conversion_fractions=True,
                                       plot_mismatch_fractions=False,
                                       conditions=None,
                                       line_conditions=None,
@@ -2379,14 +2379,17 @@ def make_partial_incorporation_figure(editing_strategy,
                                       condition_colors=None,
                                       condition_labels=None,
                                       frequency_cutoff=1e-3,
+                                      fractions_x_min=None,
                                       show_log_scale=False,
                                       manual_window=None,
                                       include_non_programmed_mismatches=True,
                                       include_wild_type=False,
+                                      fractions_x_max=None,
                                       pegRNA_conversion_fractions_y_max=None,
                                       pegRNA_conversion_fractions_y_ticks=None,
                                       pegRNA_conversion_fractions_height_multiple=10,
                                       manual_outcomes=None,
+                                      apply_threshold_to_manual_outcomes=False,
                                       sort_by_frequency=True,
                                       perform_marginalization_over_mismatches_outside_window=True,
                                       perform_marginalization_over_all_mismatches=False,
@@ -2434,6 +2437,8 @@ def make_partial_incorporation_figure(editing_strategy,
         legend_kwargs = {}
 
     diagram_kwargs.setdefault('draw_all_sequence', 0.1)
+
+    pegRNA_conversion_fractions = knock_knock.outcome.pegRNA_conversion_fractions(editing_strategy, outcome_fractions)
 
     if difference_from_condition is not None:
         condition_values = outcome_fractions[difference_from_condition]
@@ -2504,8 +2509,16 @@ def make_partial_incorporation_figure(editing_strategy,
 
         return in_window
 
+    above_threshold = outcome_fractions.abs().max(axis=1) >= frequency_cutoff
+
     if manual_outcomes is not None:
         outcomes = manual_outcomes
+
+        if apply_threshold_to_manual_outcomes:
+            outcomes = [
+                outcome for outcome in outcomes
+                if above_threshold.get(outcome, False)
+            ]
 
     else:
         def outcome_filter(c, s, d):
@@ -2521,7 +2534,6 @@ def make_partial_incorporation_figure(editing_strategy,
                 (include_wild_type and (c, s) == ('wild type', 'clean'))
             )
 
-        above_threshold = outcome_fractions.abs().max(axis=1) >= frequency_cutoff
 
         outcomes = [
             (c, s, d) for c, s, d in outcome_fractions[above_threshold].index
@@ -2667,14 +2679,19 @@ def make_partial_incorporation_figure(editing_strategy,
         grid.style_fold_change_ax('log2_fold_change')
 
         if difference_from_condition is None:
-            grid.set_xlim('fractions', (0,))
+            grid.set_xlim('fractions', (0, fractions_x_max))
 
         x_max = (grid.axs_by_name['fractions'].get_xlim()[1] / 100) * 1.01
 
-        grid.set_xlim('log10_fractions', (np.log10(0.49 * frequency_cutoff), np.log10(x_max)))
+        if fractions_x_min is None:
+            log10_fractions_x_min = np.log10(0.49 * frequency_cutoff)
+        else:
+            log10_fractions_x_min = np.log10(fractions_x_min)
+
+        grid.set_xlim('log10_fractions', (log10_fractions_x_min, np.log10(x_max)))
         grid.style_log10_frequency_ax('log10_fractions')
 
-        if pegRNA_conversion_fractions is not None:
+        if plot_conversion_fractions:
             grid.plot_pegRNA_conversion_fractions_above(pegRNA_conversion_fractions,
                                                         conditions=line_conditions,
                                                         condition_colors=condition_colors,
