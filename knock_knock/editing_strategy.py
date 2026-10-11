@@ -571,7 +571,7 @@ class EditingStrategy:
         features.update(self.integrase_sites)
 
         for name, feature in {**self.protospacer_features, **self.PAM_features}.items():
-            features[self.target, name] = feature
+            features[feature.seqname, name] = feature
 
         features.update(self.inferred_HA_features)
 
@@ -591,8 +591,8 @@ class EditingStrategy:
 
             features_to_show.update(self.inferred_HA_features)
 
-            for protospacer_name in self.protospacer_features:
-                features_to_show.add((self.target, protospacer_name))
+            for protospacer_name, feature in self.protospacer_features.items():
+                features_to_show.add((feature.seqname, protospacer_name))
 
             for primer_name in self.primers:
                 features_to_show.add((self.target, primer_name))
@@ -686,15 +686,20 @@ class EditingStrategy:
             for name, components in self.sgRNA_components.items():
                 effector = effectors[components['effector']]
 
-                try:
-                    feature = effector.identify_protospacer_in_target(self.target_sequence, components['protospacer'])
-                except ValueError:
-                    continue
+                for seq_name, seq in self.reference_sequences.items():
+                    try:
+                        feature = effector.identify_protospacer_in_target(seq, components['protospacer'])
+                    except ValueError:
+                        continue
 
-                feature.seqname = self.target
-                ps_name = knock_knock.pegRNAs.protospacer_name(name)
-                feature.attribute['ID'] = ps_name
-                features[ps_name] = feature
+                    feature.seqname = seq_name
+                    ps_name = knock_knock.pegRNAs.protospacer_name(name)
+                    feature.attribute['ID'] = ps_name
+
+                    if ps_name in features:
+                        logging.warning(f'Multiple locations for protospacer {name}')
+
+                    features[ps_name] = feature
                                                                         
         return features
     
@@ -722,7 +727,7 @@ class EditingStrategy:
 
             PAM_slices[name] = effector.PAM_slice(protospacer)
 
-            if not effector.PAM_matches_pattern(protospacer, self.target_sequence):
+            if not effector.PAM_matches_pattern(protospacer, self.reference_sequences[protospacer.seqname]):
                 print(f'Warning: {name} PAM doesn\'t match {effector.PAM_pattern}')
 
         return PAM_slices
@@ -735,7 +740,7 @@ class EditingStrategy:
             protospacer = self.protospacer_features[name]
 
             PAM_name = f'{name}_PAM'
-            PAM_feature = gff.Feature.from_fields(seqname=self.target,
+            PAM_feature = gff.Feature.from_fields(seqname=protospacer.seqname,
                                                   feature='PAM',
                                                   start=sl.start,
                                                   end=sl.stop - 1,

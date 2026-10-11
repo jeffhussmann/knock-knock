@@ -1464,59 +1464,60 @@ class ReadDiagram:
                         )
 
         if self.draw_cut_afters:
-            if ref_name == strat.target:
-                cut_after_x_and_strands = set()
+            cut_after_x_and_strands = set()
 
-                for cut_after_name, cut_after in strat.cut_afters.items():
-                    cut_after_x = ref_p_to_x(cut_after + 0.5)
+            for cut_after_name, cut_after in strat.cut_afters.items():
+                cut_after_x = ref_p_to_x(cut_after + 0.5)
 
-                    name, strand = cut_after_name.rsplit('_', 1)
+                name, strand = cut_after_name.rsplit('_', 1)
+                protospacer_feature = self.editing_strategy.protospacer_features[name]
 
+                if ref_name == protospacer_feature.seqname:
                     cut_after_x_and_strands.add((cut_after_x, strand))
 
-                for cut_after_x, strand in cut_after_x_and_strands:
-                    cut_y_bottom = ref_y - self.feature_line_width
-                    cut_y_middle = ref_y
-                    cut_y_top = ref_y + self.feature_line_width
+            for cut_after_x, strand in cut_after_x_and_strands:
+                cut_y_bottom = ref_y - self.feature_line_width
+                cut_y_middle = ref_y
+                cut_y_top = ref_y + self.feature_line_width
 
-                    flip_target = (strat.target in self.refs_to_flip)
+                flip_target = (strat.target in self.refs_to_flip)
 
-                    if strand == 'both':
-                        ys = [cut_y_bottom, cut_y_top]
-                    elif (strand == '+' and not flip_target) or (strand == '-' and flip_target):
-                        ys = [cut_y_middle, cut_y_top]
-                    elif (strand == '-' and not flip_target) or (strand == '+' and flip_target):
-                        ys = [cut_y_bottom, cut_y_middle]
-                    else:
-                        raise ValueError(strand)
+                if strand == 'both':
+                    ys = [cut_y_bottom, cut_y_top]
+                elif (strand == '+' and not flip_target) or (strand == '-' and flip_target):
+                    ys = [cut_y_middle, cut_y_top]
+                elif (strand == '-' and not flip_target) or (strand == '+' and flip_target):
+                    ys = [cut_y_bottom, cut_y_middle]
+                else:
+                    raise ValueError(strand)
 
-                    self.ax.plot([cut_after_x, cut_after_x],
-                                 ys,
-                                 '-',
-                                 linewidth=1,
-                                 color='black',
-                                 solid_capstyle='butt',
-                                 zorder=10,
-                                 visible=visible,
-                                )
+                self.ax.plot([cut_after_x, cut_after_x],
+                             ys,
+                             '-',
+                             linewidth=1,
+                             color='black',
+                             solid_capstyle='butt',
+                             zorder=10,
+                             visible=visible,
+                            )
 
-                    if (PAM_feature := strat.PAM_features.get(f'{name}_PAM')) is not None:
-                        color = PAM_feature.attribute.get('color', 'grey')
-                    else:
-                        color = 'grey'
+                if (PAM_feature := strat.PAM_features.get(f'{name}_PAM')) is not None:
+                    color = PAM_feature.attribute.get('color', 'grey')
+                else:
+                    color = 'grey'
 
-                    if self.label_cut:
-                        label = self.label_overrides.get(f'{name}_cut', f'{name}_cut')
-                        self.ax.annotate(label,
-                                         xy=(cut_after_x, cut_y_bottom),
-                                         xycoords='data',
-                                         xytext=(0, 10 * self.feature_line_width / 0.005 * np.sign(ref_y)),
-                                         textcoords='offset points',
-                                         color=color,
-                                         ha='center',
-                                         va='top' if ref_y < 0 else 'bottom',
-                                         size=self.font_sizes['ref_label'],
-                                        )
+                if self.label_cut:
+                    label = self.label_overrides.get(f'{name}_cut', f'{name}_cut')
+                    self.ax.annotate(label,
+                                     xy=(cut_after_x, cut_y_bottom),
+                                     xycoords='data',
+                                     xytext=(0, 10 * self.feature_line_width / 0.005 * np.sign(ref_y)),
+                                     textcoords='offset points',
+                                     color=color,
+                                     ha='center',
+                                     va='top' if ref_y < 0 else 'bottom',
+                                     size=self.font_sizes['ref_label'],
+                                    )
 
         if self.draw_ref_sequences:
             ref_sequence = strat.reference_sequences[ref_name]
