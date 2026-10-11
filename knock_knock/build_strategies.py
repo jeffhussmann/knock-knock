@@ -295,7 +295,7 @@ class EditingStrategyBuilder:
         for variant in self.genotype.get('variant_flanking_regions', []):
             var_g = parser.parse(variant)
 
-            ref_name = knock_knock.build_strategies.var_g_to_chr(var_g)
+            ref_name = knock_knock.variants.var_g_to_chr(var_g)
             
             var_g_0 = var_g.posedit.pos.start.base - 1
             
