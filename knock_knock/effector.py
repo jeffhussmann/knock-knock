@@ -168,14 +168,26 @@ effector_details = {
     'SpCas9-NRRH_D10A': ('NRRN', 3, (None, -4)),
     'SpCas9-NRTH_D10A': ('NRTH', 3, (None, -4)),
     'SpCas9-NRCH_D10A': ('NRCH', 3, (None, -4)),
+
+    'SpCas9(MKRCKS)_D10A': ('NGT', 3, (None, -4)),
     'SpCas9(MKRCMV)_D10A': ('NGT', 3, (None, -4)),
     'SpCas9(ARGIMR)_D10A': ('NGT', 3, (None, -4)),
     'SpCas9(MRRWMR)_D10A': ('NGT', 3, (None, -4)),
+    'eSpGT_D10A': ('NGT', 3, (None, -4)),
+
+    'SpGA_D10A': ('NGA', 3, (None, -4)),
+    'eSpGA_D10A': ('NGA', 3, (None, -4)),
+    'SpCas9_VRQR_D10A': ('NGA', 3, (None, -4)),
+    'SpCas9_eVRQR_D10A': ('NGA', 3, (None, -4)),
+    'SpCas9(KWRQLC)_D10A': ('NGA', 3, (None, -4)),
+    'SpCas9(MRKCRS)_D10A': ('NGA', 3, (None, -4)),
+
     'SpCas9(LWRYEK)_D10A': ('NGC', 3, (None, -4)),
     'SpCas9(LWKYQS)_D10A': ('NGC', 3, (None, -4)),
     'SpCas9(eSpGC)_D10A': ('NGC', 3, (None, -4)),
     'SpCas9(eMQKSER)_D10A': ('NGC', 3, (None, -4)),
     'SpCas9(MQKSER)_D10A': ('NGC', 3, (None, -4)),
+    'eSpGC_D10A': ('NGC', 3, (None, -4)),
 
     'SpCas9-NG': ('NG', 3, (-4, -4)), 
 
