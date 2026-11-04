@@ -202,6 +202,9 @@ class EditingStrategy:
             elif len(self.protospacer_features) > 0:
                 primary_protospacer = sorted(self.protospacer_features)[0]
 
+            elif len(self.protospacer_without_PAM_features) > 0:
+                primary_protospacer = sorted(self.protospacer_without_PAM_features)[0]
+
         return primary_protospacer
 
     @memoized_property
@@ -680,7 +683,7 @@ class EditingStrategy:
 
     @memoized_property
     def protospacer_features(self):
-        features = {}
+        protospacer_features = {}
 
         if self.sgRNA_components is not None:
             for name, components in self.sgRNA_components.items():
@@ -688,24 +691,61 @@ class EditingStrategy:
 
                 for seq_name, seq in self.reference_sequences.items():
                     try:
-                        feature = effector.identify_protospacer_in_target(seq, components['protospacer'])
+                        features = effector.identify_protospacer_in_target(seq, components['protospacer'], allow_multiple_matches=True)
                     except ValueError:
                         continue
 
-                    feature.seqname = seq_name
-                    ps_name = knock_knock.pegRNAs.protospacer_name(name)
-                    feature.attribute['ID'] = ps_name
+                    for feature_i, feature in enumerate(features):
+                        feature.seqname = seq_name
+                        ps_name = knock_knock.pegRNAs.protospacer_name(name)
 
-                    if ps_name in features:
-                        logging.warning(f'Multiple locations for protospacer {name}')
+                        #if len(features) > 1:
+                        #    logging.warning(f'Multiple locations for protospacer {name}')
 
-                    features[ps_name] = feature
+                        feature.attribute['ID'] = ps_name
+
+                        # Outrageously hacky - overwrite the existing.
+                        protospacer_features[ps_name] = feature
                                                                         
-        return features
+        return protospacer_features
+
+    @memoized_property
+    def protospacer_without_PAM_features(self):
+        protospacer_features = {}
+
+        if self.sgRNA_components is not None:
+            for name, components in self.sgRNA_components.items():
+                effector = effectors[components['effector']]
+
+                for seq_name, seq in self.reference_sequences.items():
+                    try:
+                        features = effector.identify_protospacer_in_target(seq,
+                                                                           components['protospacer'],
+                                                                           allow_multiple_matches=True,
+                                                                           PAM_should_match=False,
+                                                                          )
+                    except ValueError:
+                        continue
+
+                    for feature_i, feature in enumerate(features):
+                        feature.seqname = seq_name
+                        ps_name = knock_knock.pegRNAs.protospacer_name(name)
+
+                        feature.attribute['ID'] = ps_name
+
+                        # Outrageously hacky - overwrite the existing.
+                        protospacer_features[ps_name] = feature
+                                                                        
+        return protospacer_features
     
     @memoized_property
     def protospacer_feature(self):
-        return self.protospacer_features.get(self.primary_protospacer)
+        feature = self.protospacer_features.get(self.primary_protospacer)
+
+        if feature is None:
+            feature = self.protospacer_without_PAM_features.get(self.primary_protospacer)
+
+        return feature
 
     @memoized_property
     def protospacer_sequence(self):
@@ -722,13 +762,15 @@ class EditingStrategy:
     def PAM_slices(self):
         PAM_slices = {}
 
-        for name, protospacer in self.protospacer_features.items():
+        all_items = list(self.protospacer_features.items()) + list(self.protospacer_without_PAM_features.items())
+
+        for name, protospacer in all_items:
             effector = effectors[protospacer.attribute['effector']]
 
             PAM_slices[name] = effector.PAM_slice(protospacer)
 
-            if not effector.PAM_matches_pattern(protospacer, self.reference_sequences[protospacer.seqname]):
-                print(f'Warning: {name} PAM doesn\'t match {effector.PAM_pattern}')
+            #if not effector.PAM_matches_pattern(protospacer, self.reference_sequences[protospacer.seqname]):
+            #    logging.warning(f'{name} PAM doesn\'t match {effector.PAM_pattern}')
 
         return PAM_slices
 
@@ -737,7 +779,10 @@ class EditingStrategy:
         PAM_features = {}
 
         for name, sl in self.PAM_slices.items():
-            protospacer = self.protospacer_features[name]
+            protospacer = self.protospacer_features.get(name)
+
+            if protospacer is None:
+                protospacer = self.protospacer_without_PAM_features.get(name)
 
             PAM_name = f'{name}_PAM'
             PAM_feature = gff.Feature.from_fields(seqname=protospacer.seqname,
