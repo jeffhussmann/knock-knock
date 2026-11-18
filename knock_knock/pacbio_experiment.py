@@ -1,3 +1,4 @@
+from itertools import islice
 import hits.fastq
 import hits.utilities
 
@@ -29,7 +30,9 @@ class PacbioExperiment(Experiment):
 
     @property
     def reads(self):
-        return hits.fastq.reads(self.fns['CCS_fastqs'], standardize_names=True, up_to_space=True)
+        reads = hits.fastq.reads(self.fns['CCS_fastqs'], standardize_names=True, up_to_space=True)
+        reads = islice(reads, self.max_reads)
+        return reads
 
     @memoized_property
     def max_relevant_length(self):
