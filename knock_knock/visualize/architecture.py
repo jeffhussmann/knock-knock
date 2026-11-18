@@ -10,6 +10,7 @@ if 'inline' not in matplotlib.get_backend():
 
 import numpy as np
 import matplotlib.pyplot as plt
+import pysam
 
 from hits import utilities, interval, sam, sw
 import hits.visualize
@@ -35,7 +36,7 @@ def adjust_edges(xs):
 
 @dataclass
 class ReadDiagram:
-    alignments: list | dict
+    alignments: list | dict | pysam.AlignedSegment
     editing_strategy: knock_knock.editing_strategy.EditingStrategy
 
     ref_centric: bool = True
@@ -176,6 +177,9 @@ class ReadDiagram:
                 als = interval.make_parsimonious(als)
 
             return als, all_als
+
+        if isinstance(self.alignments, pysam.AlignedSegment):
+            self.alignments = [self.alignments]
 
         if isinstance(self.alignments, dict):
             self.R2_alignments, _ = clean_up_alignments(self.alignments['R2'])
